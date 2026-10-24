@@ -48,12 +48,12 @@
     "dxHandler": {
       "origin": "repository",
       "path": "Runtime/Core/MessageHandler.cs",
-      "sha256": "6773868cfa7e7594074efdfe038d703b5fb2ed9eef1fdbb6166defd9c9f521cd"
+      "sha256": "79e308925aec5b4a409749e775bff07c9ae58efffd89476d62c67e7c82b0ec10"
     },
     "dxToken": {
       "origin": "repository",
       "path": "Runtime/Core/MessageRegistrationToken.cs",
-      "sha256": "7c1ebe076951e4c510e22610cb08ade9a7cd050698b19ee4d9e1bcc6ad212f73"
+      "sha256": "e44dc93853f72d477550dffe7783963de74cec3a31311519aa1daac98b67928a"
     },
     "dxFlat": {
       "origin": "repository",

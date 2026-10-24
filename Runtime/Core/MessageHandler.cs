@@ -851,9 +851,9 @@ namespace DxMessaging.Core
         /// <param name="originalUntargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="untargetedMessageHandler">MessageHandler to accept all UntargetedMessages.</param>
         /// <param name="originalBroadcastMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
-        /// <param name="broadcastMessageHandler">MessageHandler to accept all TargetedMessages for all entities.</param>
+        /// <param name="broadcastMessageHandler">Handler for broadcast messages and their source.</param>
         /// <param name="originalTargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
-        /// <param name="targetedMessageHandler">MessageHandler to accept all BroadcastMessages for all entities.</param>
+        /// <param name="targetedMessageHandler">Handler for targeted messages and their target.</param>
         /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal GlobalAcceptAllDeregistrationState RegisterGlobalAcceptAll(
@@ -909,9 +909,9 @@ namespace DxMessaging.Core
         /// <param name="originalUntargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="untargetedMessageHandler">MessageHandler to accept all UntargetedMessages.</param>
         /// <param name="originalBroadcastMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
-        /// <param name="broadcastMessageHandler">MessageHandler to accept all TargetedMessages for all entities.</param>
+        /// <param name="broadcastMessageHandler">Handler for broadcast messages and their source.</param>
         /// <param name="originalTargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
-        /// <param name="targetedMessageHandler">MessageHandler to accept all BroadcastMessages for all entities.</param>
+        /// <param name="targetedMessageHandler">Handler for targeted messages and their target.</param>
         /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
         /// <returns>The deregistration state.</returns>
         internal GlobalAcceptAllDeregistrationState RegisterGlobalAcceptAll(
@@ -4897,7 +4897,7 @@ namespace DxMessaging.Core
             /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalUntargetedHandler(
                 Action<IUntargetedMessage> originalHandler,
                 Action<IUntargetedMessage> handler,
@@ -4918,7 +4918,7 @@ namespace DxMessaging.Core
             /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalUntargetedHandler(
                 FastHandler<IUntargetedMessage> originalHandler,
                 FastHandler<IUntargetedMessage> handler,
@@ -4939,7 +4939,7 @@ namespace DxMessaging.Core
             /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalTargetedHandler(
                 Action<InstanceId, ITargetedMessage> originalHandler,
                 Action<InstanceId, ITargetedMessage> handler,
@@ -4960,7 +4960,7 @@ namespace DxMessaging.Core
             /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalTargetedHandler(
                 FastHandlerWithContext<ITargetedMessage> originalHandler,
                 FastHandlerWithContext<ITargetedMessage> handler,
@@ -4976,12 +4976,12 @@ namespace DxMessaging.Core
             }
 
             /// <summary>
-            /// Adds a Global BroadcastHandler to listen to all Targeted Messages of all types for all entities, returning the deregistration action.
+            /// Adds a global handler for broadcast messages of any type with their source.
             /// </summary>
             /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalBroadcastHandler(
                 Action<InstanceId, IBroadcastMessage> originalHandler,
                 Action<InstanceId, IBroadcastMessage> handler,
@@ -4997,12 +4997,12 @@ namespace DxMessaging.Core
             }
 
             /// <summary>
-            /// Adds a Global fast BroadcastHandler to listen to all Targeted Messages of all types for all entities (along with the source instance id), returning the deregistration action.
+            /// Adds a global handler for broadcast messages of any type with their source.
             /// </summary>
             /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalBroadcastHandler(
                 FastHandlerWithContext<IBroadcastMessage> originalHandler,
                 FastHandlerWithContext<IBroadcastMessage> handler,

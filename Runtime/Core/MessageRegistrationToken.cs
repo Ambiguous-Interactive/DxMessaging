@@ -1182,7 +1182,7 @@ namespace DxMessaging.Core
         /// <param name="acceptAllUntargeted">Action handler functionality for UntargetedMessages.</param>
         /// <param name="acceptAllTargeted">Action handler functionality for TargetedMessages.</param>
         /// <param name="acceptAllBroadcast">Action handler functionality for BroadcastMessages.</param>
-        /// <returns>A handle that allows for registration and de-registration.</returns>
+        /// <returns>Handle for removing this registration from the token.</returns>
         public MessageRegistrationHandle RegisterGlobalAcceptAll(
             Action<IUntargetedMessage> acceptAllUntargeted,
             Action<InstanceId, ITargetedMessage> acceptAllTargeted,
@@ -1204,7 +1204,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Stages a registration of the provided MessageHandler to accept every message that is broadcast.
+        /// Stages global observers for untargeted, targeted, and broadcast messages.
         /// </summary>
         /// <note>
         /// DOES NOT ACTUALLY REGISTER THE HANDLER IF NOT ENABLED. To register, a call to Enable() is needed.
@@ -1212,7 +1212,7 @@ namespace DxMessaging.Core
         /// <param name="acceptAllUntargeted">Handler for any untargeted message.</param>
         /// <param name="acceptAllTargeted">Handler for any targeted message with target context.</param>
         /// <param name="acceptAllBroadcast">Handler for any broadcast message with source context.</param>
-        /// <returns>A handle that allows for registration and de-registration.</returns>
+        /// <returns>Handle for removing this registration from the token.</returns>
         /// <example>
         /// <code>
         /// _ = token.RegisterGlobalAcceptAll(
