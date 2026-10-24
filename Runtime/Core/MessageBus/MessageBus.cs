@@ -1857,8 +1857,7 @@ namespace DxMessaging.Core.MessageBus
         /// <item>ApplyRuntimeSettings - runtime settings hot reload
         /// (defensive; plans cache no settings today).</item>
         /// </list>
-        /// NOT required (no sink mutation): BumpResetGeneration (only
-        /// invalidates deregistration closures), handler.active toggles
+        /// NOT required (no sink mutation): BumpResetGeneration, handler.active toggles
         /// (live-checked per dispatch entry), DiagnosticsMode and
         /// MessagingDebug.enabled (read live every emission).
         /// </summary>
@@ -5990,10 +5989,9 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <summary>
-        /// Re-expression of the former <see cref="InternalRegisterUntargeted{T}"/> closure body:
-        /// the scalar (untargeted / without-context) handler deregistration. Behaviour and the
-        /// four reentrancy invariants are unchanged; the closure's captured locals are read from
-        /// <paramref name="reg"/>'s fields instead, and the sink is re-resolved from the method.
+        /// Removes one scalar (untargeted or without-context) handler reference using
+        /// captured state from <paramref name="reg"/>. Re-resolves the live sink only
+        /// to classify a missing handler as stale after a sweep or over-deregistered.
         /// </summary>
         private void DeregisterScalarHandler<T>(in MessageBusRegistration reg)
             where T : IMessage
@@ -6030,8 +6028,9 @@ namespace DxMessaging.Core.MessageBus
                 sweep-staleness / over-deregistration classification only matters when the handler
                 is NOT found, so it is deferred to the cold fallback below. This removes the
                 per-deregistration sink re-resolution (the measured cold-path regression source)
-                while preserving every guard and the throw-safe ordering (this method performs no
-                user callback; the throwing IMessageBus.Deregister boundary is the caller's).
+                while preserving every guard and the ordering of state changes. The cold fallback
+                below can invoke message formatting and the configured debug log receiver. The
+                caller still owns exception handling for its IMessageBus.Deregister boundary.
             */
             if (
                 capturedHandlers.handlers.TryGetValue(priority, out HandlerCache cache)
@@ -6093,8 +6092,9 @@ namespace DxMessaging.Core.MessageBus
             /*
                 COLD FALLBACK: the handler was not found in the captured bucket, so this is a no-op
                 deregistration (post-sweep, or a genuine over-deregistration) -- nothing is removed,
-                so NO version bump / snapshot invalidation is performed. Bumping here would
-                spuriously rebuild whichever bucket currently occupies this priority, which after a
+                so this branch does not bump cache versions or stage snapshots. The bus-wide
+                dispatch-plan stamp was already invalidated before fallback classification.
+                Bumping a cache version here would rebuild whichever bucket occupies this priority, which after a
                 full deregister + re-registration at the same priority is the NEW live bucket (the
                 stale handle must not touch it). Re-resolve the live sink only to CLASSIFY this as a
                 silent stale-after-sweep no-op versus a genuine over-deregistration. Rare path; not
@@ -6219,10 +6219,9 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <summary>
-        /// Re-expression of the former <see cref="InternalRegisterWithContext{T}"/> closure body:
-        /// the keyed (targeted / sourced-broadcast) handler deregistration. Behaviour and the four
-        /// reentrancy invariants are unchanged; the closure's captured locals are read from
-        /// <paramref name="reg"/>'s fields, and the sink is re-resolved from the method.
+        /// Removes one context-bound targeted or sourced-broadcast handler reference using
+        /// captured state from <paramref name="reg"/>. Re-resolves the live sink only
+        /// to classify a missing handler as stale after a sweep or over-deregistered.
         /// </summary>
         private void DeregisterContextHandler<T>(in MessageBusRegistration reg)
             where T : IMessage
@@ -6316,9 +6315,10 @@ namespace DxMessaging.Core.MessageBus
 
             /*
                 COLD FALLBACK: handler not found in the captured bucket -> a no-op deregistration
-                (nothing removed), so NO version bump is performed (it would spuriously rebuild the
-                bucket currently at this priority -- the NEW live bucket after a full deregister +
-                re-registration). Re-resolve only to CLASSIFY stale-after-sweep (silent) versus
+                (nothing removed), so this branch does not bump cache versions or stage snapshots.
+                The bus-wide dispatch-plan stamp was already invalidated. Bumping a cache version
+                here would rebuild the new live bucket after a full deregister + re-registration.
+                Re-resolve only to CLASSIFY stale-after-sweep (silent) versus
                 over-deregistration (error). Rare path; not on the steady deregistration cost.
             */
             MessageCache<ContextHandlerMap> sinks = ContextSinkForMethod(registrationMethod);
