@@ -27,11 +27,12 @@ namespace DxMessaging.Core.MessageBus
     /// <item><description><see cref="Messages.IBroadcastMessage"/> -- Emitted from a source for any listener.</description></item>
     /// </list>
     /// <para>
-    /// Contract note: emitting any message on a bus with no registered handlers must
-    /// be a silent no-op. Implementations must NOT throw, log, or otherwise surface
-    /// the empty-bus state to the caller. The
-    /// <c>LifecycleEdgeCasesTests.EmitOnEmptyBusIsSilentNoOp</c> test pins this
-    /// contract for every message kind.
+    /// A missing subscription does not itself raise a dispatch error. The built-in
+    /// <see cref="MessageBus"/> can report unmatched typed messages at
+    /// <see cref="LogLevel.Info"/> when <see cref="MessagingDebug.enabled"/> is true
+    /// and <see cref="MessagingDebug.LogFunction"/> is non-null. Message formatting
+    /// and log receiver exceptions propagate to the caller. Empty typed emissions
+    /// still advance the emission sequence without adding registrations.
     /// </para>
     /// </remarks>
     /// <example>

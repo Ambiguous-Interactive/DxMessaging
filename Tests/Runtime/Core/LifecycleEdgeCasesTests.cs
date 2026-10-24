@@ -31,10 +31,11 @@ namespace DxMessaging.Tests.Runtime.Core
     /// bus's lifetime is owned by the application (typically the global
     /// singleton or an explicit container scope), not by the consumers that
     /// register handlers on it. There is no "EmitOnDisposedBus" test in this
-    /// fixture because the contract is "no handlers means a silent no-op"
-    /// (pinned by <see cref="EmitOnEmptyBusIsSilentNoOp"/>) plus "Reset
-    /// invalidates handles via the bus's reset generation" (pinned by
-    /// <see cref="EmitImmediatelyAfterResetIsSilentNoOp"/>). Adding an
+    /// fixture. <see cref="EmitOnEmptyBusIsSilentNoOp"/> verifies successful
+    /// emits and unchanged registration counters under the test logger;
+    /// it does not assert silence from every logging configuration.
+    /// <see cref="EmitImmediatelyAfterResetIsSilentNoOp"/> covers emissions
+    /// after reset invalidates handles via the bus's reset generation. Adding an
     /// explicit dispose contract would push lifetime control onto handler
     /// authors; the existing reset-generation guard solves the same problem
     /// without that surface area.
@@ -554,19 +555,15 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         /// <summary>
-        /// <see cref="IMessageBus"/> does NOT extend <see cref="IDisposable"/>
-        /// in the public surface, so an "EmitOnDisposedBus" test does not
-        /// translate directly. The closest defined behavior is "no handlers
-        /// registered emit is a silent no-op" - emitting on an empty bus
-        /// must succeed without throwing. This pins that contract for every
-        /// kind.
+        /// Verifies that an empty-bus emit succeeds under the fixture's logger
+        /// and leaves registration counters unchanged for every message kind.
         /// </summary>
         /// <remarks>
-        /// Per-kind differentiating assertions: the test asserts the correct
-        /// per-kind counter remains zero AFTER the emit (as opposed to a
-        /// kind-agnostic "no exception"), so that a regression in (say) the
-        /// untargeted path that accidentally bumps the targeted counter
-        /// would surface as a test failure.
+        /// The fixture's logger filters routine unmatched-message Info logs.
+        /// This test does not assert that the logger is never called or that
+        /// arbitrary message formatters and log receivers cannot throw.
+        /// All three handler counters must remain at their pre-emit baselines,
+        /// including the counter for the selected message kind.
         /// </remarks>
         [Test]
         public void EmitOnEmptyBusIsSilentNoOp(

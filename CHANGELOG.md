@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Correct IntelliSense summaries and references, including cache enumeration, bus reset behavior,
-  and global observer message and context parameters
+  global observer message and context parameters, and empty-bus debug logging
   ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503),
   [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
 - **BREAKING:** Remove the test-only `DxMessagingRuntimeSettingsProvider.Override` API. Configure

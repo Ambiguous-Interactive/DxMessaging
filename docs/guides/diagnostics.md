@@ -539,6 +539,12 @@ even when `enabled` is false. For example, the plain .NET build uses it to repor
 unsupported reflexive dispatch. Set `LogFunction` to `null` to discard logs from both
 overloads. Formatting and receiver exceptions propagate to the caller.
 
+The built-in bus can log unmatched typed messages at `LogLevel.Info` when
+`MessagingDebug.enabled` is true and `LogFunction` is non-null. This also applies to
+an empty bus, independently of its `DiagnosticsMode` setting. An empty typed emit
+advances the emission sequence and leaves registration counts unchanged; a message
+formatter or log receiver that throws can still interrupt the call.
+
 In 4.0, a logger that throws while `Enable()` rolls back a failed registration leaves
 pending cleanup visible through `Enabled`. Call `Disable()` to finish that cleanup
 before enabling staged handlers again. A logger that disables or clears the token
