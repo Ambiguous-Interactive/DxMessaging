@@ -247,6 +247,11 @@ token.RetargetMessageBus(busB, MessageBusRebindMode.RebindActive);
 // All registrations are now on busB
 ```
 
+If a custom bus registration callback calls `Enable()` on the token currently being activated or
+retargeted, that nested call returns without restarting replay. The outer call determines whether
+activation succeeds. A registration failure still reaches the outer caller, and later activation
+can retry after cleanup completes.
+
 #### When to use this
 
 - When you have direct access to a token and want fine-grained control

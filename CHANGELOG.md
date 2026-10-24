@@ -56,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve activation when a custom bus registration callback calls `Enable()` on the same token.
+  The owning replay completes without restarting its registration queue, including during retargeting
+  ([#671](https://github.com/Ambiguous-Interactive/DxMessaging/issues/671)).
+
 - Stop reflexive dispatch when a diagnostic receiver resets the bus; newly registered handlers
   wait for the next emission ([#670](https://github.com/Ambiguous-Interactive/DxMessaging/issues/670)).
 

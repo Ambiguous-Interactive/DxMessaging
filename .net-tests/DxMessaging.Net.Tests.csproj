@@ -53,6 +53,10 @@
       Link="DelegatingMessageBus.cs"
     />
     <Compile
+      Include="../Tests/Runtime/Core/TokenReentrantEnableTests.cs"
+      Link="TokenReentrantEnableTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/ReflexiveLoggingResetBoundaryTests.cs"
       Link="ReflexiveLoggingResetBoundaryTests.cs"
     />

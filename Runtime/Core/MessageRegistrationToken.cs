@@ -100,6 +100,7 @@ namespace DxMessaging.Core
             teardown, or retarget actually needs them.
         */
         private List<StagedRegistration> _registrationReplayQueue;
+        private bool _isReplayingRegistrations;
         private List<TeardownIdentity> _teardownQueue;
         private Dictionary<MessageRegistrationHandle, int> _rollbackCounts;
         private List<MessageRegistrationHandle> _activeRetargetHandles;
@@ -1385,6 +1386,8 @@ namespace DxMessaging.Core
         /// Handles staged while disabled remain valid if replay fails. If rollback leaves
         /// <see cref="Enabled"/> true, finish cleanup with <see cref="Disable"/> before retrying
         /// <see cref="Enable"/>. If cleanup completes, retry Enable after the bus recovers.
+        /// A nested Enable from a registration callback returns while the outer replay owns
+        /// activation. The outer call determines success or failure.
         /// </remarks>
         /// <note>
         /// Idempotent.
@@ -1397,7 +1400,7 @@ namespace DxMessaging.Core
         /// </example>
         public void Enable()
         {
-            if (_enabled)
+            if (_enabled || _isReplayingRegistrations)
             {
                 return;
             }
@@ -1896,6 +1899,8 @@ namespace DxMessaging.Core
         /// <remarks>2026-10-17: Skip a later entry removed or replaced by an earlier registration callback.</remarks>
         private void InvokeRegistrationReplayQueue()
         {
+            bool wasReplaying = _isReplayingRegistrations;
+            _isReplayingRegistrations = true;
             try
             {
                 foreach (StagedRegistration staged in GetRegistrationReplayQueue())
@@ -1914,6 +1919,7 @@ namespace DxMessaging.Core
             finally
             {
                 _registrationReplayQueue?.Clear();
+                _isReplayingRegistrations = wasReplaying;
             }
         }
 
