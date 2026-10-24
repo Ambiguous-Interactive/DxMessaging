@@ -294,6 +294,16 @@ try {
     Assert-That 'every repeated stdout/stderr progress line is captured' (@($result.Output).Count -eq 7)
     Assert-That 'periodic notice reports monotonic idle elapsed time' ($noticeText -match 'install heartbeat:.*idleElapsed=\d+s')
 
+    if ($failed -ne 0) {
+        # This first control captures stream 6 to assert the periodic notices. Print that
+        # captured evidence on failure so CI retains startup silence and later progress.
+        Write-Host '::group::Finite heartbeat control failure evidence'
+        Write-Host "PowerShell $($PSVersionTable.PSVersion); $([Runtime.InteropServices.RuntimeInformation]::FrameworkDescription); logical processors $([Environment]::ProcessorCount)"
+        Write-Host ($result | ConvertTo-Json -Depth 4)
+        Write-Host $noticeText
+        Write-Host '::endgroup::'
+    }
+
     $env:DXM_ENSURE_EDITOR_PROGRESS_NOTICE_INTERVAL_SECONDS = '0'
     $env:DXM_ENSURE_EDITOR_PROGRESS_STALL_SECONDS = '1'
     $silent = 'Start-Sleep -Seconds 10'
