@@ -4219,6 +4219,10 @@ namespace DxMessaging.Core.MessageBus
                             LogLevel.Warn,
                             "ReflexiveMessage dispatch traverses the Unity hierarchy and is significantly slower than typed messages. Prefer targeted or broadcast messages where possible."
                         );
+                        if (emissionResetGeneration != _resetGeneration)
+                        {
+                            return;
+                        }
                     }
                 }
 #if UNITY_2021_3_OR_NEWER
@@ -4344,6 +4348,10 @@ namespace DxMessaging.Core.MessageBus
                     LogLevel.Error,
                     "Reflexive messages are not supported in this build."
                 );
+                if (emissionResetGeneration != _resetGeneration)
+                {
+                    return;
+                }
 #endif
             }
 

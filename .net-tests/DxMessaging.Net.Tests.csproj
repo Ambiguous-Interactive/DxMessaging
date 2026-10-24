@@ -53,6 +53,10 @@
       Link="DelegatingMessageBus.cs"
     />
     <Compile
+      Include="../Tests/Runtime/Core/ReflexiveLoggingResetBoundaryTests.cs"
+      Link="ReflexiveLoggingResetBoundaryTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/ForeignIndexGetterLifecycleTests.cs"
       Link="ForeignIndexGetterLifecycleTests.cs"
     />

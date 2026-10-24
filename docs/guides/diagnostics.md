@@ -545,6 +545,10 @@ an empty bus, independently of its `DiagnosticsMode` setting. An empty typed emi
 advances the emission sequence and leaves registration counts unchanged; a message
 formatter or log receiver that throws can still interrupt the call.
 
+In 4.0, a reset from reflexive diagnostic logging stops the current emission before
+further reflexive work or typed callbacks. Registrations created by that log receiver
+remain available for the next emission.
+
 In 4.0, a logger that throws while `Enable()` rolls back a failed registration leaves
 pending cleanup visible through `Enabled`. Call `Disable()` to finish that cleanup
 before enabling staged handlers again. A logger that disables or clears the token
