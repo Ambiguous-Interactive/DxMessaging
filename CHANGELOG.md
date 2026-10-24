@@ -55,8 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Keep failed registration cleanup retryable when diagnostic formatting or a log receiver throws
-  or reenters the token ([#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663)).
+- Preserve retryable cleanup across diagnostic callbacks and keep a logger's successful `Disable()`
+  effective during retarget recovery ([#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663),
+  [#668](https://github.com/Ambiguous-Interactive/DxMessaging/issues/668)).
 
 - Fix `InstanceId` XML and JSON data contract serialization by storing the numeric `id` member on its backing field
   ([#662](https://github.com/Ambiguous-Interactive/DxMessaging/issues/662)).

@@ -544,6 +544,10 @@ pending cleanup visible through `Enabled`. Call `Disable()` to finish that clean
 before enabling staged handlers again. A logger that disables or clears the token
 during recovery keeps the resulting cleanup state.
 
+During active retarget recovery, a successful `Disable()` from either logging callback
+keeps the token disabled. `UnregisterAll()` also clears staged handlers. If rollback
+completes without callback cleanup, recovery restores registrations on the previous bus.
+
 ## Per-Environment Configuration
 
 A common pattern is enabling diagnostics only in the Editor for development visibility while keeping runtime builds lean.

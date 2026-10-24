@@ -1414,7 +1414,7 @@ namespace DxMessaging.Core
                     so replay tolerates re-entrant registration mutation.
                 */
                 QueueRegistrationsInOrder();
-                InvokeRegistrationQueueWithRollback();
+                InvokeRegistrationQueueWithRollback(out _);
             }
 
             _enabled = true;
@@ -1490,6 +1490,11 @@ namespace DxMessaging.Core
         /// <summary>
         /// Retargets staged registrations to use a new message bus, re-registering active handlers if needed.
         /// </summary>
+        /// <remarks>
+        /// Failed active replay restores registrations on the previous bus. If diagnostic formatting
+        /// or a log receiver successfully finishes pending rollback cleanup through <see cref="Disable"/>
+        /// or <see cref="UnregisterAll"/>, recovery preserves that cleanup instead of replaying staging.
+        /// </remarks>
         /// <param name="messageBus">Bus override to apply. Pass <c>null</c> to resume using the handler default.</param>
         /// <param name="rebindMode">Determines whether existing registrations should move to the supplied bus immediately.</param>
         public void RetargetMessageBus(IMessageBus messageBus, MessageBusRebindMode rebindMode)
@@ -1547,14 +1552,18 @@ namespace DxMessaging.Core
                     equal-priority dispatch order survives a bus retarget.
                 */
                 QueueRegistrationsInOrder();
+                bool cleanupCompletedDuringLogging = false;
                 try
                 {
-                    InvokeRegistrationQueueWithRollback();
+                    InvokeRegistrationQueueWithRollback(out cleanupCompletedDuringLogging);
                     _enabled = true;
                 }
                 catch (Exception exception)
                 {
-                    RestoreRegistrationsAfterRetargetFailure(previousMessageBus);
+                    RestoreRegistrationsAfterRetargetFailure(
+                        previousMessageBus,
+                        cleanupCompletedDuringLogging
+                    );
                     ExceptionDispatchInfo.Capture(exception).Throw();
                     throw;
                 }
@@ -1778,7 +1787,7 @@ namespace DxMessaging.Core
             QueueMissingRegistrationsInOrder(activeRetargetHandles);
             try
             {
-                InvokeRegistrationQueueWithRollback();
+                InvokeRegistrationQueueWithRollback(out _);
             }
             catch (Exception exception)
             {
@@ -1793,10 +1802,13 @@ namespace DxMessaging.Core
             }
         }
 
-        private void RestoreRegistrationsAfterRetargetFailure(IMessageBus previousMessageBus)
+        private void RestoreRegistrationsAfterRetargetFailure(
+            IMessageBus previousMessageBus,
+            bool cleanupCompletedDuringLogging
+        )
         {
             _messageBus = previousMessageBus;
-            if (_registrationCount == 0)
+            if (cleanupCompletedDuringLogging || _registrationCount == 0)
             {
                 _enabled = 0 < _deregistrationCount;
                 return;
@@ -1805,7 +1817,7 @@ namespace DxMessaging.Core
             QueueRegistrationsWithoutRetryableDeregistrationsInOrder();
             try
             {
-                InvokeRegistrationQueueWithRollback();
+                InvokeRegistrationQueueWithRollback(out _);
                 _enabled = true;
             }
             catch (Exception restoreException)
@@ -2045,8 +2057,9 @@ namespace DxMessaging.Core
             return firstException;
         }
 
-        private void InvokeRegistrationQueueWithRollback()
+        private void InvokeRegistrationQueueWithRollback(out bool cleanupCompletedDuringLogging)
         {
+            cleanupCompletedDuringLogging = false;
             Dictionary<MessageRegistrationHandle, int> rollbackBaseline =
                 SnapshotDeregistrationCounts();
             try
@@ -2055,7 +2068,10 @@ namespace DxMessaging.Core
             }
             catch (Exception exception)
             {
-                RollBackDeregistrationsAfterRegistrationFailure(rollbackBaseline);
+                RollBackDeregistrationsAfterRegistrationFailure(
+                    rollbackBaseline,
+                    out cleanupCompletedDuringLogging
+                );
                 _enabled = 0 < _deregistrationCount;
                 ExceptionDispatchInfo.Capture(exception).Throw();
                 throw;
@@ -2063,9 +2079,11 @@ namespace DxMessaging.Core
         }
 
         private void RollBackDeregistrationsAfterRegistrationFailure(
-            Dictionary<MessageRegistrationHandle, int> rollbackBaseline
+            Dictionary<MessageRegistrationHandle, int> rollbackBaseline,
+            out bool cleanupCompletedDuringLogging
         )
         {
+            cleanupCompletedDuringLogging = false;
             if (_deregistrationCount == 0)
             {
                 return;
@@ -2077,13 +2095,26 @@ namespace DxMessaging.Core
                 Publish pending cleanup before entering either user-code boundary.
             */
             _enabled = 0 < _deregistrationCount;
-            if (rollbackException != null && MessagingDebug.enabled)
+            bool pendingBeforeLogging = _enabled;
+            try
             {
-                MessagingDebug.Log(
-                    LogLevel.Error,
-                    "Failed to roll back partial registration after token replay failure: {0}",
-                    rollbackException
-                );
+                if (rollbackException != null && MessagingDebug.enabled)
+                {
+                    MessagingDebug.Log(
+                        LogLevel.Error,
+                        "Failed to roll back partial registration after token replay failure: {0}",
+                        rollbackException
+                    );
+                }
+            }
+            finally
+            {
+                /*
+                    A logger can finish pending cleanup and then throw. Preserve that completed
+                    cleanup in outer retarget recovery without suppressing the logger exception.
+                    Natural rollback completion occurred before logging and still restores staging.
+                */
+                cleanupCompletedDuringLogging = pendingBeforeLogging && _deregistrationCount == 0;
             }
         }
 
