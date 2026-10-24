@@ -104,11 +104,11 @@ Use **double quotes** for all strings (matches Prettier YAML defaults):
 
 ```text
 # Correct
-node-version: "22.18.0"
+node-version: "22.23.4"
 cache: "npm"
 
 # Incorrect
-node-version: '22.18.0'
+node-version: '22.23.4'
 cache: 'npm'
 ```
 
@@ -167,7 +167,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: "22.18.0"
+          node-version: "22.23.4"
           cache: "npm"
           cache-dependency-path: package.json
 

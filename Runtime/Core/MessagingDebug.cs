@@ -38,18 +38,22 @@ namespace DxMessaging.Core
     /// </remarks>
     public static class MessagingDebug
     {
+        /// <summary>Enables formatted logs and package call sites that explicitly check this flag.</summary>
+        /// <remarks>The two-argument <see cref="Log(LogLevel, string)"/> overload does not read this flag.</remarks>
         public static bool enabled = false;
 
         /// <summary>
         /// Custom log function to use.
         /// </summary>
-        /// <note>
-        /// For Unity, you could do LogFunction = Debug.Log;
-        /// </note>
+        /// <remarks>
+        /// Use a two-argument callback, for example
+        /// <c>(level, message) =&gt; UnityEngine.Debug.Log($"[{level}] {message}")</c>.
+        /// A null receiver discards logs from either overload.
+        /// </remarks>
         public static Action<LogLevel, string> LogFunction = null;
 
         /// <summary>
-        /// Logs a message to the debug log function if it's not null.
+        /// Sends an unformatted message to the configured receiver, regardless of the enabled flag.
         /// </summary>
         /// <param name="logLevel">Severity of the message.</param>
         /// <param name="message">Message to log.</param>
@@ -59,11 +63,13 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Logs a format string + args to the debug log function, if it's not null.
+        /// Sends a message to the configured receiver only when enabled.
         /// </summary>
-        /// <note>
-        /// Will call string.Format(message, args)
-        /// </note>
+        /// <remarks>
+        /// A null receiver discards the message. Empty arguments send the text unchanged;
+        /// otherwise <see cref="string.Format(string, object[])"/> formats it first.
+        /// Formatting and receiver exceptions propagate to the caller.
+        /// </remarks>
         /// <param name="logLevel">Severity of the message.</param>
         /// <param name="message">Format string.</param>
         /// <param name="args">Args to populate the format string with.</param>

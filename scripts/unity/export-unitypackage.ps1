@@ -643,7 +643,7 @@ function New-ConsumerProject {
     New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($ConsumerPath, 'Assets', 'Editor')) | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $ConsumerPath 'Packages') | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $ConsumerPath 'ProjectSettings') | Out-Null
-    $dependencies = [ordered]@{ 'com.unity.test-framework' = '1.4.5' }
+    $dependencies = [ordered]@{ 'com.unity.test-framework' = '1.4.6' }
     if (-not [string]::IsNullOrWhiteSpace($Dependency)) {
         $dependencies[$PackageName] = $Dependency
     }

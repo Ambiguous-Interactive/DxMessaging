@@ -33,7 +33,7 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Require a registered Unity runner
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/check-unity-runner-availability@e04369db0da0e0106af77091bf95118218ec7c02 # v1.17.0
         with:
           reader-app-id: ${{ secrets.BUILD_LOCK_READER_APP_ID }}
           reader-app-private-key: ${{ secrets.BUILD_LOCK_READER_APP_PRIVATE_KEY }}
@@ -69,7 +69,7 @@ jobs:
       - name: Require manually installed Unity editor
         id: ensure_unity_editor
         timeout-minutes: 10
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@e04369db0da0e0106af77091bf95118218ec7c02 # v1.17.0
         with:
           unity-version: ${{ matrix.unity-version }}
           install-root: ${{ runner.tool_cache }}\u6-v3
@@ -109,9 +109,9 @@ jobs:
       - name: Setup Node.js
         id: setup_node
         timeout-minutes: 5
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.18.0"
+          node-version: "22.23.4"
 
       - name: Install artifact tooling dependencies
         id: install_dependencies
@@ -163,7 +163,7 @@ jobs:
       - name: Acquire organization Unity lock
         id: acquire_lock
         timeout-minutes: 305
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@e04369db0da0e0106af77091bf95118218ec7c02 # v1.17.0
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -267,7 +267,7 @@ jobs:
       - name: Upload benchmark artifacts
         if: ${{ always() && steps.redact_benchmarks.outcome == 'success' }}
         timeout-minutes: 10
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unity-benchmarks-${{ matrix.unity-version }}-${{ matrix.test-mode }}
           path: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -278,7 +278,7 @@ jobs:
         id: return_unity_license
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@e04369db0da0e0106af77091bf95118218ec7c02 # v1.17.0
         with:
           unity-version: ${{ matrix.unity-version }}
           tool-cache: ${{ runner.tool_cache }}
@@ -290,7 +290,7 @@ jobs:
         id: cleanup_classification
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@e04369db0da0e0106af77091bf95118218ec7c02 # v1.17.0
         with:
           return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
           return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
@@ -302,7 +302,7 @@ jobs:
         id: release_unity_lock
         if: always()
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@e04369db0da0e0106af77091bf95118218ec7c02 # v1.17.0
         with:
           lock-name: wallstop-organization-builds
           holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
@@ -317,7 +317,7 @@ jobs:
       - name: Require confirmed Unity cleanup
         if: always()
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@03518ac5ac2a4a223243c593cc9b453688c92b99 # v1.15.0
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@e04369db0da0e0106af77091bf95118218ec7c02 # v1.17.0
         with:
           # Typed binding to the one acquire step, exactly as the enrollment
           # contract requires. A leg that aborts before acquire ran reports an

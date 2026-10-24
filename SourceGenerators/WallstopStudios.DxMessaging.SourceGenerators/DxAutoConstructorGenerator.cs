@@ -11,32 +11,15 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
     using Microsoft.CodeAnalysis.CSharp;
     using Microsoft.CodeAnalysis.CSharp.Syntax;
     using Microsoft.CodeAnalysis.Text;
+    using static WallstopStudios.DxMessaging.SourceGenerators.GeneratorDiagnostics;
 
     [Generator]
     public sealed class DxAutoConstructorGenerator : ISourceGenerator
     {
-        private static readonly DiagnosticDescriptor NonPartialContainerDiagnostic = new(
-            id: "DXMSG003",
-            title: "Containing type must be partial for nested generation",
-            messageFormat: "Type '{0}' is nested inside non-partial container(s): {1}. Suggested fix: add the 'partial' keyword to the containing type declaration(s).",
-            category: "DxMessaging",
-            defaultSeverity: DiagnosticSeverity.Warning,
-            isEnabledByDefault: true
-        );
-
-        private static readonly DiagnosticDescriptor AddPartialSuggestionDiagnostic = new(
-            id: "DXMSG004",
-            title: "Add 'partial' keyword to containing type",
-            messageFormat: "Add 'partial' to the declaration of '{0}' to enable generation for nested type '{1}'.",
-            category: "DxMessaging",
-            defaultSeverity: DiagnosticSeverity.Info,
-            isEnabledByDefault: true
-        );
-
         private static readonly DiagnosticDescriptor InvalidOptionalDefaultDiagnostic = new(
             id: "DXMSG005",
             title: "Invalid optional default value",
-            messageFormat: "Field '{0}' default value expression '{1}' is not a valid optional parameter default for type '{2}'.",
+            messageFormat: "Field '{0}' default value expression '{1}' is not a valid optional parameter default for type '{2}'",
             category: "DxMessaging",
             defaultSeverity: DiagnosticSeverity.Error,
             isEnabledByDefault: true

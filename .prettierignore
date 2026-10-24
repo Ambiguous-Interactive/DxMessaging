@@ -24,3 +24,7 @@ Samples~/
 # --check mode converge: a formatter rewriting these would make `npm run llm:check` fail
 # immediately after a successful regeneration.
 .llm/index.md
+
+# Roslyn 3.3 release tracking rejects leading/trailing table pipes from Prettier.
+# The compiler and markdownlint validate these native-format tables.
+SourceGenerators/**/AnalyzerReleases.*.md

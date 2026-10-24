@@ -150,7 +150,7 @@ check_tool "ncdu" "ncdu" "--version"
 
 echo ""
 echo -e "${BLUE}=== .NET Tools ===${NC}"
-check_tool "csharpier" "dotnet-csharpier" "--version"
+check_tool "csharpier" "csharpier" "--version"
 
 echo ""
 echo -e "${BLUE}=== AI / Agent CLIs ===${NC}"

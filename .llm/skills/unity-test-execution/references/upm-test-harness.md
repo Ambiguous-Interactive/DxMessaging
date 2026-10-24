@@ -54,8 +54,8 @@ The generated manifest shape:
 ```json
 {
   "dependencies": {
-    "com.unity.test-framework": "1.4.5",
-    "com.unity.test-framework.performance": "3.4.2",
+    "com.unity.test-framework": "1.4.6",
+    "com.unity.test-framework.performance": "3.6.0",
     "com.wallstop-studios.dxmessaging": "file:<repo-root>"
   },
   "scopedRegistries": [],

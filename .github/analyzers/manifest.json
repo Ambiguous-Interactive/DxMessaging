@@ -3,29 +3,29 @@
   "packages": [
     {
       "id": "Roslynator.Analyzers",
-      "version": "4.16.0",
-      "url": "https://api.nuget.org/v3-flatcontainer/roslynator.analyzers/4.16.0/roslynator.analyzers.4.16.0.nupkg",
-      "sha256": "8fdf744e36778e6d3c00c5ea89e94fd36810588d3cd8a572301d9d9934c28a9b",
+      "version": "5.0.1",
+      "url": "https://api.nuget.org/v3-flatcontainer/roslynator.analyzers/5.0.1/roslynator.analyzers.5.0.1.nupkg",
+      "sha256": "c34f0658e9219bcf615a70215be64bb9333ecfbfb6c60dd8cc7ef7be50edf580",
       "license": "Apache-2.0",
       "files": [
         {
           "entry": "analyzers/dotnet/roslyn3.8/cs/Roslynator.CSharp.Analyzers.dll",
-          "sha256": "3f104ae829826e063b36ea4c11df2fd595ae482ddf76c58c09530486e1ebf853",
+          "sha256": "86cc717f07070a823b8f728847717527bb09c0ef846db17ddb9366f437b6ac4c",
           "guid": "3661e954d1b7490b944b35cdb72a3665"
         },
         {
           "entry": "analyzers/dotnet/roslyn3.8/cs/Roslynator_Analyzers_Roslynator.Common.dll",
-          "sha256": "4b3133ce1d4f52e17e6b488a1b7e7eb3d768e4d705c50d3482f8ca65e91cc834",
+          "sha256": "f4998d6a52f49eaba7deef1db2f1579a2185620bf1e612845c189229fb68aea6",
           "guid": "8ccb09443b614abbb68b8e4bc48fed63"
         },
         {
           "entry": "analyzers/dotnet/roslyn3.8/cs/Roslynator_Analyzers_Roslynator.Core.dll",
-          "sha256": "bab462206bdb9653cc61f39b13b47042d82b8fcc189ab73eaf76452f2f369424",
+          "sha256": "4abeb2b3fef95f947a61e37f3dc65169ea1fe979a5e5855303264b5d464102a7",
           "guid": "f4fdc9dd29fa4da897893d2be89437d6"
         },
         {
           "entry": "analyzers/dotnet/roslyn3.8/cs/Roslynator_Analyzers_Roslynator.CSharp.dll",
-          "sha256": "c69267920234e720e5c93f0eec218d522547edd1e67ec2e295f42c5a2b89de70",
+          "sha256": "e68a6fd2a24c5c7854dc61bba905d84719297a088838db13e1b1b6213563febf",
           "guid": "bb49eda285bf4387a171485058f6ae80"
         }
       ]
@@ -46,14 +46,14 @@
     },
     {
       "id": "SonarAnalyzer.CSharp",
-      "version": "10.34.0.3385",
-      "url": "https://api.nuget.org/v3-flatcontainer/sonaranalyzer.csharp/10.34.0.3385/sonaranalyzer.csharp.10.34.0.3385.nupkg",
-      "sha256": "00195615df83f27cf7d99a4dc0e5c717a9add62c6e2c398aca8c6ec1d44f5459",
+      "version": "10.35.0.4138",
+      "url": "https://api.nuget.org/v3-flatcontainer/sonaranalyzer.csharp/10.35.0.4138/sonaranalyzer.csharp.10.35.0.4138.nupkg",
+      "sha256": "253e3678f5b33849f6727e7570c0c43bc8603e327df5b0e28967a19b1de3ed04",
       "license": "Sonar Source-Available License v1.0",
       "files": [
         {
           "entry": "analyzers/SonarAnalyzer.CSharp.dll",
-          "sha256": "94c3578c197039338b8767d52e9ebf7c6e961c8a138330a379dd7fd95979e382",
+          "sha256": "83de8d78a074833e940c21f3437a5c4b4e3ad27a73bce65f4b66adef5bfedfdb",
           "guid": "f02db70c3209456394060837586bda5e"
         }
       ]

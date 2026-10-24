@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1.4
 
+FROM rust:1-bookworm AS tokei-builder
+RUN rustc --version && cargo install tokei --version 15.0.0 --locked
+
 # DxMessaging Development Container
 # Base image: .NET 9.0 on Debian Bookworm
 # Note: .NET 10 SDK is installed alongside .NET 9 to support C# Dev Kit.
@@ -88,11 +91,11 @@ RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
 WORKDIR /tmp/tools
 
 # ------------------------------------------------------------------------------
-# Install fd (fd-find) 10.2.0
+# Install fd (fd-find) 10.5.0
 # https://github.com/sharkdp/fd
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    FD_VERSION="10.2.0"; \
+    FD_VERSION="10.5.0"; \
     case "${TARGETARCH}" in \
         amd64) FD_ARCH="x86_64-unknown-linux-gnu" ;; \
         arm64) FD_ARCH="aarch64-unknown-linux-gnu" ;; \
@@ -106,11 +109,11 @@ RUN set -eux; \
     fd --version
 
 # ------------------------------------------------------------------------------
-# Install bat 0.24.0
+# Install bat 0.26.1
 # https://github.com/sharkdp/bat
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    BAT_VERSION="0.24.0"; \
+    BAT_VERSION="0.26.1"; \
     case "${TARGETARCH}" in \
         amd64) BAT_ARCH="x86_64-unknown-linux-gnu" ;; \
         arm64) BAT_ARCH="aarch64-unknown-linux-gnu" ;; \
@@ -124,11 +127,11 @@ RUN set -eux; \
     bat --version
 
 # ------------------------------------------------------------------------------
-# Install fzf 0.56.3
+# Install fzf 0.74.5
 # https://github.com/junegunn/fzf
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    FZF_VERSION="0.56.3"; \
+    FZF_VERSION="0.74.5"; \
     case "${TARGETARCH}" in \
         amd64) FZF_ARCH="linux_amd64" ;; \
         arm64) FZF_ARCH="linux_arm64" ;; \
@@ -142,11 +145,11 @@ RUN set -eux; \
     fzf --version
 
 # ------------------------------------------------------------------------------
-# Install delta 0.18.2
+# Install delta 0.20.1
 # https://github.com/dandavison/delta
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    DELTA_VERSION="0.18.2"; \
+    DELTA_VERSION="0.20.1"; \
     case "${TARGETARCH}" in \
         amd64) DELTA_ARCH="x86_64-unknown-linux-gnu" ;; \
         arm64) DELTA_ARCH="aarch64-unknown-linux-gnu" ;; \
@@ -160,11 +163,11 @@ RUN set -eux; \
     delta --version
 
 # ------------------------------------------------------------------------------
-# Install eza 0.20.14
+# Install eza 0.23.5
 # https://github.com/eza-community/eza
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    EZA_VERSION="0.20.14"; \
+    EZA_VERSION="0.23.5"; \
     case "${TARGETARCH}" in \
         amd64) EZA_ARCH="x86_64-unknown-linux-gnu" ;; \
         arm64) EZA_ARCH="aarch64-unknown-linux-gnu" ;; \
@@ -178,11 +181,11 @@ RUN set -eux; \
     eza --version
 
 # ------------------------------------------------------------------------------
-# Install zoxide 0.9.6
+# Install zoxide 0.10.0
 # https://github.com/ajeetdsouza/zoxide
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    ZOXIDE_VERSION="0.9.6"; \
+    ZOXIDE_VERSION="0.10.0"; \
     case "${TARGETARCH}" in \
         amd64) ZOXIDE_ARCH="x86_64-unknown-linux-musl" ;; \
         arm64) ZOXIDE_ARCH="aarch64-unknown-linux-musl" ;; \
@@ -196,11 +199,11 @@ RUN set -eux; \
     zoxide --version
 
 # ------------------------------------------------------------------------------
-# Install yq 4.44.6
+# Install yq 4.54.1
 # https://github.com/mikefarah/yq
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    YQ_VERSION="4.44.6"; \
+    YQ_VERSION="4.54.1"; \
     case "${TARGETARCH}" in \
         amd64) YQ_ARCH="linux_amd64" ;; \
         arm64) YQ_ARCH="linux_arm64" ;; \
@@ -211,11 +214,11 @@ RUN set -eux; \
     yq --version
 
 # ------------------------------------------------------------------------------
-# Install duf 0.8.1
+# Install duf 0.9.1
 # https://github.com/muesli/duf
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    DUF_VERSION="0.8.1"; \
+    DUF_VERSION="0.9.1"; \
     case "${TARGETARCH}" in \
         amd64) DUF_ARCH="linux_x86_64" ;; \
         arm64) DUF_ARCH="linux_arm64" ;; \
@@ -229,11 +232,11 @@ RUN set -eux; \
     duf --version
 
 # ------------------------------------------------------------------------------
-# Install sd 1.0.0
+# Install sd 1.1.0
 # https://github.com/chmln/sd
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    SD_VERSION="1.0.0"; \
+    SD_VERSION="1.1.0"; \
     case "${TARGETARCH}" in \
         amd64) SD_ARCH="x86_64-unknown-linux-gnu" ;; \
         arm64) SD_ARCH="aarch64-unknown-linux-musl" ;; \
@@ -247,11 +250,11 @@ RUN set -eux; \
     sd --version
 
 # ------------------------------------------------------------------------------
-# Install dust 1.1.1
+# Install dust 1.2.6
 # https://github.com/bootandy/dust
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    DUST_VERSION="1.1.1"; \
+    DUST_VERSION="1.2.6"; \
     case "${TARGETARCH}" in \
         amd64) DUST_ARCH="x86_64-unknown-linux-gnu" ;; \
         arm64) DUST_ARCH="aarch64-unknown-linux-gnu" ;; \
@@ -283,48 +286,37 @@ RUN set -eux; \
     procs --version
 
 # ------------------------------------------------------------------------------
-# Install tokei 12.1.2
+# Install tokei 15.0.0 from the source build; this release has no binary assets.
 # https://github.com/XAMPPRocky/tokei
 # ------------------------------------------------------------------------------
-RUN set -eux; \
-    TOKEI_VERSION="12.1.2"; \
-    case "${TARGETARCH}" in \
-        amd64) TOKEI_ARCH="x86_64-unknown-linux-gnu" ;; \
-        arm64) TOKEI_ARCH="aarch64-unknown-linux-gnu" ;; \
-        *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
-    esac; \
-    wget -q "https://github.com/XAMPPRocky/tokei/releases/download/v${TOKEI_VERSION}/tokei-${TOKEI_ARCH}.tar.gz" -O tokei.tar.gz; \
-    tar -xzf tokei.tar.gz; \
-    cp tokei /usr/local/bin/tokei; \
-    chmod +x /usr/local/bin/tokei; \
-    rm -rf tokei.tar.gz tokei; \
-    tokei --version
+COPY --from=tokei-builder /usr/local/cargo/bin/tokei /usr/local/bin/tokei
+RUN tokei --version
 
 # ------------------------------------------------------------------------------
-# Install lychee 0.21.0
+# Install lychee 0.24.2
 # https://github.com/lycheeverse/lychee
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    LYCHEE_VERSION="0.21.0"; \
+    LYCHEE_VERSION="0.24.2"; \
     case "${TARGETARCH}" in \
-        amd64) LYCHEE_ARCH="x86_64-unknown-linux-gnu" ;; \
-        arm64) LYCHEE_ARCH="aarch64-unknown-linux-gnu" ;; \
+        amd64) LYCHEE_ARCH="x86_64-unknown-linux-musl" ;; \
+        arm64) LYCHEE_ARCH="aarch64-unknown-linux-musl" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac; \
     curl --fail --location --show-error --retry 3 --retry-delay 2 \
         --output lychee.tar.gz "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-${LYCHEE_ARCH}.tar.gz"; \
     tar -xzf lychee.tar.gz; \
-    cp lychee /usr/local/bin/lychee; \
+    cp "lychee-${LYCHEE_ARCH}/lychee" /usr/local/bin/lychee; \
     chmod +x /usr/local/bin/lychee; \
-    rm -rf lychee.tar.gz lychee; \
+    rm -rf lychee.tar.gz "lychee-${LYCHEE_ARCH}"; \
     lychee --version
 
 # ------------------------------------------------------------------------------
-# Install actionlint 1.7.7
+# Install actionlint 1.7.12
 # https://github.com/rhysd/actionlint
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    ACTIONLINT_VERSION="1.7.7"; \
+    ACTIONLINT_VERSION="1.7.12"; \
     case "${TARGETARCH}" in \
         amd64) ACTIONLINT_ARCH="linux_amd64" ;; \
         arm64) ACTIONLINT_ARCH="linux_arm64" ;; \
@@ -399,7 +391,7 @@ RUN npm install --global --prefix /usr/local \
         opencode-ai@latest \
         @nanocollective/nanocoder@latest \
         @z_ai/mcp-server@latest \
-        mcp-remote@0.8.3 \
+        mcp-remote@0.15.2 \
         --no-fund \
         --no-audit \
     && codex --version \
@@ -593,7 +585,9 @@ RUN rm -rf /tmp/tools
 # Install CSharpier as dotnet tool for vscode user
 # ------------------------------------------------------------------------------
 USER vscode
-RUN dotnet tool install --global csharpier --version 0.30.6
+# Discard build-time scratch ownership before the runtime user UID can change.
+RUN dotnet tool install --global csharpier --version 1.3.0 \
+    && rm -rf /tmp/NuGetScratchvscode
 
 # Add dotnet tools to PATH for vscode user
 ENV PATH="${PATH}:/home/vscode/.dotnet/tools"

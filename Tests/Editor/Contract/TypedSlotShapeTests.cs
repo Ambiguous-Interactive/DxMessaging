@@ -738,7 +738,7 @@ namespace DxMessaging.Tests.Editor.Contract
             System.ArgumentNullException ex = Assert.Throws<System.ArgumentNullException>(() =>
                 ReflectionHelpers.CloseNestedGeneric(null, EntryNestedName, BindingFlags.NonPublic)
             );
-            StringAssert.Contains("closedOuter", ex.Message);
+            Assert.That(ex.Message, Does.Contain("closedOuter"));
         }
 
         /// <summary>
@@ -755,7 +755,7 @@ namespace DxMessaging.Tests.Editor.Contract
             System.ArgumentNullException ex = Assert.Throws<System.ArgumentNullException>(() =>
                 ReflectionHelpers.CloseNestedGeneric(closed, null, BindingFlags.NonPublic)
             );
-            StringAssert.Contains("nestedName", ex.Message);
+            Assert.That(ex.Message, Does.Contain("nestedName"));
         }
 
         /// <summary>
@@ -779,7 +779,7 @@ namespace DxMessaging.Tests.Editor.Contract
                         BindingFlags.NonPublic
                     )
             );
-            StringAssert.Contains("fully-closed outer", ex.Message);
+            Assert.That(ex.Message, Does.Contain("fully-closed outer"));
         }
 
         /// <summary>
@@ -803,8 +803,8 @@ namespace DxMessaging.Tests.Editor.Contract
                         BindingFlags.NonPublic
                     )
             );
-            StringAssert.Contains("DoesNotExist", ex.Message);
-            StringAssert.Contains("not found", ex.Message);
+            Assert.That(ex.Message, Does.Contain("DoesNotExist"));
+            Assert.That(ex.Message, Does.Contain("not found"));
         }
 
         /// <summary>
@@ -827,7 +827,7 @@ namespace DxMessaging.Tests.Editor.Contract
                         BindingFlags.NonPublic
                     )
             );
-            StringAssert.Contains("non-generic", ex.Message);
+            Assert.That(ex.Message, Does.Contain("non-generic"));
         }
 
         /// <summary>
@@ -858,8 +858,8 @@ namespace DxMessaging.Tests.Editor.Contract
                         BindingFlags.NonPublic
                     )
             );
-            StringAssert.Contains("of its own", ex.Message);
-            StringAssert.Contains("overload", ex.Message);
+            Assert.That(ex.Message, Does.Contain("of its own"));
+            Assert.That(ex.Message, Does.Contain("overload"));
         }
 
         /// <summary>
@@ -1121,9 +1121,9 @@ namespace DxMessaging.Tests.Editor.Contract
 
             string[] sortedExpected = expected.OrderBy(n => n, StringComparer.Ordinal).ToArray();
 
-            CollectionAssert.AreEqual(
-                sortedExpected,
+            Assert.That(
                 actual,
+                Is.EqualTo(sortedExpected),
                 "IHandlerActionCache must expose exactly the documented member set. "
                     + "Adding or removing a member requires updating both the interface "
                     + "and this test in lockstep."

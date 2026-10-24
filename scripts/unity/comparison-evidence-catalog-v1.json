@@ -53,7 +53,7 @@
     "dxToken": {
       "origin": "repository",
       "path": "Runtime/Core/MessageRegistrationToken.cs",
-      "sha256": "46df800af7f7ba6faadd1243a07ac420fd4f08080ec7d9c0a65a0c84466c2ff5"
+      "sha256": "328fd44ceca073c41db5252b074294839d4454d5d08bf5a08d92b0246c873c7c"
     },
     "dxFlat": {
       "origin": "repository",
@@ -83,7 +83,7 @@
     "pins": {
       "origin": "repository",
       "path": ".github/comparison-packages.json",
-      "sha256": "f5bc9a13d90b7d89eb9bb5ca7e13def0b404fb6f4fb0b0fa3acb6800b18303f0"
+      "sha256": "b1e55e7704b401402cd457047adc670b9f32e18a60ab29d74337fc9fbab6d4db"
     },
     "untargetedPayload": {
       "origin": "repository",
