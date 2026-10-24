@@ -867,10 +867,13 @@ namespace DxMessaging.Core
         )
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterGlobalAcceptAll(
                 this
             );
-            TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(messageBus);
+            TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(
+                messageBusIndex
+            );
 
             GlobalHandlerDeregistrationState untargetedDeregistration =
                 typedHandler.AddGlobalUntargetedHandler(
@@ -922,10 +925,13 @@ namespace DxMessaging.Core
         )
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterGlobalAcceptAll(
                 this
             );
-            TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(messageBus);
+            TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(
+                messageBusIndex
+            );
 
             GlobalHandlerDeregistrationState untargetedDeregistration =
                 typedHandler.AddGlobalUntargetedHandler(
@@ -975,12 +981,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterTargeted<T>(
                 target,
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedHandler(
                 target,
                 originalHandler,
@@ -1008,12 +1015,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterTargeted<T>(
                 target,
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedHandler(
                 target,
                 originalHandler,
@@ -1044,12 +1052,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterTargeted<T>(
                 target,
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedHandler(
                 target,
                 originalHandler,
@@ -1080,9 +1089,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedPostProcessor<T>(target, this, priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedPostProcessor(
                 target,
                 originalHandler,
@@ -1113,9 +1123,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedPostProcessor<T>(target, this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedPostProcessor(
                 target,
                 originalHandler,
@@ -1143,9 +1154,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedPostProcessor<T>(target, this, priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedPostProcessor(
                 target,
                 originalHandler,
@@ -1174,12 +1186,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargetingPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingPostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1207,12 +1220,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargetingPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingPostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1239,12 +1253,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargetingPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingPostProcessor(
                 originalHandler,
                 flatInvoker,
@@ -1272,9 +1287,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargeting<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingHandler(
                 originalHandler,
                 messageHandler,
@@ -1301,9 +1317,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargeting<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingHandler(
                 originalHandler,
                 flatInvoker,
@@ -1331,9 +1348,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargeting<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingHandler(
                 originalHandler,
                 messageHandler,
@@ -1361,11 +1379,12 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterUntargeted<T>(
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddUntargetedHandler(
                 originalHandler,
                 messageHandler,
@@ -1391,11 +1410,12 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterUntargeted<T>(
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddUntargetedHandler(
                 originalHandler,
                 flatInvoker,
@@ -1423,11 +1443,12 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterUntargeted<T>(
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddUntargetedHandler(
                 originalHandler,
                 messageHandler,
@@ -1455,12 +1476,13 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterUntargetedPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddUntargetedPostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1488,12 +1510,13 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterUntargetedPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddUntargetedPostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1523,9 +1546,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcast<T>(source, this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
 
             return typedHandler.AddSourcedBroadcastHandler(
                 source,
@@ -1554,9 +1578,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcast<T>(source, this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddSourcedBroadcastHandler(
                 source,
                 originalHandler,
@@ -1587,9 +1612,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcast<T>(source, this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddSourcedBroadcastHandler(
                 source,
                 originalHandler,
@@ -1618,9 +1644,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcastWithoutSource<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddSourcedBroadcastWithoutSourceHandler(
                 originalHandler,
                 messageHandler,
@@ -1647,9 +1674,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcastWithoutSource<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddSourcedBroadcastWithoutSourceHandler(
                 originalHandler,
                 flatInvoker,
@@ -1677,9 +1705,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcastWithoutSource<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddSourcedBroadcastWithoutSourceHandler(
                 originalHandler,
                 messageHandler,
@@ -1709,13 +1738,14 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastPostProcessor<T>(
                     source,
                     messageHandler: this,
                     priority: priority
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastPostProcessor(
                 source,
                 originalHandler,
@@ -1746,13 +1776,14 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastPostProcessor<T>(
                     source,
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastPostProcessor(
                 source,
                 originalHandler,
@@ -1780,13 +1811,14 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastPostProcessor<T>(
                     source,
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastPostProcessor(
                 source,
                 originalHandler,
@@ -1815,12 +1847,13 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastWithoutSourcePostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastWithoutSourcePostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1848,12 +1881,13 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastWithoutSourcePostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastWithoutSourcePostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1880,12 +1914,13 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastWithoutSourcePostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastWithoutSourcePostProcessor(
                 originalHandler,
                 flatInvoker,
@@ -2052,11 +2087,11 @@ namespace DxMessaging.Core
         /// Retrieves an existing Handler for the specific type if it exists, or creates a new Handler if none exist.
         /// </summary>
         /// <typeparam name="T">Type of Message to retrieve a Handler for.</typeparam>
+        /// <param name="messageBusIndex">Stable cache index captured before calling the bus registrar.</param>
         /// <returns>Non-Null Handler for the specific type.</returns>
-        private TypedHandler<T> GetOrCreateHandlerForType<T>(IMessageBus messageBus)
+        private TypedHandler<T> GetOrCreateHandlerForType<T>(int messageBusIndex)
             where T : IMessage
         {
-            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             if (
                 !_handlersByTypeByMessageBus.TryGetValue(
                     messageBusIndex,

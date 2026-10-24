@@ -53,6 +53,10 @@
       Link="DelegatingMessageBus.cs"
     />
     <Compile
+      Include="../Tests/Runtime/Core/ForeignIndexGetterLifecycleTests.cs"
+      Link="ForeignIndexGetterLifecycleTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/ForeignBusRegistrationTests.cs"
       Link="ForeignBusRegistrationTests.cs"
     />

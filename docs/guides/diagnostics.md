@@ -548,6 +548,10 @@ During active retarget recovery, a successful `Disable()` from either logging ca
 keeps the token disabled. `UnregisterAll()` also clears staged handlers. If rollback
 completes without callback cleanup, recovery restores registrations on the previous bus.
 
+Handler and global accept-all registration read a custom bus's `RegisteredGlobalSequentialIndex`
+before calling its registrar. If that getter throws, the registrar has not run. This ordering also applies
+to `Enable()` replay and active retargeting. Keep the index stable for the bus storage's lifetime.
+
 ## Per-Environment Configuration
 
 A common pattern is enabling diagnostics only in the Editor for development visibility while keeping runtime builds lean.

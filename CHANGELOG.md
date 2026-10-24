@@ -73,9 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default/null-array key equality safe. Resolve reflected overloads from the captured signature
   ([#659](https://github.com/Ambiguous-Interactive/DxMessaging/issues/659)).
 
-- Prevent custom bus emission getters from interrupting subscription registration and teardown or
-  reclaiming a subscription while it is being enabled
-  ([#655](https://github.com/Ambiguous-Interactive/DxMessaging/issues/655)).
+- Resolve custom bus cache indices before registration so a throwing or resetting getter cannot
+  leave an inaccessible subscription. Avoid emission getters during registration and teardown
+  ([#655](https://github.com/Ambiguous-Interactive/DxMessaging/issues/655),
+  [#669](https://github.com/Ambiguous-Interactive/DxMessaging/issues/669)).
 
 - Preserve token diagnostic origins when callbacks rebind the token, including pending callbacks
   and nested deliveries ([#654](https://github.com/Ambiguous-Interactive/DxMessaging/issues/654)).
