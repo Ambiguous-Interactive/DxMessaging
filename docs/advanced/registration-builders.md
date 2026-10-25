@@ -208,7 +208,7 @@ lease.Deactivate();
 
 - `Activate()` throws `ObjectDisposedException` if called after disposal
 - `Deactivate()` is safe to call multiple times or after disposal
-- If `ActivateOnBuild` activation throws, the builder disposes the partially constructed lease before throwing again. If cleanup itself cannot finish because deregistration remains retryable, `Build()` throws `MessageRegistrationBuildException`; dispose `exception.Lease` after resolving the cleanup failure.
+- **4.0:** If `Configure`, `OnBuild`, or `ActivateOnBuild` activation throws, `Build()` cleans up its token before throwing again. If deregistration remains retryable, `Build()` throws `MessageRegistrationBuildException`; dispose `exception.Lease` after resolving the cleanup failure. Its `ActivationException` property contains the original setup or activation failure, and `CleanupException` contains the first cleanup failure.
 
 ### Dispose Pattern
 

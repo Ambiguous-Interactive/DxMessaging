@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Clean up subscriptions when registration-builder setup callbacks throw, preserving a retryable
+  lease when cleanup fails ([#675](https://github.com/Ambiguous-Interactive/DxMessaging/issues/675)).
+
 - Preserve activation when a custom bus registration callback calls `Enable()` on the same token.
   The owning replay completes without restarting its registration queue, including during retargeting
   ([#671](https://github.com/Ambiguous-Interactive/DxMessaging/issues/671)).

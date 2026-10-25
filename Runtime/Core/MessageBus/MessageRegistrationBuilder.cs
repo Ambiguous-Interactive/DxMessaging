@@ -6,7 +6,7 @@ namespace DxMessaging.Core.MessageBus
     using DxMessaging.Core;
 
     /// <summary>
-    /// Exception thrown when <see cref="MessageRegistrationBuildOptions.ActivateOnBuild"/> fails and
+    /// Exception thrown when registration setup or activation fails and
     /// the builder cannot fully clean up the partially constructed lease before returning control.
     /// </summary>
     /// <remarks>
@@ -54,7 +54,7 @@ namespace DxMessaging.Core.MessageBus
         public MessageRegistrationLease Lease { get; }
 
         /// <summary>
-        /// Original exception raised while activating the lease.
+        /// Original exception raised during setup or activation of the lease.
         /// </summary>
         public Exception ActivationException { get; }
 
@@ -456,7 +456,7 @@ namespace DxMessaging.Core.MessageBus
         /// <returns>A lease that wraps the created <see cref="MessageRegistrationToken"/>.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is <see langword="null"/>.</exception>
         /// <exception cref="InvalidOperationException">Thrown when the synthetic owner range is exhausted and no explicit owner is supplied.</exception>
-        /// <exception cref="MessageRegistrationBuildException">Thrown when ActivateOnBuild activation fails and automatic cleanup remains retryable.</exception>
+        /// <exception cref="MessageRegistrationBuildException">Thrown when setup or activation fails and automatic cleanup remains retryable.</exception>
         public MessageRegistrationLease Build(MessageRegistrationBuildOptions options)
         {
             if (options == null)
@@ -475,35 +475,42 @@ namespace DxMessaging.Core.MessageBus
                 messageBus
             );
             token.DiagnosticMode = options.EnableDiagnostics;
-            if (options.Configure != null)
+            MessageRegistrationLease lease = null;
+            try
             {
-                options.Configure(token);
-            }
+                if (options.Configure != null)
+                {
+                    options.Configure(token);
+                }
 
-            MessageRegistrationLease lease = new MessageRegistrationLease(
-                token,
-                messageHandler,
-                messageBus,
-                options.Lifecycle
-            );
-            lease.InvokeBuildHook();
+                lease = new MessageRegistrationLease(
+                    token,
+                    messageHandler,
+                    messageBus,
+                    options.Lifecycle
+                );
+                lease.InvokeBuildHook();
 
-            if (options.ActivateOnBuild)
-            {
-                try
+                if (options.ActivateOnBuild)
                 {
                     lease.Activate();
                 }
-                catch (Exception exception)
-                {
-                    HandleActivateOnBuildFailure(lease, exception);
-                }
+            }
+            catch (Exception exception)
+            {
+                lease ??= new MessageRegistrationLease(
+                    token,
+                    messageHandler,
+                    messageBus,
+                    options.Lifecycle
+                );
+                HandleBuildFailure(lease, exception);
             }
 
             return lease;
         }
 
-        private static void HandleActivateOnBuildFailure(
+        private static void HandleBuildFailure(
             MessageRegistrationLease lease,
             Exception activationException
         )
@@ -521,7 +528,7 @@ namespace DxMessaging.Core.MessageBus
             if (lease.Token.Enabled)
             {
                 throw new MessageRegistrationBuildException(
-                    "ActivateOnBuild failed and automatic lease cleanup did not complete. Dispose the Lease property after resolving the cleanup failure.",
+                    "Registration build failed and automatic lease cleanup did not complete. Dispose the Lease property after resolving the cleanup failure.",
                     lease,
                     activationException,
                     cleanupException
@@ -532,7 +539,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 MessagingDebug.Log(
                     LogLevel.Error,
-                    "ActivateOnBuild cleanup failed after activation failure: {0}",
+                    "Registration build cleanup failed after setup or activation failure: {0}",
                     cleanupException
                 );
             }
