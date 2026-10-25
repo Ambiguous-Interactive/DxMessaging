@@ -6,6 +6,25 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile
+      Include="../Tests/Runtime/Core/DifferentialBusTraceTests.cs"
+      Link="DifferentialBusTraceTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/DifferentialBusTrace.cs"
+      Link="DifferentialBusTrace.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/MessageBusTraceAdapter.cs"
+      Link="MessageBusTraceAdapter.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/DiagnosticsScope.cs"
+      Link="DiagnosticsScope.cs"
+    />
+    <Compile Include="../Tests/Runtime/TestUtilities/GlobalBusScope.cs" Link="GlobalBusScope.cs" />
+    <Compile Include="../Tests/Runtime/TestUtilities/CleanupScope.cs" Link="CleanupScope.cs" />
+    <Compile Include="../Tests/Runtime/TestUtilities/FakeClock.cs" Link="FakeClock.cs" />
+    <Compile
       Include="../Tests/Runtime/Core/TokenDiagnosticStagedCountsTests.cs"
       Link="TokenDiagnosticStagedCountsTests.cs"
     />
