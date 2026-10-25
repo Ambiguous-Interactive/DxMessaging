@@ -58,6 +58,10 @@ namespace DxMessaging.Core
         /// <summary>
         /// When <c>true</c>, collects per-registration call counts and emission history.
         /// </summary>
+        /// <remarks>
+        /// Counts belong to staged registrations. A completed callback can still record bounded
+        /// emission history after its registration has been removed.
+        /// </remarks>
         public bool DiagnosticMode
         {
             get => _diagnosticMode;
@@ -143,7 +147,10 @@ namespace DxMessaging.Core
             InstanceId? context = null
         )
         {
-            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
+            if (TryGetSlot(handle.Slot, handle.Id, out _))
+            {
+                _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
+            }
             long traceId =
                 messageBus is DxMessaging.Core.MessageBus.MessageBus concreteBus
                 && concreteBus.IsDispatching

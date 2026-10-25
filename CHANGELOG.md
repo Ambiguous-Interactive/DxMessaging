@@ -86,6 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#655](https://github.com/Ambiguous-Interactive/DxMessaging/issues/655),
   [#669](https://github.com/Ambiguous-Interactive/DxMessaging/issues/669)).
 
+- Stop diagnostic call-count storage from growing with handles removed during callbacks, while
+  preserving completed deliveries in bounded history
+  ([#674](https://github.com/Ambiguous-Interactive/DxMessaging/issues/674)).
 - Preserve token diagnostic origins when callbacks rebind the token, including pending callbacks
   and nested deliveries ([#654](https://github.com/Ambiguous-Interactive/DxMessaging/issues/654)).
 - Release consumed typed teardown state after a token disables successfully, preserving staged

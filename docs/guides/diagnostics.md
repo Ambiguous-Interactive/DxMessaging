@@ -511,6 +511,9 @@ When diagnostics are enabled, buses and tokens record message emissions in a rin
 > the rebound bus. Nested deliveries keep their own scoped trace IDs.
 
 Tokens record successful callbacks after they return, using `DiagnosticMode` at that point.
+Call counts belong to registrations that are still staged when the callback returns. Removing a
+registration inside its callback prevents its counter from being recreated. Its completed delivery
+can still enter the bounded emission history with the original registration handle.
 A callback that throws adds no token emission record. Resetting the originating bus clears its
 current scoped trace ID; records completed after that reset can carry `traceId = 0`.
 
