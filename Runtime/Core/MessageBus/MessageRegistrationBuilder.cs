@@ -246,8 +246,12 @@ namespace DxMessaging.Core.MessageBus
         public MessageHandler Handler => _messageHandler;
 
         /// <summary>
-        /// Gets the message bus that registrations created through this lease will target by default.
+        /// Gets the bus selector captured when the lease was built.
         /// </summary>
+        /// <remarks>
+        /// A null value selects the global bus. Later <see cref="MessageRegistrationToken.RetargetMessageBus"/>
+        /// calls do not update this property.
+        /// </remarks>
         public IMessageBus MessageBus => _messageBus;
 
         /// <summary>
@@ -256,8 +260,12 @@ namespace DxMessaging.Core.MessageBus
         public InstanceId Owner => _messageHandler.owner;
 
         /// <summary>
-        /// Gets a value indicating whether the lease is currently active (token enabled).
+        /// Gets the active state maintained by this lease.
         /// </summary>
+        /// <remarks>
+        /// Lease activation and cleanup update this value. Direct calls on <see cref="Token"/>
+        /// do not automatically synchronize this property.
+        /// </remarks>
         public bool IsActive => _isActive;
 
         /// <summary>

@@ -188,13 +188,15 @@ A `MessageRegistrationLease` wraps the created token and provides lifecycle mana
 
 ### Properties
 
-| Property     | Type                       | Description                           |
-| ------------ | -------------------------- | ------------------------------------- |
-| `Token`      | `MessageRegistrationToken` | The underlying registration token     |
-| `Handler`    | `MessageHandler`           | The handler hosting registrations     |
-| `MessageBus` | `IMessageBus`              | The bus used for registrations        |
-| `Owner`      | `InstanceId`               | The owner identifier                  |
-| `IsActive`   | `bool`                     | Whether the lease is currently active |
+| Property     | Type                       | Description                                             |
+| ------------ | -------------------------- | ------------------------------------------------------- |
+| `Token`      | `MessageRegistrationToken` | The underlying registration token                       |
+| `Handler`    | `MessageHandler`           | The handler hosting registrations                       |
+| `MessageBus` | `IMessageBus`              | Selector captured at build; null selects the global bus |
+| `Owner`      | `InstanceId`               | The owner identifier                                    |
+| `IsActive`   | `bool`                     | State maintained by lease operations                    |
+
+Retargeting the token does not change `MessageBus`. Manage activation through the lease to keep its state and lifecycle hooks synchronized; direct token operations do not update `IsActive`.
 
 ### Activation Methods
 
