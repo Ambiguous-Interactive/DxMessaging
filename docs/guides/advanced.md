@@ -22,13 +22,13 @@ Lifecycles and tokens
   - Manual: `var token = messagingComponent.Create(this);`
 - Enable/Disable
   - Call `token.Enable()` in `OnEnable` and `token.Disable()` in `OnDisable`.
-  - Idempotent; safe to call multiple times.
+  - Idempotent; repeated calls are safe.
   - Removing a staged handle from a custom-bus registration callback keeps that entry inactive
-    during the current replay. A replacement staged while the token is disabled activates on
+    during the current replay. A replacement staged on a disabled token activates on
     the next Disable/Enable cycle.
   - If a custom bus rejects a registration on an enabled token before changing its registrations,
     that call leaves no staged entry to replay later.
-  - A failed `Enable()` retains handles returned while the token was disabled. If `Enabled` is
+  - A failed `Enable()` keeps registrations that you staged before enabling the token. If `Enabled` is
     false, retry `Enable()` after the bus recovers, or remove those handles. If rollback leaves
     `Enabled` true, finish cleanup with `Disable()` before enabling again.
 - Clearing
@@ -264,11 +264,14 @@ Do's
 
 ## Important behavior note: Snapshot Semantics
 
-- When a message is emitted, DxMessaging takes a snapshot of all current listeners (handlers, interceptors, post-processors).
-- Listeners registered **during** an emission will **not** run for that emission -- they only become active for the **next** emission.
-- This prevents infinite loops (e.g., a handler that registers itself won't recurse).
-- This applies to all message types (Untargeted, Targeted, Broadcast) and all listener types.
-- See [Interceptors & Ordering](../concepts/interceptors-and-ordering.md#snapshot-semantics-frozen-listener-lists) for detailed examples.
+Listener lists freeze when each dispatch phase acquires them. Registration changes can affect
+later phases whose lists have not been captured; they do not rewrite a list already in use.
+See [Snapshot Semantics](../concepts/interceptors-and-ordering.md#snapshot-semantics-frozen-listener-lists)
+for the acquisition points and global accept-all rules.
+
+Handler activity is checked separately from list membership. See
+[Handler activity during callbacks](../concepts/interceptors-and-ordering.md#handler-activity-during-callbacks)
+before using `MessageHandler.active` to control delivery during an emission.
 
 Don'ts
 

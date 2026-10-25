@@ -436,6 +436,11 @@ namespace DxMessaging.Core
         /// <summary>
         /// Whether this MessageHandler will process messages.
         /// </summary>
+        /// <remarks>
+        /// The built-in bus checks this before each ordinary handler or post-processor callback.
+        /// Global accept-all groups check it on entry; a running group can finish after it becomes false.
+        /// Interceptor callbacks do not check this field. Changing it leaves registrations in place.
+        /// </remarks>
         public bool active;
 
         /// <summary>

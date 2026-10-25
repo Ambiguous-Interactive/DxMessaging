@@ -16,7 +16,7 @@
     ".devcontainer/**",
     ".gitignore",
     ".gitattributes",
-    ".vale/styles/Vocab/**/reject.txt",
+    ".vale/styles/config/vocabularies/**/reject.txt",
     "*.meta",
     "**/*.asset",
     "Samples~/**",
