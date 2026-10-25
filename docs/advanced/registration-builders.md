@@ -210,6 +210,7 @@ lease.Deactivate();
 - `Deactivate()` is safe to call multiple times or after disposal
 - **4.0:** A nested `Activate()` from a registration callback returns while the outer call owns activation. Disposal during registration prevents `OnActivate` and attempts to release newly accepted subscriptions.
 - **4.0:** If a cleanup callback adds a subscription, `Token.Enabled` and `IsActive` can stay true. Retry `Dispose()` to release it. The `OnDispose` hook runs once.
+- **4.0:** If cleanup diagnostics stage or enable registrations, `Build()` releases them or throws `MessageRegistrationBuildException` with a recovery lease. Diagnostic exceptions propagate after cleanup completes. The recovery exception takes priority while cleanup remains live.
 - **4.0:** If `Configure`, `OnBuild`, or `ActivateOnBuild` activation throws, `Build()` cleans up its token before throwing again. If deregistration remains retryable, `Build()` throws `MessageRegistrationBuildException`; dispose `exception.Lease` after resolving the cleanup failure. Its `ActivationException` property contains the original setup or activation failure, and `CleanupException` contains the first cleanup failure. `CleanupException` is null when callbacks add cleanup work without throwing.
 
 ### Dispose Pattern

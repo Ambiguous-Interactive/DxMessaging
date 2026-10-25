@@ -396,6 +396,7 @@ namespace DxMessaging.Core.MessageBus
         /// <remarks>
         /// The disposal hook runs at most once. Cleanup accepted by a callback remains owned by this
         /// lease. Retry disposal if <see cref="MessageRegistrationToken.Enabled"/> stays true or cleanup throws.
+        /// Disposal also consumes cleanup accepted through the token after an earlier completed call.
         /// </remarks>
         public void Dispose()
         {
@@ -403,7 +404,7 @@ namespace DxMessaging.Core.MessageBus
             {
                 _disposeRequestedDuringActivation = true;
             }
-            if (_disposed)
+            if (_disposed && !_token.Enabled && _token._metadata.Count == 0)
             {
                 return;
             }
@@ -507,6 +508,11 @@ namespace DxMessaging.Core.MessageBus
         /// <summary>
         /// Creates a <see cref="MessageRegistrationLease"/> configured according to the supplied <paramref name="options"/>.
         /// </summary>
+        /// <remarks>
+        /// Cleanup diagnostics can stage or enable registrations through the token. The builder attempts
+        /// their cleanup before throwing again. If cleanup remains enabled, the recovery exception exposes
+        /// its owning lease. Diagnostic exceptions propagate after cleanup completes.
+        /// </remarks>
         /// <param name="options">Options controlling bus selection, diagnostics, and lifecycle behavior.</param>
         /// <returns>A lease that wraps the created <see cref="MessageRegistrationToken"/>.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is <see langword="null"/>.</exception>
@@ -580,6 +586,35 @@ namespace DxMessaging.Core.MessageBus
                 cleanupException = exception;
             }
 
+            Exception diagnosticException = null;
+            if (!lease.Token.Enabled && cleanupException != null && MessagingDebug.enabled)
+            {
+                try
+                {
+                    MessagingDebug.Log(
+                        LogLevel.Error,
+                        "Registration build cleanup failed after setup or activation failure: {0}",
+                        cleanupException
+                    );
+                }
+                catch (Exception exception)
+                {
+                    diagnosticException = exception;
+                }
+
+                if (lease.Token.Enabled || lease.Token._metadata.Count != 0)
+                {
+                    try
+                    {
+                        lease.Dispose();
+                    }
+                    catch (Exception exception)
+                    {
+                        cleanupException ??= exception;
+                    }
+                }
+            }
+
             if (lease.Token.Enabled)
             {
                 throw new MessageRegistrationBuildException(
@@ -590,15 +625,10 @@ namespace DxMessaging.Core.MessageBus
                 );
             }
 
-            if (cleanupException != null && MessagingDebug.enabled)
+            if (diagnosticException != null)
             {
-                MessagingDebug.Log(
-                    LogLevel.Error,
-                    "Registration build cleanup failed after setup or activation failure: {0}",
-                    cleanupException
-                );
+                ExceptionDispatchInfo.Capture(diagnosticException).Throw();
             }
-
             ExceptionDispatchInfo.Capture(activationException).Throw();
         }
 

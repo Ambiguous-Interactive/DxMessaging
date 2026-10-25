@@ -36,6 +36,10 @@
       Include="../Tests/Runtime/Core/LeaseReentrantOwnershipTests.cs"
       Link="LeaseReentrantOwnershipTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/BuilderDiagnosticOwnershipTests.cs"
+      Link="BuilderDiagnosticOwnershipTests.cs"
+    />
     <ProjectReference Include="../.net/DxMessaging.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageReference Include="NUnit" Version="5.0.0" />

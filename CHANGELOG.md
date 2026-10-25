@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Clean up subscriptions added by diagnostics after a failed registration build, preserving
+  a retryable lease when cleanup fails ([#677](https://github.com/Ambiguous-Interactive/DxMessaging/issues/677)).
+
 - Keep lease cleanup retryable when callbacks add subscriptions during disposal, and prevent
   duplicate activation notifications ([#676](https://github.com/Ambiguous-Interactive/DxMessaging/issues/676)).
 
