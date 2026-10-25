@@ -212,6 +212,8 @@ namespace DxMessaging.Core.MessageBus
         private bool _disposed;
         private bool _deactivateHookInvoked;
         private bool _disposeHookInvoked;
+        private bool _activationInProgress;
+        private bool _disposeRequestedDuringActivation;
 
         internal MessageRegistrationLease(
             MessageRegistrationToken token,
@@ -229,6 +231,8 @@ namespace DxMessaging.Core.MessageBus
             _disposed = false;
             _deactivateHookInvoked = false;
             _disposeHookInvoked = false;
+            _activationInProgress = false;
+            _disposeRequestedDuringActivation = false;
         }
 
         /// <summary>
@@ -259,35 +263,78 @@ namespace DxMessaging.Core.MessageBus
         /// <summary>
         /// Enables the token managed by this lease and raises the activation lifecycle callback if provided.
         /// </summary>
+        /// <remarks>
+        /// A nested call from a registration callback returns while the outer call owns activation.
+        /// Disposal during registration suppresses the activation hook and attempts cleanup of accepted
+        /// subscriptions. Failed cleanup remains retryable through <see cref="Dispose"/>.
+        /// </remarks>
         /// <exception cref="ObjectDisposedException">Thrown if the lease has already been disposed.</exception>
         public void Activate()
         {
             EnsureNotDisposed();
-            if (_isActive)
+            if (_isActive || _activationInProgress)
             {
                 return;
             }
 
             _messageHandler.active = true;
             _deactivateHookInvoked = false;
+            _activationInProgress = true;
+            _disposeRequestedDuringActivation = false;
+            Exception activationFailure = null;
             try
             {
-                _token.Enable();
+                try
+                {
+                    _token.Enable();
+                }
+                catch (Exception exception)
+                {
+                    activationFailure = exception;
+                }
+
+                if (_disposeRequestedDuringActivation)
+                {
+                    bool tokenCleanupFailed = false;
+                    try
+                    {
+                        _token.Dispose();
+                    }
+                    catch (Exception exception)
+                    {
+                        tokenCleanupFailed = true;
+                        activationFailure ??= exception;
+                    }
+                    finally
+                    {
+                        _messageHandler.active = _token.Enabled;
+                        _isActive = _token.Enabled;
+                        _disposed = !tokenCleanupFailed && !_token.Enabled;
+                    }
+                }
+                else
+                {
+                    _isActive = _token.Enabled;
+                    if (activationFailure != null)
+                    {
+                        _messageHandler.active = _token.Enabled;
+                    }
+                }
             }
-            catch
+            finally
             {
-                _messageHandler.active = _token.Enabled;
-                _isActive = _token.Enabled;
-                throw;
+                _activationInProgress = false;
             }
 
-            /*
-                _isActive is set BEFORE the user callback runs so the lease's
-                state matches the registrations even if OnActivate throws:
-                Deactivate()/Dispose() can then always release the live
-                registrations (a post-callback assignment left them wedged).
-            */
-            _isActive = true;
+            if (activationFailure != null)
+            {
+                ExceptionDispatchInfo.Capture(activationFailure).Throw();
+            }
+            if (_disposeRequestedDuringActivation || !_isActive)
+            {
+                return;
+            }
+
             if (_lifecycle.OnActivate != null)
             {
                 _lifecycle.OnActivate(_token);
@@ -346,8 +393,16 @@ namespace DxMessaging.Core.MessageBus
         /// <summary>
         /// Disposes the lease, unregistering handlers and executing lifecycle callbacks once.
         /// </summary>
+        /// <remarks>
+        /// The disposal hook runs at most once. Cleanup accepted by a callback remains owned by this
+        /// lease. Retry disposal if <see cref="MessageRegistrationToken.Enabled"/> stays true or cleanup throws.
+        /// </remarks>
         public void Dispose()
         {
+            if (_activationInProgress)
+            {
+                _disposeRequestedDuringActivation = true;
+            }
             if (_disposed)
             {
                 return;
@@ -397,7 +452,7 @@ namespace DxMessaging.Core.MessageBus
                 {
                     _messageHandler.active = _token.Enabled;
                     _isActive = _token.Enabled;
-                    _disposed = !tokenCleanupFailed;
+                    _disposed = !tokenCleanupFailed && !_token.Enabled;
                 }
             }
 
