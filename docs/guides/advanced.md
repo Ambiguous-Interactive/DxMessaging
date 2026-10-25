@@ -36,8 +36,9 @@ Lifecycles and tokens
     cleanup finishes.
   - Custom-bus deregistration callbacks may call token cleanup again. In-flight cleanup runs once;
     a failed action keeps its original handle retryable, even if a callback clears or reuses its slot.
-  - A registration accepted during teardown keeps the token enabled and retains cleanup for the
-    next pass. Call `UnregisterAll()` again after the callback stops adding registrations.
+  - In 4.0, cleanup applies only to the registrations selected when that pass starts. Registrations
+    accepted by a callback, including reactivation of a staged handle, keep the token enabled for
+    another cleanup pass. Call `UnregisterAll()` again after the callback stops adding registrations.
   - `token.RemoveRegistration(handle)` removes a single registration.
   - `token.AsDisposable(handle)` returns a copy-safe concrete value type. Keep that concrete type
     to avoid `IDisposable` boxing. Only the first successful removal has an effect; a failed removal

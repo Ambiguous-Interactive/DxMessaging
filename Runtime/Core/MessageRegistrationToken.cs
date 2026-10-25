@@ -2,6 +2,7 @@ namespace DxMessaging.Core
 {
     using System;
     using System.Collections.Generic;
+    using System.Runtime.CompilerServices;
     using System.Runtime.ExceptionServices;
     using DataStructure;
     using Diagnostics;
@@ -102,7 +103,7 @@ namespace DxMessaging.Core
         private List<StagedRegistration> _registrationReplayQueue;
         private bool _isReplayingRegistrations;
         private List<TeardownIdentity> _teardownQueue;
-        private Dictionary<MessageRegistrationHandle, int> _rollbackCounts;
+        private HashSet<TeardownIdentity> _rollbackBaseline;
         private List<MessageRegistrationHandle> _activeRetargetHandles;
         private Dictionary<MessageRegistrationHandle, object> _orphanDeregistrations;
 
@@ -1428,8 +1429,9 @@ namespace DxMessaging.Core
         /// </summary>
         /// <remarks>
         /// Attempts the cleanup queued at the start, then rethrows the first failure. Failed
-        /// cleanup keeps its original handle retryable. Registrations accepted during teardown
-        /// retain cleanup for a later pass. <see cref="Enabled"/> stays true while cleanup remains.
+        /// cleanup keeps its original handle retryable. Cleanup accepted by a callback waits
+        /// for a later pass, including reactivation of an existing staged handle.
+        /// <see cref="Enabled"/> stays true while cleanup remains.
         /// Retry after the bus recovers or the callback stops adding registrations.
         /// </remarks>
         /// <note>
@@ -1494,7 +1496,8 @@ namespace DxMessaging.Core
         /// Retargets staged registrations to use a new message bus, re-registering active handlers if needed.
         /// </summary>
         /// <remarks>
-        /// Failed active replay restores registrations on the previous bus. If diagnostic formatting
+        /// Failed active replay selects the previous bus for later registrations. Pending cleanup
+        /// on another bus stays retryable; finish cleanup before enabling again. If diagnostic formatting
         /// or a log receiver successfully finishes pending rollback cleanup through <see cref="Disable"/>
         /// or <see cref="UnregisterAll"/>, recovery preserves that cleanup instead of replaying staging.
         /// </remarks>
@@ -1667,38 +1670,37 @@ namespace DxMessaging.Core
             Exception exception = InvokeDeregistration(value, startIndex, out bool shouldRemove);
             if (!shouldRemove)
             {
-                /*
-                    A callback may clear or reuse the original slot, or accept another cleanup
-                    under the same handle. Keep the older unconsumed value first and preserve
-                    both obligations; a removed identity becomes an orphan instead of attaching
-                    its cleanup to a replacement slot.
-                */
-                if (TryGetSlot(handle.Slot, handle.Id, out RegistrationSlot slot))
-                {
-                    if (slot.Deregistration == null)
-                    {
-                        _slots[handle.Slot].Deregistration = value;
-                        ++_deregistrationCount;
-                    }
-                    else
-                    {
-                        _slots[handle.Slot].Deregistration = MergeDeregistrations(
-                            value,
-                            slot.Deregistration
-                        );
-                    }
-                }
-                else
-                {
-                    AddOrphanDeregistration(handle, value, prepend: true);
-                }
+                RestoreOwnedDeregistration(handle, value);
             }
             return exception;
         }
 
-        // Logical de-registration count for a _deregistrations value (inline object == 1).
-        private static int DeregistrationCount(object value) =>
-            value is PendingDeregistration pending ? pending.Count : 1;
+        private void RestoreOwnedDeregistration(MessageRegistrationHandle handle, object value)
+        {
+            /*
+                Reentrant cleanup can clear or reuse the slot and accept another cleanup.
+                Restore the older obligation first, or retain it as an orphan after retirement.
+            */
+            if (TryGetSlot(handle.Slot, handle.Id, out RegistrationSlot slot))
+            {
+                if (slot.Deregistration == null)
+                {
+                    _slots[handle.Slot].Deregistration = value;
+                    ++_deregistrationCount;
+                }
+                else
+                {
+                    _slots[handle.Slot].Deregistration = MergeDeregistrations(
+                        value,
+                        slot.Deregistration
+                    );
+                }
+            }
+            else
+            {
+                AddOrphanDeregistration(handle, value, prepend: true);
+            }
+        }
 
         /*
             Invokes the de-registration tail [startIndex..) for a _deregistrations value. For the
@@ -1744,10 +1746,8 @@ namespace DxMessaging.Core
             }
         }
 
-        private Dictionary<MessageRegistrationHandle, int> SnapshotDeregistrationCounts()
+        private void SnapshotDeregistrations(HashSet<TeardownIdentity> snapshot)
         {
-            Dictionary<MessageRegistrationHandle, int> snapshot = _rollbackCounts ??=
-                new Dictionary<MessageRegistrationHandle, int>();
             snapshot.Clear();
             for (
                 int slotIndex = _registrationHead;
@@ -1756,25 +1756,74 @@ namespace DxMessaging.Core
             )
             {
                 RegistrationSlot slot = _slots[slotIndex];
-                if (slot.Deregistration != null)
-                {
-                    snapshot[MessageRegistrationHandle.FromIdentity(slot.Id, slotIndex)] =
-                        DeregistrationCount(slot.Deregistration);
-                }
+                AppendDeregistrationSnapshot(snapshot, slotIndex, slot.Id, slot.Deregistration);
             }
-
             if (_orphanDeregistrations != null)
             {
                 foreach (
                     KeyValuePair<MessageRegistrationHandle, object> entry in _orphanDeregistrations
                 )
                 {
-                    snapshot[entry.Key] = DeregistrationCount(entry.Value);
+                    AppendDeregistrationSnapshot(
+                        snapshot,
+                        entry.Key.Slot,
+                        entry.Key.Id,
+                        entry.Value
+                    );
                 }
             }
-
-            return snapshot;
         }
+
+        private static void AppendDeregistrationSnapshot(
+            ICollection<TeardownIdentity> destination,
+            int slot,
+            long id,
+            object value,
+            HashSet<TeardownIdentity> baseline = null
+        )
+        {
+            if (value is PendingDeregistration pending)
+            {
+                pending.AppendSnapshot(destination, slot, id, baseline);
+            }
+            else if (value != null)
+            {
+                AppendDeregistrationSnapshotEntry(
+                    destination,
+                    slot,
+                    id,
+                    (MessageHandler.HandlerDeregistration)value,
+                    0,
+                    baseline
+                );
+            }
+        }
+
+        private static void AppendDeregistrationSnapshotEntry(
+            ICollection<TeardownIdentity> destination,
+            int slot,
+            long id,
+            MessageHandler.HandlerDeregistration deregistration,
+            int order,
+            HashSet<TeardownIdentity> baseline
+        )
+        {
+            TeardownIdentity identity = new TeardownIdentity(
+                slot,
+                id,
+                deregistration,
+                DeregistrationVersion(deregistration),
+                order
+            );
+            if (baseline == null || !baseline.Contains(identity))
+            {
+                destination.Add(identity);
+            }
+        }
+
+        private static int DeregistrationVersion(
+            MessageHandler.HandlerDeregistration deregistration
+        ) => deregistration is Registration registration ? registration.DeregistrationVersion : 0;
 
         private void RestoreMissingRegistrationsAfterRetargetDeregistrationFailure(
             IMessageBus previousMessageBus,
@@ -1945,109 +1994,61 @@ namespace DxMessaging.Core
             }
         }
 
-        private Exception InvokeDeregistrationQueue(
-            Dictionary<MessageRegistrationHandle, int> baselineCounts = null
-        )
+        private Exception InvokeDeregistrationQueue(HashSet<TeardownIdentity> baseline = null)
         {
             if (_deregistrationCount == 0)
             {
                 return null;
             }
-
-            bool scopedToAddedDeregistrations = baselineCounts != null;
-            List<TeardownIdentity> teardownQueue = _teardownQueue ??= new List<TeardownIdentity>();
-            teardownQueue.Clear();
-            for (
-                int slotIndex = _registrationHead;
-                0 <= slotIndex;
-                slotIndex = _slots[slotIndex].Next
-            )
-            {
-                RegistrationSlot slot = _slots[slotIndex];
-                if (slot.Deregistration != null)
-                {
-                    teardownQueue.Add(new TeardownIdentity(slotIndex, slot.Id, isOrphan: false));
-                }
-            }
-
-            bool hasOrphanSnapshot =
-                _orphanDeregistrations != null && 0 < _orphanDeregistrations.Count;
-            if (hasOrphanSnapshot)
-            {
-                foreach (MessageRegistrationHandle handle in _orphanDeregistrations.Keys)
-                {
-                    teardownQueue.Add(new TeardownIdentity(handle.Slot, handle.Id, isOrphan: true));
-                }
-            }
-
-            /*
-                Global handle ids are monotonic and therefore encode original registration order.
-                Capture and sort BEFORE invoking anything: reentrant teardown additions are deferred
-                to the next pass rather than joining this snapshot.
-            */
-            if (hasOrphanSnapshot)
-            {
-                teardownQueue.Sort(TeardownIdentityComparer.Instance);
-            }
-            /*
-                The current invocation owns this snapshot until its finally block. Nested
-                cleanup borrows another list, and an arena clear cannot invalidate this one.
-            */
+            List<TeardownIdentity> queue = _teardownQueue ?? new List<TeardownIdentity>();
             _teardownQueue = null;
+            queue.Clear();
             Exception firstException = null;
             try
             {
-                foreach (TeardownIdentity identity in teardownQueue)
+                for (
+                    int slotIndex = _registrationHead;
+                    0 <= slotIndex;
+                    slotIndex = _slots[slotIndex].Next
+                )
                 {
-                    MessageRegistrationHandle handle = MessageRegistrationHandle.FromIdentity(
-                        identity.Id,
-                        identity.Slot
+                    RegistrationSlot slot = _slots[slotIndex];
+                    AppendDeregistrationSnapshot(
+                        queue,
+                        slotIndex,
+                        slot.Id,
+                        slot.Deregistration,
+                        baseline
                     );
-                    object value;
-                    if (identity.IsOrphan)
+                }
+                bool hasOrphans =
+                    _orphanDeregistrations != null && 0 < _orphanDeregistrations.Count;
+                if (hasOrphans)
+                {
+                    foreach (
+                        KeyValuePair<
+                            MessageRegistrationHandle,
+                            object
+                        > entry in _orphanDeregistrations
+                    )
                     {
-                        if (
-                            _orphanDeregistrations == null
-                            || !_orphanDeregistrations.TryGetValue(handle, out value)
-                        )
-                        {
-                            continue;
-                        }
+                        AppendDeregistrationSnapshot(
+                            queue,
+                            entry.Key.Slot,
+                            entry.Key.Id,
+                            entry.Value,
+                            baseline
+                        );
                     }
-                    else
-                    {
-                        if (!TryGetSlot(identity.Slot, identity.Id, out RegistrationSlot slot))
-                        {
-                            continue;
-                        }
-
-                        value = slot.Deregistration;
-                        if (value == null)
-                        {
-                            continue;
-                        }
-                    }
-
-                    int startIndex = 0;
-                    if (scopedToAddedDeregistrations)
-                    {
-                        if (baselineCounts.TryGetValue(handle, out int baselineCount))
-                        {
-                            startIndex = baselineCount;
-                        }
-
-                        if (DeregistrationCount(value) <= startIndex)
-                        {
-                            continue;
-                        }
-                    }
-
-                    Exception exception = InvokeOwnedDeregistration(
-                        handle,
-                        value,
-                        startIndex,
-                        identity.IsOrphan
-                    );
+                    queue.Sort(TeardownIdentityComparer.Instance);
+                }
+                /*
+                    Each entry owns an exact action/version, not a mutable slot's later contents.
+                    Nested cleanup can consume it; later accepted replacements stay outside this pass.
+                */
+                foreach (TeardownIdentity identity in queue)
+                {
+                    Exception exception = InvokeSnapshotDeregistration(identity);
                     if (exception != null)
                     {
                         firstException ??= exception;
@@ -2056,36 +2057,127 @@ namespace DxMessaging.Core
             }
             finally
             {
-                teardownQueue.Clear();
-                _teardownQueue = teardownQueue;
+                queue.Clear();
+                _teardownQueue = queue;
             }
-
             return firstException;
+        }
+
+        private Exception InvokeSnapshotDeregistration(TeardownIdentity identity)
+        {
+            if (DeregistrationVersion(identity.Deregistration) != identity.Version)
+            {
+                return null;
+            }
+            MessageRegistrationHandle handle = MessageRegistrationHandle.FromIdentity(
+                identity.Id,
+                identity.Slot
+            );
+            object remaining;
+            if (
+                TryGetSlot(identity.Slot, identity.Id, out RegistrationSlot slot)
+                && RemoveSnapshotDeregistration(
+                    slot.Deregistration,
+                    identity.Deregistration,
+                    out remaining
+                )
+            )
+            {
+                _slots[identity.Slot].Deregistration = remaining;
+                if (remaining == null)
+                {
+                    --_deregistrationCount;
+                }
+            }
+            else if (
+                _orphanDeregistrations != null
+                && _orphanDeregistrations.TryGetValue(handle, out object orphan)
+                && RemoveSnapshotDeregistration(orphan, identity.Deregistration, out remaining)
+            )
+            {
+                if (remaining == null)
+                {
+                    _orphanDeregistrations.Remove(handle);
+                    --_deregistrationCount;
+                }
+                else
+                {
+                    _orphanDeregistrations[handle] = remaining;
+                }
+            }
+            else
+            {
+                return null;
+            }
+            try
+            {
+                identity.Deregistration?.Deregister();
+                return null;
+            }
+            catch (Exception exception)
+            {
+                RestoreOwnedDeregistration(handle, identity.Deregistration);
+                return exception;
+            }
+        }
+
+        private static bool RemoveSnapshotDeregistration(
+            object value,
+            MessageHandler.HandlerDeregistration selected,
+            out object remaining
+        )
+        {
+            remaining = value;
+            if (value is PendingDeregistration pending)
+            {
+                if (!pending.Remove(selected))
+                {
+                    return false;
+                }
+                remaining = pending.Count == 0 ? null : pending;
+                return true;
+            }
+            if (!ReferenceEquals(value, selected) || value == null)
+            {
+                return false;
+            }
+            remaining = null;
+            return true;
         }
 
         private void InvokeRegistrationQueueWithRollback(out bool cleanupCompletedDuringLogging)
         {
             cleanupCompletedDuringLogging = false;
-            Dictionary<MessageRegistrationHandle, int> rollbackBaseline =
-                SnapshotDeregistrationCounts();
+            HashSet<TeardownIdentity> rollbackBaseline =
+                _rollbackBaseline ?? new HashSet<TeardownIdentity>();
+            _rollbackBaseline = null;
             try
             {
-                InvokeRegistrationReplayQueue();
+                SnapshotDeregistrations(rollbackBaseline);
+                try
+                {
+                    InvokeRegistrationReplayQueue();
+                }
+                catch (Exception exception)
+                {
+                    RollBackDeregistrationsAfterRegistrationFailure(
+                        rollbackBaseline,
+                        out cleanupCompletedDuringLogging
+                    );
+                    _enabled = 0 < _deregistrationCount;
+                    ExceptionDispatchInfo.Capture(exception).Throw();
+                    throw;
+                }
             }
-            catch (Exception exception)
+            finally
             {
-                RollBackDeregistrationsAfterRegistrationFailure(
-                    rollbackBaseline,
-                    out cleanupCompletedDuringLogging
-                );
-                _enabled = 0 < _deregistrationCount;
-                ExceptionDispatchInfo.Capture(exception).Throw();
-                throw;
+                rollbackBaseline.Clear();
+                _rollbackBaseline = rollbackBaseline;
             }
         }
 
         private void RollBackDeregistrationsAfterRegistrationFailure(
-            Dictionary<MessageRegistrationHandle, int> rollbackBaseline,
+            HashSet<TeardownIdentity> rollbackBaseline,
             out bool cleanupCompletedDuringLogging
         )
         {
@@ -2347,7 +2439,7 @@ namespace DxMessaging.Core
                 would invalidate an active enumerator when a bus callback clears the token.
             */
             _teardownQueue?.Clear();
-            _rollbackCounts?.Clear();
+            _rollbackBaseline?.Clear();
             _activeRetargetHandles?.Clear();
             _orphanDeregistrations?.Clear();
         }
@@ -2388,17 +2480,63 @@ namespace DxMessaging.Core
             public int NextFree;
         }
 
-        private readonly struct TeardownIdentity
+        private readonly struct TeardownIdentity : IEquatable<TeardownIdentity>
         {
             public readonly int Slot;
             public readonly long Id;
-            public readonly bool IsOrphan;
+            public readonly MessageHandler.HandlerDeregistration Deregistration;
+            public readonly int Version;
+            public readonly int Order;
 
-            public TeardownIdentity(int slot, long id, bool isOrphan)
+            public TeardownIdentity(
+                int slot,
+                long id,
+                MessageHandler.HandlerDeregistration deregistration,
+                int version,
+                int order
+            )
             {
                 Slot = slot;
                 Id = id;
-                IsOrphan = isOrphan;
+                Deregistration = deregistration;
+                Version = version;
+                Order = order;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool Equals(TeardownIdentity other) =>
+                Slot == other.Slot
+                && Id == other.Id
+                && Version == other.Version
+                && ReferenceEquals(Deregistration, other.Deregistration);
+
+            public override bool Equals(object obj) =>
+                obj is TeardownIdentity other && Equals(other);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool operator ==(TeardownIdentity left, TeardownIdentity right) =>
+                left.Equals(right);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool operator !=(TeardownIdentity left, TeardownIdentity right) =>
+                !left.Equals(right);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = (Slot * 397) ^ Id.GetHashCode();
+                    hash = (hash * 397) ^ Version;
+                    return (hash * 397)
+                        ^ (
+                            Deregistration == null
+                                ? 0
+                                : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(
+                                    Deregistration
+                                )
+                        );
+                }
             }
         }
 
@@ -2408,7 +2546,8 @@ namespace DxMessaging.Core
 
             public int Compare(TeardownIdentity left, TeardownIdentity right)
             {
-                return left.Id.CompareTo(right.Id);
+                int idOrder = left.Id.CompareTo(right.Id);
+                return idOrder == 0 ? left.Order.CompareTo(right.Order) : idOrder;
             }
         }
 
@@ -2569,6 +2708,69 @@ namespace DxMessaging.Core
                 }
             }
 
+            internal void AppendSnapshot(
+                ICollection<TeardownIdentity> destination,
+                int slot,
+                long id,
+                HashSet<TeardownIdentity> baseline
+            )
+            {
+                int order = 0;
+                if (_hasHead)
+                {
+                    AppendDeregistrationSnapshotEntry(
+                        destination,
+                        slot,
+                        id,
+                        _head,
+                        order++,
+                        baseline
+                    );
+                }
+                if (_overflow != null)
+                {
+                    foreach (MessageHandler.HandlerDeregistration entry in _overflow)
+                    {
+                        AppendDeregistrationSnapshotEntry(
+                            destination,
+                            slot,
+                            id,
+                            entry,
+                            order++,
+                            baseline
+                        );
+                    }
+                }
+            }
+
+            internal bool Remove(MessageHandler.HandlerDeregistration selected)
+            {
+                if (_hasHead && ReferenceEquals(_head, selected))
+                {
+                    _head = null;
+                    _hasHead = false;
+                    if (_overflow != null && 0 < _overflow.Count)
+                    {
+                        _head = _overflow[0];
+                        _hasHead = true;
+                        _overflow.RemoveAt(0);
+                    }
+                    return true;
+                }
+                if (_overflow != null)
+                {
+                    for (int index = 0; index < _overflow.Count; ++index)
+                    {
+                        if (ReferenceEquals(_overflow[index], selected))
+                        {
+                            _overflow.RemoveAt(index);
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
             internal Exception InvokeFrom(int startIndex)
             {
                 if (startIndex < 0)
@@ -2703,6 +2905,19 @@ namespace DxMessaging.Core
             protected readonly MessageRegistrationToken Token;
             public MessageRegistrationHandle Handle;
 
+            internal int DeregistrationVersion { get; private set; }
+
+            protected bool TryClaimInlineDeregistration()
+            {
+                /* A saturated action is never reused; immutable spill wrappers remain independent. */
+                if (DeregistrationVersion == int.MaxValue)
+                {
+                    return false;
+                }
+                ++DeregistrationVersion;
+                return true;
+            }
+
             protected Registration(MessageRegistrationToken token)
             {
                 Token = token;
@@ -2836,7 +3051,7 @@ namespace DxMessaging.Core
                 MessageHandler.TypedHandler<T>.TypedHandlerDeregistrationState deregistration
             )
             {
-                if (_hasInlineDeregistration)
+                if (_hasInlineDeregistration || !TryClaimInlineDeregistration())
                 {
                     return deregistration;
                 }
@@ -3443,7 +3658,7 @@ namespace DxMessaging.Core
                 MessageHandler.InterceptorDeregistrationState<T> deregistration
             )
             {
-                if (_hasInlineDeregistration)
+                if (_hasInlineDeregistration || !TryClaimInlineDeregistration())
                 {
                     return deregistration;
                 }
@@ -3710,7 +3925,7 @@ namespace DxMessaging.Core
                 MessageHandler.GlobalAcceptAllDeregistrationState deregistration
             )
             {
-                if (_hasInlineDeregistration)
+                if (_hasInlineDeregistration || !TryClaimInlineDeregistration())
                 {
                     return deregistration;
                 }

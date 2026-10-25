@@ -109,8 +109,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Apply runtime memory settings on an idle Editor update and clarify the counter-based idle-age
   tooltip ([#644](https://github.com/Ambiguous-Interactive/DxMessaging/issues/644),
   [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
-- Preserve token cleanup and retryable failures when a custom-bus deregistration callback clears,
-  disables, or registers with the token ([#642](https://github.com/Ambiguous-Interactive/DxMessaging/issues/642)).
+- Preserve token cleanup and retryable failures during custom-bus callbacks, including activation
+  that reuses a staged handle while older cleanup runs
+  ([#642](https://github.com/Ambiguous-Interactive/DxMessaging/issues/642), [#673](https://github.com/Ambiguous-Interactive/DxMessaging/issues/673)).
 
 - Keep token replay valid when a custom-bus registration callback calls `UnregisterAll()` or `Dispose()`; cleared future entries stay inactive and accepted registrations keep their teardown
   ([#641](https://github.com/Ambiguous-Interactive/DxMessaging/issues/641)).
