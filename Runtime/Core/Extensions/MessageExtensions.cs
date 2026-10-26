@@ -203,7 +203,7 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <remarks>
         /// This is a convenience shorthand for <c>EmitUntargeted</c> that improves readability when emitting
-        /// messages globally. If <paramref name="messageBus"/> is <c>null</c>, the global bus is used.
+        /// messages globally. A null explicit bus consults the provider first, then falls back to the global bus.
         /// </remarks>
         /// <example>
         /// <code>
@@ -258,8 +258,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <remarks>
         /// This is a convenience shorthand for <c>EmitUntargeted</c> that improves readability when emitting
-        /// struct messages globally by reference. If <paramref name="messageBus"/> is <c>null</c>, the global
-        /// bus is used.
+        /// struct messages globally by reference. A null explicit bus consults the provider first, then falls
+        /// back to the global bus.
         /// </remarks>
         /// <example>
         /// <code>
