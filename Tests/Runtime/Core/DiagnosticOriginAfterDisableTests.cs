@@ -897,17 +897,51 @@ namespace DxMessaging.Tests.Runtime.Core
                     Is.EqualTo(mode == 0),
                     label + ": different-bus replay replaces exact binding"
                 );
-                Assert.That(
-                    graph.Binding.IsAlive,
-                    Is.EqualTo(mode == 1),
-                    label
-                        + ": replaced/removed binding collects; disabled staging retains positive control"
-                );
-                Assert.That(
-                    graph.Bus.IsAlive,
-                    Is.EqualTo(mode == 1),
-                    label + ": obsolete binding bus follows its owner lifetime"
-                );
+                try
+                {
+                    Assert.That(
+                        graph.Binding.IsAlive,
+                        Is.EqualTo(mode == 1),
+                        label
+                            + ": replaced/removed binding collects; disabled staging retains positive control"
+                    );
+                }
+                catch (AssertionException)
+                {
+#if UNITY_2021_3_OR_NEWER
+                    if (mode != 1)
+                    {
+                        NativeRetentionDiagnostics.Report(
+                            "Binding:mode" + mode,
+                            graph.Binding,
+                            graph
+                        );
+                    }
+#endif
+                    throw;
+                }
+                try
+                {
+                    Assert.That(
+                        graph.Bus.IsAlive,
+                        Is.EqualTo(mode == 1),
+                        label + ": obsolete binding bus follows its owner lifetime"
+                    );
+                }
+                catch (AssertionException)
+                {
+#if UNITY_2021_3_OR_NEWER
+                    if (mode != 1)
+                    {
+                        NativeRetentionDiagnostics.Report(
+                            "BindingBus:mode" + mode,
+                            graph.Bus,
+                            graph
+                        );
+                    }
+#endif
+                    throw;
+                }
                 Assert.That(
                     graph.Counter.Calls,
                     Is.EqualTo(mode == 0 ? 3 : 2),

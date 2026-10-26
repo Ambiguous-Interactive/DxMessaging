@@ -82,12 +82,22 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             try
             {
                 DxPools.IntSets.MaxRetained = cap;
+#if UNITY_2021_3_OR_NEWER
+                TestContext.Out.WriteLine(
+                    $"GLOBAL_CAP declared={cap}, beforeBus={DxPools.IntSets.MaxRetained}"
+                );
+#endif
                 MessagingDebug.enabled = false;
                 bus = new MessageBus { DiagnosticsMode = false };
                 MessageHandler handler = new MessageHandler(new InstanceId(1652), bus)
                 {
                     active = true,
                 };
+#if UNITY_2021_3_OR_NEWER
+                TestContext.Out.WriteLine(
+                    $"GLOBAL_CAP declared={cap}, afterBus={DxPools.IntSets.MaxRetained}"
+                );
+#endif
                 watcher = LeakWatcher.WatchWithSlots(bus, label: label, handler: handler);
                 token = MessageRegistrationToken.Create(handler, bus);
                 token.Enable();
@@ -103,11 +113,27 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     label
                 );
                 Collect();
-                Assert.That(
-                    receivers.Removed.IsAlive,
-                    Is.False,
-                    label + ": removed receiver before trim"
-                );
+                try
+                {
+                    Assert.That(
+                        receivers.Removed.IsAlive,
+                        Is.False,
+                        label + ": removed receiver before trim"
+                    );
+                }
+                catch (AssertionException)
+                {
+#if UNITY_2021_3_OR_NEWER
+                    NativeRetentionDiagnostics.Report(
+                        "GlobalRemovedReceiver",
+                        receivers.Removed,
+                        handler,
+                        token,
+                        bus
+                    );
+#endif
+                    throw;
+                }
                 Assert.That(
                     receivers.Live.IsAlive,
                     Is.True,
@@ -328,7 +354,15 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                         Assert.That(
                             capacity <= cap,
                             Is.True,
-                            label + ": tracking capacity=" + capacity
+                            label
+                                + ": tracking capacity="
+                                + capacity
+                                + ", field="
+                                + field.Name
+                                + ", actualPoolCap="
+                                + DxPools.IntSets.MaxRetained
+                                + ", declaredCap="
+                                + cap
                         );
                     }
                 }

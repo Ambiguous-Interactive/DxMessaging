@@ -123,11 +123,28 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     Is.EqualTo(1),
                     "Removing the duplicate raw registration must leave the real callback active."
                 );
-                Assert.That(
-                    alive,
-                    Is.EqualTo(new[] { false, false, false, false }),
-                    $"A consumed old handle must allow the unrelated bus, handler, token and receiver to collect. Actual: [{string.Join(", ", alive)}]."
-                );
+                try
+                {
+                    Assert.That(
+                        alive,
+                        Is.EqualTo(new[] { false, false, false, false }),
+                        $"A consumed old handle must allow the unrelated bus, handler, token and receiver to collect. Actual: [{string.Join(", ", alive)}]."
+                    );
+                }
+                catch (AssertionException)
+                {
+#if UNITY_2021_3_OR_NEWER
+                    if (alive[0])
+                    {
+                        NativeRetentionDiagnostics.Report(
+                            "ConsumedHandle:mode" + mode,
+                            foreign.Bus,
+                            old
+                        );
+                    }
+#endif
+                    throw;
+                }
             }
             finally
             {

@@ -127,11 +127,28 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     Is.EqualTo(1),
                     "Valid raw duplicate cleanup must preserve the real token callback."
                 );
-                Assert.That(
-                    alive,
-                    Is.EqualTo(new[] { false, false, false, false }),
-                    $"Disabled staging must release the unrelated bus, handler, token and receiver. Actual: [{string.Join(", ", alive)}]."
-                );
+                try
+                {
+                    Assert.That(
+                        alive,
+                        Is.EqualTo(new[] { false, false, false, false }),
+                        $"Disabled staging must release the unrelated bus, handler, token and receiver. Actual: [{string.Join(", ", alive)}]."
+                    );
+                }
+                catch (AssertionException)
+                {
+#if UNITY_2021_3_OR_NEWER
+                    if (alive[0])
+                    {
+                        NativeRetentionDiagnostics.Report(
+                            "DisabledToken:mode" + mode,
+                            foreign.Bus,
+                            old
+                        );
+                    }
+#endif
+                    throw;
+                }
                 if (old.Root.Token != null)
                 {
                     old.Root.Token.Enable();

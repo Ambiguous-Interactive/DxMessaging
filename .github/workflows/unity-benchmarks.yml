@@ -49,26 +49,17 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        # Complete Editor coverage first, before the longer PlayMode timing selections.
+        # Frozen native-reclamation diagnostic study: unchanged non-PerfBench PlayMode coverage.
         test-mode:
-          - editmode
           - playmode
         unity-version:
           - 2021.3.45f1
           - 2022.3.45f1
           - 6000.3.16f1
           - 6000.5.2f1
-        # Complete PlayMode selections exceed the existing 600-second editor watchdog.
-        # Split every case by PerfBench membership, then the cardinality fixture.
+        # Preserve all495 MemoryReclaim rows and their original neighboring coverage.
         benchmark-scope:
           - coverage
-          - cardinality
-          - remaining
-        exclude:
-          - test-mode: editmode
-            benchmark-scope: cardinality
-          - test-mode: editmode
-            benchmark-scope: remaining
     steps:
       # Contract item 3: the central immutable gate validates the runner-owned
       # editor before any credential reference or checkout. CI never installs,
