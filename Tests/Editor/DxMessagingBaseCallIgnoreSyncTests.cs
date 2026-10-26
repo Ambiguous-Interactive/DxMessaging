@@ -128,12 +128,35 @@ namespace DxMessaging.Tests.Editor
         private EnterPlayModeOptions _previousOptions;
         private bool _previousDebugEnabled;
         private Action<DxMessaging.Core.LogLevel, string> _previousDebugLog;
+        private bool _fixtureStateCaptured;
         private int _setupSequence;
         private int _teardownSequence;
+
+        /// <remarks>
+        /// 2026-10-26: fresh-project tests entered while compilation was active. The real idle
+        /// scheduler correctly requeued settings work. Finish the incoming reload before isolating
+        /// fixture state so the unchanged callback assertions execute with their idle precondition.
+        /// Keep the reload barrier separate from synchronous setup and teardown on each NUnit repeat.
+        /// </remarks>
+        [UnitySetUp]
+        public IEnumerator WaitForIncomingCompilation()
+        {
+            if (EditorApplication.isCompiling)
+            {
+                yield return new WaitForDomainReload();
+            }
+        }
 
         [SetUp]
         public void SetUp()
         {
+            _fixtureStateCaptured = false;
+            Assert.That(
+                DxMessagingEditorIdle.CanMutateAssetDatabase(),
+                Is.True,
+                "The initializer fixture requires an idle Editor before capturing state. "
+                    + $"Compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}."
+            );
             ++_setupSequence;
             TestContext.Out.WriteLine(
                 $"Initializer setup sequence={_setupSequence}, compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}"
@@ -146,6 +169,7 @@ namespace DxMessaging.Tests.Editor
             _previousDebugLog = DxMessaging.Core.MessagingDebug.LogFunction;
             _previousOptionsEnabled = EditorSettings.enterPlayModeOptionsEnabled;
             _previousOptions = EditorSettings.enterPlayModeOptions;
+            _fixtureStateCaptured = true;
             _initializerState = new(
                 typeof(DxMessagingEditorInitializer),
                 "s_playModeWarningIssued",
@@ -176,6 +200,11 @@ namespace DxMessaging.Tests.Editor
         [TearDown]
         public void TearDown()
         {
+            if (!_fixtureStateCaptured)
+            {
+                return;
+            }
+            _fixtureStateCaptured = false;
             Application.logMessageReceived -= ObserveWarning;
             try
             {
