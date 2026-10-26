@@ -14,7 +14,8 @@ namespace DxMessaging.Tests.Runtime
     internal static class NativeRetentionDiagnostics
     {
         private const int MaxNodes = 4096;
-        private const int MaxDepth = 12;
+        private const int MaxDepth = 24;
+        private const int DeepControlEdges = 20;
         private const int MaxArrayItems = 64;
         private static readonly HashSet<string> Reported = new();
 
@@ -31,17 +32,35 @@ namespace DxMessaging.Tests.Runtime
             }
             object[] strongControl = { target };
             object[] weakControl = { new WeakReference(target) };
+            object deepStrongControl = null;
+            object deepWeakControl = null;
             List<(string Name, object Value)> sampled = new();
             try
             {
+                deepStrongControl = CreateControlChain(target);
+                deepWeakControl = CreateControlChain(new WeakReference(target));
+                Result deepStrong = Find(
+                    target,
+                    new[] { ("strong-deep-control", deepStrongControl) }
+                );
+                Result deepWeak = Find(target, new[] { ("weak-deep-control", deepWeakControl) });
                 Result strong = Find(target, new[] { ("strong-control", (object)strongControl) });
                 Result weak = Find(target, new[] { ("weak-control", (object)weakControl) });
-                if (strong.Paths.Count != 1 || weak.Paths.Count != 0)
+                if (
+                    strong.Paths.Count != 1
+                    || weak.Paths.Count != 0
+                    || deepStrong.Paths.Count != 1
+                    || deepWeak.Paths.Count != 0
+                )
                 {
                     TestContext.Out.WriteLine($"RETENTION {family}: INVALID observer controls.");
                     return;
                 }
                 Array.Clear(strongControl, 0, strongControl.Length);
+                ClearControlChain(deepStrongControl);
+                ClearControlChain(deepWeakControl);
+                deepStrongControl = null;
+                deepWeakControl = null;
                 for (int index = 0; index < roots.Length; ++index)
                 {
                     sampled.Add(($"owned[{index}]", roots[index]));
@@ -71,7 +90,7 @@ namespace DxMessaging.Tests.Runtime
                 }
                 Result result = Find(target, sampled);
                 TestContext.Out.WriteLine(
-                    $"RETENTION {family}: target={target.GetType().FullName}, controls=PASS, nodes={result.Nodes}, truncated={result.Truncated}, paths={result.Paths.Count}. "
+                    $"RETENTION {family}: target={target.GetType().FullName}, controls=PASS, deepControlEdges={DeepControlEdges}, nodes={result.Nodes}, truncated={result.Truncated}, paths={result.Paths.Count}. "
                         + (
                             result.Paths.Count == 0
                                 ? "NO_PATH_IN_SAMPLED_ROOTS; this does not prove absence."
@@ -86,10 +105,37 @@ namespace DxMessaging.Tests.Runtime
             finally
             {
                 Array.Clear(strongControl, 0, strongControl.Length);
+                ClearControlChain(deepStrongControl);
+                ClearControlChain(deepWeakControl);
+                deepStrongControl = null;
+                deepWeakControl = null;
                 Array.Clear(weakControl, 0, weakControl.Length);
                 Array.Clear(roots, 0, roots.Length);
                 sampled.Clear();
             }
+        }
+
+        private static object CreateControlChain(object leaf)
+        {
+            for (int index = 0; index < DeepControlEdges; ++index)
+            {
+                leaf = new ControlLink { Next = leaf };
+            }
+            return leaf;
+        }
+
+        private static void ClearControlChain(object root)
+        {
+            for (int index = 0; index < DeepControlEdges && root is ControlLink link; ++index)
+            {
+                root = link.Next;
+                link.Next = null;
+            }
+        }
+
+        private sealed class ControlLink
+        {
+            internal object Next;
         }
 
         private static Result Find(object target, IEnumerable<(string Name, object Value)> roots)

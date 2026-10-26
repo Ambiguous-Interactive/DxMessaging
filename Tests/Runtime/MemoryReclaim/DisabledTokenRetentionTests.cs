@@ -141,7 +141,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     if (alive[0])
                     {
                         NativeRetentionDiagnostics.Report(
-                            "DisabledToken:mode" + mode,
+                            "DisabledStaging:mode" + mode,
                             foreign.Bus,
                             old
                         );
