@@ -317,10 +317,15 @@ namespace DxMessaging.Tests.Editor
             settings._diagnosticsTargets = DiagnosticsTarget.Runtime;
             settings._messageBufferSize = 19;
             _settingsCache.SetCurrent(settings);
+            string beforeEnsure = CaptureDeferredEnsureState(settings);
             _scheduled[0].Invoke();
+            string ensureTrace =
+                $"Before: {beforeEnsure}; after: {CaptureDeferredEnsureState(settings)}";
+            TestContext.Out.WriteLine(ensureTrace);
             Assert.That(
                 IMessageBus.GlobalDiagnosticsTargets,
-                Is.EqualTo(DiagnosticsTarget.Runtime)
+                Is.EqualTo(DiagnosticsTarget.Runtime),
+                ensureTrace
             );
             Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(19));
             DxMessagingEditorInitializer.ApplyEditorSettings();
@@ -355,10 +360,15 @@ namespace DxMessaging.Tests.Editor
             settings._diagnosticsTargets = DiagnosticsTarget.Runtime;
             settings._messageBufferSize = 23;
             _settingsCache.SetCurrent(settings);
+            string beforeEnsure = CaptureDeferredEnsureState(settings);
             _scheduled[0].Invoke();
+            string ensureTrace =
+                $"Before: {beforeEnsure}; after: {CaptureDeferredEnsureState(settings)}";
+            TestContext.Out.WriteLine(ensureTrace);
             Assert.That(
                 IMessageBus.GlobalDiagnosticsTargets,
-                Is.EqualTo(DiagnosticsTarget.Runtime)
+                Is.EqualTo(DiagnosticsTarget.Runtime),
+                ensureTrace
             );
             Assert.That(IMessageBus.GlobalMessageBufferSize, Is.EqualTo(23));
             Assert.That(
@@ -384,6 +394,26 @@ namespace DxMessaging.Tests.Editor
             DxMessagingEditorInitializer.ApplyEditorSettings();
             _scheduled[0].Invoke();
             Assert.That(_warnings, Is.Empty);
+        }
+
+        private string CaptureDeferredEnsureState(DxMessagingSettings expected)
+        {
+            object cached = MessageBusInspection.ReadField(
+                typeof(DxMessagingSettings),
+                "_cachedSettings"
+            );
+            object cachedRevision = MessageBusInspection.ReadField(
+                typeof(DxMessagingSettings),
+                "_cachedSettingsRevision"
+            );
+            object scheduled = MessageBusInspection.ReadField(
+                typeof(DxMessagingEditorInitializer),
+                "s_ensureSettingsAssetScheduled"
+            );
+            return $"compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}, "
+                + $"queued={_scheduled.Count}, scheduled={scheduled}, "
+                + $"revision={DxMessagingSettings.SettingsRevision}, cachedRevision={cachedRevision}, "
+                + $"expectedCached={ReferenceEquals(cached, expected)}";
         }
 
         private DxMessagingSettings NewSettings()
