@@ -36,6 +36,8 @@ namespace DxMessaging.Tests.Editor
     {
         private readonly Dictionary<string, string> _saved = new();
         private readonly Dictionary<string, object> _pending = new();
+        private readonly EditorDelayCallScope _sidecarCallbacks;
+        private readonly EditorDelayCallScope _responseCallbacks;
         private bool _assetEditing;
 
         internal EditorCompilerInputScope()
@@ -54,33 +56,41 @@ namespace DxMessaging.Tests.Editor
                     "responseFileImportPending"
                 )
             );
-            string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            foreach (
-                string relative in new[]
-                {
-                    "Assets/csc.rsp",
-                    "csc.rsp",
-                    DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
-                }
-            )
-            {
-                foreach (string suffix in new[] { "", ".meta" })
-                {
-                    string path = Path.Combine(root, relative + suffix);
-                    string backup = File.Exists(path)
-                        ? Path.Combine(
-                            Path.GetDirectoryName(path),
-                            "."
-                                + Path.GetFileName(path)
-                                + ".dxm-fixture-"
-                                + Guid.NewGuid().ToString("N")
-                        )
-                        : null;
-                    _saved.Add(path, backup);
-                }
-            }
             try
             {
+                _sidecarCallbacks = new(
+                    typeof(DxMessagingBaseCallIgnoreSync),
+                    suspendBaseline: true
+                );
+                _responseCallbacks = new(
+                    typeof(DxMessaging.Editor.SetupCscRsp),
+                    suspendBaseline: true
+                );
+                string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                foreach (
+                    string relative in new[]
+                    {
+                        "Assets/csc.rsp",
+                        "csc.rsp",
+                        DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
+                    }
+                )
+                {
+                    foreach (string suffix in new[] { "", ".meta" })
+                    {
+                        string path = Path.Combine(root, relative + suffix);
+                        string backup = File.Exists(path)
+                            ? Path.Combine(
+                                Path.GetDirectoryName(path),
+                                "."
+                                    + Path.GetFileName(path)
+                                    + ".dxm-fixture-"
+                                    + Guid.NewGuid().ToString("N")
+                            )
+                            : null;
+                        _saved.Add(path, backup);
+                    }
+                }
                 /*
                     Importing temporary compiler inputs requests a compilation while NUnit locks
                     reloads. Keep imports batched until their original bytes are restored.
@@ -135,7 +145,14 @@ namespace DxMessaging.Tests.Editor
                 }
                 catch (Exception exception)
                 {
-                    failures.Add(exception);
+                    failures.Add(
+                        new IOException(
+                            $"Restoring compiler input '{saved.Key}' failed. "
+                                + $"OriginallyPresent={saved.Value != null}, assetEditing={_assetEditing}, "
+                                + $"compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}.",
+                            exception
+                        )
+                    );
                 }
             }
             try
@@ -173,6 +190,22 @@ namespace DxMessaging.Tests.Editor
                         failures.Add(exception);
                     }
                 }
+            }
+            try
+            {
+                _responseCallbacks?.Dispose();
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception);
+            }
+            try
+            {
+                _sidecarCallbacks?.Dispose();
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception);
             }
             if (0 < failures.Count)
             {

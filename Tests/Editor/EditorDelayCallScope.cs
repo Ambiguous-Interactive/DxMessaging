@@ -14,11 +14,28 @@ namespace DxMessaging.Tests.Editor
         private readonly Type _owner;
         private readonly HashSet<Delegate> _baseline;
         private readonly List<EditorApplication.CallbackFunction> _history = new();
+        private readonly List<EditorApplication.CallbackFunction> _suspendedBaseline = new();
+        private bool _baselineRestored;
 
-        internal EditorDelayCallScope(Type owner)
+        internal EditorDelayCallScope(Type owner, bool suspendBaseline = false)
         {
             _owner = owner;
-            _baseline = new HashSet<Delegate>(Current());
+            Delegate[] baseline = Current();
+            _baseline = new HashSet<Delegate>(baseline);
+            if (suspendBaseline)
+            {
+                foreach (Delegate callback in baseline)
+                {
+                    if (BelongsTo(callback, _owner, new HashSet<object>(), 0))
+                    {
+                        _suspendedBaseline.Add((EditorApplication.CallbackFunction)callback);
+                    }
+                }
+                foreach (EditorApplication.CallbackFunction callback in _suspendedBaseline)
+                {
+                    EditorApplication.delayCall -= callback;
+                }
+            }
         }
 
         private static Delegate[] Current() =>
@@ -105,17 +122,31 @@ namespace DxMessaging.Tests.Editor
 
         internal void Clear()
         {
-            Dispose();
+            Drain();
             _history.Clear();
         }
 
-        public void Dispose()
+        private void Drain()
         {
             Observe();
             foreach (EditorApplication.CallbackFunction callback in _history)
             {
                 EditorApplication.delayCall -= callback;
             }
+        }
+
+        public void Dispose()
+        {
+            Drain();
+            if (_baselineRestored)
+            {
+                return;
+            }
+            foreach (EditorApplication.CallbackFunction callback in _suspendedBaseline)
+            {
+                EditorApplication.delayCall += callback;
+            }
+            _baselineRestored = true;
         }
     }
 
