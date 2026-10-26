@@ -14,6 +14,10 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
     using NUnit.Framework;
 
     /// <summary>Checks that completed global snapshots release captures while their handler stays alive.</summary>
+    /// <remarks>
+    /// 2026-10-26: Unity bus construction reapplies runtime pool settings. Set the explicit test cap
+    /// afterward so each capacity assertion exercises its declared cap, and restore it during cleanup.
+    /// </remarks>
     [TestFixture]
     [Category("MemoryReclaim")]
     public sealed class GlobalNestedSnapshotReclamationTests
@@ -81,13 +85,18 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             LeakWatcher watcher = null;
             try
             {
-                DxPools.IntSets.MaxRetained = cap;
                 MessagingDebug.enabled = false;
                 bus = new MessageBus { DiagnosticsMode = false };
                 MessageHandler handler = new MessageHandler(new InstanceId(1652), bus)
                 {
                     active = true,
                 };
+                DxPools.IntSets.MaxRetained = cap;
+                Assert.That(
+                    DxPools.IntSets.MaxRetained,
+                    Is.EqualTo(cap),
+                    label + ": explicit pool cap after bus initialization"
+                );
                 watcher = LeakWatcher.WatchWithSlots(bus, label: label, handler: handler);
                 token = MessageRegistrationToken.Create(handler, bus);
                 token.Enable();
