@@ -49,26 +49,17 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        # Complete Editor coverage first, before the longer PlayMode timing selections.
+        # Frozen #682 diagnostic study: unchanged complete EditMode scope only.
         test-mode:
           - editmode
-          - playmode
         unity-version:
           - 2021.3.45f1
           - 2022.3.45f1
           - 6000.3.16f1
           - 6000.5.2f1
-        # Complete PlayMode selections exceed the existing 600-second editor watchdog.
-        # Split every case by PerfBench membership, then the cardinality fixture.
+        # Two unchanged diagnostic methods repeat at most 50 times in each owned scope.
         benchmark-scope:
           - coverage
-          - cardinality
-          - remaining
-        exclude:
-          - test-mode: editmode
-            benchmark-scope: cardinality
-          - test-mode: editmode
-            benchmark-scope: remaining
     steps:
       # Contract item 3: the central immutable gate validates the runner-owned
       # editor before any credential reference or checkout. CI never installs,

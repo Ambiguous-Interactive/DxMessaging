@@ -128,10 +128,16 @@ namespace DxMessaging.Tests.Editor
         private EnterPlayModeOptions _previousOptions;
         private bool _previousDebugEnabled;
         private Action<DxMessaging.Core.LogLevel, string> _previousDebugLog;
+        private int _setupSequence;
+        private int _teardownSequence;
 
         [SetUp]
         public void SetUp()
         {
+            ++_setupSequence;
+            TestContext.Out.WriteLine(
+                $"Initializer setup sequence={_setupSequence}, compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}"
+            );
             _previousTargets = IMessageBus.GlobalDiagnosticsTargets;
             _previousStacks = IMessageBus.GlobalDiagnosticsStackTraces;
             _previousBuffer = IMessageBus.GlobalMessageBufferSize;
@@ -216,6 +222,10 @@ namespace DxMessaging.Tests.Editor
                     () => IMessageBus.GlobalMessageBufferSize = _previousBuffer,
                     () => DxMessaging.Core.MessagingDebug.enabled = _previousDebugEnabled,
                     () => DxMessaging.Core.MessagingDebug.LogFunction = _previousDebugLog
+                );
+                ++_teardownSequence;
+                TestContext.Out.WriteLine(
+                    $"Initializer teardown completed sequence={_teardownSequence}"
                 );
             }
         }
@@ -303,6 +313,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        [Repeat(50)]
         public void DeferredSettingsEnsureUsesRealIdleQueueAndClearsDebounce()
         {
             _settingsCache.SetCurrent(null);
@@ -348,6 +359,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
+        [Repeat(50)]
         public void DeferredSettingsEnsureWarnsOnceWhenDomainReloadIsDisabledAndWarningUnsuppressed()
         {
             _settingsCache.SetCurrent(null);
