@@ -565,6 +565,13 @@ test("entity-heavy account input cannot exhaust the scrubber", () => {
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0);
 });
+test("repeated NUnit scalar contexts use the document cache", () => {
+  // 2026-10-26: expanded native suites repeated contextual scans before reaching the scalar cache.
+  const pattern = CREDENTIAL_PATTERNS.find(({ id }) => id === "credential-assignment").pattern, original = pattern.exec;
+  let calls = 0;
+  try { pattern.exec = function (...args) { calls++; return original.apply(this, args); }; assert.deepEqual(findSensitiveData(`<test-run>${'<test-case name="TokenCase"/>'.repeat(1024)}</test-run>`, ".xml"), []); assert.equal(calls, 1); }
+  finally { pattern.exec = original; }
+});
 test("repeated sensitive Bee JSON scalars are scanned once per document", () => {
   // 2026-09-13: repeated Bee paths made the 20-cell shipping redaction gate exceed two minutes.
   const value = "C:/Users/runner/Library/Bee/artifacts/WinPlayerBuildProgram/il2cppOutput/build/Data/Metadata/global-metadata.dat";
