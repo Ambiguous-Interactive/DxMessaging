@@ -451,6 +451,107 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
+        /// <remarks>
+        /// 2026-10-26: startup response-file work can remain queued after a domain reload.
+        /// Input ownership must suspend those writers until restoration, preserve unrelated
+        /// callbacks, and drain writers created during the owned operation. The historical
+        /// Windows file-lock failure did not identify the process holding the response file.
+        /// </remarks>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void CompilerInputScopeSuspendsExistingWritersUntilRestoration(bool sidecar)
+        {
+            DxMessagingSettings settings = NewSettings();
+            for (int cycle = 0; cycle < 10; ++cycle)
+            {
+                string context = $"sidecar={sidecar}, cycle={cycle}";
+                List<EditorApplication.CallbackFunction> owned = new();
+                EditorApplication.CallbackFunction unrelated = () => { };
+                EditorCompilerInputScope scope = null;
+                try
+                {
+                    Delegate[] before = CurrentDelayCallbacks();
+                    QueueWriter();
+                    Delegate[] baseline = CurrentDelayCallbacks().Except(before).ToArray();
+                    owned.AddRange(baseline.Cast<EditorApplication.CallbackFunction>());
+                    Assert.That(
+                        baseline.Length,
+                        Is.EqualTo(1),
+                        $"{context} Queue one actual package writer."
+                    );
+                    EditorApplication.delayCall += unrelated;
+
+                    scope = new();
+                    Assert.That(CurrentDelayCallbacks(), Does.Contain(unrelated), context);
+                    foreach (Delegate callback in baseline)
+                    {
+                        Assert.That(
+                            CurrentDelayCallbacks().Contains(callback),
+                            Is.False,
+                            $"{context} A pre-existing package writer must not mutate protected compiler inputs."
+                        );
+                    }
+                    Assert.That(CurrentDelayCallbacks(), Does.Contain(unrelated), context);
+
+                    before = CurrentDelayCallbacks();
+                    QueueWriter();
+                    Delegate[] temporary = CurrentDelayCallbacks().Except(before).ToArray();
+                    owned.AddRange(temporary.Cast<EditorApplication.CallbackFunction>());
+                    Assert.That(temporary.Length, Is.EqualTo(1), context);
+                    scope.Dispose();
+                    scope = null;
+
+                    foreach (Delegate callback in baseline)
+                    {
+                        Assert.That(
+                            CurrentDelayCallbacks().Count(candidate => candidate.Equals(callback)),
+                            Is.EqualTo(1),
+                            $"{context} Restore each pre-existing writer exactly once after restoring inputs."
+                        );
+                    }
+                    foreach (Delegate callback in temporary)
+                    {
+                        Assert.That(
+                            CurrentDelayCallbacks().Contains(callback),
+                            Is.False,
+                            $"{context} Do not leave test-created compiler writers queued after restoration."
+                        );
+                    }
+                    Assert.That(CurrentDelayCallbacks(), Does.Contain(unrelated), context);
+                }
+                finally
+                {
+                    try
+                    {
+                        scope?.Dispose();
+                    }
+                    finally
+                    {
+                        foreach (EditorApplication.CallbackFunction callback in owned)
+                        {
+                            EditorApplication.delayCall -= callback;
+                        }
+                        EditorApplication.delayCall -= unrelated;
+                    }
+                }
+            }
+
+            void QueueWriter()
+            {
+                if (sidecar)
+                {
+                    DxMessagingBaseCallIgnoreSync.RegenerateSidecarDeferred(settings);
+                }
+                else
+                {
+                    SetupCscRsp.ScheduleAdditionalFileForIgnoreListSync();
+                }
+            }
+        }
+
+        private static Delegate[] CurrentDelayCallbacks() =>
+            EditorApplication.delayCall?.GetInvocationList() ?? Array.Empty<Delegate>();
+
         [Test]
         public void PreparedCompilerInputWritersRemainIdempotent()
         {
