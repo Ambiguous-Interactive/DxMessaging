@@ -184,6 +184,10 @@
       Link="HandlerDeregistrationActions.cs"
     />
     <Compile
+      Include="../Tests/Runtime/MemoryReclaim/NativeCollectionWindowControlTests.cs"
+      Link="NativeCollectionWindowControlTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/MemoryReclaim/ConsumedContextHandleRetentionTests.cs"
       Link="ConsumedContextHandleRetentionTests.cs"
     />
