@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Runtime.Unity
 {
     using System;
+    using System.Collections.Generic;
     using System.Reflection;
     using System.Text.RegularExpressions;
     using DxMessaging.Core;
@@ -271,6 +272,8 @@ namespace DxMessaging.Tests.Runtime.Unity
         /// 2026-10-26: a live listener enumeration was invalidated by completed peer release during
         /// retarget cleanup. A captured peer token may also accept independently owned work before
         /// the outer migration resumes, so checking the listener key alone is insufficient.
+        /// A retry after the adversarial bus commits deregistration and then throws emits one
+        /// expected over-deregistration error; capture and assert it without hiding other diagnostics.
         /// </remarks>
         [Test]
         public void ConfigureDoesNotRetargetDetachedTokensOrReplacementOwners(
@@ -284,6 +287,16 @@ namespace DxMessaging.Tests.Runtime.Unity
         {
             string context =
                 $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, replace={replaceOwner}, throw={throwAfterRelease}]";
+            bool previousDebug = MessagingDebug.enabled;
+            Action<LogLevel, string> previousLog = MessagingDebug.LogFunction;
+            using CleanupScope logging = new(() =>
+            {
+                MessagingDebug.enabled = previousDebug;
+                MessagingDebug.LogFunction = previousLog;
+            });
+            List<(LogLevel Level, string Message)> logs = new();
+            MessagingDebug.enabled = true;
+            MessagingDebug.LogFunction = (level, message) => logs.Add((level, message));
             GameObject host = new(
                 nameof(ConfigureDoesNotRetargetDetachedTokensOrReplacementOwners),
                 typeof(MessagingComponent),
@@ -315,6 +328,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 for (int cycle = 0; cycle < 10; ++cycle)
                 {
                     string cycleContext = $"{context}, cycle={cycle}";
+                    logs.Clear();
                     messaging.Configure(bus, MessageBusRebindMode.RebindActive);
                     MessageRegistrationToken firstToken = messaging.Create(first);
                     MessageRegistrationToken secondToken = messaging.Create(second);
@@ -493,6 +507,36 @@ namespace DxMessaging.Tests.Runtime.Unity
                     Assert.That(originalWatcher.LeakedRegistrations, Is.Zero, cycleContext);
                     Assert.That(replacementWatcher.LeakedRegistrations, Is.Zero, cycleContext);
                     Assert.That(independentWatcher.LeakedRegistrations, Is.Zero, cycleContext);
+                    bool committedBeforeThrow = throwAfterRelease && !beforeDeregistration;
+                    Assert.That(logs.Count, Is.EqualTo(committedBeforeThrow ? 1 : 0), cycleContext);
+                    if (committedBeforeThrow)
+                    {
+                        string messageType = scenario.Kind switch
+                        {
+                            MessageKind.Untargeted => nameof(SimpleUntargetedMessage),
+                            MessageKind.Targeted => nameof(SimpleTargetedMessage),
+                            MessageKind.Broadcast => nameof(SimpleBroadcastMessage),
+                            _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+                        };
+                        Assert.That(logs[0].Level, Is.EqualTo(LogLevel.Error), cycleContext);
+                        Assert.That(
+                            logs[0].Message,
+                            Does.StartWith(
+                                interceptor
+                                    ? "Received over-deregistration of Interceptor "
+                                    : "Received over-deregistration of "
+                            ),
+                            cycleContext
+                        );
+                        Assert.That(logs[0].Message, Does.Contain(messageType), cycleContext);
+                        Assert.That(
+                            logs[0].Message,
+                            Does.EndWith(
+                                "Check to make sure you're not calling (de)registration multiple times."
+                            ),
+                            cycleContext
+                        );
+                    }
                 }
             }
         }
