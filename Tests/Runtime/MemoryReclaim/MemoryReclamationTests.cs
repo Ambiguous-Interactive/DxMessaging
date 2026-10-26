@@ -2061,6 +2061,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
+        /// <remarks>
+        /// 2026-10-26: reflection-only closed generic registration calls had no generated code on
+        /// Unity 2021 IL2CPP. Static row and column calls execute the same 32-by-32 type matrix
+        /// so every combination is visible to the ahead-of-time compiler before this test runs.
+        /// </remarks>
         [Test]
         public void TypedHandlerOuterWrappersReclaimedAtScaleAfterTrim()
         {
@@ -2069,29 +2074,18 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus);
             MessageHandler handler = CreateActiveHandler(bus);
             List<Action> deregistrations = new List<Action>(1024);
-            MethodInfo registerMethod = typeof(MemoryReclamationTests).GetMethod(
-                nameof(RegisterUntargetedGenericDirect),
-                BindingFlags.Static | BindingFlags.NonPublic
-            );
-            Type[] markerTypes = RegistrationFloodMarkerTypes;
 
             try
             {
-                foreach (Type outerMarker in markerTypes)
+                foreach (
+                    Action<
+                        MessageHandler,
+                        MessageBus,
+                        List<Action>
+                    > registerRow in RegistrationFloodRows
+                )
                 {
-                    foreach (Type innerMarker in markerTypes)
-                    {
-                        Type messageType = typeof(RegistrationFloodMessage<,>).MakeGenericType(
-                            outerMarker,
-                            innerMarker
-                        );
-                        deregistrations.Add(
-                            (Action)
-                                registerMethod
-                                    .MakeGenericMethod(messageType)
-                                    .Invoke(null, new object[] { handler, bus })
-                        );
-                    }
+                    registerRow(handler, bus, deregistrations);
                 }
 
                 Assert.AreEqual(
@@ -2773,41 +2767,227 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
         }
 
-        private static readonly Type[] RegistrationFloodMarkerTypes =
+        private static readonly Action<
+            MessageHandler,
+            MessageBus,
+            List<Action>
+        >[] RegistrationFloodRows =
         {
-            typeof(RegistrationFloodMarker00),
-            typeof(RegistrationFloodMarker01),
-            typeof(RegistrationFloodMarker02),
-            typeof(RegistrationFloodMarker03),
-            typeof(RegistrationFloodMarker04),
-            typeof(RegistrationFloodMarker05),
-            typeof(RegistrationFloodMarker06),
-            typeof(RegistrationFloodMarker07),
-            typeof(RegistrationFloodMarker08),
-            typeof(RegistrationFloodMarker09),
-            typeof(RegistrationFloodMarker10),
-            typeof(RegistrationFloodMarker11),
-            typeof(RegistrationFloodMarker12),
-            typeof(RegistrationFloodMarker13),
-            typeof(RegistrationFloodMarker14),
-            typeof(RegistrationFloodMarker15),
-            typeof(RegistrationFloodMarker16),
-            typeof(RegistrationFloodMarker17),
-            typeof(RegistrationFloodMarker18),
-            typeof(RegistrationFloodMarker19),
-            typeof(RegistrationFloodMarker20),
-            typeof(RegistrationFloodMarker21),
-            typeof(RegistrationFloodMarker22),
-            typeof(RegistrationFloodMarker23),
-            typeof(RegistrationFloodMarker24),
-            typeof(RegistrationFloodMarker25),
-            typeof(RegistrationFloodMarker26),
-            typeof(RegistrationFloodMarker27),
-            typeof(RegistrationFloodMarker28),
-            typeof(RegistrationFloodMarker29),
-            typeof(RegistrationFloodMarker30),
-            typeof(RegistrationFloodMarker31),
+            RegisterRegistrationFloodRow<RegistrationFloodMarker00>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker01>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker02>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker03>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker04>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker05>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker06>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker07>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker08>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker09>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker10>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker11>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker12>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker13>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker14>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker15>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker16>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker17>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker18>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker19>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker20>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker21>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker22>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker23>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker24>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker25>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker26>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker27>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker28>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker29>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker30>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker31>,
         };
+
+        private static void RegisterRegistrationFloodRow<TOuter>(
+            MessageHandler handler,
+            MessageBus bus,
+            List<Action> deregistrations
+        )
+        {
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker00>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker01>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker02>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker03>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker04>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker05>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker06>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker07>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker08>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker09>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker10>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker11>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker12>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker13>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker14>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker15>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker16>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker17>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker18>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker19>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker20>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker21>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker22>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker23>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker24>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker25>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker26>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker27>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker28>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker29>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker30>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker31>(
+                handler,
+                bus,
+                deregistrations
+            );
+        }
+
+        private static void RegisterRegistrationFloodEntry<TOuter, TInner>(
+            MessageHandler handler,
+            MessageBus bus,
+            List<Action> deregistrations
+        )
+        {
+            deregistrations.Add(
+                RegisterUntargetedGenericDirect<RegistrationFloodMessage<TOuter, TInner>>(
+                    handler,
+                    bus
+                )
+            );
+        }
 
         private readonly struct RegistrationFloodMessage<TOuter, TInner>
             : IUntargetedMessage<RegistrationFloodMessage<TOuter, TInner>> { }
