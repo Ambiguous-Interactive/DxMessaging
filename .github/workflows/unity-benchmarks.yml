@@ -209,7 +209,11 @@ jobs:
           # coverage run measures the same optimized hot path the docs do.
           # This run keeps its editmode+playmode + no-comparisons coverage role;
           # the Release flags add no comparison rows.
-          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\b\${{ matrix.unity-version }}-${{ matrix.test-mode }}'
+          # The conditional682 study starts from a fresh owned project; retain the shared UPM cache.
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\b\682-${{ github.run_id }}\${{ matrix.unity-version }}-e'
+          if (Test-Path -LiteralPath $projectPath) {
+            throw "Cold-study project already exists: $projectPath"
+          }
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
