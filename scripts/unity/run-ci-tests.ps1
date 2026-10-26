@@ -28,6 +28,8 @@ param(
 
     [string]$TestCategory = $(if ($env:DXM_UNITY_TEST_CATEGORY) { $env:DXM_UNITY_TEST_CATEGORY } else { '' }),
 
+    [string]$TestFilter = $(if ($env:DXM_UNITY_TEST_FILTER) { $env:DXM_UNITY_TEST_FILTER } else { '' }),
+
     [switch]$IncludeComparisons,
 
     [switch]$ReleaseCodeOptimization,
@@ -5322,6 +5324,32 @@ function Invoke-StandaloneTestPlayer {
     }
 }
 
+# Keep CLI values as separate arguments; Unity applies category and name filters together.
+function Get-UnityEditorTestArguments {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectPath,
+        [Parameter(Mandatory = $true)][ValidateSet('editmode', 'playmode')][string]$TestPlatform,
+        [Parameter(Mandatory = $true)][string]$ResultsPath,
+        [Parameter(Mandatory = $true)][string]$AssemblyNames,
+        [string]$TestCategory,
+        [string]$TestFilter,
+        [string[]]$AdditionalArguments = @()
+    )
+
+    $arguments = @(
+        '-batchmode', '-nographics', '-projectPath', $ProjectPath,
+        '-runTests', '-testPlatform', $TestPlatform, '-testResults', $ResultsPath,
+        '-assemblyNames', $AssemblyNames, '-releaseCodeOptimization', '-logFile', '-'
+    )
+    if (-not [string]::IsNullOrWhiteSpace($TestCategory)) {
+        $arguments += @('-testCategory', $TestCategory)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($TestFilter)) {
+        $arguments += @('-testFilter', $TestFilter)
+    }
+    return $arguments + $AdditionalArguments
+}
+
 function Invoke-UnityEditor {
     param(
         [Parameter(Mandatory = $true)][string]$EditorPath,
@@ -7145,6 +7173,10 @@ Assert-RepoRoot -Path $RepoRoot
 $ArtifactsPath = Resolve-FullPath -Path $ArtifactsPath
 New-Item -ItemType Directory -Force -Path $ArtifactsPath | Out-Null
 
+if (-not [string]::IsNullOrWhiteSpace($TestFilter) -and $TestMode -notin @('editmode', 'playmode')) {
+    throw 'TestFilter is supported only for EditMode and PlayMode editor tests.'
+}
+
 $isShippingFidelity = $TestMode -eq 'shipping'
 if ($isShippingFidelity) {
     if (-not [string]::IsNullOrWhiteSpace($AssemblyNames)) {
@@ -8249,18 +8281,14 @@ try {
         # Editor is running tests with -runTests, -quit causes it to QUIT IMMEDIATELY
         # before in-progress tests can complete -- the editor exits 0 having written
         # no results.xml.
-        $testArgs = @(
-            '-batchmode',
-            '-nographics',
-            '-projectPath', $ProjectPath,
-            '-runTests',
-            '-testPlatform', $testPlatform,
-            '-testResults', $resultsPath,
-            '-assemblyNames', $AssemblyNames,
-            '-releaseCodeOptimization',
-            '-logFile', '-'
-        )
-        $testArgs = $testArgs + $categoryArgs + $acceleratorArgs
+        $testArgs = Get-UnityEditorTestArguments `
+            -ProjectPath $ProjectPath `
+            -TestPlatform $testPlatform `
+            -ResultsPath $resultsPath `
+            -AssemblyNames $AssemblyNames `
+            -TestCategory $TestCategory `
+            -TestFilter $TestFilter `
+            -AdditionalArguments $acceleratorArgs
 
         # Delete any STALE results file first so the file validation below can only
         # honor results THIS run wrote (defensive for local re-runs; CI checkout

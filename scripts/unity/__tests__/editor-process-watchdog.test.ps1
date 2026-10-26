@@ -200,7 +200,56 @@ exit 0
         }
         if ($rejected -ne ($case -ne 'passed')) { throw "$case had the wrong artifact verdict." }
     }
-    Write-Host 'Editor watchdog and result-validation cases passed.'
+    # Exercise the maintained Editor argument builder through the real process owner.
+    $argumentDump = Join-Path $fixture 'dump-arguments.ps1'
+    [System.IO.File]::WriteAllText($argumentDump, @'
+param([string]$OutputPath)
+[System.IO.File]::WriteAllText($OutputPath, (ConvertTo-Json -InputObject @($args) -Compress))
+'@)
+    $cardinalityFixture = 'DxMessaging.Tests.Runtime.Benchmarks.HandlerCardinalityBenchmarks'
+    $selections = @(
+        @{ Name = 'unfiltered'; Category = ''; Filter = '' },
+        @{ Name = 'coverage'; Category = '!PerfBench'; Filter = '' },
+        @{ Name = 'cardinality'; Category = 'PerfBench'; Filter = $cardinalityFixture },
+        @{ Name = 'remaining'; Category = 'PerfBench'; Filter = "!$cardinalityFixture" },
+        @{ Name = 'pattern'; Category = 'Allocation;MemoryReclaim'; Filter = 'Fixture\.Method\(two words\)' }
+    )
+    foreach ($selection in $selections) {
+        $outputPath = Join-Path $fixture ("arguments-{0}.json" -f $selection.Name)
+        $arguments = @(Get-UnityEditorTestArguments `
+            -ProjectPath (Join-Path $fixture 'project with spaces') -TestPlatform playmode `
+            -ResultsPath (Join-Path $fixture 'results with spaces.xml') `
+            -AssemblyNames 'Assembly.One;Assembly.Two' `
+            -TestCategory $selection.Category -TestFilter $selection.Filter `
+            -AdditionalArguments @('-CacheServerIPAddress', 'cache.example:10080'))
+        if (@($arguments | Where-Object { $_ -eq '-testFilter' }).Count -ne [int]([bool]$selection.Filter)) {
+            throw "$($selection.Name) has the wrong test-name filter count."
+        }
+        if ($selection.Filter) {
+            $index = [array]::IndexOf($arguments, '-testFilter')
+            if ($arguments[$index + 1] -cne $selection.Filter) { throw 'TestFilter changed before launch.' }
+        }
+        $roundtrip = Invoke-ProcessWithTreeKillTimeout -FilePath $pwsh `
+            -Arguments (@('-NoLogo', '-NoProfile', '-File', $argumentDump, '-OutputPath', $outputPath) + $arguments) `
+            -Label $selection.Name -LogPath (Join-Path $fixture ("arguments-{0}.log" -f $selection.Name)) `
+            -TimeoutSeconds 15
+        if ($roundtrip.ExitCode -ne 0 -or $roundtrip.TimedOut) { throw 'Editor argument transport failed.' }
+        $actual = @(Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json)
+        if ((ConvertTo-Json -InputObject $actual -Compress) -cne (ConvertTo-Json -InputObject $arguments -Compress)) {
+            throw "$($selection.Name) changed arguments across the actual child process."
+        }
+    }
+    $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+    foreach ($mode in @('standalone', 'shipping')) {
+        $rejection = & $pwsh -NoLogo -NoProfile -NonInteractive -File $runner `
+            -UnityVersion '2021.3.45f1' -TestMode $mode -AssemblyNames 'Assembly.One' `
+            -ArtifactsPath (Join-Path $fixture "rejected-$mode") -RepoRoot $repoRoot `
+            -TestFilter $cardinalityFixture -GenerateOnly -SkipCiAnalyzers 2>&1 | Out-String
+        if ($LASTEXITCODE -eq 0 -or $rejection -notmatch 'TestFilter is supported only for EditMode and PlayMode') {
+            throw "$mode did not reject an unsupported Editor name filter: $rejection"
+        }
+    }
+    Write-Host 'Editor watchdog and result-validation and argument-transport cases passed.'
 } finally {
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }

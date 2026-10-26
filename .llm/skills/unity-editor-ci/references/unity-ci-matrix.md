@@ -89,12 +89,20 @@ Runner administrators manually install every exact editor and required module un
 
 `unity-benchmarks.yml` (active; manual-only, NEVER on PRs):
 
-| Axis            | Values                  |
-| --------------- | ----------------------- |
-| `unity-version` | every canonical version |
-| `test-mode`     | `editmode`, `playmode`  |
+| Axis              | Values                                 |
+| ----------------- | -------------------------------------- |
+| `unity-version`   | every canonical version                |
+| `test-mode`       | `editmode`, `playmode`                 |
+| `benchmark-scope` | `coverage`, `cardinality`, `remaining` |
 
 The active `unity-benchmarks.yml` explicitly omits `pull_request` and `push` per the perf isolation rule.
+
+Each version runs one complete EditMode job and three PlayMode jobs: non-`PerfBench`
+coverage, `PerfBench` cardinality, and the remaining `PerfBench` cases. The `benchmark-scope`
+axis excludes the two extra EditMode combinations. Category membership and the exact
+cardinality fixture name define complementary selections. Keep the 600-second editor
+watchdog, benchmark windows and all cases; partition work instead of extending the cap.
+Include `benchmark-scope` in lock-holder and artifact identities.
 
 ## compute-unity-assemblies is-empty Gate
 

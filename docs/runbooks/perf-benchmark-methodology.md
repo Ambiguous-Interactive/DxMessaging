@@ -428,6 +428,16 @@ The harness can exercise every scope through the shared protocol.
 manually dispatched `unity-benchmarks.yml` runs retain the editor scopes for fast
 iteration and allocation investigation.
 
+The manual benchmark workflow keeps one complete EditMode selection per supported version.
+PlayMode uses three disjoint selections: non-`PerfBench` coverage, the `PerfBench`
+`HandlerCardinalityBenchmarks` fixture, and the remaining `PerfBench` cases. Each selection
+keeps its own results and the existing 600-second editor watchdog. This preserves all cases
+and measurement windows while keeping each process within its budget.
+
+For Editor runs, `run-ci-tests.ps1 -TestFilter` (or `DXM_UNITY_TEST_FILTER`) forwards Unity's
+full-name or regular-expression filter as one argument. Category and name filters intersect;
+a leading `!` excludes matching names. Standalone and shipping runs reject this Editor filter.
+
 ## Scenario taxonomy
 
 There are two scenario families. The DxMessaging-only family measures raw
