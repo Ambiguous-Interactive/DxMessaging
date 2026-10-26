@@ -156,9 +156,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicit bus and provider are assigned ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Make null provider and empty provider-handle configuration replace a prior explicit component bus
   with the global fallback ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
-- Fix `MessagingComponent` retaining registrations after destruction and delivering to inactive
-  hosts before activation ([#542](https://github.com/Ambiguous-Interactive/DxMessaging/issues/542),
-  [#543](https://github.com/Ambiguous-Interactive/DxMessaging/issues/543)).
+- Fix `MessagingComponent` retaining registrations after destruction, delivering to inactive
+  hosts before activation, and failing bus configuration when cleanup callbacks release or replace
+  listener owners ([#542](https://github.com/Ambiguous-Interactive/DxMessaging/issues/542),
+  [#543](https://github.com/Ambiguous-Interactive/DxMessaging/issues/543),
+  [#683](https://github.com/Ambiguous-Interactive/DxMessaging/issues/683)).
 
 - Fix base-call ignore compiler wiring and batch preparation while preserving consumer options
   ([#537](https://github.com/Ambiguous-Interactive/DxMessaging/issues/537),

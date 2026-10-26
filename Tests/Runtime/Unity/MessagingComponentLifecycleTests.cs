@@ -266,6 +266,237 @@ namespace DxMessaging.Tests.Runtime.Unity
             }
         }
 
+        /// <summary>Leaves detached tokens and replacement owners intact across configuration callbacks.</summary>
+        /// <remarks>
+        /// 2026-10-26: a live listener enumeration was invalidated by completed peer release during
+        /// retarget cleanup. A captured peer token may also accept independently owned work before
+        /// the outer migration resumes, so checking the listener key alone is insufficient.
+        /// </remarks>
+        [Test]
+        public void ConfigureDoesNotRetargetDetachedTokensOrReplacementOwners(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool beforeDeregistration,
+            [Values(false, true)] bool interceptor,
+            [Values(false, true)] bool replaceOwner,
+            [Values(false, true)] bool throwAfterRelease
+        )
+        {
+            string context =
+                $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, replace={replaceOwner}, throw={throwAfterRelease}]";
+            GameObject host = new(
+                nameof(ConfigureDoesNotRetargetDetachedTokensOrReplacementOwners),
+                typeof(MessagingComponent),
+                typeof(ManualListenerComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            ManualListenerComponent first = host.GetComponent<ManualListenerComponent>();
+            ManualListenerComponent second = host.AddComponent<ManualListenerComponent>();
+            InstanceId route = host;
+            MessageBus original = new();
+            MessageBus replacement = new();
+            MessageBus independent = new();
+            ReleaseCallbackBus bus = new(original, beforeDeregistration);
+            using (LeakWatcher originalWatcher = new(bus: bus, label: context + " original"))
+            using (
+                LeakWatcher replacementWatcher = new(
+                    bus: replacement,
+                    label: context + " replacement"
+                )
+            )
+            using (
+                LeakWatcher independentWatcher = new(
+                    bus: independent,
+                    label: context + " independent"
+                )
+            )
+            {
+                for (int cycle = 0; cycle < 10; ++cycle)
+                {
+                    string cycleContext = $"{context}, cycle={cycle}";
+                    messaging.Configure(bus, MessageBusRebindMode.RebindActive);
+                    MessageRegistrationToken firstToken = messaging.Create(first);
+                    MessageRegistrationToken secondToken = messaging.Create(second);
+                    MessageRegistrationToken replacementOwner = null;
+                    int firstCalls = 0;
+                    int secondCalls = 0;
+                    int independentCalls = 0;
+                    int replacementCalls = 0;
+                    MonoBehaviour survivor = null;
+                    foreach (MonoBehaviour listener in messaging._registeredListeners.Keys)
+                    {
+                        survivor = listener;
+                        break;
+                    }
+                    Assert.That(survivor, Is.Not.Null, cycleContext);
+                    bool firstSurvives = ReferenceEquals(survivor, first);
+                    MonoBehaviour peer = firstSurvives ? second : first;
+                    MessageRegistrationToken survivorToken = firstSurvives
+                        ? firstToken
+                        : secondToken;
+                    MessageRegistrationToken peerToken = firstSurvives ? secondToken : firstToken;
+                    InvalidOperationException failure = new("configuration cleanup failure");
+                    try
+                    {
+                        RegisterReleaseProbe(
+                            scenario,
+                            firstToken,
+                            route,
+                            interceptor,
+                            () => ++firstCalls
+                        );
+                        RegisterReleaseProbe(
+                            scenario,
+                            secondToken,
+                            route,
+                            interceptor,
+                            () => ++secondCalls
+                        );
+                        firstToken.Enable();
+                        secondToken.Enable();
+                        ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                        Assert.That(firstCalls, Is.EqualTo(1), cycleContext);
+                        Assert.That(secondCalls, Is.EqualTo(1), cycleContext);
+                        Assert.That(
+                            originalWatcher.LeakedRegistrations,
+                            Is.EqualTo(2),
+                            cycleContext
+                        );
+                        int callbacksBefore = bus.Callbacks;
+                        bool callbackCompleted = false;
+                        bus.OnDeregister = () =>
+                        {
+                            Assert.That(messaging.Release(peer), Is.True, cycleContext);
+                            Assert.That(messaging.TryGetToken(peer, out _), Is.False, cycleContext);
+                            peerToken.RetargetMessageBus(
+                                independent,
+                                MessageBusRebindMode.PreserveRegistrations
+                            );
+                            RegisterReleaseProbe(
+                                scenario,
+                                peerToken,
+                                route,
+                                interceptor,
+                                () => ++independentCalls
+                            );
+                            peerToken.Enable();
+                            if (replaceOwner)
+                            {
+                                replacementOwner = messaging.Create(peer);
+                                RegisterReleaseProbe(
+                                    scenario,
+                                    replacementOwner,
+                                    route,
+                                    interceptor,
+                                    () => ++replacementCalls
+                                );
+                                replacementOwner.Enable();
+                            }
+                            callbackCompleted = true;
+                            if (throwAfterRelease)
+                            {
+                                throw failure;
+                            }
+                        };
+
+                        Exception configurationFailure = null;
+                        try
+                        {
+                            messaging.Configure(replacement, MessageBusRebindMode.RebindActive);
+                        }
+                        catch (Exception exception)
+                        {
+                            configurationFailure = exception;
+                        }
+                        Assert.That(callbackCompleted, Is.True, cycleContext);
+                        Assert.That(bus.Callbacks, Is.EqualTo(callbacksBefore + 1), cycleContext);
+                        if (throwAfterRelease)
+                        {
+                            Assert.That(configurationFailure, Is.SameAs(failure), cycleContext);
+                        }
+                        else
+                        {
+                            Assert.That(configurationFailure, Is.Null, cycleContext);
+                        }
+                        Assert.That(
+                            messaging.TryGetToken(survivor, out MessageRegistrationToken retained),
+                            Is.True,
+                            cycleContext
+                        );
+                        Assert.That(retained, Is.SameAs(survivorToken), cycleContext);
+                        Assert.That(
+                            messaging.TryGetToken(peer, out MessageRegistrationToken cachedPeer),
+                            Is.EqualTo(replaceOwner),
+                            cycleContext
+                        );
+                        Assert.That(cachedPeer, Is.SameAs(replacementOwner), cycleContext);
+                        Assert.That(peerToken.Enabled, Is.True, cycleContext);
+                        Assert.That(
+                            messaging._registeredListeners.Count,
+                            Is.EqualTo(replaceOwner ? 2 : 1),
+                            cycleContext
+                        );
+                        ScenarioCallbacks.EmitForKind(scenario, independent, route);
+                        Assert.That(independentCalls, Is.EqualTo(1), cycleContext);
+                        Assert.That(replacementCalls, Is.Zero, cycleContext);
+                        if (!throwAfterRelease)
+                        {
+                            Assert.That(originalWatcher.LeakedRegistrations, Is.Zero, cycleContext);
+                            ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                            Assert.That(firstCalls, Is.EqualTo(1), cycleContext);
+                            Assert.That(secondCalls, Is.EqualTo(1), cycleContext);
+                            ScenarioCallbacks.EmitForKind(scenario, replacement, route);
+                            Assert.That(
+                                firstCalls,
+                                Is.EqualTo(firstSurvives ? 2 : 1),
+                                cycleContext
+                            );
+                            Assert.That(
+                                secondCalls,
+                                Is.EqualTo(firstSurvives ? 1 : 2),
+                                cycleContext
+                            );
+                            Assert.That(
+                                replacementCalls,
+                                Is.EqualTo(replaceOwner ? 1 : 0),
+                                cycleContext
+                            );
+                        }
+                        Assert.That(messaging.Release(survivor), Is.True, cycleContext);
+                        Assert.That(
+                            messaging.Release(peer),
+                            Is.EqualTo(replaceOwner),
+                            cycleContext
+                        );
+                        Assert.That(messaging._registeredListeners.Count, Is.Zero, cycleContext);
+                        Assert.That(peerToken.Enabled, Is.True, cycleContext);
+                        Assert.That(originalWatcher.LeakedRegistrations, Is.Zero, cycleContext);
+                        Assert.That(replacementWatcher.LeakedRegistrations, Is.Zero, cycleContext);
+                        Assert.That(
+                            independentWatcher.LeakedRegistrations,
+                            Is.EqualTo(1),
+                            cycleContext
+                        );
+                        ScenarioCallbacks.EmitForKind(scenario, independent, route);
+                        Assert.That(independentCalls, Is.EqualTo(2), cycleContext);
+                    }
+                    finally
+                    {
+                        bus.OnDeregister = null;
+                        firstToken.Dispose();
+                        secondToken.Dispose();
+                        replacementOwner?.Dispose();
+                        _ = messaging.Release(first);
+                        _ = messaging.Release(second);
+                    }
+                    Assert.That(originalWatcher.LeakedRegistrations, Is.Zero, cycleContext);
+                    Assert.That(replacementWatcher.LeakedRegistrations, Is.Zero, cycleContext);
+                    Assert.That(independentWatcher.LeakedRegistrations, Is.Zero, cycleContext);
+                }
+            }
+        }
+
         /// <summary>Retains listener ownership when a bus callback releases a peer during configuration.</summary>
         [Test]
         public void ConfigureRetainsListenerOwnershipWhenBusCallbacksReleasePeers(

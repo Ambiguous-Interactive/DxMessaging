@@ -143,6 +143,12 @@ namespace DxMessaging.Unity
         /// </summary>
         /// <param name="messageBus">Message bus to prefer. Pass <c>null</c> to fall back to the global bus.</param>
         /// <param name="rebindMode">Controls whether existing registrations move to the new bus immediately.</param>
+        /// <remarks>
+        /// Active migration snapshots current listener owners. A bus cleanup callback can release or
+        /// replace a listener; the remaining migration skips tokens no longer owned by this component.
+        /// Work accepted independently on a released token remains under its caller's ownership.
+        /// <para><b>Fixed in v4.0.0.</b></para>
+        /// </remarks>
         public void Configure(IMessageBus messageBus, MessageBusRebindMode rebindMode)
         {
             _messageBusOverride = messageBus;
@@ -429,9 +435,26 @@ namespace DxMessaging.Unity
                     ? MessageBusRebindMode.RebindActive
                     : rebindMode;
 
-            foreach (MessageRegistrationToken token in _registeredListeners.Values)
+            /*
+                Retargeting calls foreign bus cleanup, which can release or replace another
+                listener. Only migrate identities that remain owned after each callback.
+            */
+            foreach (
+                KeyValuePair<
+                    MonoBehaviour,
+                    MessageRegistrationToken
+                > listener in _registeredListeners.ToArray()
+            )
             {
-                token.RetargetMessageBus(resolvedBus, effectiveMode);
+                if (
+                    _registeredListeners.TryGetValue(
+                        listener.Key,
+                        out MessageRegistrationToken token
+                    ) && ReferenceEquals(token, listener.Value)
+                )
+                {
+                    token.RetargetMessageBus(resolvedBus, effectiveMode);
+                }
             }
         }
 

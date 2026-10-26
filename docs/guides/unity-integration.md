@@ -13,6 +13,11 @@ Unity-centric helpers make registration lifecycles explicit and safe.
 unless `emitMessagesWhenDisabled` is enabled. Token enable state and handler activity are
 separate; enabling a token does not activate its GameObject.
 
+During `Configure(..., RebindActive)`, a custom bus cleanup callback can release or replace
+another listener. Remaining owned listeners still migrate. The outer call leaves work accepted
+independently on a released token under that token's caller; it does not migrate that work.
+A cleanup exception propagates without discarding the remaining cached owners.
+
 Destroying an initialized `MessagingComponent` deactivates its shared handler and disposes its
 owned tokens, including tokens created by plain `MonoBehaviour` listeners. This also applies when only the
 `MessagingComponent` is removed. If a custom bus throws during deregistration, cleanup continues
