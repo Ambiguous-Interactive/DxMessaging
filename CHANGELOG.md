@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve component cleanup ownership when deregistration callbacks release or register work
+  for the same listener. Failed cleanup remains publicly retryable
+  ([#679](https://github.com/Ambiguous-Interactive/DxMessaging/issues/679)).
 - Clean up subscriptions added by diagnostics after a failed registration build, preserving
   a retryable lease when cleanup fails ([#677](https://github.com/Ambiguous-Interactive/DxMessaging/issues/677)).
 

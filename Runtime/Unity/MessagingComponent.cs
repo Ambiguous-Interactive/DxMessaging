@@ -38,6 +38,9 @@ namespace DxMessaging.Unity
         private MessageHandler _messageHandler;
         private bool _destroyed;
 
+        // Retain cleanup owners only until the outermost release frame exits.
+        private List<MessageRegistrationToken> _releasingTokens;
+
         [NonSerialized]
         private IMessageBus _messageBusOverride;
 
@@ -207,14 +210,16 @@ namespace DxMessaging.Unity
         /// <param name="listener">Listener whose token should be released.</param>
         /// <remarks>
         /// Invokes <see cref="MessageRegistrationToken.Dispose"/> and removes the listener from the internal cache after
-        /// disposal succeeds. If token disposal throws, the listener remains cached so release can be retried. Safe to call
-        /// multiple times after a successful release. A destroyed Unity listener can still be released by its retained
+        /// disposal succeeds and leaves no accepted cleanup. If disposal throws, the listener remains cached for retry.
+        /// Safe to call multiple times after a successful release. A destroyed Unity listener can still be released by its retained
         /// reference.
+        /// A nested release of the same token returns false while its owning release is in progress.
+        /// Work accepted during cleanup remains cached and can be released by a later call.
         /// <para><b>Fixed in v4.0.0.</b></para>
         /// </remarks>
         /// <returns>
         /// <c>true</c> when a retained token was disposed and removed; otherwise <c>false</c> for a CLR null
-        /// reference or a live or destroyed listener with no retained token.
+        /// reference, a listener with no retained token, an in-progress nested release, or accepted work that remains active.
         /// </returns>
         public bool Release(MonoBehaviour listener)
         {
@@ -225,9 +230,34 @@ namespace DxMessaging.Unity
 
             if (_registeredListeners.TryGetValue(listener, out MessageRegistrationToken token))
             {
-                token?.Dispose();
-                _ = _registeredListeners.Remove(listener);
-                return true;
+                List<MessageRegistrationToken> releasing = _releasingTokens ??= new();
+                for (int index = 0; index < releasing.Count; ++index)
+                {
+                    if (ReferenceEquals(releasing[index], token))
+                    {
+                        return false;
+                    }
+                }
+
+                releasing.Add(token);
+                try
+                {
+                    token?.Dispose();
+                    if (token != null && token.Enabled)
+                    {
+                        return false;
+                    }
+                    _ = _registeredListeners.Remove(listener);
+                    return true;
+                }
+                finally
+                {
+                    releasing.RemoveAt(releasing.Count - 1);
+                    if (releasing.Count == 0)
+                    {
+                        _releasingTokens = null;
+                    }
+                }
             }
 
             return false;

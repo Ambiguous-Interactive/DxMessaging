@@ -151,7 +151,7 @@ for cleanup failures and hosts that have never been active.
 
 Re-register after release (opt-in)
 
-`MessagingComponent.Release` permanently disposes a listener's token; by default
+When cleanup completes, `MessagingComponent.Release` removes the listener's cached token; by default
 the listener stays unregistered across later enable/disable cycles. Override
 `ReregisterOnEnableAfterRelease` on a `MessageAwareComponent` to opt into
 automatic recovery: the next enable re-creates the token and replays
@@ -159,6 +159,7 @@ automatic recovery: the next enable re-creates the token and replays
 
 > **Fixed in v4.0.0:** A retained reference can release a listener after Unity destroys it.
 > `Release` disposes the token and removes the cached listener before returning `true`.
+> A nested release or new work accepted during cleanup returns `false` and keeps the cleanup owner cached.
 
 ```csharp
 using DxMessaging.Unity;

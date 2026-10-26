@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Runtime.Unity
 {
     using System;
+    using System.Reflection;
     using System.Text.RegularExpressions;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
@@ -262,6 +263,322 @@ namespace DxMessaging.Tests.Runtime.Unity
                     ++Callbacks;
                     callback();
                 }
+            }
+        }
+
+        [Test]
+        public void ReleasingAnotherListenerPreservesEachInFlightOwner(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool beforeDeregistration,
+            [Values(false, true)] bool interceptor
+        )
+        {
+            string context =
+                $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}]";
+            GameObject host = new(
+                nameof(ReleasingAnotherListenerPreservesEachInFlightOwner),
+                typeof(MessagingComponent),
+                typeof(ManualListenerComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            ManualListenerComponent first = host.GetComponent<ManualListenerComponent>();
+            ManualListenerComponent second = host.AddComponent<ManualListenerComponent>();
+            MessageBus inner = new();
+            ReleaseCallbackBus bus = new(inner, beforeDeregistration);
+            messaging.Configure(bus, MessageBusRebindMode.RebindActive);
+            InstanceId route = host;
+            MessageRegistrationToken firstToken = messaging.Create(first);
+            MessageRegistrationToken secondToken = messaging.Create(second);
+            int firstCalls = 0;
+            int secondCalls = 0;
+            int replacementCalls = 0;
+            bool secondReleased = false;
+            bool firstNestedReleased = true;
+            using (LeakWatcher watcher = new(bus: bus, label: context))
+            {
+                try
+                {
+                    RegisterReleaseProbe(
+                        scenario,
+                        firstToken,
+                        route,
+                        interceptor,
+                        () => ++firstCalls
+                    );
+                    RegisterReleaseProbe(
+                        scenario,
+                        secondToken,
+                        route,
+                        interceptor,
+                        () => ++secondCalls
+                    );
+                    firstToken.Enable();
+                    secondToken.Enable();
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(firstCalls, Is.EqualTo(1), context);
+                    Assert.That(secondCalls, Is.EqualTo(1), context);
+                    Assert.That(watcher.LeakedRegistrations, Is.EqualTo(2), context);
+                    bus.OnDeregister = () =>
+                    {
+                        bus.OnDeregister = () =>
+                        {
+                            firstNestedReleased = messaging.Release(first);
+                            RegisterReleaseProbe(
+                                scenario,
+                                firstToken,
+                                route,
+                                interceptor,
+                                () => ++replacementCalls
+                            );
+                            firstToken.Enable();
+                        };
+                        secondReleased = messaging.Release(second);
+                    };
+
+                    Assert.That(messaging.Release(first), Is.False, context);
+                    Assert.That(secondReleased, Is.True, context);
+                    Assert.That(firstNestedReleased, Is.False, context);
+                    Assert.That(bus.Callbacks, Is.EqualTo(2), context);
+                    Assert.That(
+                        messaging.TryGetToken(first, out MessageRegistrationToken retained),
+                        Is.True,
+                        context
+                    );
+                    Assert.That(retained, Is.SameAs(firstToken), context);
+                    Assert.That(messaging.TryGetToken(second, out _), Is.False, context);
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(firstCalls, Is.EqualTo(1), context);
+                    Assert.That(secondCalls, Is.EqualTo(1), context);
+                    Assert.That(replacementCalls, Is.EqualTo(1), context);
+                    Assert.That(watcher.LeakedRegistrations, Is.EqualTo(1), context);
+                    Assert.That(messaging.Release(first), Is.True, context);
+                    Assert.That(messaging.Release(first), Is.False, context);
+                    Assert.That(watcher.LeakedRegistrations, Is.Zero, context);
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(replacementCalls, Is.EqualTo(1), context);
+                }
+                finally
+                {
+                    bus.OnDeregister = null;
+                    firstToken.Dispose();
+                    secondToken.Dispose();
+                    _ = messaging.Release(first);
+                    _ = messaging.Release(second);
+                }
+            }
+        }
+
+        [Test]
+        public void RejectedReleaseKeepsNestedWorkOwnedForPublicRetry(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool interceptor,
+            [Values(false, true)] bool stageReplacement,
+            [Values(false, true)] bool nestedRelease
+        )
+        {
+            string context =
+                $"[{scenario.Kind}, interceptor={interceptor}, replacement={stageReplacement}, nestedRelease={nestedRelease}]";
+            GameObject host = new(
+                nameof(RejectedReleaseKeepsNestedWorkOwnedForPublicRetry),
+                typeof(MessagingComponent),
+                typeof(ManualListenerComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
+            MessageBus inner = new();
+            RejectedReleaseBus bus = new(inner);
+            messaging.Configure(bus, MessageBusRebindMode.RebindActive);
+            InstanceId route = host;
+            FieldInfo releaseOwners = typeof(MessagingComponent).GetField(
+                "_releasingTokens",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            Assert.That(
+                releaseOwners,
+                Is.Not.Null,
+                $"{context} Inspect actual transient ownership storage."
+            );
+
+            using (LeakWatcher watcher = new(bus: bus, label: context))
+            {
+                for (int iteration = 0; iteration < 10; ++iteration)
+                {
+                    string label = context + ", iteration=" + iteration;
+                    MessageRegistrationToken token = messaging.Create(listener);
+                    int originalCalls = 0;
+                    int replacementCalls = 0;
+                    bool callbackCompleted = false;
+                    try
+                    {
+                        RegisterReleaseProbe(
+                            scenario,
+                            token,
+                            route,
+                            interceptor,
+                            () => ++originalCalls
+                        );
+                        token.Enable();
+                        ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                        Assert.That(
+                            originalCalls,
+                            Is.EqualTo(1),
+                            $"{label} Initial callback must deliver once."
+                        );
+                        Assert.That(
+                            watcher.LeakedRegistrations,
+                            Is.EqualTo(1),
+                            $"{label} Setup must own one registration."
+                        );
+                        bus.RejectNext = true;
+                        bus.OnDeregister = () =>
+                        {
+                            if (nestedRelease)
+                            {
+                                _ = messaging.Release(listener);
+                            }
+                            if (stageReplacement)
+                            {
+                                RegisterReleaseProbe(
+                                    scenario,
+                                    token,
+                                    route,
+                                    interceptor,
+                                    () => ++replacementCalls
+                                );
+                                token.Enable();
+                            }
+                            callbackCompleted = true;
+                        };
+
+                        InvalidOperationException observed =
+                            Assert.Throws<InvalidOperationException>(
+                                () => messaging.Release(listener),
+                                $"{label} Rejected cleanup must propagate."
+                            );
+                        Assert.That(
+                            observed,
+                            Is.SameAs(bus.Failure),
+                            $"{label} Preserve exact cleanup exception identity."
+                        );
+                        Assert.That(
+                            callbackCompleted,
+                            Is.True,
+                            $"{label} Complete the admitted one-shot callback."
+                        );
+                        Assert.That(
+                            bus.Callbacks,
+                            Is.EqualTo(iteration + 1),
+                            $"{label} Invoke each callback once."
+                        );
+                        Assert.That(
+                            token.Enabled,
+                            Is.True,
+                            $"{label} Failed cleanup must retain live ownership."
+                        );
+                        Assert.That(
+                            watcher.LeakedRegistrations,
+                            Is.GreaterThan(0),
+                            $"{label} Observe pending work before retry."
+                        );
+                        Assert.That(
+                            messaging.TryGetToken(listener, out MessageRegistrationToken retained)
+                                && ReferenceEquals(retained, token),
+                            Is.True,
+                            $"{label} The component must retain its retryable cleanup owner."
+                        );
+                        Assert.That(
+                            releaseOwners.GetValue(messaging),
+                            Is.Null,
+                            $"{label} Failed frames must release transient owner storage."
+                        );
+                        ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                        Assert.That(
+                            replacementCalls,
+                            Is.EqualTo(stageReplacement ? 1 : 0),
+                            $"{label} Accepted new work must remain observable."
+                        );
+                        int oldCallsBeforeRetry = originalCalls;
+                        int newCallsBeforeRetry = replacementCalls;
+
+                        Assert.That(
+                            messaging.Release(listener),
+                            Is.True,
+                            $"{label} Public retry must drain original and new work."
+                        );
+                        Assert.That(
+                            messaging.Release(listener),
+                            Is.False,
+                            $"{label} Completed retry must be idempotent."
+                        );
+                        Assert.That(
+                            token.Enabled,
+                            Is.False,
+                            $"{label} Complete the token cleanup."
+                        );
+                        Assert.That(
+                            watcher.LeakedRegistrations,
+                            Is.Zero,
+                            $"{label} Public retry must finish empty."
+                        );
+                        Assert.That(
+                            releaseOwners.GetValue(messaging),
+                            Is.Null,
+                            $"{label} Completed frames must release their capacity."
+                        );
+                        ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                        Assert.That(
+                            originalCalls,
+                            Is.EqualTo(oldCallsBeforeRetry),
+                            $"{label} Retry must stop original delivery."
+                        );
+                        Assert.That(
+                            replacementCalls,
+                            Is.EqualTo(newCallsBeforeRetry),
+                            $"{label} Retry must stop replacement delivery."
+                        );
+                    }
+                    finally
+                    {
+                        bus.OnDeregister = null;
+                        bus.RejectNext = false;
+                        token.Dispose();
+                        _ = messaging.Release(listener);
+                    }
+                }
+            }
+        }
+
+        private sealed class RejectedReleaseBus : DelegatingMessageBus
+        {
+            internal readonly InvalidOperationException Failure = new(
+                "Component release rejected before acceptance."
+            );
+            internal Action OnDeregister;
+            internal bool RejectNext;
+            internal int Callbacks;
+
+            internal RejectedReleaseBus(IMessageBus inner)
+                : base(inner) { }
+
+            public override void Deregister<T>(in MessageBusRegistration registration)
+            {
+                Action callback = OnDeregister;
+                OnDeregister = null;
+                if (callback != null)
+                {
+                    ++Callbacks;
+                    callback();
+                }
+                if (RejectNext)
+                {
+                    RejectNext = false;
+                    throw Failure;
+                }
+                base.Deregister<T>(in registration);
             }
         }
 
