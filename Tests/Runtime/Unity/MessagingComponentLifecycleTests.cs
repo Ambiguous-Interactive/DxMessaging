@@ -296,7 +296,17 @@ namespace DxMessaging.Tests.Runtime.Unity
             });
             List<(LogLevel Level, string Message)> logs = new();
             MessagingDebug.enabled = true;
-            MessagingDebug.LogFunction = (level, message) => logs.Add((level, message));
+            MessagingDebug.LogFunction = (level, message) =>
+            {
+                if (level == LogLevel.Warn || level == LogLevel.Error)
+                {
+                    logs.Add((level, message));
+                }
+                else
+                {
+                    previousLog?.Invoke(level, message);
+                }
+            };
             GameObject host = new(
                 nameof(ConfigureDoesNotRetargetDetachedTokensOrReplacementOwners),
                 typeof(MessagingComponent),
