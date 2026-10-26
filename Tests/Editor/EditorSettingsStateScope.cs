@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+// cspell:ignore rstrtmgr
 namespace DxMessaging.Tests.Editor
 {
     using System;
@@ -7,6 +8,11 @@ namespace DxMessaging.Tests.Editor
     using DxMessaging.Editor.Settings;
     using UnityEditor;
     using UnityEngine;
+#if UNITY_EDITOR_WIN
+    using System.Runtime.InteropServices;
+    using System.Text;
+    using NUnit.Framework;
+#endif
 
     internal sealed class EditorSettingsCacheScope : IDisposable
     {
@@ -30,6 +36,172 @@ namespace DxMessaging.Tests.Editor
 
         public void Dispose() => _state.Dispose();
     }
+
+    /// <summary>Queries locking processes after compiler-input IO fails, without changing them.</summary>
+    internal static class EditorFileLockDiagnostics
+    {
+        internal static string Describe(string path)
+        {
+#if UNITY_EDITOR_WIN
+            if (Marshal.SizeOf<UniqueProcess>() != 12 || Marshal.SizeOf<ProcessInfo>() != 672)
+            {
+                return "RestartManager observer invalid: unexpected native structure layout.";
+            }
+            StringBuilder report = new();
+            try
+            {
+                int start = RmStartSession(out uint session, 0, new StringBuilder(33));
+                report.Append($"RestartManager start={start}");
+                if (start != 0)
+                {
+                    return report.ToString();
+                }
+                try
+                {
+                    int registered = RmRegisterResources(
+                        session,
+                        1,
+                        new[] { path },
+                        0,
+                        IntPtr.Zero,
+                        0,
+                        IntPtr.Zero
+                    );
+                    report.Append($", register={registered}");
+                    if (registered == 0)
+                    {
+                        ProcessInfo[] processes = new ProcessInfo[64];
+                        uint count = (uint)processes.Length;
+                        int listed = RmGetList(
+                            session,
+                            out uint needed,
+                            ref count,
+                            processes,
+                            out uint reasons
+                        );
+                        report.Append(
+                            $", list={listed}, needed={needed}, returned={count}, reasons={reasons}"
+                        );
+                        if (listed == 0)
+                        {
+                            for (
+                                int index = 0;
+                                index < Math.Min(count, (uint)processes.Length);
+                                ++index
+                            )
+                            {
+                                ProcessInfo process = processes[index];
+                                report.Append(
+                                    $"; pid={process.Process.Id}, app='{process.ApplicationName}', service='{process.ServiceName}'"
+                                );
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    report.Append($", end={RmEndSession(session)}");
+                }
+            }
+            catch (Exception exception)
+            {
+                report.Append($"; observer failed: {exception}");
+            }
+            return report.ToString();
+#else
+            return "RestartManager unavailable on this Editor platform.";
+#endif
+        }
+
+#if UNITY_EDITOR_WIN
+        [StructLayout(LayoutKind.Sequential)]
+        private struct UniqueProcess
+        {
+            public uint Id;
+            public System.Runtime.InteropServices.ComTypes.FILETIME Started;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct ProcessInfo
+        {
+            public UniqueProcess Process;
+
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 257)]
+            public string ApplicationName;
+
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 65)]
+            public string ServiceName;
+            public uint ApplicationType;
+            public uint Status;
+            public uint SessionId;
+
+            [MarshalAs(UnmanagedType.Bool)]
+            public bool Restartable;
+        }
+
+        [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RmStartSession(out uint session, uint flags, StringBuilder key);
+
+        [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RmRegisterResources(
+            uint session,
+            uint fileCount,
+            [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPWStr)] string[] files,
+            uint applicationCount,
+            IntPtr applications,
+            uint serviceCount,
+            IntPtr services
+        );
+
+        [DllImport("rstrtmgr.dll", ExactSpelling = true)]
+        private static extern int RmGetList(
+            uint session,
+            out uint needed,
+            ref uint count,
+            [In, Out] ProcessInfo[] processes,
+            out uint reasons
+        );
+
+        [DllImport("rstrtmgr.dll", ExactSpelling = true)]
+        private static extern int RmEndSession(uint session);
+#endif
+    }
+
+#if UNITY_EDITOR_WIN
+    [TestFixture]
+    public sealed class EditorFileLockDiagnosticsTests
+    {
+        [Test]
+        public void FileLockObserverReportsTheCurrentProcessForAnOwnedExclusiveFile()
+        {
+            string path = Path.Combine(
+                Path.GetTempPath(),
+                "dxm-owned-lock-" + Guid.NewGuid().ToString("N") + ".rsp"
+            );
+            try
+            {
+                using FileStream locked = new(
+                    path,
+                    FileMode.CreateNew,
+                    FileAccess.ReadWrite,
+                    FileShare.None
+                );
+                using System.Diagnostics.Process current =
+                    System.Diagnostics.Process.GetCurrentProcess();
+                string report = EditorFileLockDiagnostics.Describe(path);
+                TestContext.Out.WriteLine(report);
+                Assert.That(report, Does.StartWith("RestartManager start=0, register=0, list=0,"));
+                Assert.That(report, Does.Contain("pid=" + current.Id + ","));
+                Assert.That(report, Does.EndWith(", end=0"));
+                GC.KeepAlive(locked);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+    }
+#endif
 
     /// <summary>Preserves the real generated inputs touched by editor settings operations.</summary>
     internal sealed class EditorCompilerInputScope : IDisposable
@@ -101,8 +273,24 @@ namespace DxMessaging.Tests.Editor
                 {
                     if (saved.Value != null)
                     {
-                        File.Move(saved.Key, saved.Value);
-                        File.Copy(saved.Value, saved.Key);
+                        string operation = "move";
+                        try
+                        {
+                            File.Move(saved.Key, saved.Value);
+                            operation = "copy";
+                            File.Copy(saved.Value, saved.Key);
+                        }
+                        catch (IOException failure)
+                        {
+                            throw new IOException(
+                                $"Compiler-input backup {operation} failed: '{saved.Key}' -> '{saved.Value}'. "
+                                    + $"sourceExists={File.Exists(saved.Key)}, backupExists={File.Exists(saved.Value)}, "
+                                    + $"assetEditing={_assetEditing}, compiling={EditorApplication.isCompiling}, "
+                                    + $"updating={EditorApplication.isUpdating}. "
+                                    + EditorFileLockDiagnostics.Describe(saved.Key),
+                                failure
+                            );
+                        }
                     }
                 }
             }
