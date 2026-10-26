@@ -33,6 +33,238 @@ namespace DxMessaging.Tests.Runtime.Unity
     /// </remarks>
     public sealed class MessagingComponentLifecycleTests : MessagingTestBase
     {
+        /// <summary>Retains public cleanup ownership when a release callback accepts new work.</summary>
+        /// <remarks>
+        /// 2026-10-26: a captured token can finish nested release before the outer call removes its listener key.
+        /// Replacement work must remain reachable through the component, regardless of token identity.
+        /// </remarks>
+        [Test]
+        public void ReleaseRetainsWorkAcceptedDuringNestedRelease(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool beforeDeregistration,
+            [Values(false, true)] bool interceptor,
+            [Values(false, true)] bool replace
+        )
+        {
+            string context =
+                $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, replace={replace}]";
+            GameObject host = new(
+                nameof(ReleaseRetainsWorkAcceptedDuringNestedRelease),
+                typeof(MessagingComponent),
+                typeof(ManualListenerComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.GetComponent<ManualListenerComponent>();
+            MessageBus inner = new();
+            ReleaseCallbackBus bus = new(inner, beforeDeregistration);
+            messaging.Configure(bus, MessageBusRebindMode.RebindActive);
+            InstanceId route = host;
+            MessageRegistrationToken original = messaging.Create(listener);
+            MessageRegistrationToken replacement = null;
+            MessageRegistrationToken recovery = null;
+            int originalCalls = 0;
+            int replacementCalls = 0;
+            int recoveryCalls = 0;
+            bool callbackCompleted = false;
+
+            using (LeakWatcher watcher = new(bus: bus, label: context))
+            {
+                try
+                {
+                    RegisterReleaseProbe(
+                        scenario,
+                        original,
+                        route,
+                        interceptor,
+                        () => ++originalCalls
+                    );
+                    original.Enable();
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(
+                        originalCalls,
+                        Is.EqualTo(1),
+                        $"{context} Initial work must deliver once."
+                    );
+                    Assert.That(
+                        watcher.LeakedRegistrations,
+                        Is.EqualTo(1),
+                        $"{context} Setup must own one registration."
+                    );
+
+                    bus.OnDeregister = () =>
+                    {
+                        _ = messaging.Release(listener);
+                        if (replace)
+                        {
+                            replacement = messaging.Create(listener);
+                            RegisterReleaseProbe(
+                                scenario,
+                                replacement,
+                                route,
+                                interceptor,
+                                () => ++replacementCalls
+                            );
+                            replacement.Enable();
+                        }
+                        callbackCompleted = true;
+                    };
+
+                    bool released = messaging.Release(listener);
+                    Assert.That(
+                        callbackCompleted,
+                        Is.True,
+                        $"{context} The nested public operation must complete."
+                    );
+                    Assert.That(
+                        bus.Callbacks,
+                        Is.EqualTo(1),
+                        $"{context} Deregistration callback must run exactly once."
+                    );
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(
+                        originalCalls,
+                        Is.EqualTo(1),
+                        $"{context} Released original callback must stay retired."
+                    );
+                    Assert.That(
+                        replacementCalls,
+                        Is.EqualTo(replace ? 1 : 0),
+                        $"{context} Only accepted replacement work may deliver."
+                    );
+                    Assert.That(
+                        released,
+                        Is.EqualTo(!original.Enabled),
+                        $"{context} Release may report completion only when its token is inactive."
+                    );
+
+                    if (replace)
+                    {
+                        Assert.That(
+                            replacement.Enabled,
+                            Is.True,
+                            $"{context} Accepted replacement must remain active."
+                        );
+                        Assert.That(
+                            messaging.TryGetToken(listener, out MessageRegistrationToken retained)
+                                && ReferenceEquals(retained, replacement),
+                            Is.True,
+                            $"{context} Replacement ownership must remain in the component cache."
+                        );
+                        Assert.That(
+                            messaging.Release(listener),
+                            Is.True,
+                            $"{context} Public release must reach accepted replacement work."
+                        );
+                    }
+                    Assert.That(
+                        messaging.Release(listener),
+                        Is.False,
+                        $"{context} Completed cleanup must be idempotent."
+                    );
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(
+                        replacementCalls,
+                        Is.EqualTo(replace ? 1 : 0),
+                        $"{context} Public cleanup must stop replacement delivery."
+                    );
+                    Assert.That(
+                        watcher.LeakedRegistrations,
+                        Is.Zero,
+                        $"{context} Public cleanup must release all registrations."
+                    );
+
+                    recovery = messaging.Create(listener);
+                    RegisterReleaseProbe(
+                        scenario,
+                        recovery,
+                        route,
+                        interceptor,
+                        () => ++recoveryCalls
+                    );
+                    recovery.Enable();
+                    ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                    Assert.That(
+                        recoveryCalls,
+                        Is.EqualTo(1),
+                        $"{context} Independent recovery must deliver once."
+                    );
+                    Assert.That(
+                        messaging.Release(listener),
+                        Is.True,
+                        $"{context} Independent recovery must remain publicly releasable."
+                    );
+                    Assert.That(
+                        watcher.LeakedRegistrations,
+                        Is.Zero,
+                        $"{context} Independent recovery must finish empty."
+                    );
+                }
+                finally
+                {
+                    bus.OnDeregister = null;
+                    original.Dispose();
+                    replacement?.Dispose();
+                    recovery?.Dispose();
+                    _ = messaging.Release(listener);
+                }
+            }
+        }
+
+        private static void RegisterReleaseProbe(
+            MessageScenario scenario,
+            MessageRegistrationToken token,
+            InstanceId route,
+            bool interceptor,
+            Action callback
+        )
+        {
+            if (interceptor)
+            {
+                _ = ScenarioCallbacks.RegisterCountingInterceptor(
+                    scenario,
+                    token,
+                    () => true,
+                    callback
+                );
+            }
+            else
+            {
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, callback);
+            }
+        }
+
+        private sealed class ReleaseCallbackBus : DelegatingMessageBus
+        {
+            private readonly bool _before;
+            internal Action OnDeregister;
+            internal int Callbacks;
+
+            internal ReleaseCallbackBus(IMessageBus inner, bool before)
+                : base(inner)
+            {
+                _before = before;
+            }
+
+            public override void Deregister<T>(in MessageBusRegistration registration)
+            {
+                Action callback = OnDeregister;
+                OnDeregister = null;
+                if (_before && callback != null)
+                {
+                    ++Callbacks;
+                    callback();
+                }
+                base.Deregister<T>(in registration);
+                if (!_before && callback != null)
+                {
+                    ++Callbacks;
+                    callback();
+                }
+            }
+        }
+
         [Test]
         public void DestroyingMessagingOwnerDisposesManualTokens(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
