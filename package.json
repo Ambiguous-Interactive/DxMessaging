@@ -82,7 +82,7 @@
     "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:unity-pr-policy && npm run validate:js-loc-budget && npm run check:banner && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run llm:check && npm run check:issue-template-versions && npm run check:upm-changelog"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@xmldom/xmldom": "0.9.12",
     "ajv": "8.20.0",
     "cspell": "10.4.0",
@@ -93,7 +93,7 @@
     "yaml": "2.9.1"
   },
   "overrides": {
-    "katex": "0.19.0",
+    "katex": "0.19.1",
     "markdownlint-cli2": {
       "smol-toml": "$smol-toml"
     }

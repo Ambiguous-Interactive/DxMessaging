@@ -787,6 +787,14 @@ jobs:
         if: ${{ needs.changes.outputs.scripts != 'false' }}
         shell: bash
         run: |
+          node -p '
+            JSON.stringify({
+              node: process.version,
+              availableParallelism: require("node:os").availableParallelism(),
+              logicalProcessors: require("node:os").cpus().length,
+              totalMemory: require("node:os").totalmem()
+            })
+          '
           # The heartbeat probes wait on isolated child processes; overlap those waits with Node tests.
           heartbeat_log="$RUNNER_TEMP/editor-provisioning-heartbeat.log"
           pwsh -NoLogo -NoProfile -File ./scripts/__tests__/test-editor-provisioning-heartbeat.ps1 -VerboseOutput > "$heartbeat_log" 2>&1 &

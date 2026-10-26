@@ -42,6 +42,7 @@ internal sealed class DocsObsoleteApiReferenceTests
     private static readonly string[] SourceScanRoots = { "Runtime", "Editor" };
     private static readonly string[] GeneratedDirectoryNames = { ".artifacts", "obj", "bin" };
     private static readonly string[] ExpectedFixtureObsoleteMembers = { "RealApi.OldValue" };
+    private static readonly string[] ExpectedProbeMembers = { "Probe.Removed" };
 
     // Resolve + parse once per test-run process: both tests share the same Roslyn scan of
     // Runtime/ and Editor/ (the same once-per-domain reflection-walk caching used elsewhere in
@@ -183,6 +184,42 @@ internal sealed class DocsObsoleteApiReferenceTests
             {
                 Directory.Delete(temporaryRoot, recursive: true);
             }
+        }
+    }
+
+    [TestCase("ordinary")]
+    [TestCase(".artifacts")]
+    public void ObsoleteScanExcludesGeneratedPathsRelativeToRepository(string parentName)
+    {
+        string temporaryRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string repoRoot = Path.Combine(temporaryRoot, parentName, "repository");
+        string runtimeRoot = Path.Combine(repoRoot, "Runtime");
+        Directory.CreateDirectory(runtimeRoot);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(runtimeRoot, "Probe.cs"),
+                "public class Probe { [System.Obsolete] public void Removed() { } }"
+            );
+            foreach (string excluded in new[] { "obj", "bin", ".artifacts" })
+            {
+                string generatedRoot = Path.Combine(runtimeRoot, excluded);
+                Directory.CreateDirectory(generatedRoot);
+                File.WriteAllText(
+                    Path.Combine(generatedRoot, "Generated.cs"),
+                    "public class Generated { [System.Obsolete] public void Ignored() { } }"
+                );
+            }
+
+            Assert.That(
+                CollectObsoleteMembers(repoRoot).Select(member => member.QualifiedName),
+                Is.EqualTo(ExpectedProbeMembers),
+                $"[{parentName}] Real sources must be scanned regardless of parent paths; generated subtrees must be excluded."
+            );
+        }
+        finally
+        {
+            Directory.Delete(temporaryRoot, recursive: true);
         }
     }
 
