@@ -1819,7 +1819,7 @@ namespace DxMessaging.Core
                 slot,
                 id,
                 deregistration,
-                DeregistrationVersion(deregistration),
+                GetDeregistrationVersion(deregistration),
                 order
             );
             if (baseline == null || !baseline.Contains(identity))
@@ -1828,7 +1828,7 @@ namespace DxMessaging.Core
             }
         }
 
-        private static int DeregistrationVersion(
+        private static int GetDeregistrationVersion(
             MessageHandler.HandlerDeregistration deregistration
         ) => deregistration is Registration registration ? registration.DeregistrationVersion : 0;
 
@@ -2072,7 +2072,7 @@ namespace DxMessaging.Core
 
         private Exception InvokeSnapshotDeregistration(TeardownIdentity identity)
         {
-            if (DeregistrationVersion(identity.Deregistration) != identity.Version)
+            if (GetDeregistrationVersion(identity.Deregistration) != identity.Version)
             {
                 return null;
             }

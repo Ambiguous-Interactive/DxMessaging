@@ -8,6 +8,11 @@ closure into the disposable test project's `Assets` tree. `csc.rsp` registers
 the files for the existing full-source compile, where `-warnaserror` makes every
 enabled diagnostic blocking.
 
+A portable analyzer run over test sources does not analyze referenced production
+assemblies. Local production checks must compile the production sources with the
+pinned analyzer closure, Unity references, symbols and configuration. Full EditMode
+compilation remains required to verify the actual host configuration.
+
 `DxMessaging.StaticAnalysis.globalconfig`, the repository `.editorconfig`, and
 `DxMessaging.CiProject.editorconfig` form the text-only analyzer policy. The
 EditorConfig files keep test, Editor, and copied-sample exceptions path-scoped;
