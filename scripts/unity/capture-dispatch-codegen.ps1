@@ -8,12 +8,17 @@ param(
 
     [switch]$SelfTestOnly,
 
-    [switch]$SkipNativeInventory
+    [switch]$SkipNativeInventory,
+
+    [switch]$NativeInputsOnly
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
+if ($NativeInputsOnly -and ($SelfTestOnly -or $SkipNativeInventory)) {
+    throw 'NativeInputsOnly cannot be combined with SelfTestOnly or SkipNativeInventory.'
+}
 
 function Set-GeneratedCppIndex {
     param([Parameter(Mandatory = $true)] [string[]]$Paths)
@@ -1777,6 +1782,25 @@ if ($SelfTestOnly) {
         ) | Set-Content -LiteralPath $primarySymbolMapPath
         $gameAssemblyPdbPath = Join-Path $backupDir 'GameAssembly.pdb'
         [System.IO.File]::WriteAllBytes($gameAssemblyPdbPath, [byte[]]@(5, 6, 7, 8))
+        $nativeOnlyArtifacts = Join-Path $integrationTestRoot 'native-only-artifacts'
+        New-Item -ItemType Directory -Path $nativeOnlyArtifacts | Out-Null
+        $previousNativeDirectory = $null
+        foreach ($captureIteration in 1..2) {
+            & $PSCommandPath -ProjectPath $integrationTestRoot -ArtifactsPath $nativeOnlyArtifacts -NativeInputsOnly
+            $receipt = Get-Content (Join-Path $nativeOnlyArtifacts 'native-inputs.json') -Raw | ConvertFrom-Json
+            if (@($receipt.files).Count -ne 2 -or $receipt.directory -eq $previousNativeDirectory) {
+                throw 'Native-inputs-only capture must retain both files in a fresh directory.'
+            }
+            foreach ($file in $receipt.files) {
+                $retained = Join-Path (Join-Path $nativeOnlyArtifacts $receipt.directory) $file.name
+                if ((Get-Item $retained).Length -ne 4 -or
+                    (Get-FileHash $retained -Algorithm SHA256).Hash.ToLowerInvariant() -cne $file.sha256) {
+                    throw 'Native-inputs-only receipt must match the retained bytes.'
+                }
+            }
+            $previousNativeDirectory = $receipt.directory
+        }
+        Write-Host 'Native-inputs-only capture retains exact bytes in distinct directories.'
         'fake object' | Set-Content -LiteralPath (Join-Path $integrationCppRoot 'gEnErAtEd.cpp.obj')
         $nativeProbeMethod = [pscustomobject]@{
             Label               = 'Native source-line probe'
@@ -2146,6 +2170,20 @@ if ($SelfTestOnly) {
                 )
             }
         }
+
+        try {
+            [System.IO.File]::WriteAllBytes($gameAssemblyPdbPath, [byte[]]@())
+            Assert-NativeInventoryFailure -ExpectedMessage 'Expected a non-empty native input' -Operation {
+                & $PSCommandPath -ProjectPath $integrationTestRoot -ArtifactsPath $nativeOnlyArtifacts -NativeInputsOnly
+            }
+            if (Test-Path -LiteralPath (Join-Path $nativeOnlyArtifacts 'native-inputs.json')) {
+                throw 'A failed native-only capture retained an earlier acceptance receipt.'
+            }
+        }
+        finally {
+            [System.IO.File]::WriteAllBytes($gameAssemblyPdbPath, [byte[]]@(5, 6, 7, 8))
+        }
+        Write-Host 'Native-inputs-only capture invalidates a stale receipt before rejecting empty inputs.'
 
         $rebuildFlatDumpbin = Join-Path $integrationTestRoot 'rebuild-flat-dumpbin.ps1'
         Copy-Item -LiteralPath $fakeDumpbin -Destination $rebuildFlatDumpbin
@@ -2597,6 +2635,40 @@ if ([string]::IsNullOrWhiteSpace($ArtifactsPath)) {
 
 $resolvedProjectPath = (Resolve-Path -LiteralPath $ProjectPath).Path
 $resolvedArtifactsPath = (Resolve-Path -LiteralPath $ArtifactsPath).Path
+if ($NativeInputsOnly) {
+    $receiptPath = Join-Path $resolvedArtifactsPath 'native-inputs.json'
+    if (Test-Path -LiteralPath $receiptPath) { Remove-Item -LiteralPath $receiptPath -Force }
+    $player = Join-Path $resolvedProjectPath 'Build\DxmTestPlayer'
+    $directoryName = 'native-inputs-' + [Guid]::NewGuid().ToString('N')
+    $destination = Join-Path $resolvedArtifactsPath $directoryName
+    New-Item -ItemType Directory -Path $destination | Out-Null
+    $snapshots = [System.Collections.Generic.List[object]]::new()
+    try {
+        foreach ($name in @('GameAssembly.dll', 'GameAssembly.pdb')) {
+            $nativeFiles = @(Get-ChildItem -LiteralPath $player -File -Recurse -Filter $name)
+            if ($nativeFiles.Count -ne 1) {
+                throw "Expected one exact player input: $name"
+            }
+            $snapshots.Add((Open-NativeInputSnapshot $nativeFiles[0].FullName $destination))
+        }
+        foreach ($snapshot in $snapshots) { Assert-NativeInputUnchanged $snapshot }
+        [ordered]@{
+            schemaVersion = 1
+            directory = $directoryName
+            files = @($snapshots | ForEach-Object {
+                [ordered]@{
+                    name = [IO.Path]::GetFileName($_.Path)
+                    bytes = $_.Bytes
+                    sha256 = $_.Sha256.ToLowerInvariant()
+                }
+            })
+        } | ConvertTo-Json -Depth 4 | Set-Content $receiptPath -Encoding utf8
+    }
+    finally {
+        foreach ($snapshot in $snapshots) { $snapshot.Stream.Dispose() }
+    }
+    return
+}
 $beeArtifacts = Join-Path $resolvedProjectPath 'Library\Bee\artifacts'
 $il2cppRoots = @(
     Get-ChildItem `

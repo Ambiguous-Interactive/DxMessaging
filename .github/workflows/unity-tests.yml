@@ -150,6 +150,11 @@ jobs:
           - 2022.3.45f1
           - 6000.3.16f1
           - 6000.5.2f1
+        # Exact-player research selection; all four source scopes were qualified separately.
+        exclude:
+          - unity-version: 2021.3.45f1
+          - unity-version: 2022.3.45f1
+          - unity-version: 6000.3.16f1
         # Every leg of this job also builds the standalone IL2CPP player, so the
         # reviewed static map keeps the editor gate verifying the
         # StandaloneWindowsIl2Cpp payload at gate time. A literal EditorOnly
@@ -451,6 +456,7 @@ jobs:
           DXM_TEST_ASSEMBLIES: ${{ steps.compute_standalone.outputs.assemblies }}
           DXM_UNITY_TEST_CATEGORY: "MemoryReclaim"
         run: |
+          "capture_started_utc=$([DateTime]::UtcNow.ToString('O'))" >> $env:GITHUB_OUTPUT
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-standalone'
           $projectPath = "${projectPath}-$env:DXM_UNITY_SOURCE_SET_KEY"
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
@@ -465,6 +471,48 @@ jobs:
             -LicenseReturnOwner Central `
             -ReleaseCodeOptimization `
             -ReleasePlayerBuild
+
+      - name: Retain exact reclamation player native inputs
+        id: retain_reclaim_native
+        if: ${{ !cancelled() && steps.acquire_lock.outputs.acquired == 'true' && steps.run_standalone.outcome != 'skipped' }}
+        timeout-minutes: 3
+        shell: pwsh
+        env:
+          CAPTURE_STARTED_UTC: ${{ steps.run_standalone.outputs.capture_started_utc }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $root = '.artifacts/unity/${{ matrix.unity-version }}-standalone'
+          $processPath = Join-Path $root 'standalone-process.json'
+          $resultPath = Join-Path $root 'results.xml'
+          $started = [DateTime]::Parse($env:CAPTURE_STARTED_UTC).ToUniversalTime()
+          foreach ($path in @($processPath, $resultPath)) {
+            if (!(Test-Path -LiteralPath $path -PathType Leaf) -or
+                (Get-Item -LiteralPath $path).LastWriteTimeUtc -lt $started) {
+              throw "Current standalone evidence is missing or stale: $path"
+            }
+          }
+          $process = Get-Content -LiteralPath $processPath -Raw | ConvertFrom-Json
+          [xml]$results = Get-Content -LiteralPath $resultPath -Raw
+          if ($process.schemaVersion -ne 1 -or $process.timedOut -or
+              @($results.SelectNodes('//test-case')).Count -ne 503) {
+            throw 'Native capture requires the completed 503-case reclamation player.'
+          }
+          $captureScript = 'scripts/unity/capture-dispatch-codegen.ps1'
+          $project = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-standalone'
+          $project = "${project}-$env:DXM_UNITY_SOURCE_SET_KEY"
+          & ./scripts/unity/capture-dispatch-codegen.ps1 -ProjectPath $project -ArtifactsPath $root -NativeInputsOnly
+          $receiptPath = Join-Path $root 'native-inputs.json'
+          $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+          $receipt | Add-Member -NotePropertyMembers ([ordered]@{
+            sourceCommit = (git rev-parse HEAD).Trim()
+            unityVersion = '${{ matrix.unity-version }}'
+            caseCount = 503
+            processEvidenceSha256BeforeRedaction = (Get-FileHash $processPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            resultSha256BeforeRedaction = (Get-FileHash $resultPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            captureScriptSha256 = (Get-FileHash $captureScript -Algorithm SHA256).Hash.ToLowerInvariant()
+          })
+          $receipt | ConvertTo-Json -Depth 4 | Set-Content $receiptPath -Encoding utf8
 
       # Explicitly requested dispatch runs cover semantic and 1/16/256/1000-message
       # shipping topologies at every stripping level on the endpoint editors. Keep the
