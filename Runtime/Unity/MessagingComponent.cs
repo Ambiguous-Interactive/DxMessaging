@@ -4,6 +4,7 @@ namespace DxMessaging.Unity
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Runtime.ExceptionServices;
     using Core;
     using Core.MessageBus;
     using UnityEngine;
@@ -37,6 +38,8 @@ namespace DxMessaging.Unity
 
         private MessageHandler _messageHandler;
         private bool _destroyed;
+        private bool _applyingMessageBusConfiguration;
+        private Queue<MessageBusConfiguration> _pendingMessageBusConfigurations;
 
         // Retain cleanup owners only until the outermost release frame exits.
         private List<MessageRegistrationToken> _releasingTokens;
@@ -147,6 +150,10 @@ namespace DxMessaging.Unity
         /// Active migration snapshots current listener owners. A bus cleanup callback can release or
         /// replace a listener; the remaining migration skips tokens no longer owned by this component.
         /// Work accepted independently on a released token remains under its caller's ownership.
+        /// A configuration requested from a bus or provider callback queues until the current
+        /// migration returns from foreign code. Queued requests retain their order and mode;
+        /// their migrations and errors complete through the outermost configuration call.
+        /// One error is rethrown unchanged; multiple errors are reported by an AggregateException.
         /// <para><b>Fixed in v4.0.0.</b></para>
         /// </remarks>
         public void Configure(IMessageBus messageBus, MessageBusRebindMode rebindMode)
@@ -166,6 +173,11 @@ namespace DxMessaging.Unity
         /// treated as unavailable.
         /// </param>
         /// <param name="rebindMode">Controls whether existing listeners should migrate immediately.</param>
+        /// <remarks>
+        /// Requests made during another configuration queue until the outermost call drains them.
+        /// Resolution and migration errors from queued requests are reported by that outermost call.
+        /// <para><b>Fixed in v4.0.0.</b></para>
+        /// </remarks>
         public void Configure(
             IMessageBusProvider messageBusProvider,
             MessageBusRebindMode rebindMode
@@ -191,6 +203,11 @@ namespace DxMessaging.Unity
         /// prior explicit bus with the global fallback.
         /// </param>
         /// <param name="rebindMode">Controls whether existing listeners should migrate immediately.</param>
+        /// <remarks>
+        /// Requests made during another configuration queue until the outermost call drains them.
+        /// Resolution and migration errors from queued requests are reported by that outermost call.
+        /// <para><b>Fixed in v4.0.0.</b></para>
+        /// </remarks>
         public void Configure(
             MessageBusProviderHandle providerHandle,
             MessageBusRebindMode rebindMode
@@ -417,9 +434,84 @@ namespace DxMessaging.Unity
             return handler;
         }
 
+        /// <summary>Drains accepted requests without overlapping listener migrations.</summary>
         private void ApplyMessageBusConfiguration(MessageBusRebindMode rebindMode)
         {
-            IMessageBus resolvedBus = ResolveConfiguredBus();
+            /*
+                Retain provider identity before Resolve can accept another configuration. Deferred
+                resolution then preserves both request inputs and acceptance order.
+            */
+            MessageBusConfiguration configuration = new(
+                _messageBusOverride,
+                _messageBusOverride == null ? ResolveConfiguredProvider() : null,
+                rebindMode
+            );
+            if (_applyingMessageBusConfiguration)
+            {
+                (_pendingMessageBusConfigurations ??= new()).Enqueue(configuration);
+                return;
+            }
+
+            _applyingMessageBusConfiguration = true;
+            Exception firstFailure = null;
+            List<Exception> failures = null;
+            try
+            {
+                while (true)
+                {
+                    try
+                    {
+                        ApplyMessageBusConfiguration(in configuration);
+                    }
+                    catch (Exception exception)
+                    {
+                        if (firstFailure == null)
+                        {
+                            firstFailure = exception;
+                        }
+                        else
+                        {
+                            (failures ??= new() { firstFailure }).Add(exception);
+                        }
+                    }
+
+                    if (
+                        _pendingMessageBusConfigurations == null
+                        || _pendingMessageBusConfigurations.Count == 0
+                    )
+                    {
+                        break;
+                    }
+                    configuration = _pendingMessageBusConfigurations.Dequeue();
+                }
+            }
+            finally
+            {
+                _pendingMessageBusConfigurations = null;
+                _applyingMessageBusConfiguration = false;
+            }
+
+            if (failures != null)
+            {
+                throw new AggregateException("Component bus configuration failed.", failures);
+            }
+            if (firstFailure != null)
+            {
+                ExceptionDispatchInfo.Capture(firstFailure).Throw();
+            }
+        }
+
+        /// <summary>Applies one accepted request after earlier foreign callbacks have returned.</summary>
+        private void ApplyMessageBusConfiguration(in MessageBusConfiguration configuration)
+        {
+            IMessageBus resolvedBus = configuration.MessageBus;
+            if (
+                resolvedBus == null
+                && MessageBusProviderUtility.IsAvailable(configuration.Provider)
+            )
+            {
+                resolvedBus = configuration.Provider.Resolve();
+            }
             _messageHandler?.SetDefaultMessageBus(resolvedBus);
             if (_registeredListeners.Count == 0)
             {
@@ -431,9 +523,9 @@ namespace DxMessaging.Unity
                     Zero is the legacy Unknown value. Compare the default without naming the
                     obsolete compatibility member so strict consumers do not inherit CS0618.
                 */
-                rebindMode == default
+                configuration.RebindMode == default
                     ? MessageBusRebindMode.RebindActive
-                    : rebindMode;
+                    : configuration.RebindMode;
 
             /*
                 Retargeting calls foreign bus cleanup, which can release or replace another
@@ -455,6 +547,25 @@ namespace DxMessaging.Unity
                 {
                     token.RetargetMessageBus(resolvedBus, effectiveMode);
                 }
+            }
+        }
+
+        /// <summary>Retains the bus/provider and mode accepted by one configuration call.</summary>
+        private readonly struct MessageBusConfiguration
+        {
+            internal readonly IMessageBus MessageBus;
+            internal readonly IMessageBusProvider Provider;
+            internal readonly MessageBusRebindMode RebindMode;
+
+            internal MessageBusConfiguration(
+                IMessageBus messageBus,
+                IMessageBusProvider provider,
+                MessageBusRebindMode rebindMode
+            )
+            {
+                MessageBus = messageBus;
+                Provider = provider;
+                RebindMode = rebindMode;
             }
         }
 
