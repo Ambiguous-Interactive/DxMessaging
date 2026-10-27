@@ -495,8 +495,8 @@ jobs:
           $process = Get-Content -LiteralPath $processPath -Raw | ConvertFrom-Json
           [xml]$results = Get-Content -LiteralPath $resultPath -Raw
           if ($process.schemaVersion -ne 1 -or $process.timedOut -or
-              @($results.SelectNodes('//test-case')).Count -ne 503) {
-            throw 'Native capture requires the completed 503-case reclamation player.'
+              @($results.SelectNodes('//test-case')).Count -ne 515) {
+            throw 'Native capture requires the completed 515-case reclamation player.'
           }
           $captureScript = 'scripts/unity/capture-dispatch-codegen.ps1'
           $project = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-standalone'
@@ -507,7 +507,7 @@ jobs:
           $receipt | Add-Member -NotePropertyMembers ([ordered]@{
             sourceCommit = (git rev-parse HEAD).Trim()
             unityVersion = '${{ matrix.unity-version }}'
-            caseCount = 503
+            caseCount = 515
             processEvidenceSha256BeforeRedaction = (Get-FileHash $processPath -Algorithm SHA256).Hash.ToLowerInvariant()
             resultSha256BeforeRedaction = (Get-FileHash $resultPath -Algorithm SHA256).Hash.ToLowerInvariant()
             captureScriptSha256 = (Get-FileHash $captureScript -Algorithm SHA256).Hash.ToLowerInvariant()
