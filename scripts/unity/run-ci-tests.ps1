@@ -5845,7 +5845,11 @@ function Write-StandaloneBuildOutputDiagnostics {
         [Parameter(Mandatory = $true)][string]$Project,
         [Parameter(Mandatory = $true)][string]$ExpectedExe,
         [string]$LogPath,
-        [datetime]$BuildStartedUtc
+        [datetime]$BuildStartedUtc,
+        [string]$Artifacts,
+        [string]$ProfileId,
+        [string]$ProfileSha256,
+        [string]$UnityVersion
     )
 
     Write-Host "::group::Standalone player build output diagnostics"
@@ -5901,6 +5905,17 @@ function Write-StandaloneBuildOutputDiagnostics {
         }
     } catch {
         Write-Host "::warning::Could not collect standalone player build diagnostics: $($_.Exception.Message)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ProfileId)) {
+        try {
+            Write-NativeBuildInputEvidence `
+                -Project $Project -LogPath $LogPath -Artifacts $Artifacts `
+                -ProfileId $ProfileId -ProfileSha256 $ProfileSha256 `
+                -UnityVersion $UnityVersion
+        } catch {
+            # Evidence collection must preserve the original build failure.
+            Write-Host "::warning::Could not retain failed native build inputs: $_"
+        }
     }
     Write-Host "::endgroup::"
 }
@@ -7679,7 +7694,10 @@ try {
                 -Project $ProjectPath `
                 -ExpectedExe $standaloneExe `
                 -LogPath $logPath `
-                -BuildStartedUtc $shippingBuildStartedUtc
+                -BuildStartedUtc $shippingBuildStartedUtc `
+                -Artifacts $ArtifactsPath `
+                -ProfileId $canonicalProfileId -ProfileSha256 $canonicalProfileSha256 `
+                -UnityVersion $UnityVersion
             throw "Shipping-fidelity build did not produce fresh complete evidence (marker: $shippingMarkerProblem; player: $shippingBuildProblem; exit code $($shippingBuildResult.ExitCode))."
         }
         if ($shippingBuildResult.TimedOut -or $shippingBuildResult.ExitCode -ne 0) {
@@ -7885,6 +7903,12 @@ try {
                 $incrementalMarkerProblem = 'build marker does not match the incremental invocation nonce'
             }
             if (-not [string]::IsNullOrWhiteSpace($incrementalMarkerProblem)) {
+                Write-StandaloneBuildOutputDiagnostics `
+                    -Project $ProjectPath -ExpectedExe $standaloneExe `
+                    -LogPath $incrementalLogPath -BuildStartedUtc $incrementalBuildStartedUtc `
+                    -Artifacts $incrementalArtifactsPath `
+                    -ProfileId $canonicalProfileId -ProfileSha256 $canonicalProfileSha256 `
+                    -UnityVersion $UnityVersion
                 throw "Incremental shipping build did not produce fresh invocation evidence: $incrementalMarkerProblem."
             }
             if ($incrementalResult.TimedOut -or $incrementalResult.ExitCode -ne 0) {
@@ -8053,7 +8077,10 @@ try {
                 -Project $ProjectPath `
                 -ExpectedExe $standaloneExe `
                 -LogPath $logPath `
-                -BuildStartedUtc $standaloneBuildStartedUtc
+                -BuildStartedUtc $standaloneBuildStartedUtc `
+                -Artifacts $ArtifactsPath `
+                -ProfileId $canonicalProfileId -ProfileSha256 $canonicalProfileSha256 `
+                -UnityVersion $UnityVersion
             if ($buildResult.TimedOut) {
                 throw "Standalone test-player build timed out and the process tree was killed before producing a valid player at $standaloneExe ($standaloneBuildProblem). Raise the limit via DXM_STANDALONE_BUILD_TIMEOUT_SECONDS (0 disables the timeout). See the build log at $logPath."
             }
