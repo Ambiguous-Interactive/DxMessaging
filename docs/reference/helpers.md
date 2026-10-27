@@ -609,15 +609,17 @@ Create isolated message buses for tests or subsystems:
 
 ```csharp
 using DxMessaging.Core;
+using DxMessaging.Core.Extensions;
 using DxMessaging.Core.MessageBus;
 
 // Create isolated bus
 var testBus = new MessageBus();
 var handler = new MessageHandler(new InstanceId(1), testBus) { active = true };
-var token = MessageRegistrationToken.Create(handler, testBus);
+using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, testBus);
 
 // Register on isolated bus
 _ = token.RegisterUntargeted<MyMessage>(OnMessage);
+token.Enable();
 
 // Emit to isolated bus (won't affect global bus!)
 var msg = new MyMessage();
@@ -626,9 +628,12 @@ msg.Emit(testBus);
 
 ### Use cases
 
-- Unit tests (no global side effects!)
+- Unit tests with explicit registration ownership
 - Subsystem isolation (UI has own bus)
 - Sandboxing (mod systems, untrusted code)
+
+The token starts disabled. Enable it before emitting, and dispose it at the end of its ownership
+scope. A local bus isolates routing but still shares runtime settings and pools.
 
 ## Attributes Quick Reference
 

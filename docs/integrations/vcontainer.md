@@ -265,7 +265,7 @@ public class GameInitializerTests
 
         bool messageReceived = false;
         var handler = new MessageHandler(new InstanceId(1), bus) { active = true };
-        var token = MessageRegistrationToken.Create(handler, bus);
+        using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
         _ = token.RegisterUntargeted<GameStarted>(
             (in GameStarted msg) => messageReceived = true
         );
