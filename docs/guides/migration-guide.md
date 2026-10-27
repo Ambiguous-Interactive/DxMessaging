@@ -12,13 +12,14 @@ type to `CompareTo(object)` throws `ArgumentException`. `MessageHandler.CompareT
 also places null before a handler. Earlier versions returned -1 for these inputs.
 
 Pass another value of the same type, or null, when using these methods. Numeric and owner ordering
-for valid values, equality, hashing, and generic comparisons between non-null values are unchanged.
+for valid values, equality, hashing, and generic comparisons between non-null values keep their
+previous behavior.
 
 ### Construct a new reflexive message to change its signature
 
 `MethodSignatureKey` captures its ordered parameter types at construction. Null and empty type
 lists both describe a method with no parameters, and default keys support equality and dictionary
-lookup. Each nonempty type list is copied once when the key is constructed.
+lookup. The constructor copies each nonempty type list once.
 
 `ReflexiveMessage` uses that captured signature for reflected overload selection. Changing its
 public `parameterTypes` array after construction does not select a different overload. Construct
@@ -27,11 +28,11 @@ values and must remain compatible with the captured signature.
 
 ### Remove the test-only runtime settings override
 
-`DxMessagingRuntimeSettingsProvider.Override` is removed. Configure
+DxMessaging 4.0 removes `DxMessagingRuntimeSettingsProvider.Override`. Configure
 `Assets/Resources/DxMessagingRuntimeSettings.asset` for application settings and read
 `DxMessagingRuntimeSettingsProvider.Current`. Keep any fixture configuration and
 restoration in test assemblies. Resource loading, default settings, player resets,
-and live edits to the asset in the Editor retain their existing behavior.
+and live edits to the asset in the Editor keep their existing behavior.
 
 ### Opt in to inherited string demo handlers
 
@@ -42,10 +43,10 @@ component overrides the inherited string handler methods, add
 
 Keep calling `base.RegisterMessageHandlers()` so registrations declared by parent components run.
 
-### Update fast handlers to readonly references
+### Use `in` parameters for fast handlers
 
-DxMessaging 4.0 makes fast handlers and post-processors readonly. Change explicit handler
-parameters from `ref` to `in`:
+Fast handlers and post-processors receive read-only message references in DxMessaging 4.0. Change
+explicit handler parameters from `ref` to `in`:
 
 ```csharp
 // 3.x
@@ -195,7 +196,7 @@ public class Enemy : MonoBehaviour {
 
 #### Why this works
 
-- Old code still works (zero risk)
+- Keep the existing event while adding the message listener; verify that shared listeners do not apply the same effect twice
 - New system is decoupled
 - Team sees immediate value (achievements without wiring)
 - Easy to roll back if needed

@@ -79,7 +79,10 @@ The five guarded methods, with what breaks if you forget the base call:
 | `base.OnDestroy()`               | Registrations leak past the component's lifetime; held references prevent GC.                           |
 | `base.RegisterMessageHandlers()` | Registrations declared by a parent component do not register.                                           |
 
-`Start`, `Update`, `FixedUpdate`, `LateUpdate`, and `OnApplicationQuit` are not hooked. You can override them without calling base.
+Declare `Start`, `Update`, `FixedUpdate`, and `LateUpdate` as ordinary Unity message methods;
+`MessageAwareComponent` does not declare them as virtual methods to override. Its virtual
+`OnApplicationQuit` implementation does nothing. An override needs no base call for messaging
+cleanup. Preserve any quit behavior implemented by an intermediate parent class.
 
 See [DXMSG006 in the analyzer reference](../reference/analyzers.md#dxmsg006-missing-base-call) and the symptom-first [troubleshooting guide](../reference/troubleshooting.md).
 
