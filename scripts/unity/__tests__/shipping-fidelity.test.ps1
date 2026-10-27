@@ -72,6 +72,126 @@ function Copy-JsonValue {
 try {
     New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
 
+    $auditPath = Join-Path $repoRoot '.github/workflows/runner-bootstrap.yml'
+    $auditJson = & node -e 'const fs=require("fs"),y=require("yaml");process.stdout.write(JSON.stringify(y.parse(fs.readFileSync(process.argv[1],"utf8"))));' $auditPath
+    Assert-That 'runner audit YAML parses' ($LASTEXITCODE -eq 0)
+    $audit = $auditJson | ConvertFrom-Json
+    $snapshotSteps = @($audit.jobs.bootstrap.steps | Where-Object { $_.name -ceq 'Capture surviving failed shipping input identities' })
+    Assert-That 'one real postmortem capture step exists' ($snapshotSteps.Count -eq 1)
+    $snapshotScript = [scriptblock]::Create($snapshotSteps[0].run)
+    $snapshotCases = @(
+        @{ Name = 'complete'; Count = 48; Runner = 'DAD-MACHINE'; Marker = $true; Compiler = $true; Link = $false; Mutate = $false; Manifest = $true; Error = '' },
+        @{ Name = 'wrong-runner'; Count = 48; Runner = 'ELI-MACHINE'; Marker = $true; Compiler = $true; Link = $false; Mutate = $false; Manifest = $false; Error = 'original DAD-MACHINE' },
+        @{ Name = 'missing-owner'; Count = 48; Runner = 'DAD-MACHINE'; Marker = $false; Compiler = $true; Link = $false; Mutate = $false; Manifest = $false; Error = 'ownership marker' },
+        @{ Name = 'missing-compiler'; Count = 48; Runner = 'DAD-MACHINE'; Marker = $true; Compiler = $false; Link = $false; Mutate = $false; Manifest = $false; Error = 'converter image is missing' },
+        @{ Name = 'incomplete'; Count = 47; Runner = 'DAD-MACHINE'; Marker = $true; Compiler = $true; Link = $false; Mutate = $false; Manifest = $true; Error = 'Expected 48' },
+        @{ Name = 'extra-input'; Count = 49; Runner = 'DAD-MACHINE'; Marker = $true; Compiler = $true; Link = $false; Mutate = $false; Manifest = $true; Error = 'Expected 48' },
+        @{ Name = 'no-inputs'; Count = 0; Runner = 'DAD-MACHINE'; Marker = $true; Compiler = $true; Link = $false; Mutate = $false; Manifest = $true; Error = 'Expected 48' },
+        @{ Name = 'linked-directory'; Count = 48; Runner = 'DAD-MACHINE'; Marker = $true; Compiler = $true; Link = $true; Mutate = $false; Manifest = $false; Error = 'linked' },
+        @{ Name = 'changed-during-hash'; Count = 48; Runner = 'DAD-MACHINE'; Marker = $true; Compiler = $true; Link = $false; Mutate = $true; Manifest = $false; Error = 'changed while hashing' }
+    )
+    $snapshotEnvironmentNames = @('RUNNER_NAME', 'RUNNER_WORKSPACE', 'RUNNER_TOOL_CACHE', 'GITHUB_WORKSPACE', 'GITHUB_SHA')
+    $priorSnapshotEnvironment = @{}
+    foreach ($name in $snapshotEnvironmentNames) {
+        $priorSnapshotEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+    }
+    $snapshotOutcomes = [Collections.Generic.List[object]]::new()
+    try {
+        foreach ($case in $snapshotCases) {
+            $label = ConvertTo-Json -InputObject $case -Compress
+            $caseRoot = Join-Path $fixtureRoot ("snapshot-" + $case.Name)
+            $inputRoot = Join-Path $caseRoot 'inputs'
+            $env:RUNNER_NAME = $case.Runner
+            $env:RUNNER_WORKSPACE = Join-Path $inputRoot 'runner'
+            $env:RUNNER_TOOL_CACHE = Join-Path $inputRoot 'tool'
+            $env:GITHUB_WORKSPACE = Join-Path $caseRoot 'repo'
+            $env:GITHUB_SHA = '1111111111111111111111111111111111111111'
+            $snapshotProject = Join-Path $env:RUNNER_WORKSPACE 'dxm-u/t/6000.5.2f1-shipping-medium-semantic-18'
+            $managedDirectory = Join-Path $snapshotProject 'Library/Bee/artifacts/WinPlayerBuildProgram/ManagedStripped'
+            $compilerPath = Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3/6000.5.2f1/Editor/Data/il2cpp/build/deploy/il2cpp.exe'
+            foreach ($directory in @($managedDirectory, (Split-Path -Parent $compilerPath), (Join-Path $snapshotProject 'ProjectSettings'), (Join-Path $snapshotProject 'Packages'))) {
+                New-Item -ItemType Directory -Force -Path $directory | Out-Null
+            }
+            if ($case.Marker) {
+                [IO.File]::WriteAllText((Join-Path $snapshotProject '.dxmessaging-ci-project'), 'owned fixture')
+            }
+            # Hash-only fixtures never execute or parse the .exe/.dll contents.
+            if ($case.Compiler) {
+                [IO.File]::WriteAllText($compilerPath, 'converter identity fixture')
+            }
+            [IO.File]::WriteAllText((Join-Path $snapshotProject 'ProjectSettings/ProjectVersion.txt'), 'm_EditorVersion: 6000.5.2f1')
+            [IO.File]::WriteAllText((Join-Path $snapshotProject 'Packages/manifest.json'), '{"dependencies":{}}')
+            foreach ($graph in @('Playerabc.dag', 'Playerabc.dag.json', 'Playerabc-inputdata.json')) {
+                [IO.File]::WriteAllText((Join-Path $snapshotProject ('Library/Bee/' + $graph)), 'graph identity fixture')
+            }
+            for ($index = 0; $index -lt $case.Count; $index++) {
+                [IO.File]::WriteAllText((Join-Path $managedDirectory ("assembly{0:D2}.dll" -f $index)), "assembly fixture $index")
+            }
+            $mutatedPath = Join-Path $managedDirectory 'assembly00.dll'
+            if ($case.Link) {
+                $linkTarget = Join-Path $inputRoot 'linked-managed-inputs'
+                Move-Item -LiteralPath $managedDirectory -Destination $linkTarget
+                $linkKind = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'Junction' } else { 'SymbolicLink' }
+                New-Item -ItemType $linkKind -Path $managedDirectory -Target $linkTarget | Out-Null
+            }
+            $before = @(Get-ChildItem -LiteralPath $inputRoot -Recurse -File -Force | Sort-Object FullName | ForEach-Object {
+                "$($_.FullName)|$($_.LastWriteTimeUtc.Ticks)|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+            }) -join "`n"
+            $observedError = ''
+            try {
+                function Get-FileHash {
+                    param([string]$LiteralPath, [string]$Algorithm)
+                    $hash = Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm
+                    if ($case.Mutate -and $LiteralPath -ceq $mutatedPath) {
+                        [IO.File]::AppendAllText($LiteralPath, 'external writer control')
+                    }
+                    return $hash
+                }
+                & $snapshotScript
+            } catch {
+                $observedError = $_.Exception.Message
+            } finally {
+                Remove-Item -LiteralPath 'Function:\Get-FileHash'
+            }
+            $after = @(Get-ChildItem -LiteralPath $inputRoot -Recurse -File -Force | Sort-Object FullName | ForEach-Object {
+                "$($_.FullName)|$($_.LastWriteTimeUtc.Ticks)|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+            }) -join "`n"
+            Assert-That "input tree mutation matches external-writer control: $label" (($before -cne $after) -eq $case.Mutate)
+            Assert-That "original snapshot outcome: $label; observed=$observedError" (
+                ($case.Error -ceq '' -and $observedError -ceq '') -or
+                ($case.Error -cne '' -and $observedError.Contains($case.Error))
+            )
+            $snapshotPath = Join-Path $env:GITHUB_WORKSPACE '.artifacts/runner-bootstrap/compiler-postmortem.json'
+            $hasManifest = Test-Path -LiteralPath $snapshotPath -PathType Leaf
+            Assert-That "snapshot retention: $label" ($hasManifest -eq $case.Manifest)
+            if ($hasManifest) {
+                $snapshot = Get-Content -LiteralPath $snapshotPath -Raw | ConvertFrom-Json
+                Assert-That "observed count and scope: $label" (
+                    $snapshot.observedManagedDllCount -eq $case.Count -and
+                    $snapshot.measurementClass -ceq 'postmortem-observation-only' -and
+                    -not $snapshot.exactOriginalInputClaim -and -not $snapshot.newUnityRun
+                )
+                foreach ($file in $snapshot.files) {
+                    $scopeRoot = if ($file.scope -ceq 'project') { $snapshotProject } else { $env:RUNNER_TOOL_CACHE }
+                    $actualPath = Join-Path $scopeRoot $file.sourcePath
+                    Assert-That "snapshot exact observed hash: $label; path=$($file.sourcePath)" (
+                        $file.length -eq (Get-Item -LiteralPath $actualPath -Force).Length -and
+                        $file.sha256 -ceq (Get-FileHash -LiteralPath $actualPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    )
+                }
+                Assert-That "snapshot copies no input binaries: $label" (
+                    @(Get-ChildItem -LiteralPath (Split-Path -Parent $snapshotPath) -Recurse -File).Count -eq 1
+                )
+            }
+            $snapshotOutcomes.Add([pscustomobject]@{ case = $case.Name; outcomePreserved = $true; manifest = $hasManifest; observedError = $observedError })
+        }
+    } finally {
+        foreach ($name in $snapshotEnvironmentNames) {
+            [Environment]::SetEnvironmentVariable($name, $priorSnapshotEnvironment[$name], 'Process')
+        }
+    }
+    Write-Host ('Read-only postmortem outcomes: ' + (ConvertTo-Json -InputObject @($snapshotOutcomes.ToArray()) -Compress))
+
     $matrixInvocationLogPath = Join-Path $fixtureRoot 'matrix-invocations.txt'
     $mockRunnerPath = Join-Path $fixtureRoot 'mock-run-ci-tests.ps1'
     $escapedMatrixInvocationLogPath = $matrixInvocationLogPath.Replace("'", "''")

@@ -2734,6 +2734,58 @@ process.stdout.write(JSON.stringify({on: workflow.on, env: job.env, steps: job.s
                 f"shipping event={event}, input={option}, version={version}: expected {expected}, got {actual}")
 
 
+def validate_runner_postmortem_policy(source: str) -> None:
+    """Execute the audit mode gates; postmortem must exclude all Unity work."""
+    result = subprocess.run(
+        ["node", "-e", r"""
+const fs = require('fs'), yaml = require('yaml');
+const workflow = yaml.parse(fs.readFileSync(0, 'utf8'));
+const input = workflow.on.workflow_dispatch.inputs['compiler-input-postmortem'];
+const jobs = workflow.jobs, job = jobs.bootstrap;
+const step = name => job.steps.find(value => value.name === name);
+const rows = [
+  [false, false, 'success', 'success', 'skipped'],
+  [false, true, 'success', 'success', 'skipped'],
+  [true, false, 'success', 'success', 'success'],
+  [true, true, 'success', 'success', 'success'],
+  [true, false, 'failure', 'skipped', 'skipped'],
+  [true, false, 'success', 'failure', 'skipped'],
+  [true, false, 'success', 'success', 'failure']
+];
+const outcomes = rows.map(([postmortem, shipping, setup, install, redact]) => {
+  const inputs = {'compiler-input-postmortem': postmortem, 'shipping-editor-verification': shipping};
+  const steps = {setup_node: {outcome: setup}, install_dependencies: {outcome: install}, redact_postmortem: {outcome: redact}};
+  const evaluate = expression => Boolean(new Function('inputs', 'github', 'steps', 'always',
+    'return (' + String(expression).replace(/\$\{\{|\}\}/g, '') + ')')(
+      inputs, {event_name: 'workflow_dispatch'}, steps, () => true));
+  const bootstrap = evaluate(job.if);
+  return [bootstrap, bootstrap && evaluate(step('Run runner audit (single-step transcript)').if),
+    bootstrap && evaluate(step('Capture surviving failed shipping input identities').if),
+    bootstrap && evaluate(step('Redact postmortem artifact identities').if),
+    evaluate(jobs['shipping-editor-runner-preflight'].if), evaluate(jobs['shipping-editor-verification'].if),
+    bootstrap && evaluate(step('Upload bootstrap transcript').if)];
+});
+process.stdout.write(JSON.stringify({typedOptIn: input?.type === 'boolean' && input.default === false, rows, outcomes}));
+"""], input=source, capture_output=True, text=True, check=False,
+    )
+    require(result.returncode == 0, f"postmortem mode predicates must execute: {result.stderr}")
+    observed = json.loads(result.stdout)
+    require(observed["typedOptIn"], "postmortem must be a typed boolean opt-in defaulting to false")
+    expected = [
+        [True, True, False, False, False, False, True],
+        [False, False, False, False, True, True, False],
+        [True, False, True, True, False, False, True],
+        [True, False, True, True, False, False, True],
+        [True, False, False, False, False, False, False],
+        [True, False, False, False, False, False, False],
+        [True, False, True, True, False, False, False],
+    ]
+    require(len(observed["outcomes"]) == len(expected), "postmortem must evaluate every mode row")
+    for row, actual, wanted in zip(observed["rows"], observed["outcomes"], expected):
+        require(actual == wanted,
+                f"audit postmortem/shipping/tooling/redaction={row}: expected {wanted}, got {actual}")
+
+
 def validate_grouped_unity_correctness() -> None:
     """Pin per-editor mode isolation and execute the terminal result truth table."""
     source = WORKFLOW.read_text(encoding="utf-8")
@@ -4816,6 +4868,20 @@ steps:
         and "Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3'" in runner_audit_source,
         "runner audit workflow must be validation-only at the canonical editor root",
     )
+    validate_runner_postmortem_policy(runner_audit_source)
+    for name, before, after in (
+        ("postmortem becomes the default", "default: false", "default: true"),
+        ("postmortem starts normal audit", "!inputs['compiler-input-postmortem']", "true"),
+        ("postmortem admits shipping", "&& !inputs['compiler-input-postmortem']", ""),
+        ("postmortem bypasses redaction",
+         "!inputs['compiler-input-postmortem'] || steps.redact_postmortem.outcome == 'success'", "true"),
+    ):
+        require(before in runner_audit_source, f"{name}: mutation target missing")
+        try:
+            validate_runner_postmortem_policy(runner_audit_source.replace(before, after, 1))
+        except AssertionError:
+            continue
+        raise AssertionError(f"{name}: invalid postmortem mode accepted")
     ensure_editor_source = Path("scripts/unity/ensure-editor.ps1").read_text(
         encoding="utf-8"
     )

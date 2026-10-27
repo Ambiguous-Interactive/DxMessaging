@@ -26,6 +26,10 @@ name: Runner Audit (Windows)
 on:
   workflow_dispatch:
     inputs:
+      compiler-input-postmortem:
+        description: "Read surviving failed Unity 6.5 compiler input identities on DAD without starting Unity."
+        type: boolean
+        default: false
       shipping-editor-verification:
         description: "Run the complete shipping Editor and sample scope on Unity 2021.3."
         type: boolean
@@ -80,11 +84,11 @@ jobs:
           required-label-sets: '[["self-hosted","Windows","RAM-64GB"]]'
 
   bootstrap:
-    if: ${{ !inputs['shipping-editor-verification'] }}
+    if: ${{ !inputs['shipping-editor-verification'] || inputs['compiler-input-postmortem'] }}
     # F9: surface the mode (Audit vs Maintenance) in the job display name so
     # operators reading the Actions UI immediately see which mode this run is
     # without expanding the inputs.
-    name: Audit ${{ inputs.runner-label }}
+    name: ${{ inputs['compiler-input-postmortem'] && 'Compiler input postmortem' || 'Audit' }} ${{ inputs.runner-label }}
     needs:
       - runner-preflight
     # Cannot dynamically pin to a specific runner without machine-name labels
@@ -156,6 +160,7 @@ jobs:
           }
 
       - name: Run runner audit (single-step transcript)
+        if: ${{ !inputs['compiler-input-postmortem'] }}
         # F5/F7: a single PowerShell 5.1 step opens the transcript, invokes
         # the audit script, and Stop-Transcripts in a finally{} -- the
         # previous design split Start-Transcript and the bootstrap into
@@ -224,22 +229,133 @@ jobs:
           }
           if ($code -ne 0) { exit $code }
 
+      - name: Setup postmortem artifact tooling
+        id: setup_node
+        if: ${{ inputs['compiler-input-postmortem'] }}
+        timeout-minutes: 5
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.23.4"
+
+      - name: Install postmortem artifact dependencies
+        id: install_dependencies
+        if: ${{ inputs['compiler-input-postmortem'] && steps.setup_node.outcome == 'success' }}
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
+          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
+          Copy-Item .github/artifact-tooling/package.json, .github/artifact-tooling/package-lock.json -Destination $tooling
+          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
+
+      - name: Capture surviving failed shipping input identities
+        id: capture_postmortem
+        if: ${{ inputs['compiler-input-postmortem'] && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        timeout-minutes: 4
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_NAME -cne 'DAD-MACHINE') {
+              throw 'Compiler postmortem requires the original DAD-MACHINE; do not recreate its inputs elsewhere.'
+          }
+          $project = Join-Path $env:RUNNER_WORKSPACE 'dxm-u/t/6000.5.2f1-shipping-medium-semantic-18'
+          $marker = Join-Path $project '.dxmessaging-ci-project'
+          if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
+              throw 'The surviving failed project ownership marker is missing; do not create it.'
+          }
+          $managed = Join-Path $project 'Library/Bee/artifacts/WinPlayerBuildProgram/ManagedStripped'
+          for ($parent = $managed; ; $parent = Split-Path -Parent $parent) {
+              if ((Get-Item -LiteralPath $parent).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                  throw "Postmortem refuses a linked input directory: $parent"
+              }
+              if ([string]::Equals($parent, $project, [StringComparison]::OrdinalIgnoreCase)) { break }
+          }
+          $compilerRelative = 'u6-v3/6000.5.2f1/Editor/Data/il2cpp/build/deploy/il2cpp.exe'
+          $compiler = Join-Path $env:RUNNER_TOOL_CACHE $compilerRelative
+          if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {
+              throw 'The installed converter image is missing; do not install or replace it.'
+          }
+          $dlls = @(Get-ChildItem -LiteralPath $managed -File -Filter '*.dll' | Sort-Object Name)
+          $projectFiles = @(
+              Get-Item -LiteralPath $marker -Force
+              Get-Item -LiteralPath (Join-Path $project 'ProjectSettings/ProjectVersion.txt')
+              Get-Item -LiteralPath (Join-Path $project 'Packages/manifest.json')
+              $dlls
+              Get-ChildItem -LiteralPath (Join-Path $project 'Library/Bee') -File |
+                  Where-Object { $_.Name -like 'Player*.dag*' -or $_.Name -like 'Player*-inputdata.json' } |
+                  Sort-Object Name
+          )
+          $selected = @(
+              foreach ($file in $projectFiles) {
+                  [pscustomobject]@{
+                      scope = 'project'; path = $file.FullName
+                      sourcePath = [IO.Path]::GetRelativePath($project, $file.FullName).Replace('\', '/')
+                  }
+              }
+              [pscustomobject]@{ scope = 'toolCache'; path = $compiler; sourcePath = $compilerRelative }
+          )
+          if ($selected.Count -gt 256) { throw 'Postmortem exceeds the 256-file identity limit.' }
+          $records = [Collections.Generic.List[object]]::new()
+          foreach ($file in $selected) {
+              $item = Get-Item -LiteralPath $file.path -Force
+              if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                  throw "Postmortem refuses a linked input file: $($file.sourcePath)"
+              }
+              $length = [long]$item.Length
+              $writeUtc = $item.LastWriteTimeUtc
+              $hash = (Get-FileHash -LiteralPath $file.path -Algorithm SHA256).Hash.ToLowerInvariant()
+              $after = Get-Item -LiteralPath $file.path -Force
+              if ($after.Length -ne $length -or $after.LastWriteTimeUtc.Ticks -ne $writeUtc.Ticks) {
+                  throw "Postmortem input changed while hashing: $($file.sourcePath)"
+              }
+              $records.Add([ordered]@{
+                  scope = $file.scope; sourcePath = $file.sourcePath
+                  length = $length; sha256 = $hash; lastWriteTimeUtc = $writeUtc.ToString('o')
+              })
+          }
+          $manifest = [ordered]@{
+              schemaVersion = 1; measurementClass = 'postmortem-observation-only'
+              failedRun = 40453284917; failedJob = 122020755685
+              failedSource = '0692abb045c7d16436e9ed33c9eb12e2063ee505'
+              observerSource = $env:GITHUB_SHA; capturedUtc = [datetime]::UtcNow.ToString('o')
+              expectedManagedDllCount = 48; observedManagedDllCount = $dlls.Count
+              exactOriginalInputClaim = $false; newUnityRun = $false; files = @($records.ToArray())
+          }
+          $destination = Join-Path $env:GITHUB_WORKSPACE '.artifacts/runner-bootstrap/compiler-postmortem.json'
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+          [IO.File]::WriteAllText($destination, (($manifest | ConvertTo-Json -Depth 8) + "`n"))
+          if ($dlls.Count -ne 48) {
+              throw "Expected 48 surviving managed input files, observed $($dlls.Count); retain this observation and stop."
+          }
+          Write-Host "Retained $($records.Count) read-only file identities; original pre-converter identity remains unproven."
+
+      - name: Redact postmortem artifact identities
+        id: redact_postmortem
+        if: ${{ always() && inputs['compiler-input-postmortem'] && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: .artifacts/runner-bootstrap
+
       # F1: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 -- matches the repo-wide pinned
       # version used by release.yml/unity-tests.yml/unity-benchmarks.yml.
       # F19: if-no-files-found is `error` (not `warn`) so a missing transcript
       # is a HARD failure rather than a silent empty artifact upload.
       - name: Upload bootstrap transcript
-        if: always()
+        if: ${{ always() && (!inputs['compiler-input-postmortem'] || steps.redact_postmortem.outcome == 'success') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: runner-bootstrap-${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ inputs['compiler-input-postmortem'] && 'compiler-postmortem' || 'runner-bootstrap' }}-${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .artifacts/runner-bootstrap/**
           if-no-files-found: error
           retention-days: 30
 
   shipping-editor-runner-preflight:
     name: Shipping Editor ELI registration preflight
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] && !inputs['compiler-input-postmortem'] }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -252,7 +368,7 @@ jobs:
 
   shipping-editor-verification:
     name: Unity 2021.3 shipping Editor and samples on ELI
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] && !inputs['compiler-input-postmortem'] }}
     needs:
       - runner-preflight
       - shipping-editor-runner-preflight
