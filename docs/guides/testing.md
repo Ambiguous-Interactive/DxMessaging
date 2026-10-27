@@ -1,243 +1,176 @@
 # Testing with DxMessaging
 
-[<- Back to Index](../getting-started/index.md) | [Patterns](patterns.md) | [Runtime Configuration](../advanced/runtime-configuration.md)
+[Back to Index](../getting-started/index.md) | [Patterns](patterns.md) | [runtime configuration](../advanced/runtime-configuration.md)
 
----
+Test message delivery and registration ownership separately. Use a local bus for plain C# owners,
+and a scoped bus override when a Unity component resolves the global bus. Run Unity messaging tests
+on the main thread; separate buses still share runtime settings and pools.
 
-**You're here because:** You want to write reliable, isolated tests for systems that use DxMessaging.
+## Plain C# owners
 
-## Key Testing Principles
-
-1. **Use isolated MessageBus instances** - Avoid global state pollution between tests
-1. **Manage token lifecycles explicitly** - Enable/disable tokens to control when handlers are active
-1. **Clean up spawned objects** - Destroy test GameObjects to prevent registration leaks
-
----
-
-## 1) Isolated MessageBus for Unit Tests
-
-The global `MessageHandler.MessageBus` is shared across your application. For unit tests, create a dedicated `MessageBus` instance to ensure complete isolation.
+This synchronous NUnit test uses no Unity object. Save it as `PlainMessageTests.cs` in a test assembly.
+The token starts disabled, so enable it after staging the handler. The `using` block disposes the
+registration even when an assertion fails.
 
 ```csharp
 using DxMessaging.Core;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Core.MessageBus;
+using DxMessaging.Core.Messages;
+using NUnit.Framework;
+
+public readonly struct TestPing : IUntargetedMessage<TestPing> { }
+
+public sealed class PlainMessageTests
+{
+    [Test]
+    public void LocalSubscriptionDeliversAndCleansUp()
+    {
+        MessageBus bus = new MessageBus();
+        MessageHandler handler = new MessageHandler(new InstanceId(1), bus) { active = true };
+        int received = 0;
+        TestPing message = new TestPing();
+
+        using (MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus))
+        {
+            _ = token.RegisterUntargeted<TestPing>((in TestPing ping) => received++);
+            token.Enable();
+            message.Emit(bus);
+            Assert.That(received, Is.EqualTo(1));
+        }
+
+        Assert.That(bus.RegisteredUntargeted, Is.Zero);
+        message.Emit(bus);
+        Assert.That(received, Is.EqualTo(1), "Disposal must remove the subscription.");
+    }
+}
+```
+
+## Unity component lifecycle
+
+Put these scripts and `TestPing` above in the same PlayMode test assembly. The receiver registers
+through its inherited token and keeps the required base call. Save it as `TestPingReceiver.cs`:
+
+```csharp
+using DxMessaging.Unity;
+
+public sealed class TestPingReceiver : MessageAwareComponent
+{
+    public int Received { get; private set; }
+
+    protected override void RegisterMessageHandlers()
+    {
+        base.RegisterMessageHandlers();
+        _ = Token.RegisterUntargeted<TestPing>(OnPing);
+    }
+
+    private void OnPing(in TestPing message)
+    {
+        Received++;
+    }
+}
+```
+
+Save the fixture as `ComponentLifecycleTests.cs`. The synchronous test checks enabled, disabled,
+and re-enabled delivery. The receiver uses the default `MessageRegistrationTiedToEnableStatus = true`.
+The fixture restores the previous global bus after destroying its GameObject:
+
+```csharp
+using System;
+using System.Collections;
+using DxMessaging.Core;
+using DxMessaging.Core.Extensions;
 using DxMessaging.Core.MessageBus;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.TestTools;
 
-[Test]
-public void IsolatedBusDoesNotAffectGlobalBus()
+public sealed class ComponentLifecycleTests
 {
-    // Create isolated bus and handler
-    MessageBus testBus = new();
-    GameObject testObject = new("TestObject");
-    MessageHandler handler = new(testObject) { active = true };
-    MessageRegistrationToken token = MessageRegistrationToken.Create(handler, testBus);
-    token.Enable();
+    private MessageBus _bus;
+    private IDisposable _busScope;
+    private GameObject _host;
 
-    int localCount = 0;
-    _ = token.RegisterUntargeted<MyMessage>(_ => localCount++);
-
-    // Emit to isolated bus only
-    MyMessage msg = new();
-    msg.EmitUntargeted(testBus);
-
-    Assert.AreEqual(1, localCount, "Local handler should receive message.");
-
-    // Cleanup
-    token.UnregisterAll();
-    UnityEngine.Object.DestroyImmediate(testObject);
-}
-```
-
----
-
-## 2) Test Base Class Pattern
-
-Create a reusable base class for common setup/teardown.
-
-```csharp
-public abstract class MessagingTestBase
-{
-    protected readonly List<GameObject> _spawned = new();
-
-    [TearDown]
-    public virtual void Cleanup()
+    [SetUp]
+    public void SetUp()
     {
-        foreach (GameObject spawned in _spawned)
-            if (spawned != null) UnityEngine.Object.Destroy(spawned);
-        _spawned.Clear();
+        _bus = new MessageBus();
+        _busScope = MessageHandler.OverrideGlobalMessageBus(_bus);
     }
 
-    [UnitySetUp]
-    public virtual IEnumerator UnitySetup()
+    [Test]
+    public void ReceiverTracksEnabledState()
     {
-        IMessageBus bus = MessageHandler.MessageBus;
-        while (bus.RegisteredUntargeted != 0 || bus.RegisteredTargeted != 0)
+        _host = new GameObject("TestPingReceiver");
+        TestPingReceiver receiver = _host.AddComponent<TestPingReceiver>();
+        TestPing message = new TestPing();
+
+        message.Emit(_bus);
+        Assert.That(receiver.Received, Is.EqualTo(1));
+
+        receiver.enabled = false;
+        message.Emit(_bus);
+        Assert.That(receiver.Received, Is.EqualTo(1));
+
+        receiver.enabled = true;
+        message.Emit(_bus);
+        Assert.That(receiver.Received, Is.EqualTo(2));
+    }
+
+    [UnityTearDown]
+    public IEnumerator TearDown()
+    {
+        try
+        {
+            if (_host != null)
+            {
+                UnityEngine.Object.Destroy(_host);
+            }
             yield return null;
+            _host = null;
+
+            Assert.That(_bus.RegisteredUntargeted, Is.Zero);
+            Assert.That(_bus.RegisteredTargeted, Is.Zero);
+            Assert.That(_bus.RegisteredBroadcast, Is.Zero);
+            Assert.That(_bus.RegisteredInterceptors, Is.Zero);
+            Assert.That(_bus.RegisteredPostProcessors, Is.Zero);
+            Assert.That(_bus.RegisteredGlobalAcceptAll, Is.Zero);
+        }
+        finally
+        {
+            _busScope.Dispose();
+        }
     }
-
-    protected MessageRegistrationToken GetToken(MessageAwareComponent c) => c.Token;
 }
 ```
 
----
+Unity's [Destroy contract](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Object.Destroy.html)
+defers destruction until after the current Update loop. The
+[Unity teardown](https://docs.unity3d.com/Packages/com.unity.test-framework@1.4/api/UnityEngine.TestTools.UnityTearDownAttribute.html)
+yields once for that destruction,
+then asserts the six registration counters. It does not poll until counts reach zero or reset the bus
+to hide live registrations. A failed cleanup assertion still runs the `finally` block that restores
+the previous bus.
 
-## 3) Verifying Message Emission and Handling
+Use `[Test]` for synchronous registration and delivery checks. Use `[UnityTest]` only when the test
+must observe a later frame, scene transition, coroutine, or deferred destruction. Track every owned
+GameObject and token so teardown runs even after an assertion fails.
 
-Use counters or captured values to verify messages are emitted and handled correctly.
+## Extend the checks
 
-```csharp
-[UnityTest]
-public IEnumerator TargetedMessageReachesCorrectTarget()
-{
-    GameObject target = new("Target", typeof(EmptyMessageAwareComponent));
-    GameObject nonTarget = new("NonTarget", typeof(EmptyMessageAwareComponent));
-    _spawned.Add(target);
-    _spawned.Add(nonTarget);
-
-    MessageRegistrationToken targetToken = GetToken(target.GetComponent<EmptyMessageAwareComponent>());
-    MessageRegistrationToken nonTargetToken = GetToken(nonTarget.GetComponent<EmptyMessageAwareComponent>());
-
-    int targetReceived = 0;
-    int nonTargetReceived = 0;
-
-    _ = targetToken.RegisterGameObjectTargeted<DamageMessage>(target, _ => targetReceived++);
-    _ = nonTargetToken.RegisterGameObjectTargeted<DamageMessage>(nonTarget, _ => nonTargetReceived++);
-
-    DamageMessage msg = new() { amount = 10 };
-    msg.EmitGameObjectTargeted(target);
-
-    Assert.AreEqual(1, targetReceived, "Target should receive message.");
-    Assert.AreEqual(0, nonTargetReceived, "Non-target should NOT receive message.");
-    yield break;
-}
-```
-
----
-
-## 4) Testing Interceptors
-
-Interceptors can cancel or modify messages. Test both scenarios.
-
-```csharp
-[UnityTest]
-public IEnumerator InterceptorCanCancelMessage()
-{
-    GameObject host = new("Host", typeof(EmptyMessageAwareComponent));
-    _spawned.Add(host);
-    MessageRegistrationToken token = GetToken(host.GetComponent<EmptyMessageAwareComponent>());
-
-    int handlerCalled = 0;
-    _ = token.RegisterUntargeted<TestMessage>(_ => handlerCalled++);
-    _ = token.RegisterUntargetedInterceptor((ref TestMessage _) => false); // Cancel
-
-    TestMessage msg = new();
-    msg.EmitUntargeted();
-
-    Assert.AreEqual(0, handlerCalled, "Handler must not run when interceptor cancels.");
-    yield break;
-}
-
-[UnityTest]
-public IEnumerator InterceptorCanModifyMessage()
-{
-    GameObject host = new("Host", typeof(EmptyMessageAwareComponent));
-    _spawned.Add(host);
-    MessageRegistrationToken token = GetToken(host.GetComponent<EmptyMessageAwareComponent>());
-
-    int receivedAmount = 0;
-    _ = token.RegisterGameObjectTargeted<DamageMessage>(host, msg => receivedAmount = msg.amount);
-    _ = token.RegisterTargetedInterceptor((ref InstanceId _, ref DamageMessage msg) =>
-    {
-        if (msg.amount > 100) msg = new DamageMessage { amount = 100 };
-        return true;
-    });
-
-    DamageMessage msg = new() { amount = 999 };
-    msg.EmitGameObjectTargeted(host);
-
-    Assert.AreEqual(100, receivedAmount, "Interceptor should clamp damage to 100.");
-    yield break;
-}
-```
-
----
-
-## 5) Testing Component Lifecycle
-
-Verify handlers respect Unity's enable/disable lifecycle.
-
-```csharp
-[UnityTest]
-public IEnumerator DisabledComponentDoesNotReceiveMessages()
-{
-    GameObject host = new("Host", typeof(EmptyMessageAwareComponent));
-    _spawned.Add(host);
-    EmptyMessageAwareComponent component = host.GetComponent<EmptyMessageAwareComponent>();
-    MessageRegistrationToken token = GetToken(component);
-
-    int count = 0;
-    _ = token.RegisterUntargeted<TestMessage>(_ => count++);
-
-    TestMessage msg1 = new();
-    msg1.EmitUntargeted();
-    Assert.AreEqual(1, count, "Enabled component should receive message.");
-
-    component.enabled = false;
-    yield return null;
-
-    TestMessage msg2 = new();
-    msg2.EmitUntargeted();
-    Assert.AreEqual(1, count, "Disabled component should NOT receive message.");
-
-    component.enabled = true;
-    yield return null;
-
-    TestMessage msg3 = new();
-    msg3.EmitUntargeted();
-    Assert.AreEqual(2, count, "Re-enabled component should receive message.");
-}
-```
-
----
-
-## 6) Integration Testing
-
-For integration tests, use the global bus with proper cleanup. Create GameObjects with components, emit messages, and verify system-wide behavior across multiple components.
-
----
-
-## Best Practices
-
-| Practice                                    | Why                                                           |
-| ------------------------------------------- | ------------------------------------------------------------- |
-| Use isolated `MessageBus` for unit tests    | Prevents test pollution and flakiness                         |
-| Track spawned objects in a list             | Ensures cleanup even if test fails                            |
-| Use `yield return null` after state changes | Allows Unity lifecycle methods to execute                     |
-| Test both positive and negative cases       | Verify messages reach correct targets AND miss incorrect ones |
-| Use expressive assertion messages           | Makes test failures easier to diagnose                        |
-
----
-
-## Quick Reference: Test Message Setup
-
-```csharp
-// Test messages
-[DxUntargetedMessage]
-public partial struct TestMessage { }
-
-[DxTargetedMessage]
-[DxAutoConstructor]
-public readonly partial struct DamageMessage { public readonly int amount; }
-
-// Minimal test component - registers no handlers by default
-public sealed class EmptyMessageAwareComponent : MessageAwareComponent { }
-```
-
----
+- For [targeted messages](patterns.md#2-directed-commands-targeted), verify both the intended
+  receiver and a different target that must not receive the message.
+- For [broadcast messages](patterns.md#3-observability-broadcast), verify the emitter's source and
+  the intended source-bound and all-source listeners.
+- For [interceptors](patterns.md#4-validation-and-normalization-interceptors), test accepted,
+  cancelled, and modified messages, including whether handlers and post-processors run.
+- For cleanup and reentrancy, assert observable delivery and the registrations owned by the test.
+  Avoid sleeps, retries, and unbounded waits for another fixture's state.
+- Restore any diagnostics or runtime settings changed by a fixture. A local bus isolates routing;
+  it does not isolate those shared settings.
 
 ## See Also
 
-- **[Patterns](patterns.md)** - Pattern #6 (Local Bus Islands) and #12 (Testing)
-- **[Runtime Configuration](../advanced/runtime-configuration.md)** - MessageBus configuration options
-- **[Back to Documentation Hub](../getting-started/index.md)** - Browse all docs
+- [Subscription ownership](../concepts/listening-patterns.md)
+- [Unity integration and lifecycle](unity-integration.md)
+- [runtime configuration](../advanced/runtime-configuration.md)
