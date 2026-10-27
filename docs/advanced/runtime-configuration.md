@@ -223,7 +223,26 @@ component.Configure(busB, MessageBusRebindMode.RebindActive);
 
 - When you want complete, immediate migration to a new bus
 - In DI scenarios where the container provides a new bus instance
-- When you need atomic switching without mixed-bus behavior
+- When all current listeners should migrate through one configuration request
+
+### Configuration from callbacks
+
+> **Fixed in v4.0.0.**
+
+A bus cleanup or provider callback can call `MessagingComponent.Configure` while another component
+configuration is in progress. The nested call accepts a request with its bus or provider and rebind
+mode. Resolution and migration of that request wait until the current migration returns from foreign
+code. Requests run in their accepted order before the outermost `Configure` returns.
+
+Observe the final registrations after the outermost call returns. A nested call does not complete
+its migration inside the callback. `PreserveRegistrations` still changes future registration defaults
+without moving active registrations; `RebindActive` moves the active registrations when its queued
+request runs. Later requests do not erase an earlier request's rebind mode.
+
+The outermost call attempts accepted requests even when an earlier request fails. It rethrows a
+single original error unchanged, or reports multiple errors in an `AggregateException`. Failed token
+cleanup remains retryable through the component's owning APIs. Released or replaced listeners are
+rechecked when each migration runs, so independently owned work is not migrated by the component.
 
 ### Retarget a Token Directly
 
