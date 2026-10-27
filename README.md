@@ -544,7 +544,7 @@ invocation itself can be allocation-free.
 void OnDamage(in ApplyDamage msg) { // Pass by in = zero allocations
     health -= msg.amount;            // No boxing, no GC pressure
 }
-// Automatic cleanup prevents common leak patterns
+// MessageAwareComponent owns cleanup; plain C# owners dispose their tokens.
 ```
 
 **Note:** Struct messages passed by readonly reference avoid copies without allocating.
@@ -715,36 +715,49 @@ Inspector diagnostics, and Project Settings together.
 
 ### Local Bus Islands for Testing
 
-**The problem with normal events:** Global static events contaminate tests. Mock complexity. Flaky tests.
+Global static subscriptions can survive a test and affect later tests.
 
-**DxMessaging solution:** Each test gets its own isolated message bus:
+Pass a local bus to each participant, enable its token, and dispose the token when the test ends:
 
 ```csharp
-[Test]
-public void TestAchievementSystem() {
-    // Create isolated bus - zero global state
-    var testBus = new MessageBus();
-    var handler = new MessageHandler(new InstanceId(1), testBus) { active = true };
-    var token = MessageRegistrationToken.Create(handler, testBus);
+using DxMessaging.Core;
+using DxMessaging.Core.MessageBus;
+using DxMessaging.Core.Messages;
+using NUnit.Framework;
 
-    // Test in isolation
-    _ = token.RegisterBroadcastWithoutSource<EnemyKilled>(achievements.OnKill);
+public sealed class AchievementMessagingTests
+{
+    private readonly struct EnemyKilled : IBroadcastMessage<EnemyKilled>
+    {
+        public string Name { get; }
+        public EnemyKilled(string name) { Name = name; }
+    }
 
-    var gameObject = new GameObject();
-    var msg = new EnemyKilled("Boss");
-    msg.EmitGameObjectBroadcast(gameObject, testBus);  // Only this test sees it
+    [Test]
+    public void KillMessageReachesLocalSubscriber()
+    {
+        MessageBus testBus = new MessageBus();
+        MessageHandler handler = new MessageHandler(new InstanceId(1), testBus) { active = true };
+        using (MessageRegistrationToken token = MessageRegistrationToken.Create(handler, testBus))
+        {
+            bool received = false;
+            _ = token.RegisterBroadcastWithoutSource<EnemyKilled>(
+                (in InstanceId context, in EnemyKilled killed) => received = killed.Name == "Boss");
+            token.Enable();
 
-    Assert.IsTrue(achievements.Unlocked("BossSlayer"));
+            EnemyKilled message = new EnemyKilled("Boss");
+            InstanceId source = new InstanceId(2);
+            testBus.SourcedBroadcast(ref source, ref message);
+
+            Assert.That(received, Is.True);
+        }
+    }
 }
-// Bus destroyed, zero cleanup needed
 ```
 
-#### Why this matters
-
-- Tests don't interfere with each other
-- No "arrange/act/cleanup" boilerplate
-- No mocking frameworks needed
-- Parallel test execution is supported
+The local bus isolates message routing. The `using` block removes registrations even if the assertion
+fails. This example needs no Unity object. Local buses still share runtime settings and pools: run
+Unity messaging tests on the main thread and avoid concurrent access to that shared state.
 
 ## Documentation
 

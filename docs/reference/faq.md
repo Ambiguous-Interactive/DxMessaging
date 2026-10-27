@@ -72,7 +72,7 @@ The most common cause is forgetting to call `base.Awake()` (or `base.OnEnable()`
 
 ## How do I unit-test code that sends or receives messages?
 
-- Construct a dedicated `MessageBus` per test and pass it to the participants instead of using the global bus, so registrations cannot leak between tests. Emit a message, then assert your handler observed it. Isolating the bus also lets tests run in parallel without cross-talk.
+- Construct a dedicated `MessageBus` per test and pass it to the participants instead of using the global bus. Enable the registration token before emitting, assert that your handler observed the message, and dispose the token during cleanup. A local bus isolates routing; it does not make the runtime thread-safe. Run Unity messaging tests on the main thread and avoid concurrent access to shared settings or pools.
 
 ## Is this compatible with Unity's SendMessage/UnityEvents
 
