@@ -36,7 +36,7 @@ jobs:
           $unity = Get-Item -LiteralPath (Join-Path $editor 'Unity.exe')
           $files = @(
             'il2cpp-api-functions.h', 'il2cpp-api.cpp', 'il2cpp-object-internals.h',
-            'vm/Object.cpp', 'vm/Profiler.cpp', 'vm/Profiler.h',
+            'vm/Object.cpp', 'vm/Array.cpp', 'vm/String.cpp', 'vm/Profiler.cpp', 'vm/Profiler.h',
             'gc/GarbageCollector.cpp', 'gc/GCHandle.cpp'
           )
           $dest = Join-Path $env:GITHUB_WORKSPACE '.artifacts/native-size-sdk-contract'
