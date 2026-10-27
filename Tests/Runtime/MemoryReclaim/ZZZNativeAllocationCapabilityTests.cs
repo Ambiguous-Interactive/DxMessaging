@@ -87,6 +87,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     DxmCounterEnd,
                     DxmCounterForeign
                 );
+                NativeRegistrationAllocationRows.Measure(
+                    DxmCounterBegin,
+                    DxmCounterEnd,
+                    DxmCounterForeign
+                );
             }
             finally
             {
