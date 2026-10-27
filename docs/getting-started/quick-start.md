@@ -24,6 +24,10 @@ https://github.com/Ambiguous-Interactive/DxMessaging.git
 
 ## Your First Message (3 Steps)
 
+> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use
+> `ref DamageRequested message` for the receiver callback parameter instead. Keep the registration
+> and emission calls unchanged. See the [4.0 migration guide](../guides/migration-guide.md#migrating-to-400).
+
 ### Step 1: Define a damage command
 
 ```csharp

@@ -210,6 +210,10 @@ See the [Install Guide](docs/getting-started/install.md) for all options includi
 
 ### 2. Define a Damage Command
 
+> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use
+> `ref DamageRequested message` for the receiver callback parameter instead. Keep the registration
+> and emission calls unchanged. See the [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400).
+
 ```csharp
 using DxMessaging.Core.Attributes;
 
