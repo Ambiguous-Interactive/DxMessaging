@@ -81,14 +81,17 @@ namespace DxMessaging.Core.Messages
 
         private int CalculateHashCode()
         {
-            int hashCode = HashBase + _methodName.GetHashCode();
-            ReadOnlySpan<Type> types = _parameterTypes.AsSpan();
-            for (int i = 0; i < types.Length; ++i)
+            unchecked
             {
-                hashCode = hashCode * HashMultiplier + types[i].GetHashCode();
-            }
+                int hashCode = HashBase + _methodName.GetHashCode();
+                ReadOnlySpan<Type> types = _parameterTypes.AsSpan();
+                for (int i = 0; i < types.Length; ++i)
+                {
+                    hashCode = hashCode * HashMultiplier + types[i].GetHashCode();
+                }
 
-            return hashCode;
+                return hashCode;
+            }
         }
 
         /// <summary>
