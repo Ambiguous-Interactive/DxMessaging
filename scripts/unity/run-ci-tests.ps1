@@ -5925,7 +5925,7 @@ function Test-StandalonePlayerBuildOutput {
         [Parameter(Mandatory = $true)][string]$ExpectedExe,
         [Parameter(Mandatory = $true)][datetime]$BuildStartedUtc,
         [Parameter(Mandatory = $true)][string]$BuildLogPath,
-        [Parameter(Mandatory = $true)][ValidateSet('IL2CPP', 'Mono')][string]$ScriptingBackend
+        [Parameter(Mandatory = $true)][ValidateSet('IL2CPP', 'Mono2x')][string]$ScriptingBackend
     )
 
     if (-not (Test-Path -LiteralPath $ExpectedExe -PathType Leaf)) {

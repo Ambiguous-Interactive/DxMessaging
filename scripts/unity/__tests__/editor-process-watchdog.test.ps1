@@ -258,9 +258,9 @@ param([string]$OutputPath)
         @('empty-metadata', 'IL2CPP', 'empty-metadata', 'ok', 'empty IL2CPP'),
         @('complete', 'IL2CPP', 'complete', 'ok', '^$'),
         @('cached-native', 'IL2CPP', 'cached', 'ok', '^$'),
-        @('mono', 'Mono', 'partial', 'ok', '^$'),
+        @('mono', 'Mono2x', 'partial', 'ok', '^$'),
         @('failed-complete', 'IL2CPP', 'complete', 'failed', 'reported a failed'),
-        @('failed-mono', 'Mono', 'partial', 'failed', 'reported a failed'),
+        @('failed-mono', 'Mono2x', 'partial', 'failed', 'reported a failed'),
         @('benign-postbuild', 'IL2CPP', 'complete', 'shutdown', '^$'),
         @('lookalike', 'IL2CPP', 'complete', 'lookalike', '^$'),
         @('missing-log', 'IL2CPP', 'complete', 'missing', 'missing build log'),
@@ -306,6 +306,25 @@ param([string]$OutputPath)
         $problem = [string](Test-StandalonePlayerBuildOutput -ExpectedExe $exe `
             -BuildStartedUtc $started -BuildLogPath $buildLog -ScriptingBackend $backend)
         if ($problem -notmatch $expectedProblem) { throw "$name returned '$problem', expected '$expectedProblem'." }
+    }
+    # Bind the helper's accepted backends to the public runner contract.
+    $runnerBackend = @($ast.ParamBlock.Parameters | Where-Object {
+        $_.Name.VariablePath.UserPath -ceq 'StandaloneScriptingBackend'
+    })
+    $outputDefinition = @($ast.EndBlock.Statements | Where-Object {
+        $_ -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $_.Name -ceq 'Test-StandalonePlayerBuildOutput'
+    })
+    $outputBackend = @($outputDefinition.Body.ParamBlock.Parameters | Where-Object {
+        $_.Name.VariablePath.UserPath -ceq 'ScriptingBackend'
+    })
+    $runnerValues = @($runnerBackend.Attributes | Where-Object { $_.TypeName.Name -ceq 'ValidateSet' })
+    $outputValues = @($outputBackend.Attributes | Where-Object { $_.TypeName.Name -ceq 'ValidateSet' })
+    if ($runnerBackend.Count -ne 1 -or $outputBackend.Count -ne 1 -or
+        $runnerValues.Count -ne 1 -or $outputValues.Count -ne 1 -or
+        (ConvertTo-Json -InputObject @($runnerValues.PositionalArguments.Value) -Compress) -cne
+        (ConvertTo-Json -InputObject @($outputValues.PositionalArguments.Value) -Compress)) {
+        throw 'Build output validation does not accept the public runner backend values.'
     }
     $outputCalls = @($ast.FindAll({ param($node)
         $node -is [System.Management.Automation.Language.CommandAst] -and
