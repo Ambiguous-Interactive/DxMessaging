@@ -1080,5 +1080,185 @@
       0,
       "web-hostname"
     ]
+  ],
+  "redactorOwnership": [
+    {
+      "id": "redact_a",
+      "uses": "./.github/actions/redact-unity-artifacts",
+      "if": "always()",
+      "with": {
+        "paths": ".artifacts/unity/a"
+      }
+    },
+    {
+      "id": "redact_b",
+      "uses": "./.github/actions/redact-unity-artifacts",
+      "if": "always()",
+      "with": {
+        "paths": ".artifacts/unity/b"
+      }
+    },
+    {
+      "uses": "actions/upload-artifact",
+      "if": "always() && steps.redact_b.outcome == 'success'",
+      "with": {
+        "path": ".artifacts/unity/a"
+      }
+    }
+  ],
+  "shippingUploadDefaults": {
+    "run": "failure",
+    "seal": "skipped",
+    "redact": "success",
+    "lock": "true",
+    "event": "workflow_dispatch",
+    "shipping": true,
+    "version": "6000.5.2f1",
+    "cancelled": false,
+    "expected": false,
+    "suffix": "shipping-failure-diagnostics"
+  },
+  "shippingUploadCases": [
+    {
+      "label": "failed producer retains diagnostic identity",
+      "expected": true
+    },
+    {
+      "label": "oldest failed producer retains diagnostic identity",
+      "version": "2021.3.45f1",
+      "expected": true
+    },
+    {
+      "label": "successful sealed producer retains qualified identity",
+      "run": "success",
+      "seal": "success",
+      "expected": true,
+      "suffix": "shipping"
+    },
+    {
+      "label": "successful producer failed seal is rejected",
+      "run": "success",
+      "seal": "failure"
+    },
+    {
+      "label": "successful producer skipped seal is rejected",
+      "run": "success"
+    },
+    {
+      "label": "skipped producer is rejected",
+      "run": "skipped"
+    },
+    {
+      "label": "cancelled producer is rejected",
+      "run": "cancelled"
+    },
+    {
+      "label": "failed redaction is rejected",
+      "redact": "failure"
+    },
+    {
+      "label": "skipped redaction is rejected",
+      "redact": "skipped"
+    },
+    {
+      "label": "missing acquired lock is rejected",
+      "lock": ""
+    },
+    {
+      "label": "unacquired lock is rejected",
+      "lock": "false"
+    },
+    {
+      "label": "cancelled run is rejected",
+      "cancelled": true
+    },
+    {
+      "label": "nonmanual run is rejected",
+      "event": "pull_request"
+    },
+    {
+      "label": "manual run without shipping is rejected",
+      "shipping": false
+    },
+    {
+      "label": "middle endpoint is rejected",
+      "version": "2022.3.45f1"
+    },
+    {
+      "label": "other middle endpoint is rejected",
+      "version": "6000.3.16f1"
+    },
+    {
+      "label": "sealed producer: failed redaction is rejected",
+      "redact": "failure",
+      "run": "success",
+      "seal": "success"
+    },
+    {
+      "label": "sealed producer: skipped redaction is rejected",
+      "redact": "skipped",
+      "run": "success",
+      "seal": "success"
+    },
+    {
+      "label": "sealed producer: missing acquired lock is rejected",
+      "lock": "",
+      "run": "success",
+      "seal": "success"
+    },
+    {
+      "label": "sealed producer: unacquired lock is rejected",
+      "lock": "false",
+      "run": "success",
+      "seal": "success"
+    },
+    {
+      "label": "sealed producer: cancelled run is rejected",
+      "cancelled": true,
+      "run": "success",
+      "seal": "success"
+    },
+    {
+      "label": "sealed producer: nonmanual run is rejected",
+      "event": "pull_request",
+      "run": "success",
+      "seal": "success"
+    },
+    {
+      "label": "sealed producer: manual run without shipping is rejected",
+      "shipping": false,
+      "run": "success",
+      "seal": "success"
+    },
+    {
+      "label": "sealed producer: middle endpoint is rejected",
+      "version": "2022.3.45f1",
+      "run": "success",
+      "seal": "success"
+    },
+    {
+      "label": "sealed producer: other middle endpoint is rejected",
+      "version": "6000.3.16f1",
+      "run": "success",
+      "seal": "success"
+    },
+    {
+      "label": "oldest successful sealed producer keeps qualified identity",
+      "version": "2021.3.45f1",
+      "run": "success",
+      "seal": "success",
+      "expected": true,
+      "suffix": "shipping"
+    },
+    {
+      "label": "failed producer cannot acquire qualified identity from seal state",
+      "seal": "success",
+      "expected": true
+    },
+    {
+      "label": "skipped producer cannot acquire qualified identity from seal state",
+      "run": "skipped",
+      "seal": "success"
+    }
   ]
 }

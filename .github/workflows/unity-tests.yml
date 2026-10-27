@@ -673,10 +673,13 @@ jobs:
           retention-days: 14
 
       - name: Upload shipping-fidelity artifacts
+        # A failed producer retains diagnostics under a distinct artifact name.
+        # Successful evidence still requires sealing and replay.
         if: >-
           ${{
             steps.redact_tests.outcome == 'success' &&
-            steps.seal_shipping.outcome == 'success' &&
+            (steps.run_shipping.outcome == 'failure' ||
+            (steps.run_shipping.outcome == 'success' && steps.seal_shipping.outcome == 'success')) &&
             always() &&
             !cancelled() &&
             steps.acquire_lock.outputs.acquired == 'true' &&
@@ -687,7 +690,7 @@ jobs:
         timeout-minutes: 10
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: unity-${{ matrix.unity-version }}-shipping
+          name: unity-${{ matrix.unity-version }}-${{ steps.run_shipping.outcome == 'success' && 'shipping' || 'shipping-failure-diagnostics' }}
           path: .artifacts/unity/${{ matrix.unity-version }}-shipping
           include-hidden-files: true
           if-no-files-found: error

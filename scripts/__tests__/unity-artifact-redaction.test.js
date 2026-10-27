@@ -8,6 +8,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const WORKFLOW_DIRECTORY = path.join(REPO_ROOT, ".github", "workflows");
 const REDACTION_ACTION = "./.github/actions/redact-unity-artifacts";
 const UPLOAD_ACTION = "actions/upload-artifact";
+const WORKFLOW_FIXTURES = require("./fixtures/unity-redaction-vectors.json");
 const UNITY_OUTPUT_PREFIXES = [".artifacts/unity", "dx-unity-editor-validation"];
 function readWorkflows() {
   return fs
@@ -124,9 +125,7 @@ test("every Unity artifact upload is preceded by sensitive-data redaction in the
   assert.deepEqual(
     unprotected.map((upload) => `${upload.workflow} ${upload.jobId} "${upload.stepName}"`),
     [],
-    "these steps upload Unity output that still contains the license serial; add a " +
-      `"${REDACTION_ACTION}" step covering the uploaded path immediately before the upload, ` +
-      "with no Unity-producing step in between"
+    "these steps lack prior redaction of their output path"
   );
 });
 test("every Unity artifact upload refuses to run after a failed scrub", () => {
@@ -139,25 +138,7 @@ test("every Unity artifact upload refuses to run after a failed scrub", () => {
   );
 });
 test("an upload is gated by the redactor that covered its path", () => {
-  const steps = [
-    {
-      id: "redact_a",
-      uses: REDACTION_ACTION,
-      if: "always()",
-      with: { paths: ".artifacts/unity/a" }
-    },
-    {
-      id: "redact_b",
-      uses: REDACTION_ACTION,
-      if: "always()",
-      with: { paths: ".artifacts/unity/b" }
-    },
-    {
-      uses: UPLOAD_ACTION,
-      if: "always() && steps.redact_b.outcome == 'success'",
-      with: { path: ".artifacts/unity/a" }
-    }
-  ];
+  const steps = WORKFLOW_FIXTURES.redactorOwnership;
   const uploads = unityUploads([
     { name: "synthetic.yml", document: { jobs: { test: { steps } } } }
   ]);
@@ -219,7 +200,7 @@ test("the redaction action exists and runs the shared redactor", () => {
     "the action must fail the job when redaction fails; a silent pass recreates the leak"
   );
 });
-test("the shipping evidence bundle is sealed only after redaction has run", () => {
+test("shipping uploads distinguish sealed evidence from failed-producer diagnostics", () => {
   const workflowPath = path.join(WORKFLOW_DIRECTORY, "unity-tests.yml");
   const document = YAML.parse(fs.readFileSync(workflowPath, "utf8"));
   const steps = jobSteps(document.jobs["unity-tests"]);
@@ -241,21 +222,42 @@ test("the shipping evidence bundle is sealed only after redaction has run", () =
       step.uses.startsWith(UPLOAD_ACTION) &&
       toPathList(step.with?.path).some((value) => value.endsWith("-shipping"))
   );
-  assert.ok(
-    uploadIndex > sealIndex,
-    "the shipping upload must follow sealing so the manifest ships with the evidence"
-  );
+  assert.ok(uploadIndex > sealIndex, "shipping artifacts follow the seal step");
   assert.equal(steps[uploadIndex].with?.["include-hidden-files"], true);
-  assert.match(
-    String(steps[uploadIndex].if),
-    /steps\.seal_shipping\.outcome == 'success'/,
-    "a failed seal or replay must block the shipping evidence upload"
-  );
+  for (const row of WORKFLOW_FIXTURES.shippingUploadCases) {
+    const c = { ...WORKFLOW_FIXTURES.shippingUploadDefaults, ...row };
+    const evaluate = (expression) =>
+      new Function(
+        "steps",
+        "github",
+        "inputs",
+        "matrix",
+        "always",
+        "cancelled",
+        `return (${expression.replace(/\$\{\{|\}\}/g, "").replaceAll("matrix.unity-version", "matrix.version")});`
+      )(
+        {
+          redact_tests: { outcome: c.redact },
+          seal_shipping: { outcome: c.seal },
+          run_shipping: { outcome: c.run },
+          acquire_lock: { outputs: { acquired: c.lock } }
+        },
+        { event_name: c.event },
+        { shipping_fidelity: c.shipping },
+        { version: c.version },
+        () => true,
+        () => c.cancelled
+      );
+    assert.equal(evaluate(String(steps[uploadIndex].if)), c.expected, c.label);
+    if (c.expected) {
+      const name = steps[uploadIndex].with.name.replace(/\$\{\{(.*?)\}\}/g, (_, expression) =>
+        evaluate(expression)
+      );
+      assert.equal(name, `unity-${c.version}-${c.suffix}`, c.label);
+    }
+  }
 });
-const COVERAGE_CASES = Object.freeze(
-  require("./fixtures/unity-redaction-vectors.json").workflowCoverage
-);
-for (const [label, declared, uploaded, expected] of COVERAGE_CASES) {
+for (const [label, declared, uploaded, expected] of WORKFLOW_FIXTURES.workflowCoverage) {
   test(`covers reports ${expected} for ${label}`, () => {
     assert.equal(
       covers([declared], uploaded),

@@ -2679,7 +2679,9 @@ process.stdout.write(JSON.stringify({on: workflow.on, env: job.env, steps: job.s
         "Seal shipping-fidelity evidence bundle":
             endpoint + " && steps.run_shipping.outcome == 'success'",
         "Upload shipping-fidelity artifacts":
-            "steps.redact_tests.outcome == 'success' && steps.seal_shipping.outcome == 'success' && "
+            "steps.redact_tests.outcome == 'success' && "
+            "(steps.run_shipping.outcome == 'failure' || "
+            "(steps.run_shipping.outcome == 'success' && steps.seal_shipping.outcome == 'success')) && "
             "always() && !cancelled() && "
             "steps.acquire_lock.outputs.acquired == 'true' && " + endpoint,
     }
@@ -2689,6 +2691,13 @@ process.stdout.write(JSON.stringify({on: workflow.on, env: job.env, steps: job.s
         actual = " ".join(str(matches[0].get("if", "")).split())
         require(actual == "${{ " + condition + " }}",
                 f"{name}: shipping condition must preserve event, outcome, and cleanup gates")
+    upload = next(step for step in workflow["steps"] if step.get("name") == "Upload shipping-fidelity artifacts")
+    expected_artifact_name = (
+        "unity-${{ matrix.unity-version }}-"
+        "${{ steps.run_shipping.outcome == 'success' && 'shipping' || 'shipping-failure-diagnostics' }}"
+    )
+    require(upload.get("with", {}).get("name") == expected_artifact_name,
+            "failed shipping producers must use the distinct diagnostic artifact identity")
     for step in workflow["steps"]:
         require("DXM_RUN_SHIPPING" not in (step.get("env") or {}),
                 "the shared shipping predicate env is retired; steps must embed the dispatch predicate")
@@ -2742,6 +2751,16 @@ def validate_grouped_unity_correctness() -> None:
     mutations = [
         ("manual shipping enabled by default", "default: false", "default: true"),
         ("manual input loses boolean typing", "type: boolean", "type: string"),
+        (
+            "failed producer loses diagnostic identity",
+            "steps.run_shipping.outcome == 'success' && 'shipping' || 'shipping-failure-diagnostics'",
+            "steps.run_shipping.outcome == 'failure' && 'shipping' || 'shipping-failure-diagnostics'",
+        ),
+        (
+            "successful producer bypasses seal",
+            "(steps.run_shipping.outcome == 'success' && steps.seal_shipping.outcome == 'success')",
+            "steps.run_shipping.outcome == 'success'",
+        ),
         (
             "shipping runs on push",
             "github.event_name == 'workflow_dispatch'",
@@ -2964,7 +2983,10 @@ def validate_grouped_unity_correctness() -> None:
         "if-no-files-found: error" in shipping_upload
         and "!cancelled()" in shipping_upload
         and "steps.acquire_lock.outputs.acquired == 'true'" in shipping_upload
-        and "unity-${{ matrix.unity-version }}-shipping" in shipping_upload
+        and (
+            "name: unity-${{ matrix.unity-version }}-"
+            "${{ steps.run_shipping.outcome == 'success' && 'shipping' || 'shipping-failure-diagnostics' }}"
+        ) in shipping_upload
         and ".artifacts/unity/${{ matrix.unity-version }}-shipping" in shipping_upload,
         "shipping fidelity must upload isolated evidence after lock acquisition, skip cancellation, and fail when it is absent",
     )
