@@ -613,8 +613,13 @@ jobs:
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
+          parallel-paths: "true"
           paths: |
-            .artifacts/unity
+            .artifacts/unity/${{ matrix.unity-version }}-editmode
+            .artifacts/unity/${{ matrix.unity-version }}-playmode
+            .artifacts/unity/${{ matrix.unity-version }}-standalone
+            .artifacts/unity/${{ matrix.unity-version }}-shipping
+            .artifacts/unity/${{ matrix.unity-version }}-shipping-native-payload
 
       # Content-addressed retention for issue #508. The manifest names every evidence
       # file with its SHA-256 and embeds the normalized matrix result, so the uploaded

@@ -12,6 +12,10 @@ inputs:
       Newline-separated directories to scrub. A directory that does not exist is
       skipped, so one call can cover every test mode a job may or may not run.
     required: true
+  parallel-paths:
+    description: Process disjoint paths with up to four workers.
+    required: false
+    default: "false"
 runs:
   using: composite
   steps:
@@ -22,6 +26,7 @@ runs:
       shell: pwsh
       env:
         DXM_REDACT_PATHS: ${{ inputs.paths }}
+        DXM_REDACT_PARALLEL_PATHS: ${{ inputs.parallel-paths }}
       run: |
         $ErrorActionPreference = 'Stop'
         $paths = @(
@@ -34,9 +39,40 @@ runs:
         }
         Write-Host "::group::Redacting sensitive data from Unity artifacts"
         try {
-          node scripts/unity/redact-unity-artifacts.js @paths
-          if ($LASTEXITCODE -ne 0) {
-            throw "Sensitive-data redaction failed with exit code $LASTEXITCODE."
+          if ($env:DXM_REDACT_PARALLEL_PATHS -eq 'true') {
+            $roots = @($paths | ForEach-Object {
+              [System.IO.Path]::TrimEndingDirectorySeparator([System.IO.Path]::GetFullPath($_))
+            })
+            $comparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+            for ($i = 0; $i -lt $roots.Count; $i++) {
+              for ($j = 0; $j -lt $i; $j++) {
+                $left = $roots[$i].TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+                $right = $roots[$j].TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+                if ($left.StartsWith($right, $comparison) -or $right.StartsWith($left, $comparison)) {
+                  throw 'Parallel artifact paths must not overlap.'
+                }
+              }
+            }
+            $processor = (Resolve-Path -LiteralPath 'scripts/unity/redact-unity-artifacts.js').Path
+            $outcomes = @($roots | ForEach-Object -Parallel {
+              $ErrorActionPreference = 'Stop'
+              try {
+                node $using:processor $_ 2>&1 | ForEach-Object { Write-Host "$_" }
+                [pscustomobject]@{ Succeeded = ($LASTEXITCODE -eq 0) }
+              } catch {
+                Write-Host "Artifact processing worker failed: $_"
+                [pscustomobject]@{ Succeeded = $false }
+              }
+            } -ThrottleLimit 4)
+            $failed = @($outcomes | Where-Object { -not $_.Succeeded })
+            if ($outcomes.Count -ne $roots.Count -or $failed.Count -ne 0) {
+              throw 'Sensitive-data redaction failed in one or more workers.'
+            }
+          } else {
+            node scripts/unity/redact-unity-artifacts.js @paths
+            if ($LASTEXITCODE -ne 0) {
+              throw "Sensitive-data redaction failed with exit code $LASTEXITCODE."
+            }
           }
         } finally {
           Write-Host '::endgroup::'

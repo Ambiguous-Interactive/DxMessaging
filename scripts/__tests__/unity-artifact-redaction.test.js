@@ -229,7 +229,7 @@ test("the shipping evidence bundle is sealed only after redaction has run", () =
     (step) =>
       typeof step.uses === "string" &&
       step.uses.startsWith(REDACTION_ACTION) &&
-      covers(toPathList(step.with?.paths), ".artifacts/unity/x-shipping")
+      covers(toPathList(step.with?.paths), ".artifacts/unity/<matrix.unity-version>-shipping")
   );
   assert.ok(
     redactionIndex >= 0 && redactionIndex < sealIndex,
