@@ -5923,7 +5923,9 @@ function Write-StandaloneBuildOutputDiagnostics {
 function Test-StandalonePlayerBuildOutput {
     param(
         [Parameter(Mandatory = $true)][string]$ExpectedExe,
-        [Parameter(Mandatory = $true)][datetime]$BuildStartedUtc
+        [Parameter(Mandatory = $true)][datetime]$BuildStartedUtc,
+        [Parameter(Mandatory = $true)][string]$BuildLogPath,
+        [Parameter(Mandatory = $true)][ValidateSet('IL2CPP', 'Mono')][string]$ScriptingBackend
     )
 
     if (-not (Test-Path -LiteralPath $ExpectedExe -PathType Leaf)) {
@@ -5938,6 +5940,27 @@ function Test-StandalonePlayerBuildOutput {
     $dataDir = Join-Path (Split-Path -Parent $ExpectedExe) ("{0}_Data" -f [System.IO.Path]::GetFileNameWithoutExtension($ExpectedExe))
     if (-not (Test-Path -LiteralPath $dataDir -PathType Container)) {
         return "missing player data directory: $dataDir"
+    }
+
+    if (-not (Test-Path -LiteralPath $BuildLogPath -PathType Leaf)) {
+        return "missing build log: $BuildLogPath"
+    }
+    $buildLog = Get-Content -LiteralPath $BuildLogPath -Raw
+    if ($buildLog -match '(?m)^\s*(?:[\w.]+\.)?TestLaunchFailedException:\s*Player build failed(?:\s|$)') {
+        return 'Unity reported a failed player build'
+    }
+    if ($ScriptingBackend -ceq 'IL2CPP') {
+        foreach ($nativePath in @(
+            (Join-Path $exe.DirectoryName 'GameAssembly.dll')
+            (Join-Path $dataDir 'il2cpp_data/Metadata/global-metadata.dat')
+        )) {
+            if (-not (Test-Path -LiteralPath $nativePath -PathType Leaf)) {
+                return "missing IL2CPP player file: $nativePath"
+            }
+            if ((Get-Item -LiteralPath $nativePath).Length -le 0) {
+                return "empty IL2CPP player file: $nativePath"
+            }
+        }
     }
 
     return ''
@@ -7680,7 +7703,9 @@ try {
         }
         $shippingBuildProblem = Test-StandalonePlayerBuildOutput `
             -ExpectedExe $standaloneExe `
-            -BuildStartedUtc $shippingBuildStartedUtc
+            -BuildStartedUtc $shippingBuildStartedUtc `
+            -BuildLogPath $logPath `
+            -ScriptingBackend 'IL2CPP'
         if (
             -not [string]::IsNullOrWhiteSpace($shippingMarkerProblem) -or
             -not [string]::IsNullOrWhiteSpace($shippingBuildProblem)
@@ -8066,7 +8091,9 @@ try {
         # fresh, complete exe) still fails loudly with full diagnostics.
         $standaloneBuildProblem = Test-StandalonePlayerBuildOutput `
             -ExpectedExe $standaloneExe `
-            -BuildStartedUtc $standaloneBuildStartedUtc
+            -BuildStartedUtc $standaloneBuildStartedUtc `
+            -BuildLogPath $logPath `
+            -ScriptingBackend $StandaloneScriptingBackend
         if (-not [string]::IsNullOrWhiteSpace($standaloneBuildProblem)) {
             Write-UnityRunFailureDiagnostics `
                 -Project $ProjectPath `
