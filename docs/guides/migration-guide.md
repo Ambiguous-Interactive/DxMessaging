@@ -43,6 +43,18 @@ component overrides the inherited string handler methods, add
 
 Keep calling `base.RegisterMessageHandlers()` so registrations declared by parent components run.
 
+### Observe callback-driven configuration after the outer call
+
+A bus cleanup or provider callback can call `MessagingComponent.Configure` while another
+configuration is in progress. In 4.0, that nested call queues its request. Its provider resolution,
+listener migration, and errors complete through the outermost `Configure` call, preserving each
+request's order and rebind mode.
+
+Move work that requires delivery on the newly configured bus outside the callback, after the
+outermost call returns. Handle queued failures around that outer call: a single error keeps its
+original exception identity; multiple errors appear in `AggregateException.InnerExceptions`.
+See [configuration from callbacks](../advanced/runtime-configuration.md#configuration-from-callbacks).
+
 ### Use `in` parameters for fast handlers
 
 Fast handlers and post-processors receive read-only message references in DxMessaging 4.0. Change
