@@ -269,7 +269,7 @@ jobs:
           - comparisons
     steps:
       - name: Require current PR head before self-hosted setup
-        timeout-minutes: 2
+        timeout-minutes: 3
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           github-token: ${{ github.token }}
@@ -1382,7 +1382,7 @@ jobs:
 
       - name: Require current PR head before reporting
         if: needs.perf-benchmarks.result == 'success'
-        timeout-minutes: 2
+        timeout-minutes: 3
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           github-token: ${{ github.token }}
@@ -1618,7 +1618,7 @@ jobs:
       - name: Require current PR head before comment update
         id: report-freshness
         if: always()
-        timeout-minutes: 2
+        timeout-minutes: 3
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           github-token: ${{ github.token }}

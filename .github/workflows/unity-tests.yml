@@ -161,7 +161,7 @@ jobs:
           - standalone
     steps:
       - name: Require current PR head before setup
-        timeout-minutes: 2
+        timeout-minutes: 3
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           github-token: ${{ github.token }}
@@ -312,7 +312,7 @@ jobs:
             matrix.unity-version == '2021.3.45f1' ||
             matrix.unity-version == '6000.5.2f1'
           }}
-        timeout-minutes: 2
+        timeout-minutes: 3
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           github-token: ${{ github.token }}
