@@ -249,6 +249,86 @@ param([string]$OutputPath)
             throw "$mode did not reject an unsupported Editor name filter: $rejection"
         }
     }
+    # Execute the maintained guard with owned file layouts; these placeholders are never launched.
+    $buildOutputCases = @(
+        @('partial', 'IL2CPP', 'partial', 'ok', 'missing IL2CPP'),
+        @('metadata-missing', 'IL2CPP', 'no-metadata', 'ok', 'missing IL2CPP'),
+        @('native-missing', 'IL2CPP', 'no-native', 'ok', 'missing IL2CPP'),
+        @('empty-native', 'IL2CPP', 'empty-native', 'ok', 'empty IL2CPP'),
+        @('empty-metadata', 'IL2CPP', 'empty-metadata', 'ok', 'empty IL2CPP'),
+        @('complete', 'IL2CPP', 'complete', 'ok', '^$'),
+        @('cached-native', 'IL2CPP', 'cached', 'ok', '^$'),
+        @('mono', 'Mono', 'partial', 'ok', '^$'),
+        @('failed-complete', 'IL2CPP', 'complete', 'failed', 'reported a failed'),
+        @('failed-mono', 'Mono', 'partial', 'failed', 'reported a failed'),
+        @('benign-postbuild', 'IL2CPP', 'complete', 'shutdown', '^$'),
+        @('lookalike', 'IL2CPP', 'complete', 'lookalike', '^$'),
+        @('missing-log', 'IL2CPP', 'complete', 'missing', 'missing build log'),
+        @('qualified-failure', 'IL2CPP', 'complete', 'qualified-failed', 'reported a failed'),
+        @('missing-exe', 'IL2CPP', 'missing-exe', 'ok', 'missing exe'),
+        @('stale-exe', 'IL2CPP', 'stale', 'ok', 'stale exe'),
+        @('missing-data', 'IL2CPP', 'missing-data', 'ok', 'missing player data')
+    )
+    foreach ($case in $buildOutputCases) {
+        $name, $backend, $payload, $logKind, $expectedProblem = $case
+        $directory = Join-Path $fixture ("player output/$name")
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        $exe = Join-Path $directory 'Player.exe'
+        $data = Join-Path $directory 'Player_Data'
+        $started = [DateTime]::UtcNow.AddSeconds(-1)
+        if ($payload -ne 'missing-exe') { [IO.File]::WriteAllText($exe, 'fixture executable; never launched') }
+        if ($payload -ne 'missing-data') { New-Item -ItemType Directory -Path $data | Out-Null }
+        $native = Join-Path $directory 'GameAssembly.dll'
+        $metadata = Join-Path $data 'il2cpp_data/Metadata/global-metadata.dat'
+        if ($payload -notin @('partial', 'no-native', 'missing-exe', 'missing-data', 'stale')) {
+            [IO.File]::WriteAllText($native, $(if ($payload -eq 'empty-native') { '' } else { 'native fixture' }))
+        }
+        if ($payload -notin @('partial', 'no-metadata', 'missing-exe', 'missing-data', 'stale')) {
+            New-Item -ItemType Directory -Path (Split-Path -Parent $metadata) -Force | Out-Null
+            [IO.File]::WriteAllText($metadata, $(if ($payload -eq 'empty-metadata') { '' } else { 'metadata fixture' }))
+        }
+        if ($payload -eq 'cached') {
+            (Get-Item -LiteralPath $native).LastWriteTimeUtc = $started.AddYears(-1)
+            (Get-Item -LiteralPath $metadata).LastWriteTimeUtc = $started.AddYears(-1)
+        }
+        if ($payload -eq 'stale') { (Get-Item -LiteralPath $exe).LastWriteTimeUtc = $started.AddHours(-1) }
+        $buildLog = Join-Path $directory 'build.log'
+        if ($logKind -ne 'missing') {
+            $body = switch ($logKind) {
+                'failed' { 'TestLaunchFailedException: Player build failed' }
+                'qualified-failed' { 'UnityEditor.TestTools.TestRunner.TestLaunchFailedException: Player build failed' }
+                'shutdown' { "Build completed with a result of 'Succeeded'`nFatal error. System.AccessViolationException during shutdown" }
+                'lookalike' { 'Note: TestLaunchFailedException: Player build failed is an example message' }
+                default { "Build completed with a result of 'Succeeded'" }
+            }
+            [IO.File]::WriteAllText($buildLog, $body)
+        }
+        $problem = [string](Test-StandalonePlayerBuildOutput -ExpectedExe $exe `
+            -BuildStartedUtc $started -BuildLogPath $buildLog -ScriptingBackend $backend)
+        if ($problem -notmatch $expectedProblem) { throw "$name returned '$problem', expected '$expectedProblem'." }
+    }
+    $outputCalls = @($ast.FindAll({ param($node)
+        $node -is [System.Management.Automation.Language.CommandAst] -and
+        $node.GetCommandName() -eq 'Test-StandalonePlayerBuildOutput'
+    }, $true))
+    if ($outputCalls.Count -ne 2) { throw 'Review every maintained output-validation callsite.' }
+    foreach ($call in $outputCalls) {
+        $arguments = @{}
+        for ($index = 1; $index -lt $call.CommandElements.Count; ++$index) {
+            $element = $call.CommandElements[$index]
+            if ($element -is [System.Management.Automation.Language.CommandParameterAst]) {
+                $arguments[$element.ParameterName] = $call.CommandElements[$index + 1].Extent.Text
+            }
+        }
+        if ($arguments.BuildLogPath -cne '$logPath') { throw 'Build output validation lost its current build log.' }
+        $expectedBackend = switch ($arguments.BuildStartedUtc) {
+            '$shippingBuildStartedUtc' { "'IL2CPP'" }
+            '$standaloneBuildStartedUtc' { '$StandaloneScriptingBackend' }
+            default { throw 'Unknown standalone output-validation caller.' }
+        }
+        if ($arguments.ScriptingBackend -cne $expectedBackend) { throw 'Build output validation lost the selected backend.' }
+    }
+    Write-Host 'Seventeen build-output layouts and both current-log/backend callsites passed.'
     Write-Host 'Editor watchdog and result-validation and argument-transport cases passed.'
 } finally {
     Remove-Item -LiteralPath $fixture -Recurse -Force
