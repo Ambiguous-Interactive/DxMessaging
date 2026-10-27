@@ -43,7 +43,7 @@ namespace DxMessaging.Tests.Editor
         internal static string Describe(string path)
         {
 #if UNITY_EDITOR_WIN
-            if (Marshal.SizeOf<UniqueProcess>() != 12 || Marshal.SizeOf<ProcessInfo>() != 672)
+            if (Marshal.SizeOf<UniqueProcess>() != 12 || Marshal.SizeOf<ProcessInfo>() != 668)
             {
                 return "RestartManager observer invalid: unexpected native structure layout.";
             }
@@ -126,10 +126,10 @@ namespace DxMessaging.Tests.Editor
         {
             public UniqueProcess Process;
 
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 257)]
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
             public string ApplicationName;
 
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 65)]
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
             public string ServiceName;
             public uint ApplicationType;
             public uint Status;
@@ -171,6 +171,89 @@ namespace DxMessaging.Tests.Editor
     [TestFixture]
     public sealed class EditorFileLockDiagnosticsTests
     {
+        /// <remarks>
+        /// 2026-10-27: Windows SDK buffers include terminators at256/64characters.
+        /// The previous257/65buffers shifted scalar fields and every array record after the first.
+        /// </remarks>
+        [Test]
+        public void FileLockObserverProcessLayoutMatchesTheWindowsSdk()
+        {
+            Type unique = typeof(EditorFileLockDiagnostics).GetNestedType(
+                "UniqueProcess",
+                System.Reflection.BindingFlags.NonPublic
+            );
+            Type process = typeof(EditorFileLockDiagnostics).GetNestedType(
+                "ProcessInfo",
+                System.Reflection.BindingFlags.NonPublic
+            );
+            Assert.That(unique, Is.Not.Null);
+            Assert.That(process, Is.Not.Null);
+            Assert.That(Marshal.SizeOf(unique), Is.EqualTo(12));
+            Assert.That(
+                Marshal.SizeOf(process),
+                Is.EqualTo(668),
+                "Native RM_PROCESS_INFO array stride."
+            );
+            KeyValuePair<string, int>[] offsets =
+            {
+                new("Process", 0),
+                new("ApplicationName", 12),
+                new("ServiceName", 524),
+                new("ApplicationType", 652),
+                new("Status", 656),
+                new("SessionId", 660),
+                new("Restartable", 664),
+            };
+            foreach (KeyValuePair<string, int> entry in offsets)
+            {
+                Assert.That(
+                    Marshal.OffsetOf(process, entry.Key).ToInt32(),
+                    Is.EqualTo(entry.Value),
+                    $"Windows SDK field offset: {entry.Key}"
+                );
+            }
+        }
+
+        [TestCase(2)]
+        [TestCase(3)]
+        public void FileLockObserverReportsEveryOwnedProcess(int count)
+        {
+            using EditorOwnedFileLockProcesses owners = new(count);
+            IOException failure = Assert.Throws<IOException>(() =>
+                File.Delete(owners.ResourcePath)
+            );
+            Assert.That(failure.HResult & 65535, Is.EqualTo(32), $"Owned holders={count}");
+            string report = EditorFileLockDiagnostics.Describe(owners.ResourcePath);
+            TestContext.Out.WriteLine(report);
+            Assert.That(report, Does.StartWith("RestartManager start=0, register=0, list=0,"));
+            Assert.That(report, Does.EndWith(", end=0"));
+            HashSet<uint> actual = new();
+            foreach (
+                System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(
+                    report,
+                    @"; pid=(\d+),"
+                )
+            )
+            {
+                actual.Add(
+                    uint.Parse(
+                        match.Groups[1].Value,
+                        System.Globalization.CultureInfo.InvariantCulture
+                    )
+                );
+            }
+            HashSet<uint> expected = new();
+            foreach (int id in owners.ProcessIds)
+            {
+                expected.Add((uint)id);
+            }
+            Assert.That(
+                actual,
+                Is.EquivalentTo(expected),
+                $"Every owned holder must decode: count={count}; {report}"
+            );
+        }
+
         [Test]
         public void FileLockObserverReportsTheCurrentProcessForAnOwnedExclusiveFile()
         {
@@ -198,6 +281,178 @@ namespace DxMessaging.Tests.Editor
             finally
             {
                 File.Delete(path);
+            }
+        }
+    }
+
+    internal sealed class EditorOwnedFileLockProcesses : IDisposable
+    {
+        private readonly string _directory;
+        private readonly List<System.Diagnostics.Process> _children = new();
+        private bool _disposed;
+        internal string ResourcePath { get; }
+        internal int[] ProcessIds
+        {
+            get
+            {
+                int[] ids = new int[_children.Count];
+                for (int index = 0; index < ids.Length; ++index)
+                {
+                    ids[index] = _children[index].Id;
+                }
+                return ids;
+            }
+        }
+
+        internal EditorOwnedFileLockProcesses(int count)
+        {
+            if (count < 0 || 3 < count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+            _directory = Path.Combine(
+                Path.GetTempPath(),
+                "dxm-owned-rm-" + Guid.NewGuid().ToString("N")
+            );
+            ResourcePath = Path.Combine(_directory, "owned.rsp");
+            Directory.CreateDirectory(_directory);
+            try
+            {
+                File.WriteAllText(ResourcePath, "owned Restart Manager control");
+                string script = Path.Combine(_directory, "holder.ps1");
+                File.WriteAllText(
+                    script,
+                    @"param([string]$OwnedPath)
+$ErrorActionPreference = 'Stop'
+$held = [IO.FileStream]::new($OwnedPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+try {
+    [Console]::Out.WriteLine('DXM_HOLDER_READY:' + $PID)
+    [Console]::Out.Flush()
+    if ([Console]::ReadLine() -ne 'stop') { throw 'Unexpected owned-holder command.' }
+} finally { $held.Dispose() }"
+                );
+                for (int index = 0; index < count; ++index)
+                {
+                    System.Diagnostics.ProcessStartInfo start = new()
+                    {
+                        FileName = "pwsh",
+                        Arguments =
+                            "-NoLogo -NoProfile -NonInteractive -File \""
+                            + script
+                            + "\" -OwnedPath \""
+                            + ResourcePath
+                            + "\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardInput = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                    };
+                    System.Diagnostics.Process child =
+                        System.Diagnostics.Process.Start(start)
+                        ?? throw new InvalidOperationException("Owned holder did not start.");
+                    _children.Add(child);
+                    System.Threading.Tasks.Task<string> ready =
+                        child.StandardOutput.ReadLineAsync();
+                    if (!ready.Wait(10_000))
+                    {
+                        throw new TimeoutException("Owned holder readiness handshake timed out.");
+                    }
+                    if (ready.Result != "DXM_HOLDER_READY:" + child.Id)
+                    {
+                        throw new InvalidOperationException(
+                            "Owned holder readiness mismatch: " + ready.Result
+                        );
+                    }
+                }
+            }
+            catch (Exception failure)
+            {
+                try
+                {
+                    Dispose();
+                }
+                catch (Exception cleanupFailure)
+                {
+                    throw new AggregateException(failure, cleanupFailure);
+                }
+                throw;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            _disposed = true;
+            List<Exception> failures = new();
+            foreach (System.Diagnostics.Process child in _children)
+            {
+                try
+                {
+                    if (!child.HasExited)
+                    {
+                        child.StandardInput.WriteLine("stop");
+                        child.StandardInput.Close();
+                        if (!child.WaitForExit(10_000))
+                        {
+                            throw new TimeoutException(
+                                "Owned holder did not acknowledge normal shutdown."
+                            );
+                        }
+                    }
+                    if (child.ExitCode != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "Owned holder exited with "
+                                + child.ExitCode
+                                + ": "
+                                + child.StandardError.ReadToEnd()
+                        );
+                    }
+                }
+                catch (Exception failure)
+                {
+                    failures.Add(failure);
+                    try
+                    {
+                        if (!child.HasExited)
+                        {
+                            child.Kill();
+                            if (!child.WaitForExit(10_000))
+                            {
+                                throw new TimeoutException(
+                                    "Owned holder cleanup was not confirmed."
+                                );
+                            }
+                        }
+                    }
+                    catch (Exception cleanupFailure)
+                    {
+                        failures.Add(cleanupFailure);
+                    }
+                }
+                finally
+                {
+                    child.Dispose();
+                }
+            }
+            try
+            {
+                Directory.Delete(_directory, true);
+            }
+            catch (Exception failure)
+            {
+                failures.Add(failure);
+            }
+            if (0 < failures.Count)
+            {
+                throw new AggregateException(
+                    "Owned Restart Manager process cleanup failed.",
+                    failures
+                );
             }
         }
     }
