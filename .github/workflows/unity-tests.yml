@@ -159,6 +159,11 @@ jobs:
         # axis, and no other dynamic form.
         test-mode:
           - standalone
+        # Research projection for #680: one complete default Unity 6.5 suite.
+        exclude:
+          - unity-version: 2021.3.45f1
+          - unity-version: 2022.3.45f1
+          - unity-version: 6000.3.16f1
     steps:
       - name: Require current PR head before setup
         timeout-minutes: 3

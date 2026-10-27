@@ -608,6 +608,30 @@ namespace DxMessaging.Tests.Editor
             }
         }
 
+#if UNITY_EDITOR_WIN
+        private static IEnumerable<TestCaseData> CompilerInputSharingTimelineCases()
+        {
+            for (int repetition = 0; repetition < 25; ++repetition)
+            {
+                foreach (bool sidecar in new[] { false, true })
+                {
+                    yield return new TestCaseData(sidecar, repetition).SetName(
+                        $"CompilerInputSharingTimeline(sidecar={sidecar},repetition={repetition})"
+                    );
+                }
+            }
+        }
+
+        [TestCaseSource(nameof(CompilerInputSharingTimelineCases))]
+        public void CompilerInputSharingTimeline(bool sidecar, int repetition)
+        {
+            TestContext.Out.WriteLine(
+                $"DXM_COMPILER_INPUT_TIMELINE sidecar={sidecar}; repetition={repetition}"
+            );
+            CompilerInputScopeSuspendsExistingWritersUntilRestoration(sidecar);
+        }
+#endif
+
         private static Delegate[] CurrentDelayCallbacks() =>
             EditorApplication.delayCall?.GetInvocationList() ?? Array.Empty<Delegate>();
 

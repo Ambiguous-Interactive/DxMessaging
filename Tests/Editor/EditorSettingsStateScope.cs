@@ -458,6 +458,170 @@ try {
     }
 #endif
 
+    internal readonly struct DeleteSharingProbeResult
+    {
+        internal readonly int Error;
+        internal readonly long Started;
+        internal readonly long Finished;
+
+        internal DeleteSharingProbeResult(int error, long started, long finished)
+        {
+            Error = error;
+            Started = started;
+            Finished = finished;
+        }
+    }
+
+    /// <summary>Observes DELETE sharing without modifying the file or retrying its failed operation.</summary>
+    internal static class EditorCompilerInputFailureDiagnostics
+    {
+        internal static DeleteSharingProbeResult Probe(string path)
+        {
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            int error = -1;
+#if UNITY_EDITOR_WIN
+            try
+            {
+                IntPtr handle = CreateFileW(
+                    Path.GetFullPath(path),
+                    0x00010000,
+                    7,
+                    IntPtr.Zero,
+                    3,
+                    0,
+                    IntPtr.Zero
+                );
+                if (handle == new IntPtr(-1))
+                {
+                    error = Marshal.GetLastWin32Error();
+                }
+                else
+                {
+                    error = CloseHandle(handle) ? 0 : -2;
+                }
+            }
+            catch (Exception)
+            {
+                error = -1;
+            }
+#endif
+            return new DeleteSharingProbeResult(
+                error,
+                started,
+                System.Diagnostics.Stopwatch.GetTimestamp()
+            );
+        }
+
+        internal static string Describe(string path, Exception failure, string operation)
+        {
+            long observed = System.Diagnostics.Stopwatch.GetTimestamp();
+            DeleteSharingProbeResult before = Probe(path);
+            long queryStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            string owners = EditorFileLockDiagnostics.Describe(path);
+            long queryFinished = System.Diagnostics.Stopwatch.GetTimestamp();
+            DeleteSharingProbeResult after = Probe(path);
+            return $"DXM_COMPILER_INPUT_SHARING operation={operation}; code={failure.HResult & 65535}; "
+                + $"before={before.Error}; after={after.Error}; observed={observed}; "
+                + $"beforeStart={before.Started}; beforeEnd={before.Finished}; "
+                + $"queryStart={queryStarted}; queryEnd={queryFinished}; "
+                + $"afterStart={after.Started}; afterEnd={after.Finished}; "
+                + $"frequency={System.Diagnostics.Stopwatch.Frequency}; rm={owners}";
+        }
+
+#if UNITY_EDITOR_WIN
+        [DllImport(
+            "kernel32.dll",
+            CharSet = CharSet.Unicode,
+            ExactSpelling = true,
+            SetLastError = true
+        )]
+        private static extern IntPtr CreateFileW(
+            string fileName,
+            uint desiredAccess,
+            uint sharing,
+            IntPtr securityAttributes,
+            uint creationDisposition,
+            uint flags,
+            IntPtr template
+        );
+
+        [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr handle);
+#endif
+    }
+
+#if UNITY_EDITOR_WIN
+    [TestFixture]
+    public sealed class EditorDeleteSharingProbeTests
+    {
+        [TestCase("held-denial", 32)]
+        [TestCase("released-denial", 0)]
+        [TestCase("delete-shared", 0)]
+        [TestCase("unlocked", 0)]
+        [TestCase("missing", 2)]
+        public void DeleteSharingProbeReportsOwnedFileState(string state, int expectedError)
+        {
+            string directory = Path.Combine(
+                Path.GetTempPath(),
+                "dxm-delete-sharing-" + Guid.NewGuid().ToString("N")
+            );
+            Directory.CreateDirectory(directory);
+            string path = Path.Combine(directory, "owned.rsp");
+            FileStream owner = null;
+            try
+            {
+                if (state != "missing")
+                {
+                    File.WriteAllText(path, "owned control");
+                }
+                if (
+                    state == "held-denial"
+                    || state == "released-denial"
+                    || state == "delete-shared"
+                )
+                {
+                    FileShare sharing = FileShare.ReadWrite;
+                    if (state == "delete-shared")
+                    {
+                        sharing |= FileShare.Delete;
+                    }
+                    owner = new FileStream(path, FileMode.Open, FileAccess.Read, sharing);
+                }
+                if (state == "held-denial" || state == "released-denial")
+                {
+                    IOException failure = Assert.Throws<IOException>(() => File.Delete(path));
+                    Assert.That(failure.HResult & 65535, Is.EqualTo(32), state);
+                }
+                if (state == "released-denial")
+                {
+                    owner.Dispose();
+                    owner = null;
+                }
+                DeleteSharingProbeResult probe = EditorCompilerInputFailureDiagnostics.Probe(path);
+                TestContext.Out.WriteLine(
+                    $"DXM_DELETE_SHARING_CONTROL state={state}; error={probe.Error}; "
+                        + $"started={probe.Started}; finished={probe.Finished}; "
+                        + $"frequency={System.Diagnostics.Stopwatch.Frequency}"
+                );
+                Assert.That(probe.Error, Is.EqualTo(expectedError), state);
+                Assert.That(probe.Started, Is.LessThanOrEqualTo(probe.Finished), state);
+                Assert.That(File.Exists(path), Is.EqualTo(state != "missing"), state);
+                if (state != "missing")
+                {
+                    Assert.That(File.ReadAllText(path), Is.EqualTo("owned control"), state);
+                }
+                GC.KeepAlive(owner);
+            }
+            finally
+            {
+                owner?.Dispose();
+                Directory.Delete(directory, true);
+            }
+        }
+    }
+#endif
+
     /// <summary>Preserves the real generated inputs touched by editor settings operations.</summary>
     internal sealed class EditorCompilerInputScope : IDisposable
     {
@@ -537,12 +701,17 @@ try {
                         }
                         catch (IOException failure)
                         {
+                            string diagnostics = EditorCompilerInputFailureDiagnostics.Describe(
+                                saved.Key,
+                                failure,
+                                operation
+                            );
                             throw new IOException(
                                 $"Compiler-input backup {operation} failed: '{saved.Key}' -> '{saved.Value}'. "
                                     + $"sourceExists={File.Exists(saved.Key)}, backupExists={File.Exists(saved.Value)}, "
                                     + $"assetEditing={_assetEditing}, compiling={EditorApplication.isCompiling}, "
                                     + $"updating={EditorApplication.isUpdating}. "
-                                    + EditorFileLockDiagnostics.Describe(saved.Key),
+                                    + diagnostics,
                                 failure
                             );
                         }
@@ -568,12 +737,14 @@ try {
             List<Exception> failures = new();
             foreach (KeyValuePair<string, string> saved in _saved)
             {
+                string operation = "inspect";
                 try
                 {
                     if (saved.Value == null)
                     {
                         if (File.Exists(saved.Key))
                         {
+                            operation = "delete";
                             File.Delete(saved.Key);
                         }
                     }
@@ -581,18 +752,26 @@ try {
                     {
                         if (File.Exists(saved.Key))
                         {
+                            operation = "delete";
                             File.Delete(saved.Key);
                         }
+                        operation = "move";
                         File.Move(saved.Value, saved.Key);
                     }
                 }
                 catch (Exception exception)
                 {
+                    string diagnostics = EditorCompilerInputFailureDiagnostics.Describe(
+                        saved.Key,
+                        exception,
+                        operation
+                    );
                     failures.Add(
                         new IOException(
                             $"Restoring compiler input '{saved.Key}' failed. "
                                 + $"OriginallyPresent={saved.Value != null}, assetEditing={_assetEditing}, "
-                                + $"compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}.",
+                                + $"compiling={EditorApplication.isCompiling}, updating={EditorApplication.isUpdating}. "
+                                + diagnostics,
                             exception
                         )
                     );
