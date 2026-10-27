@@ -274,7 +274,7 @@ test("run-ci-tests -GenerateOnly rejects an unowned CachePath without modifying 
 
 test("PowerShell Unity harness regression tests pass", () => {
   // prettier-ignore
-  for (const script of ["il2cpp-profile.test.ps1", "require-comparison-rows.test.ps1", "same-player-repeat-evidence.test.ps1", "editor-process-watchdog.test.ps1", "shipping-fidelity.test.ps1", "source-input-project-cache.test.ps1"]) {
+  for (const script of ["il2cpp-profile.test.ps1", "require-comparison-rows.test.ps1", "same-player-repeat-evidence.test.ps1", "editor-process-watchdog.test.ps1", "shipping-fidelity.test.ps1", "source-input-project-cache.test.ps1", "artifact-processing-parallel.test.ps1"]) {
     const testScript = path.join(REPO_ROOT, "scripts", "unity", "__tests__", script);
     const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-File", testScript], {
       encoding: "utf8"

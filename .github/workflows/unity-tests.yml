@@ -615,6 +615,10 @@ jobs:
         with:
           paths: |
             .artifacts/unity
+          parallel-paths: |
+            ${{ !inputs.shipping_fidelity && !inputs.consumer_install_validation && format('.artifacts/unity/{0}-editmode', matrix.unity-version) || '' }}
+            ${{ !inputs.shipping_fidelity && !inputs.consumer_install_validation && format('.artifacts/unity/{0}-playmode', matrix.unity-version) || '' }}
+            ${{ !inputs.shipping_fidelity && !inputs.consumer_install_validation && format('.artifacts/unity/{0}-standalone', matrix.unity-version) || '' }}
 
       # Content-addressed retention for issue #508. The manifest names every evidence
       # file with its SHA-256 and embeds the normalized matrix result, so the uploaded
