@@ -80,8 +80,7 @@ jobs:
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
           $install = @(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
           if ($LASTEXITCODE -ne 0 -or $install.Count -ne 1) { throw 'One existing C++ toolchain is required.' }
-          Import-Module (Join-Path $install[0] 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll')
-          Enter-VsDevShell -VsInstallPath $install[0] -SkipAutomaticLocation -DevCmdArguments '-arch=amd64 -host_arch=amd64'
+          & (Join-Path $install[0] 'Common7/Tools/Launch-VsDevShell.ps1') -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
           $compiler = (Get-Command cl.exe -CommandType Application).Source
           $source = @'
           #include <cstdio>
