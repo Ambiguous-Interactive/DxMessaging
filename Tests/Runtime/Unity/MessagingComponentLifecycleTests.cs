@@ -35,6 +35,180 @@ namespace DxMessaging.Tests.Runtime.Unity
     /// </remarks>
     public sealed class MessagingComponentLifecycleTests : MessagingTestBase
     {
+        /// <summary>Observes listener migrations when cleanup accepts a nested active configuration.</summary>
+        /// <remarks>
+        /// 2026-10-27: listener identity can survive while a nested configuration supersedes an
+        /// older migration target. Record all bus deliveries before asserting ownership so an
+        /// unfavorable case retains both the accepted callback and resumed migration state.
+        /// </remarks>
+        [Test]
+        public void ConfigurePreservesNestedActiveConfiguration(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool beforeDeregistration,
+            [Values(false, true)] bool interceptor,
+            [Values("none", "original", "outer", "third")] string nestedTarget
+        )
+        {
+            string context =
+                $"[{scenario.Kind}, before={beforeDeregistration}, interceptor={interceptor}, nested={nestedTarget}]";
+            GameObject host = new(
+                nameof(ConfigurePreservesNestedActiveConfiguration),
+                typeof(MessagingComponent),
+                typeof(ManualListenerComponent)
+            );
+            _spawned.Add(host);
+            MessagingComponent messaging = host.GetComponent<MessagingComponent>();
+            ManualListenerComponent first = host.GetComponent<ManualListenerComponent>();
+            ManualListenerComponent second = host.AddComponent<ManualListenerComponent>();
+            InstanceId route = host;
+            MessageBus original = new();
+            MessageBus outer = new();
+            MessageBus third = new();
+            ReleaseCallbackBus bus = new(original, beforeDeregistration);
+            IMessageBus nestedBus = nestedTarget switch
+            {
+                "original" => bus,
+                "outer" => outer,
+                "third" => third,
+                _ => null,
+            };
+            IMessageBus expectedBus = nestedBus ?? outer;
+            IMessageBus[] observedBuses = { bus, outer, third };
+            using (LeakWatcher originalWatcher = new(bus: bus, label: context + " original"))
+            using (LeakWatcher outerWatcher = new(bus: outer, label: context + " outer"))
+            using (LeakWatcher thirdWatcher = new(bus: third, label: context + " third"))
+            {
+                for (int cycle = 0; cycle < 10; ++cycle)
+                {
+                    string cycleContext = $"{context}, cycle={cycle}";
+                    messaging.Configure(bus, MessageBusRebindMode.RebindActive);
+                    MessageRegistrationToken firstToken = messaging.Create(first);
+                    MessageRegistrationToken secondToken = messaging.Create(second);
+                    int firstCalls = 0;
+                    int secondCalls = 0;
+                    int callbacksBefore = bus.Callbacks;
+                    bool callbackCompleted = false;
+                    Exception configurationFailure = null;
+                    bool identitiesPreserved = false;
+                    bool bothEnabled = false;
+                    int[] firstByBus = new int[observedBuses.Length];
+                    int[] secondByBus = new int[observedBuses.Length];
+                    int[] registrationsByBus = new int[observedBuses.Length];
+                    try
+                    {
+                        RegisterReleaseProbe(
+                            scenario,
+                            firstToken,
+                            route,
+                            interceptor,
+                            () => ++firstCalls
+                        );
+                        RegisterReleaseProbe(
+                            scenario,
+                            secondToken,
+                            route,
+                            interceptor,
+                            () => ++secondCalls
+                        );
+                        firstToken.Enable();
+                        secondToken.Enable();
+                        ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                        Assert.That(firstCalls, Is.EqualTo(1), cycleContext);
+                        Assert.That(secondCalls, Is.EqualTo(1), cycleContext);
+                        Assert.That(
+                            originalWatcher.LeakedRegistrations,
+                            Is.EqualTo(2),
+                            cycleContext
+                        );
+                        bus.OnDeregister = () =>
+                        {
+                            if (nestedBus != null)
+                            {
+                                messaging.Configure(nestedBus, MessageBusRebindMode.RebindActive);
+                            }
+                            callbackCompleted = true;
+                        };
+                        try
+                        {
+                            messaging.Configure(outer, MessageBusRebindMode.RebindActive);
+                        }
+                        catch (Exception exception)
+                        {
+                            configurationFailure = exception;
+                        }
+                        identitiesPreserved =
+                            messaging.TryGetToken(first, out MessageRegistrationToken retainedFirst)
+                            && ReferenceEquals(retainedFirst, firstToken)
+                            && messaging.TryGetToken(
+                                second,
+                                out MessageRegistrationToken retainedSecond
+                            )
+                            && ReferenceEquals(retainedSecond, secondToken)
+                            && messaging._registeredListeners.Count == 2;
+                        bothEnabled = firstToken.Enabled && secondToken.Enabled;
+                        registrationsByBus[0] = originalWatcher.LeakedRegistrations;
+                        registrationsByBus[1] = outerWatcher.LeakedRegistrations;
+                        registrationsByBus[2] = thirdWatcher.LeakedRegistrations;
+                        for (int index = 0; index < observedBuses.Length; ++index)
+                        {
+                            int firstBefore = firstCalls;
+                            int secondBefore = secondCalls;
+                            ScenarioCallbacks.EmitForKind(scenario, observedBuses[index], route);
+                            firstByBus[index] = firstCalls - firstBefore;
+                            secondByBus[index] = secondCalls - secondBefore;
+                        }
+                        TestContext.WriteLine(
+                            $"DXM_CONFIGURE_REENTRY {cycleContext}; completed={callbackCompleted}; "
+                                + $"callbacks={bus.Callbacks - callbacksBefore}; owned={identitiesPreserved}; "
+                                + $"enabled={bothEnabled}; registrations={string.Join(",", registrationsByBus)}; "
+                                + $"first={string.Join(",", firstByBus)}; second={string.Join(",", secondByBus)}; "
+                                + $"failure={configurationFailure?.GetType().Name ?? "none"}"
+                        );
+                        Assert.That(configurationFailure, Is.Null, cycleContext);
+                        Assert.That(callbackCompleted, Is.True, cycleContext);
+                        Assert.That(bus.Callbacks, Is.EqualTo(callbacksBefore + 1), cycleContext);
+                        Assert.That(identitiesPreserved, Is.True, cycleContext);
+                        Assert.That(bothEnabled, Is.True, cycleContext);
+                        for (int index = 0; index < observedBuses.Length; ++index)
+                        {
+                            bool expectedTarget = ReferenceEquals(
+                                observedBuses[index],
+                                expectedBus
+                            );
+                            string targetContext = cycleContext + $", observedBus={index}";
+                            Assert.That(
+                                firstByBus[index],
+                                Is.EqualTo(expectedTarget ? 1 : 0),
+                                targetContext
+                            );
+                            Assert.That(
+                                secondByBus[index],
+                                Is.EqualTo(expectedTarget ? 1 : 0),
+                                targetContext
+                            );
+                            Assert.That(
+                                registrationsByBus[index],
+                                Is.EqualTo(expectedTarget ? 2 : 0),
+                                targetContext
+                            );
+                        }
+                    }
+                    finally
+                    {
+                        bus.OnDeregister = null;
+                        firstToken.Dispose();
+                        secondToken.Dispose();
+                        _ = messaging.Release(first);
+                        _ = messaging.Release(second);
+                    }
+                    Assert.That(originalWatcher.LeakedRegistrations, Is.Zero, cycleContext);
+                    Assert.That(outerWatcher.LeakedRegistrations, Is.Zero, cycleContext);
+                    Assert.That(thirdWatcher.LeakedRegistrations, Is.Zero, cycleContext);
+                }
+            }
+        }
+
         /// <summary>Retains public cleanup ownership when a release callback accepts new work.</summary>
         /// <remarks>
         /// 2026-10-26: a captured token can finish nested release before the outer call removes its listener key.
