@@ -342,7 +342,7 @@ jobs:
             Sort-Object { [version]$_.Name } -Descending)
           if ($libraries.Count -eq 0) { throw 'No existing Windows SDK library directory.' }
           $kernel = Join-Path $libraries[0].FullName 'um\x64\kernel32.lib'
-          $source = (Resolve-Path 'Tests/Runtime/MemoryReclaim/DxmNativeAllocationCounter.c').Path
+          $source = (Resolve-Path 'Tests/Runtime/MemoryReclaim/DxmNativeAllocationCounter.c.txt').Path
           $build = [IO.Path]::GetFullPath('.artifacts/native-allocation-build')
           $plugins = [IO.Path]::GetFullPath('Tests/Runtime/MemoryReclaim/Plugins/x86_64')
           New-Item -ItemType Directory -Force -Path $build, $plugins | Out-Null

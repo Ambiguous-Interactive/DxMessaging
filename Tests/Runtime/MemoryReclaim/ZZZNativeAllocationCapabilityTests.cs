@@ -9,8 +9,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
     /// <summary>Checks native allocation-event observability with forced allocation controls.</summary>
     /// <remarks>
-    /// 2026-10-27: this untimed test does not replace GC.Alloc measurements or measure production
-    /// allocation cost. The native counter uses an opaque static context and retains one VM-owned
+    /// 2026-10-27: this untimed test observes native managed-object allocation events. It does not
+    /// measure GC.Alloc recorder counts, bytes, throughput or whole-owner cost. The counter retains one VM-owned
     /// profiler descriptor until player shutdown. No managed object address enters that context.
     /// </remarks>
     [TestFixture]
@@ -41,6 +41,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 "The native counter must bind all three profiler APIs."
             );
             int detached = -1;
+            NativeDispatchAllocationRows.Observation[] dispatchRows = null;
             try
             {
                 _ = DxmCounterForeign();
@@ -72,6 +73,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     counts[kind] = DxmCounterEnd();
                     foreign[kind] = DxmCounterForeign();
                 }
+                ValidatePayloads(sink);
+                AssertControlCounts(counts);
+                Assert.That(DxmCounterBadContext(), Is.Zero);
+                dispatchRows = NativeDispatchAllocationRows.Measure(
+                    DxmCounterBegin,
+                    DxmCounterEnd,
+                    DxmCounterForeign
+                );
             }
             finally
             {
@@ -103,6 +112,15 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 Is.EqualTo(beforeDetachedControl),
                 "Forced allocations after detach must not enter the callback."
             );
+            AssertControlCounts(counts);
+            Assert.That(dispatchRows, Is.Not.Null);
+            NativeDispatchAllocationRows.AssertZeroEvents(dispatchRows);
+            GC.KeepAlive(sink);
+            GC.KeepAlive(detachedSink);
+        }
+
+        private static void AssertControlCounts(long[] counts)
+        {
             for (int kind = 0; kind < Kinds; ++kind)
             {
                 Assert.That(
@@ -111,8 +129,6 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     $"kind={kind}: native allocation events; forced zero is unavailable, not allocation-free."
                 );
             }
-            GC.KeepAlive(sink);
-            GC.KeepAlive(detachedSink);
         }
 
         private static void Allocate(int kind, int value, object[] sink, int index)
