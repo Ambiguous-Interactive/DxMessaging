@@ -42,6 +42,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
             int detached = -1;
             NativeDispatchAllocationRows.Observation[] dispatchRows = null;
+            NativeGlobalSnapshotAllocationRows.Observation[] snapshotRows = null;
             try
             {
                 _ = DxmCounterForeign();
@@ -81,6 +82,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     DxmCounterEnd,
                     DxmCounterForeign
                 );
+                snapshotRows = NativeGlobalSnapshotAllocationRows.Measure(
+                    DxmCounterBegin,
+                    DxmCounterEnd,
+                    DxmCounterForeign
+                );
             }
             finally
             {
@@ -115,6 +121,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             AssertControlCounts(counts);
             Assert.That(dispatchRows, Is.Not.Null);
             NativeDispatchAllocationRows.AssertZeroEvents(dispatchRows);
+            NativeGlobalSnapshotAllocationRows.AssertZeroEvents(snapshotRows);
             GC.KeepAlive(sink);
             GC.KeepAlive(detachedSink);
         }

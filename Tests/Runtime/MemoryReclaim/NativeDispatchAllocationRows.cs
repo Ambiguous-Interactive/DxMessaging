@@ -120,7 +120,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
-        private static long MeasureWindow(Action operation, Func<int> begin, Func<long> end)
+        internal static long MeasureWindow(Action operation, Func<int> begin, Func<long> end)
         {
             if (begin() != 0)
             {
