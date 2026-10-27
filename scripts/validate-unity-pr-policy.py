@@ -2786,6 +2786,68 @@ process.stdout.write(JSON.stringify({typedOptIn: input?.type === 'boolean' && in
                 f"audit postmortem/shipping/tooling/redaction={row}: expected {wanted}, got {actual}")
 
 
+def validate_runner_recovery_policy(source: str) -> None:
+    """Execute the separate matched-byte recovery mode and transport gates."""
+    result = subprocess.run(
+        ["node", "-e", r"""
+const yaml = require('yaml'), fs = require('fs');
+const workflow = yaml.parse(fs.readFileSync(0, 'utf8')), jobs = workflow.jobs;
+const step = name => jobs.bootstrap.steps.find(s => s.name === name);
+const names = ['Require one compiler observation mode', 'Run runner audit (single-step transcript)',
+  'Capture surviving failed shipping input identities', 'Download the fixed postmortem baseline',
+  'Recover matched surviving managed input bytes', 'Redact postmortem artifact identities', 'Upload bootstrap transcript'];
+if (names.some(name => !step(name))) throw Error('Recovery mode step missing');
+const rows = [];
+for (const p of [false,true]) for (const r of [false,true]) for (const s of [false,true])
+  rows.push([p,r,s,'success','success','success','success']);
+rows.push([false,true,false,'failure','skipped','skipped','skipped'],
+  [false,true,false,'success','failure','skipped','skipped'],
+  [false,true,false,'success','success','failure','success'],
+  [false,true,false,'success','success','success','failure']);
+const outcomes = rows.map(([p,r,s,setup,install,download,redact]) => {
+  const conflict = p && r;
+  const inputs = {'compiler-input-postmortem':p,'compiler-input-recovery':r,'shipping-editor-verification':s};
+  const steps = {setup_node:{outcome:conflict?'skipped':setup},install_dependencies:{outcome:conflict?'skipped':install},
+    download_compiler_baseline:{outcome:conflict?'skipped':download},redact_postmortem:{outcome:conflict?'skipped':redact}};
+  const evaluate = expr => Boolean(new Function('inputs','steps','github','always',
+    'return ('+String(expr).replace(/\$\{\{|\}\}/g,'')+')')(inputs,steps,{event_name:'workflow_dispatch'},()=>true));
+  const bootstrap = evaluate(jobs.bootstrap.if);
+  return [bootstrap,...names.map(name=>bootstrap&&evaluate(step(name).if)),
+    evaluate(jobs['shipping-editor-runner-preflight'].if),evaluate(jobs['shipping-editor-verification'].if)];
+});
+const input=workflow.on.workflow_dispatch.inputs['compiler-input-recovery'];
+const download=step('Download the fixed postmortem baseline'), capture=step('Recover matched surviving managed input bytes');
+process.stdout.write(JSON.stringify({rows,outcomes,typedOptIn:input?.type==='boolean'&&input.default===false,
+  baselineBound:download.uses==='actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333'&&
+    download.with['run-id']===40495845348&&download.with.name==='compiler-postmortem-DAD-MACHINE-40495845348-1'&&
+    download.with.path==='.artifacts/compiler-postmortem-baseline/${{ github.run_id }}-${{ github.run_attempt }}'&&
+    download.with['github-token']==='${{ github.token }}'&&
+    capture.env.DXM_RECOVERY_BASELINE_SHA256==='f8f2ace50ac11f7c2353798cec987baa2b4ea5365fb953267b25fc21f4a7a323'}));
+"""], input=source, capture_output=True, text=True, check=False,
+    )
+    require(result.returncode == 0, f"recovery mode predicates must execute: {result.stderr}")
+    observed = json.loads(result.stdout)
+    require(observed["typedOptIn"], "recovery must be a typed boolean opt-in defaulting to false")
+    require(observed["baselineBound"], "recovery must download only the fixed prior artifact and bind its exact manifest digest")
+    require(len(observed["rows"]) == 12 and len(observed["outcomes"]) == 12,
+            "recovery must execute all eight mode combinations and four transport cases")
+    for row, actual in zip(observed["rows"], observed["outcomes"]):
+        postmortem, recovery, shipping, setup, install, download, redact = row
+        conflict = postmortem and recovery
+        bootstrap = not shipping or postmortem or recovery
+        tooling = not conflict and setup == "success" and install == "success"
+        shipping_job = shipping and not postmortem and not recovery
+        wanted = [bootstrap, bootstrap and conflict,
+                  bootstrap and not postmortem and not recovery,
+                  bootstrap and postmortem and not recovery and tooling,
+                  bootstrap and recovery and not postmortem and tooling,
+                  bootstrap and recovery and not postmortem and tooling and download == "success",
+                  bootstrap and (postmortem or recovery) and tooling,
+                  bootstrap and (not postmortem and not recovery or not conflict and redact == "success"),
+                  shipping_job, shipping_job]
+        require(actual == wanted, f"recovery modes/tooling/transport={row}: expected {wanted}, got {actual}")
+
+
 def validate_grouped_unity_correctness() -> None:
     """Pin per-editor mode isolation and execute the terminal result truth table."""
     source = WORKFLOW.read_text(encoding="utf-8")
@@ -4869,10 +4931,28 @@ steps:
         "runner audit workflow must be validation-only at the canonical editor root",
     )
     validate_runner_postmortem_policy(runner_audit_source)
+    validate_runner_recovery_policy(runner_audit_source)
+    recovery_mutants = [
+        ("recovery becomes the default", "type: boolean\n        default: false\n      compiler-input-postmortem:", "type: boolean\n        default: true\n      compiler-input-postmortem:"),
+        ("recovery activates normal audit", "!inputs['compiler-input-postmortem'] && !inputs['compiler-input-recovery']", "!inputs['compiler-input-postmortem']"),
+        ("recovery admits licensed shipping", "&& inputs['shipping-editor-verification'] && !inputs['compiler-input-postmortem'] && !inputs['compiler-input-recovery']", "&& inputs['shipping-editor-verification'] && !inputs['compiler-input-postmortem']"),
+        ("recovery accepts conflicting modes", "if: ${{ inputs['compiler-input-postmortem'] && inputs['compiler-input-recovery'] }}", "if: ${{ false }}"),
+        ("recovery changes baseline run", "run-id: 40495845348", "run-id: 40495845349"),
+        ("recovery bypasses baseline download", "steps.download_compiler_baseline.outcome == 'success'", "true"),
+        ("recovery bypasses redaction", "(!inputs['compiler-input-recovery'] || steps.redact_postmortem.outcome == 'success')", "true"),
+    ]
+    for name, before, after in recovery_mutants:
+        require(before in runner_audit_source, f"{name}: recovery mutation target missing")
+        try:
+            validate_runner_recovery_policy(runner_audit_source.replace(before, after, 1))
+        except AssertionError:
+            continue
+        raise AssertionError(f"{name}: invalid recovery mode accepted")
+
     for name, before, after in (
-        ("postmortem becomes the default", "default: false", "default: true"),
+        ("postmortem becomes the default", "type: boolean\n        default: false\n      shipping-editor-verification:", "type: boolean\n        default: true\n      shipping-editor-verification:"),
         ("postmortem starts normal audit", "!inputs['compiler-input-postmortem']", "true"),
-        ("postmortem admits shipping", "&& !inputs['compiler-input-postmortem']", ""),
+        ("postmortem admits shipping", "&& inputs['shipping-editor-verification'] && !inputs['compiler-input-postmortem'] && !inputs['compiler-input-recovery']", "&& inputs['shipping-editor-verification'] && !inputs['compiler-input-recovery']"),
         ("postmortem bypasses redaction",
          "!inputs['compiler-input-postmortem'] || steps.redact_postmortem.outcome == 'success'", "true"),
     ):

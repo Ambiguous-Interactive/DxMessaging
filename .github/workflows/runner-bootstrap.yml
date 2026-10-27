@@ -26,6 +26,10 @@ name: Runner Audit (Windows)
 on:
   workflow_dispatch:
     inputs:
+      compiler-input-recovery:
+        description: "Recover surviving managed input bytes only when they match the fixed postmortem identities."
+        type: boolean
+        default: false
       compiler-input-postmortem:
         description: "Read surviving failed Unity 6.5 compiler input identities on DAD without starting Unity."
         type: boolean
@@ -84,11 +88,11 @@ jobs:
           required-label-sets: '[["self-hosted","Windows","RAM-64GB"]]'
 
   bootstrap:
-    if: ${{ !inputs['shipping-editor-verification'] || inputs['compiler-input-postmortem'] }}
+    if: ${{ !inputs['shipping-editor-verification'] || inputs['compiler-input-postmortem'] || inputs['compiler-input-recovery'] }}
     # F9: surface the mode (Audit vs Maintenance) in the job display name so
     # operators reading the Actions UI immediately see which mode this run is
     # without expanding the inputs.
-    name: ${{ inputs['compiler-input-postmortem'] && 'Compiler input postmortem' || 'Audit' }} ${{ inputs.runner-label }}
+    name: ${{ inputs['compiler-input-recovery'] && 'Compiler input recovery' || inputs['compiler-input-postmortem'] && 'Compiler input postmortem' || 'Audit' }} ${{ inputs.runner-label }}
     needs:
       - runner-preflight
     # Cannot dynamically pin to a specific runner without machine-name labels
@@ -159,8 +163,14 @@ jobs:
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary
           }
 
+      - name: Require one compiler observation mode
+        if: ${{ inputs['compiler-input-postmortem'] && inputs['compiler-input-recovery'] }}
+        timeout-minutes: 1
+        shell: pwsh
+        run: throw 'Postmortem and byte recovery are separate observations; select exactly one mode.'
+
       - name: Run runner audit (single-step transcript)
-        if: ${{ !inputs['compiler-input-postmortem'] }}
+        if: ${{ !inputs['compiler-input-postmortem'] && !inputs['compiler-input-recovery'] }}
         # F5/F7: a single PowerShell 5.1 step opens the transcript, invokes
         # the audit script, and Stop-Transcripts in a finally{} -- the
         # previous design split Start-Transcript and the bootstrap into
@@ -231,7 +241,7 @@ jobs:
 
       - name: Setup postmortem artifact tooling
         id: setup_node
-        if: ${{ inputs['compiler-input-postmortem'] }}
+        if: ${{ inputs['compiler-input-postmortem'] || inputs['compiler-input-recovery'] }}
         timeout-minutes: 5
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -239,7 +249,7 @@ jobs:
 
       - name: Install postmortem artifact dependencies
         id: install_dependencies
-        if: ${{ inputs['compiler-input-postmortem'] && steps.setup_node.outcome == 'success' }}
+        if: ${{ (inputs['compiler-input-postmortem'] || inputs['compiler-input-recovery']) && steps.setup_node.outcome == 'success' }}
         timeout-minutes: 2
         shell: pwsh
         run: |
@@ -250,9 +260,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
 
+      - name: Download the fixed postmortem baseline
+        id: download_compiler_baseline
+        if: ${{ inputs['compiler-input-recovery'] && !inputs['compiler-input-postmortem'] && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        timeout-minutes: 5
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: compiler-postmortem-DAD-MACHINE-40495845348-1
+          run-id: 40495845348
+          github-token: ${{ github.token }}
+          path: .artifacts/compiler-postmortem-baseline/${{ github.run_id }}-${{ github.run_attempt }}
+
       - name: Capture surviving failed shipping input identities
         id: capture_postmortem
-        if: ${{ inputs['compiler-input-postmortem'] && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        if: ${{ inputs['compiler-input-postmortem'] && !inputs['compiler-input-recovery'] && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
         timeout-minutes: 4
         shell: pwsh
         run: |
@@ -332,9 +353,167 @@ jobs:
           }
           Write-Host "Retained $($records.Count) read-only file identities; original pre-converter identity remains unproven."
 
+      - name: Recover matched surviving managed input bytes
+        id: recover_compiler_inputs
+        if: >-
+          ${{
+            inputs['compiler-input-recovery'] &&
+            !inputs['compiler-input-postmortem'] &&
+            steps.setup_node.outcome == 'success' &&
+            steps.install_dependencies.outcome == 'success' &&
+            steps.download_compiler_baseline.outcome == 'success'
+          }}
+        timeout-minutes: 4
+        shell: pwsh
+        env:
+          DXM_RECOVERY_BASELINE_SHA256: f8f2ace50ac11f7c2353798cec987baa2b4ea5365fb953267b25fc21f4a7a323
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_NAME -cne 'DAD-MACHINE') {
+              throw 'Compiler input recovery requires the original DAD-MACHINE.'
+          }
+          $project = Join-Path $env:RUNNER_WORKSPACE 'dxm-u/t/6000.5.2f1-shipping-medium-semantic-18'
+          $marker = Join-Path $project '.dxmessaging-ci-project'
+          if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
+              throw 'The surviving failed project ownership marker is missing.'
+          }
+          $managedRelative = 'Library/Bee/artifacts/WinPlayerBuildProgram/ManagedStripped'
+          $managed = Join-Path $project $managedRelative
+          for ($parent = $managed; ; $parent = Split-Path -Parent $parent) {
+              if ((Get-Item -LiteralPath $parent -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                  throw 'Recovery refuses a linked source directory.'
+              }
+              if ([string]::Equals($parent, $project, [StringComparison]::OrdinalIgnoreCase)) { break }
+          }
+          $baselinePath = Join-Path $env:GITHUB_WORKSPACE ('.artifacts/compiler-postmortem-baseline/{0}-{1}/compiler-postmortem.json' -f $env:GITHUB_RUN_ID, $env:GITHUB_RUN_ATTEMPT)
+          if ($env:DXM_RECOVERY_BASELINE_SHA256 -cnotmatch '^[0-9a-f]{64}$' -or
+              (Get-FileHash -LiteralPath $baselinePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:DXM_RECOVERY_BASELINE_SHA256) {
+              throw 'The fixed postmortem baseline digest does not match.'
+          }
+          $baseline = Get-Content -LiteralPath $baselinePath -Raw | ConvertFrom-Json
+          if ($baseline.observerSource -cne '72dd18395f65f5dc7734754a8e775a40bace7590' -or
+              $baseline.failedSource -cne '0692abb045c7d16436e9ed33c9eb12e2063ee505' -or
+              $baseline.measurementClass -cne 'postmortem-observation-only' -or
+              $baseline.observedManagedDllCount -ne 48 -or $baseline.exactOriginalInputClaim -or $baseline.newUnityRun) {
+              throw 'The baseline is not the admitted postmortem observation.'
+          }
+          $expected = @($baseline.files | Where-Object { $_.scope -ceq 'project' -and $_.sourcePath.StartsWith($managedRelative + '/', [StringComparison]::Ordinal) } | Sort-Object sourcePath)
+          if ($expected.Count -ne 48 -or $baseline.files.Count -gt 256) {
+              throw 'The baseline must contain exactly 48 managed inputs within 256 source identities.'
+          }
+          $expectedNames = @($expected | ForEach-Object { [IO.Path]::GetFileName($_.sourcePath) })
+          $liveNames = @(Get-ChildItem -LiteralPath $managed -File -Filter '*.dll' | Sort-Object Name | ForEach-Object { $_.Name })
+          if ($liveNames.Count -ne 48 -or @(Compare-Object -CaseSensitive $expectedNames $liveNames).Count -ne 0) {
+              throw 'The live managed inventory must match all 48 baseline names.'
+          }
+          $expectedBytes = [long](($expected | Measure-Object -Property length -Sum).Sum)
+          if ($expectedBytes -le 0 -or $expectedBytes -gt 64MB -or @($expected | Where-Object { $_.length -le 0 }).Count -ne 0) {
+              throw 'Managed input bytes exceed the fixed 64 MiB recovery limit or contain an empty input.'
+          }
+          $destination = Join-Path $env:GITHUB_WORKSPACE '.artifacts/runner-bootstrap/compiler-recovery'
+          if (Test-Path -LiteralPath $destination) { throw 'Recovery output already exists; never reuse a previous packet.' }
+          New-Item -ItemType Directory -Path (Join-Path $destination 'managed-inputs') -Force | Out-Null
+          $copied = [Collections.Generic.List[object]]::new()
+          $context = [Collections.Generic.List[object]]::new()
+          $toolRecords = [Collections.Generic.List[object]]::new()
+          $manifest = [ordered]@{
+              schemaVersion = 1; measurementClass = 'matched-postmortem-managed-bytes-only'
+              observerSource = $env:GITHUB_SHA; baselineManifestSha256 = $env:DXM_RECOVERY_BASELINE_SHA256
+              baselineObserverSource = $baseline.observerSource; baselineCapturedUtc = $baseline.capturedUtc
+              capturedUtc = [datetime]::UtcNow.ToString('o'); complete = $false
+              expectedManagedDllCount = 48; expectedManagedBytes = $expectedBytes
+              exactOriginalInputClaim = $false; newUnityRun = $false; compilerInvoked = $false
+              toolDirectoryState = 'unmeasured'; toolTopLevelFileCount = 0
+              sourceContext = @(); files = @(); toolDirectoryFiles = @()
+          }
+          function Read-RecoveryIdentity {
+              param([string]$LiteralPath)
+              $before = Get-Item -LiteralPath $LiteralPath -Force
+              if ($before.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Recovery refuses a linked source file.' }
+              $length = [long]$before.Length
+              $writeUtc = $before.LastWriteTimeUtc
+              $digest = (Get-FileHash -LiteralPath $LiteralPath -Algorithm SHA256).Hash.ToLowerInvariant()
+              $after = Get-Item -LiteralPath $LiteralPath -Force
+              if ($after.Length -ne $length -or $after.LastWriteTimeUtc.Ticks -ne $writeUtc.Ticks) {
+                  throw 'A recovery input changed while hashing.'
+              }
+              return [pscustomobject]@{ length = $length; sha256 = $digest; lastWriteTimeUtc = $writeUtc.ToString('o') }
+          }
+          try {
+              foreach ($record in $baseline.files) {
+                  $sourceRoot = if ($record.scope -ceq 'project') { $project } elseif ($record.scope -ceq 'toolCache') { $env:RUNNER_TOOL_CACHE } else { throw 'Unknown baseline source scope.' }
+                  $sourcePath = Join-Path $sourceRoot $record.sourcePath
+                  $identity = Read-RecoveryIdentity $sourcePath
+                  if ($identity.length -ne $record.length -or $identity.sha256 -cne $record.sha256) {
+                      throw "A surviving source no longer matches the fixed postmortem: $($record.sourcePath)"
+                  }
+                  $context.Add([ordered]@{
+                      scope = $record.scope;
+                      sourcePath = $record.sourcePath;
+                      length = $identity.length;
+                      sha256 = $identity.sha256;
+                      lastWriteTimeUtc = $identity.lastWriteTimeUtc
+                  })
+              }
+              foreach ($record in $expected) {
+                  $sourcePath = Join-Path $project $record.sourcePath
+                  $before = Read-RecoveryIdentity $sourcePath
+                  $relative = 'managed-inputs/' + [IO.Path]::GetFileName($record.sourcePath)
+                  $copyPath = Join-Path $destination $relative
+                  Copy-Item -LiteralPath $sourcePath -Destination $copyPath -ErrorAction Stop
+                  $copy = Read-RecoveryIdentity $copyPath
+                  $after = Read-RecoveryIdentity $sourcePath
+                  if ($before.sha256 -cne $record.sha256 -or $before.length -ne $record.length -or
+                      $copy.sha256 -cne $record.sha256 -or $copy.length -ne $record.length -or
+                      $after.sha256 -cne $before.sha256 -or $after.length -ne $before.length -or
+                      $after.lastWriteTimeUtc -cne $before.lastWriteTimeUtc) {
+                      throw "Source or recovered bytes changed during copying: $($record.sourcePath)"
+                  }
+                  $copied.Add([ordered]@{ sourcePath = $record.sourcePath; recoveredPath = $relative; length = $copy.length; sha256 = $copy.sha256; sourceWriteTimeUtc = $after.lastWriteTimeUtc })
+              }
+              foreach ($record in $context) {
+                  $sourceRoot = if ($record.scope -ceq 'project') { $project } else { $env:RUNNER_TOOL_CACHE }
+                  $after = Read-RecoveryIdentity (Join-Path $sourceRoot $record.sourcePath)
+                  if ($after.sha256 -cne $record.sha256 -or $after.length -ne $record.length -or $after.lastWriteTimeUtc -cne $record.lastWriteTimeUtc) {
+                      throw 'Source context changed across the recovery observation.'
+                  }
+              }
+              $compilerRecord = @($baseline.files | Where-Object { $_.scope -ceq 'toolCache' -and $_.sourcePath.EndsWith('/il2cpp.exe', [StringComparison]::Ordinal) })
+              if ($compilerRecord.Count -ne 1) { throw 'The fixed converter-path identity is missing.' }
+              $toolDirectory = Split-Path -Parent (Join-Path $env:RUNNER_TOOL_CACHE $compilerRecord[0].sourcePath)
+              $toolFiles = @(Get-ChildItem -LiteralPath $toolDirectory -File -Force | Sort-Object Name)
+              $manifest.toolTopLevelFileCount = $toolFiles.Count
+              if ($toolFiles.Count -le (256 - $context.Count)) {
+                  foreach ($file in $toolFiles) {
+                      $identity = Read-RecoveryIdentity $file.FullName
+                      $toolRecords.Add([ordered]@{
+                          sourcePath = [IO.Path]::GetRelativePath($env:RUNNER_TOOL_CACHE, $file.FullName).Replace('\', '/');
+                          length = $identity.length;
+                          sha256 = $identity.sha256;
+                          lastWriteTimeUtc = $identity.lastWriteTimeUtc
+                      })
+                  }
+                  $manifest.toolDirectoryState = 'complete-top-level-identities-only'
+              } else {
+                  $manifest.toolDirectoryState = 'unmeasured-over-256-identity-bound'
+              }
+              Copy-Item -LiteralPath $baselinePath -Destination (Join-Path $destination 'baseline-observation.json') -ErrorAction Stop
+              if ((Get-FileHash -LiteralPath (Join-Path $destination 'baseline-observation.json') -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:DXM_RECOVERY_BASELINE_SHA256) {
+                  throw 'The copied baseline observation differs.'
+              }
+              $manifest.complete = $true
+          } finally {
+              $manifest.sourceContext = @($context.ToArray())
+              $manifest.files = @($copied.ToArray())
+              $manifest.toolDirectoryFiles = @($toolRecords.ToArray())
+              [IO.File]::WriteAllText((Join-Path $destination 'compiler-input-recovery.json'), (($manifest | ConvertTo-Json -Depth 10) + "`n"))
+          }
+          Write-Host "Recovered $($copied.Count) managed inputs matching the prior postmortem; historical original bytes and full tool closure remain unproven."
+
       - name: Redact postmortem artifact identities
         id: redact_postmortem
-        if: ${{ always() && inputs['compiler-input-postmortem'] && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        if: ${{ always() && (inputs['compiler-input-postmortem'] || inputs['compiler-input-recovery']) && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
@@ -345,17 +524,27 @@ jobs:
       # F19: if-no-files-found is `error` (not `warn`) so a missing transcript
       # is a HARD failure rather than a silent empty artifact upload.
       - name: Upload bootstrap transcript
-        if: ${{ always() && (!inputs['compiler-input-postmortem'] || steps.redact_postmortem.outcome == 'success') }}
+        if: >-
+          ${{
+            always() &&
+            (!inputs['compiler-input-postmortem'] || steps.redact_postmortem.outcome == 'success') &&
+            (!inputs['compiler-input-recovery'] || steps.redact_postmortem.outcome == 'success')
+          }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ inputs['compiler-input-postmortem'] && 'compiler-postmortem' || 'runner-bootstrap' }}-${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: >-
+            ${{
+              inputs['compiler-input-recovery'] && 'compiler-input-recovery' ||
+              inputs['compiler-input-postmortem'] && 'compiler-postmortem' ||
+              'runner-bootstrap'
+            }}-${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .artifacts/runner-bootstrap/**
           if-no-files-found: error
           retention-days: 30
 
   shipping-editor-runner-preflight:
     name: Shipping Editor ELI registration preflight
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] && !inputs['compiler-input-postmortem'] }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] && !inputs['compiler-input-postmortem'] && !inputs['compiler-input-recovery'] }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -368,7 +557,7 @@ jobs:
 
   shipping-editor-verification:
     name: Unity 2021.3 shipping Editor and samples on ELI
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] && !inputs['compiler-input-postmortem'] }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] && !inputs['compiler-input-postmortem'] && !inputs['compiler-input-recovery'] }}
     needs:
       - runner-preflight
       - shipping-editor-runner-preflight

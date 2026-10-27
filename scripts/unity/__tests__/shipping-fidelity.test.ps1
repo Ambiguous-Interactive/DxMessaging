@@ -2,6 +2,8 @@
 [CmdletBinding()]
 param()
 
+# cspell:ignore fsmtime
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -191,6 +193,159 @@ try {
         }
     }
     Write-Host ('Read-only postmortem outcomes: ' + (ConvertTo-Json -InputObject @($snapshotOutcomes.ToArray()) -Compress))
+
+    $recoverySteps = @($audit.jobs.bootstrap.steps | Where-Object { $_.name -ceq 'Recover matched surviving managed input bytes' })
+    Assert-That 'one real matched byte recovery step exists' ($recoverySteps.Count -eq 1)
+    $recoveryScript = [scriptblock]::Create($recoverySteps[0].run)
+    Assert-That 'production recovery binds the fixed baseline hash' ($recoverySteps[0].env.DXM_RECOVERY_BASELINE_SHA256 -ceq 'f8f2ace50ac11f7c2353798cec987baa2b4ea5365fb953267b25fc21f4a7a323')
+    $recoveryCases = @(
+        @{ Name = 'matched' },
+        @{ Name = 'wrong-runner'; Runner = 'ELI-MACHINE'; Manifest = $false; Error = 'original DAD-MACHINE' },
+        @{ Name = 'missing-owner'; MissingOwner = $true; Manifest = $false; Error = 'ownership marker' },
+        @{ Name = 'missing-baseline'; MissingBaseline = $true; Manifest = $false; Error = '.' },
+        @{ Name = 'baseline-digest'; BadDigest = $true; Manifest = $false; Error = 'baseline digest' },
+        @{ Name = 'baseline-source'; BadObserver = $true; Manifest = $false; Error = 'admitted postmortem' },
+        @{ Name = 'missing-input'; Count = 47; Manifest = $false; Error = 'inventory.*48' },
+        @{ Name = 'extra-input'; Count = 49; Manifest = $false; Error = 'inventory.*48' },
+        @{ Name = 'empty-input'; EmptyInput = $true; Manifest = $false; Error = '64 MiB' },
+        @{ Name = 'source-mismatch'; SourceMismatch = $true; Error = 'no longer matches' },
+        @{ Name = 'missing-converter'; MissingCompiler = $true; Error = '.' },
+        @{ Name = 'linked-directory'; Link = $true; Manifest = $false; Error = 'linked source directory' },
+        @{ Name = 'changed-during-hash'; MutateHash = $true; Error = 'changed while hashing' },
+        @{ Name = 'changed-earlier-during-copy'; MutateEarlier = $true; Error = 'Source context changed' },
+        @{ Name = 'changed-during-copy'; MutateCopy = $true; Error = 'changed during copying' },
+        @{ Name = 'corrupt-copy'; CorruptCopy = $true; Error = 'changed during copying' },
+        @{ Name = 'byte-cap'; OverCap = $true; Manifest = $false; Error = '64 MiB' },
+        @{ Name = 'tool-cap'; ToolExtra = 202; ToolState = 'unmeasured-over-256-identity-bound' },
+        @{ Name = 'stale-output'; Stale = $true; Manifest = $false; Error = 'already exists' }
+    )
+    $recoveryDefaults = @{ Runner = 'DAD-MACHINE'; Count = 48; MissingOwner = $false; MissingBaseline = $false; BadDigest = $false; BadObserver = $false; EmptyInput = $false; SourceMismatch = $false; MissingCompiler = $false; Link = $false; MutateHash = $false; MutateCopy = $false; MutateEarlier = $false; CorruptCopy = $false; OverCap = $false; ToolExtra = 2; ToolState = 'complete-top-level-identities-only'; Stale = $false; Manifest = $true; Error = '' }
+    $recoveryEnvironmentNames = @('RUNNER_NAME', 'RUNNER_WORKSPACE', 'RUNNER_TOOL_CACHE', 'GITHUB_WORKSPACE', 'GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'DXM_RECOVERY_BASELINE_SHA256')
+    $priorRecoveryEnvironment = @{}
+    foreach ($name in $recoveryEnvironmentNames) { $priorRecoveryEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+    $recoveryOutcomes = [Collections.Generic.List[object]]::new()
+    try {
+        foreach ($case in $recoveryCases) {
+            foreach ($entry in $recoveryDefaults.GetEnumerator()) { if (-not $case.ContainsKey($entry.Key)) { $case[$entry.Key] = $entry.Value } }
+            $caseRoot = Join-Path $fixtureRoot ('recovery-' + $case.Name)
+            $inputRoot = Join-Path $caseRoot 'inputs'
+            $env:RUNNER_NAME = $case.Runner
+            $env:RUNNER_WORKSPACE = Join-Path $inputRoot 'runner'
+            $env:RUNNER_TOOL_CACHE = Join-Path $inputRoot 'tool'
+            $env:GITHUB_WORKSPACE = Join-Path $caseRoot 'repo'
+            $env:GITHUB_SHA = '2222222222222222222222222222222222222222'
+            $env:GITHUB_RUN_ID = 'fixture'
+            $env:GITHUB_RUN_ATTEMPT = '1'
+            $recoveryProject = Join-Path $env:RUNNER_WORKSPACE 'dxm-u/t/6000.5.2f1-shipping-medium-semantic-18'
+            $managedDirectory = Join-Path $recoveryProject 'Library/Bee/artifacts/WinPlayerBuildProgram/ManagedStripped'
+            $compilerRelative = 'u6-v3/6000.5.2f1/Editor/Data/il2cpp/build/deploy/il2cpp.exe'
+            $compilerPath = Join-Path $env:RUNNER_TOOL_CACHE $compilerRelative
+            foreach ($directory in @($managedDirectory, (Split-Path -Parent $compilerPath), (Join-Path $recoveryProject 'ProjectSettings'), (Join-Path $recoveryProject 'Packages'))) {
+                New-Item -ItemType Directory -Force -Path $directory | Out-Null
+            }
+            $ownerPath = Join-Path $recoveryProject '.dxmessaging-ci-project'
+            [IO.File]::WriteAllText($ownerPath, 'owned recovery fixture')
+            [IO.File]::WriteAllText((Join-Path $recoveryProject 'ProjectSettings/ProjectVersion.txt'), 'm_EditorVersion: 6000.5.2f1')
+            [IO.File]::WriteAllText((Join-Path $recoveryProject 'Packages/manifest.json'), '{"dependencies":{}}')
+            foreach ($graph in @('Playerabc.dag', 'Playerabc.dag.json', 'Playerabc-inputdata.json', 'Playerabc.dag_derived', 'Playerabc.dag_fsmtime', 'Playerabc.dag.outputdata', 'Playerabc.dag.payloads')) {
+                [IO.File]::WriteAllText((Join-Path $recoveryProject ('Library/Bee/' + $graph)), 'graph identity fixture')
+            }
+            [IO.File]::WriteAllText($compilerPath, 'converter identity fixture')
+            for ($index = 0; $index -lt 48; $index++) {
+                [IO.File]::WriteAllText((Join-Path $managedDirectory ("assembly{0:D2}.dll" -f $index)), "assembly fixture $index")
+            }
+            $mutatedPath = Join-Path $managedDirectory 'assembly00.dll'
+            if ($case.EmptyInput) { [IO.File]::WriteAllText($mutatedPath, '') }
+            $baselineRecords = @(
+                foreach ($file in @(Get-ChildItem -LiteralPath $recoveryProject -Recurse -File -Force | Sort-Object FullName)) {
+                    [pscustomobject]@{ scope = 'project'; sourcePath = [IO.Path]::GetRelativePath($recoveryProject, $file.FullName).Replace('\', '/'); length = $file.Length; sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant(); lastWriteTimeUtc = $file.LastWriteTimeUtc.ToString('o') }
+                }
+                [pscustomobject]@{ scope = 'toolCache'; sourcePath = $compilerRelative; length = (Get-Item -LiteralPath $compilerPath).Length; sha256 = (Get-FileHash -LiteralPath $compilerPath -Algorithm SHA256).Hash.ToLowerInvariant(); lastWriteTimeUtc = (Get-Item -LiteralPath $compilerPath).LastWriteTimeUtc.ToString('o') }
+            )
+            if ($case.OverCap) { ($baselineRecords | Where-Object { $_.sourcePath.EndsWith('/assembly00.dll') }).length = 64MB }
+            $baseline = [ordered]@{ observerSource = $(if ($case.BadObserver) { '3333333333333333333333333333333333333333' } else { '72dd18395f65f5dc7734754a8e775a40bace7590' }); failedSource = '0692abb045c7d16436e9ed33c9eb12e2063ee505'; measurementClass = 'postmortem-observation-only'; observedManagedDllCount = 48; exactOriginalInputClaim = $false; newUnityRun = $false; capturedUtc = '2026-10-27T11:37:20Z'; files = $baselineRecords }
+            $baselinePath = Join-Path $env:GITHUB_WORKSPACE '.artifacts/compiler-postmortem-baseline/fixture-1/compiler-postmortem.json'
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $baselinePath) | Out-Null
+            [IO.File]::WriteAllText($baselinePath, (($baseline | ConvertTo-Json -Depth 10) + "`n"))
+            $env:DXM_RECOVERY_BASELINE_SHA256 = (Get-FileHash -LiteralPath $baselinePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($case.BadDigest) { $env:DXM_RECOVERY_BASELINE_SHA256 = '0' * 64 }
+            if ($case.MissingBaseline) { Remove-Item -LiteralPath $baselinePath }
+            if ($case.MissingOwner) { Remove-Item -LiteralPath $ownerPath -Force }
+            if ($case.MissingCompiler) { Remove-Item -LiteralPath $compilerPath }
+            if ($case.Count -eq 47) { Remove-Item -LiteralPath (Join-Path $managedDirectory 'assembly47.dll') }
+            if ($case.Count -eq 49) { [IO.File]::WriteAllText((Join-Path $managedDirectory 'extra.dll'), 'extra input') }
+            if ($case.SourceMismatch) { [IO.File]::AppendAllText($mutatedPath, 'changed since observation') }
+            if ($case.Link) {
+                $linkTarget = Join-Path $inputRoot 'linked-managed-inputs'
+                Move-Item -LiteralPath $managedDirectory -Destination $linkTarget
+                $linkKind = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'Junction' } else { 'SymbolicLink' }
+                New-Item -ItemType $linkKind -Path $managedDirectory -Target $linkTarget | Out-Null
+            }
+            for ($index = 0; $index -lt $case.ToolExtra; $index++) {
+                [IO.File]::WriteAllText((Join-Path (Split-Path -Parent $compilerPath) ("support{0:D3}.dll" -f $index)), 'tool identity fixture')
+            }
+            $outputDirectory = Join-Path $env:GITHUB_WORKSPACE '.artifacts/runner-bootstrap/compiler-recovery'
+            if ($case.Stale) { New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null }
+            $before = @(Get-ChildItem -LiteralPath $inputRoot -Recurse -File -Force | Sort-Object FullName | ForEach-Object { "$($_.FullName)|$($_.LastWriteTimeUtc.Ticks)|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }) -join "`n"
+            $observedError = ''
+            try {
+                function Get-FileHash {
+                    param([string]$LiteralPath, [string]$Algorithm)
+                    $digest = Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm
+                    if ($case.MutateHash -and $LiteralPath -ceq $mutatedPath) { [IO.File]::AppendAllText($LiteralPath, 'external writer control') }
+                    return $digest
+                }
+                function Copy-Item {
+                    [CmdletBinding()]
+                    param([string]$LiteralPath, [string]$Destination)
+                    Microsoft.PowerShell.Management\Copy-Item -LiteralPath $LiteralPath -Destination $Destination -ErrorAction Stop
+                    if ($case.MutateEarlier -and [IO.Path]::GetFileName($LiteralPath) -ceq 'assembly01.dll') {
+                        [IO.File]::AppendAllText($mutatedPath, 'external earlier-file writer control')
+                    }
+                    if ($LiteralPath -ceq $mutatedPath) {
+                        if ($case.MutateCopy) { [IO.File]::AppendAllText($LiteralPath, 'external copy writer control') }
+                        if ($case.CorruptCopy) {
+                            $bytes = [IO.File]::ReadAllBytes($Destination)
+                            $bytes[0] = $bytes[0] -bxor 1
+                            [IO.File]::WriteAllBytes($Destination, $bytes)
+                        }
+                    }
+                }
+                & $recoveryScript
+            } catch { $observedError = $_.Exception.Message }
+            finally {
+                Remove-Item -LiteralPath 'Function:\Get-FileHash'
+                Remove-Item -LiteralPath 'Function:\Copy-Item'
+            }
+            $after = @(Get-ChildItem -LiteralPath $inputRoot -Recurse -File -Force | Sort-Object FullName | ForEach-Object { "$($_.FullName)|$($_.LastWriteTimeUtc.Ticks)|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }) -join "`n"
+            Assert-That "recovery source tree changes only for writer control: $($case.Name)" (($before -cne $after) -eq ($case.MutateHash -or $case.MutateCopy -or $case.MutateEarlier))
+            Assert-That "recovery outcome: $($case.Name); observed=$observedError" (($case.Error -ceq '' -and $observedError -ceq '') -or ($case.Error -cne '' -and $observedError -match $case.Error))
+            $manifestPath = Join-Path $outputDirectory 'compiler-input-recovery.json'
+            $hasManifest = Test-Path -LiteralPath $manifestPath -PathType Leaf
+            Assert-That "recovery manifest retention: $($case.Name)" ($hasManifest -eq $case.Manifest)
+            if ($hasManifest) {
+                $observation = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+                Assert-That "recovery completion and scope: $($case.Name)" ($observation.complete -eq ($case.Error -ceq '') -and -not $observation.exactOriginalInputClaim -and -not $observation.newUnityRun -and -not $observation.compilerInvoked)
+                if ($observation.complete) {
+                    Assert-That "recovery exact 48 files: $($case.Name)" ($observation.files.Count -eq 48 -and @(Get-ChildItem -LiteralPath (Join-Path $outputDirectory 'managed-inputs') -File).Count -eq 48)
+                    foreach ($file in $observation.files) {
+                        $expectedFile = @($baselineRecords | Where-Object { $_.sourcePath -ceq $file.sourcePath })[0]
+                        $copyPath = Join-Path $outputDirectory $file.recoveredPath
+                        Assert-That "recovery exact byte hash: $($case.Name); file=$($file.sourcePath)" ((Get-Item -LiteralPath $copyPath).Length -eq $expectedFile.length -and (Get-FileHash -LiteralPath $copyPath -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $expectedFile.sha256 -and $file.sha256 -ceq $expectedFile.sha256)
+                    }
+                    Assert-That "recovery exact baseline bytes: $($case.Name)" ((Get-FileHash -LiteralPath (Join-Path $outputDirectory 'baseline-observation.json') -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $env:DXM_RECOVERY_BASELINE_SHA256)
+                    Assert-That "recovery all-or-none top-level tool identities: $($case.Name)" ($observation.toolDirectoryState -ceq $case.ToolState -and $observation.toolTopLevelFileCount -eq (1 + $case.ToolExtra) -and (($observation.toolDirectoryFiles.Count -eq 0) -eq ($case.ToolState -like 'unmeasured*')))
+                    if ($observation.toolDirectoryFiles.Count -gt 0) {
+                        Assert-That "recovery complete bounded tool directory: $($case.Name)" ($observation.toolDirectoryFiles.Count -eq $observation.toolTopLevelFileCount)
+                    }
+                }
+            }
+            $recoveryOutcomes.Add([pscustomobject]@{ case = $case.Name; manifest = $hasManifest; error = $observedError; sourceBytesPreservedExceptWriterControl = $true })
+        }
+    } finally {
+        foreach ($name in $recoveryEnvironmentNames) { [Environment]::SetEnvironmentVariable($name, $priorRecoveryEnvironment[$name], 'Process') }
+    }
+    Write-Host ('Matched byte recovery outcomes: ' + (ConvertTo-Json -InputObject @($recoveryOutcomes.ToArray()) -Compress))
 
     $matrixInvocationLogPath = Join-Path $fixtureRoot 'matrix-invocations.txt'
     $mockRunnerPath = Join-Path $fixtureRoot 'mock-run-ci-tests.ps1'
