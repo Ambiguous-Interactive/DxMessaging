@@ -112,7 +112,13 @@ jobs:
           $exe = Join-Path $dest 'sdk-declarations.exe'
           [System.IO.File]::WriteAllText($cpp, ($source -replace "`r`n", "`n") + "`n")
           $preprocessed = Join-Path $dest 'sdk-declarations.i'
-          & $compiler /nologo /std:c++17 /EHsc /P ('/Fi' + $preprocessed) ('/I' + $manifest.sdkRoot) $cpp 2>&1 |
+          $includeRoots = @(
+            $manifest.sdkRoot,
+            (Join-Path (Split-Path $manifest.sdkRoot) 'external/baselib/Include'),
+            (Join-Path (Split-Path $manifest.sdkRoot) 'external/baselib/Platforms/Windows')
+          )
+          $includeArgs = @($includeRoots | ForEach-Object { '/I' + $_ })
+          & $compiler /nologo /std:c++17 /EHsc /P ('/Fi' + $preprocessed) @includeArgs $cpp 2>&1 |
             Tee-Object -FilePath (Join-Path $dest 'preprocess.log')
           if ($LASTEXITCODE -ne 0) { throw 'SDK preprocessing failed; no retry.' }
           if ((Get-Item -LiteralPath $preprocessed).Length -gt 16MB) { throw 'Preprocessed declaration input exceeds its bound.' }
@@ -127,6 +133,7 @@ jobs:
           }
           [ordered]@{
             head = $env:GITHUB_SHA
+            includeRoots = $includeRoots
             preprocessedSha256 = (Get-FileHash -LiteralPath $preprocessed -Algorithm SHA256).Hash.ToLowerInvariant()
             compilerSha256 = (Get-FileHash -LiteralPath $compiler -Algorithm SHA256).Hash.ToLowerInvariant()
             compilerFileVersion = (Get-Item -LiteralPath $compiler).VersionInfo.FileVersion
