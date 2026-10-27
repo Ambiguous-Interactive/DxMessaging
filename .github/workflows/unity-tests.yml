@@ -159,6 +159,11 @@ jobs:
         # axis, and no other dynamic form.
         test-mode:
           - standalone
+        # Research projection for #689: qualify the complete default Unity floor.
+        exclude:
+          - unity-version: 2022.3.45f1
+          - unity-version: 6000.3.16f1
+          - unity-version: 6000.5.2f1
     steps:
       - name: Require current PR head before setup
         timeout-minutes: 3
