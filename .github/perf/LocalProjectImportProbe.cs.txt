@@ -1,0 +1,161 @@
+namespace DxmLocalProjectImport
+{
+    using System;
+    using System.IO;
+    using System.Linq;
+    using System.Security.Cryptography;
+    using System.Text;
+    using UnityEditor;
+    using UnityEditor.Compilation;
+    using UnityEngine;
+    using PackageInfo = UnityEditor.PackageManager.PackageInfo;
+
+    /// <summary>Records actual package registration and compiled package assemblies.</summary>
+    public static class Probe
+    {
+        [Serializable]
+        public sealed class PackageRecord
+        {
+            public string name;
+            public string version;
+            public string source;
+            public string resolvedPath;
+        }
+
+        [Serializable]
+        public sealed class AssemblyRecord
+        {
+            public string name;
+            public string path;
+            public string sha256;
+            public string[] sourceFiles;
+        }
+
+        [Serializable]
+        public sealed class Receipt
+        {
+            public int schemaVersion = 1;
+            public string variant;
+            public string sourceCommit;
+            public string unityVersion;
+            public string packageRoot;
+            public string runtimeAssembly;
+            public string runtimeAssemblySha256;
+            public PackageRecord[] packages;
+            public AssemblyRecord[] assemblies;
+            public bool completed;
+        }
+
+        public static void Run()
+        {
+            if (
+                Application.unityVersion != "2022.3.45f1"
+                || !Application.isBatchMode
+                || Application.platform != RuntimePlatform.WindowsEditor
+                || IntPtr.Size != 8
+            )
+                throw new InvalidOperationException("Expected the exact batch-mode Editor.");
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+                throw new InvalidOperationException("Import/compilation is still active.");
+            string path = Required("DXM_LOCAL_PROJECT_RECEIPT");
+            string expectedRoot = NormalizeRoot(Required("DXM_LOCAL_PROJECT_PACKAGE_ROOT"));
+            System.Reflection.Assembly runtime =
+                typeof(DxMessaging.Core.MessageBus.MessageBus).Assembly;
+            PackageInfo own = PackageInfo.FindForAssembly(runtime);
+            if (
+                own == null
+                || own.name != "com.wallstop-studios.dxmessaging"
+                || !string.Equals(
+                    NormalizeRoot(own.resolvedPath),
+                    expectedRoot,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+                throw new InvalidOperationException(
+                    "Loaded Runtime is not the owned source package."
+                );
+            UnityEditor.Compilation.Assembly[] compiled = CompilationPipeline.GetAssemblies(
+                AssembliesType.Editor
+            );
+            string[] required =
+            {
+                "WallstopStudios.DxMessaging",
+                "WallstopStudios.DxMessaging.Editor",
+                "WallstopStudios.DxMessaging.Tests.Runtime",
+                "WallstopStudios.DxMessaging.Tests.Editor",
+            };
+            foreach (string name in required)
+                if (!compiled.Any(a => a.name == name))
+                    throw new InvalidOperationException(
+                        "Required package assembly absent: " + name
+                    );
+            UnityEditor.Compilation.Assembly[] packageAssemblies = compiled
+                .Where(a =>
+                    a.name.StartsWith("WallstopStudios.DxMessaging", StringComparison.Ordinal)
+                )
+                .ToArray();
+            Receipt result = new Receipt
+            {
+                variant = Required("DXM_LOCAL_PROJECT_VARIANT"),
+                sourceCommit = Required("DXM_LOCAL_PROJECT_SOURCE_HEAD"),
+                unityVersion = Application.unityVersion,
+                packageRoot = own.resolvedPath,
+                runtimeAssembly = runtime.Location,
+                runtimeAssemblySha256 = Hash(runtime.Location),
+                packages = PackageInfo
+                    .GetAllRegisteredPackages()
+                    .Select(p => new PackageRecord
+                    {
+                        name = p.name,
+                        version = p.version,
+                        source = p.source.ToString(),
+                        resolvedPath = p.resolvedPath,
+                    })
+                    .OrderBy(p => p.name, StringComparer.Ordinal)
+                    .ToArray(),
+                assemblies = packageAssemblies
+                    .Select(a => new AssemblyRecord
+                    {
+                        name = a.name,
+                        path = a.outputPath,
+                        sha256 = Hash(a.outputPath),
+                        sourceFiles = a.sourceFiles,
+                    })
+                    .OrderBy(a => a.name, StringComparer.Ordinal)
+                    .ToArray(),
+                completed = true,
+            };
+            File.WriteAllText(path, JsonUtility.ToJson(result, true), new UTF8Encoding(false));
+            Debug.Log("LOCAL_PROJECT_IMPORT_COMPLETE variant=" + result.variant);
+            EditorApplication.Exit(0);
+        }
+
+        private static string Required(string name)
+        {
+            string value = Environment.GetEnvironmentVariable(name);
+            if (string.IsNullOrWhiteSpace(value))
+                throw new InvalidOperationException(name + " is missing.");
+            return value;
+        }
+
+        private static string Hash(string path)
+        {
+            if (!Path.IsPathRooted(path))
+                path = Path.Combine(Application.dataPath, "..", path);
+            if (!File.Exists(path))
+                throw new InvalidOperationException("Compiled assembly is absent: " + path);
+            using (SHA256 hash = SHA256.Create())
+            using (FileStream stream = File.OpenRead(path))
+                return BitConverter
+                    .ToString(hash.ComputeHash(stream))
+                    .Replace("-", "")
+                    .ToLowerInvariant();
+        }
+
+        private static string NormalizeRoot(string path)
+        {
+            return Path.GetFullPath(path)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+    }
+}
