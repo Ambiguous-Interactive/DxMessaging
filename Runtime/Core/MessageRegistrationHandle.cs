@@ -47,6 +47,10 @@ namespace DxMessaging.Core
             _slot = slot;
         }
 
+        /// <summary>Compares two values for equality.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>true</c> when both values have the same opaque registration identity; otherwise <c>false</c>.</returns>
         public static bool operator ==(
             MessageRegistrationHandle left,
             MessageRegistrationHandle right
@@ -55,6 +59,10 @@ namespace DxMessaging.Core
             return left.Equals(right);
         }
 
+        /// <summary>Compares two values for inequality.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>false</c> when both values have the same opaque registration identity; otherwise <c>true</c>.</returns>
         public static bool operator !=(
             MessageRegistrationHandle left,
             MessageRegistrationHandle right
@@ -91,6 +99,10 @@ namespace DxMessaging.Core
             return left.CompareTo(right) < 0;
         }
 
+        /// <summary>Reports whether the left handle sorts before or at the right handle.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>true</c> when the left handle sorts before or at the right handle.</returns>
         public static bool operator <=(
             MessageRegistrationHandle left,
             MessageRegistrationHandle right
@@ -99,6 +111,10 @@ namespace DxMessaging.Core
             return left.CompareTo(right) <= 0;
         }
 
+        /// <summary>Reports whether the left handle sorts after or at the right handle.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>true</c> when the left handle sorts after or at the right handle.</returns>
         public static bool operator >=(
             MessageRegistrationHandle left,
             MessageRegistrationHandle right
@@ -122,16 +138,21 @@ namespace DxMessaging.Core
         /// </summary>
         /// <param name="obj">Object to compare with.</param>
         /// <returns>
-        /// Relative ordering when <paramref name="obj"/> is a <see cref="MessageRegistrationHandle"/>; otherwise <c>-1</c>.
+        /// Relative ordering for another <see cref="MessageRegistrationHandle"/>; positive for <see langword="null"/>.
         /// </returns>
+        /// <exception cref="ArgumentException">The argument is non-null and has another type.</exception>
         public int CompareTo(object obj)
         {
+            if (obj is null)
+            {
+                return 1;
+            }
             if (obj is MessageRegistrationHandle handle)
             {
                 return CompareTo(handle);
             }
 
-            return -1;
+            throw new ArgumentException("Object must be a MessageRegistrationHandle.", nameof(obj));
         }
 
         /// <summary>

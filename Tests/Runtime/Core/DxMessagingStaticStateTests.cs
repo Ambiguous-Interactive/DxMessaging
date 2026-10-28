@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Helper;
     using DxMessaging.Core.MessageBus;
@@ -27,17 +26,13 @@ namespace DxMessaging.Tests.Runtime.Core
             IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
             IMessageBus.GlobalDiagnosticsStackTraces = true;
             IMessageBus.GlobalMessageBufferSize = 128;
-            IMessageBus.GlobalSequentialIndex = 7;
 
-            Type builderType = typeof(MessageRegistrationBuilder);
-            FieldInfo syntheticOwnerField = builderType.GetField(
-                "_syntheticOwnerCounter",
-                BindingFlags.NonPublic | BindingFlags.Static
+            MessageBus customBus = new MessageBus();
+            MessageRegistrationBuilder builder = new MessageRegistrationBuilder();
+            using MessageRegistrationLease previousLease = builder.Build(
+                new MessageRegistrationBuildOptions { PreferredMessageBus = customBus }
             );
-            Assert.IsNotNull(syntheticOwnerField);
-            syntheticOwnerField.SetValue(null, 3);
-
-            MessageHandler.SetGlobalMessageBus(new MessageBus());
+            MessageHandler.SetGlobalMessageBus(customBus);
 
             DxMessagingStaticState.Reset();
 
@@ -46,7 +41,12 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(DiagnosticsTarget.Off, IMessageBus.GlobalDiagnosticsTargets);
             Assert.IsFalse(IMessageBus.GlobalDiagnosticsStackTraces);
             Assert.AreEqual(100, IMessageBus.GlobalMessageBufferSize);
-            Assert.AreEqual(-1, IMessageBus.GlobalSequentialIndex);
+            MessageBus postResetBus = new MessageBus();
+            Assert.Greater(
+                postResetBus.RegisteredGlobalSequentialIndex,
+                customBus.RegisteredGlobalSequentialIndex,
+                "Reset must preserve issued bus indices so retained custom buses cannot share handler caches."
+            );
 
             MessageRegistrationHandle resetHandle =
                 MessageRegistrationHandle.CreateMessageRegistrationHandle();
@@ -59,8 +59,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 resetHandle
             );
 
-            object syntheticOwnerValue = syntheticOwnerField.GetValue(null);
-            Assert.AreEqual(0, (int)syntheticOwnerValue);
+            using MessageRegistrationLease postResetLease = builder.Build(
+                new MessageRegistrationBuildOptions { PreferredMessageBus = customBus }
+            );
+            Assert.AreNotEqual(
+                previousLease.Owner,
+                postResetLease.Owner,
+                "Reset must not reuse automatically generated owners belonging to retained leases."
+            );
 
             Assert.AreSame(MessageHandler.InitialGlobalMessageBus, MessageHandler.MessageBus);
             Assert.AreSame(baselineBus, MessageHandler.MessageBus);

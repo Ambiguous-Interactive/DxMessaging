@@ -223,7 +223,26 @@ component.Configure(busB, MessageBusRebindMode.RebindActive);
 
 - When you want complete, immediate migration to a new bus
 - In DI scenarios where the container provides a new bus instance
-- When you need atomic switching without mixed-bus behavior
+- When all current listeners should migrate through one configuration request
+
+### Configuration from callbacks
+
+> **Fixed in v4.0.0.**
+
+A bus cleanup or provider callback can call `MessagingComponent.Configure` while another component
+configuration is in progress. The nested call accepts a request with its bus or provider and rebind
+mode. Resolution and migration of that request wait until the current migration returns from foreign
+code. Requests run in their accepted order before the outermost `Configure` returns.
+
+Observe the final registrations after the outermost call returns. A nested call does not complete
+its migration inside the callback. `PreserveRegistrations` still changes future registration defaults
+without moving active registrations; `RebindActive` moves the active registrations when its queued
+request runs. Later requests do not erase an earlier request's rebind mode.
+
+The outermost call attempts accepted requests even when an earlier request fails. It rethrows a
+single original error unchanged, or reports multiple errors in an `AggregateException`. Failed token
+cleanup remains retryable through the component's owning APIs. Released or replaced listeners are
+rechecked when each migration runs, so independently owned work is not migrated by the component.
 
 ### Retarget a Token Directly
 
@@ -246,6 +265,11 @@ token.RetargetMessageBus(busB, MessageBusRebindMode.RebindActive);
 
 // All registrations are now on busB
 ```
+
+If a custom bus registration callback calls `Enable()` on the token currently being activated or
+retargeted, that nested call returns without restarting replay. The outer call determines whether
+activation succeeds. A registration failure still reaches the outer caller, and later activation
+can retry after cleanup completes.
 
 #### When to use this
 
@@ -400,6 +424,24 @@ public class DynamicComponentManager
 ---
 
 ## Quick Reference
+
+`DxMessagingStaticState.Reset()` clears the built-in default bus, restores shared
+configuration, and invalidates prior global override scopes. It preserves custom bus
+registrations and previously issued message type IDs, bus cache indices, automatically
+generated lease owner IDs, and registration handle IDs. New buses and automatically owned
+leases keep separate handler storage from retained ones. Bus construction or automatic
+lease owner generation throws `InvalidOperationException` when its identifier range is exhausted.
+
+Reset clears the default bus's typed handler caches, including handlers that already
+deregistered their last callback. A new registration on a retained handler receives
+fresh messages without replaying a cached callback from before reset.
+
+A reset during an interceptor, global callback, handler, or post-processor stops the
+current message. Remaining callbacks and later phases do not run for that emission.
+Registrations created after the reset receive subsequent emissions, including a
+nested emission started explicitly by the resetting callback.
+`MessageBus.BumpResetGeneration()` uses the same callback boundary and invalidates
+older deregistration handles while retaining the bus's registrations for later emissions.
 
 | API                                            | Purpose                                     | Use Case                        |
 | ---------------------------------------------- | ------------------------------------------- | ------------------------------- |

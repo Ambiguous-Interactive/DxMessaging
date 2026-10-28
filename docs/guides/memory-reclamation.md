@@ -3,12 +3,28 @@
 DxMessaging keeps dispatch state in per-message-type and per-context slots so
 lookups stay O(1) on the hot path. Long-running sessions can otherwise retain a
 slot for every message type or `InstanceId` ever touched. The memory
-reclamation system bounds that growth without changing dispatch semantics or
-allocating during emit.
+reclamation system bounds that growth while preserving dispatch behavior.
 
 This page describes when reclamation runs, what it touches, how to configure
 it for common scenarios, and the diagnostic counters you can use to verify it
 is doing its job.
+
+**Fixed in v4.0.0:** Nested global accept-all emissions keep callbacks still owed to
+outer emissions. When a nested emission replaces a captured snapshot, that old
+snapshot releases its captures after its last consumer finishes, including
+exception exits. Nested registration changes can allocate replacement snapshot
+lists. Retained snapshot tracking applies
+`BufferMaxDistinctEntries` when the last consumer finishes.
+
+A consumed targeted or sourced-broadcast `MessageBusRegistration` does not retain a
+recycled context map. Keeping that old value cannot pin unrelated registrations
+when another bus reuses the map. A handle can still retain its own handler or
+external state; discard consumed values when their lifecycle ends.
+
+Disabled tokens retain their staged callbacks for the next `Enable()`. After a typed
+registration's teardown succeeds, the token releases that consumed cleanup value so
+later users of recycled typed context maps can collect. A failed teardown keeps its
+cleanup value for retry.
 
 ## Table of Contents
 
@@ -51,6 +67,9 @@ Reclamation targets these kinds of state:
 - **Per-handler bus storage (4.0).** A handler allocates storage only for buses it
   uses. Trimming the last empty typed slot or resetting the bus releases that
   bus entry. Creating unrelated buses does not increase a handler's storage.
+  Reset also clears typed caches for handlers whose final registration was
+  already removed, dropping frozen callback references before sweep tracking
+  is cleared. Reusing a handler after reset starts with fresh callback state.
 - **Registration history (4.0).** Each bus keeps at most `RegistrationLogCapacity`
   entries (1,024 by default). New entries overwrite the oldest. Records retain
   numeric owner identity without retaining Unity objects. Reading history
@@ -99,19 +118,19 @@ To customize, create the asset:
    asset is picked up at runtime.
 
 The recommended path is `Assets/Resources/DxMessagingRuntimeSettings.asset`.
-The asset's editor `OnValidate` warns when it is placed outside a `Resources/`
-folder because `Resources.Load` cannot find it there.
+After validation, an idle Editor update warns when the asset is outside a
+`Resources/` folder because `Resources.Load` cannot find it there.
 
-Field changes raise `DxMessagingRuntimeSettings.SettingsChanged`. Live buses
-re-apply caps, retention modes, and toggles without recreation, so editing the
-asset while the editor is in Play mode takes effect on the next sweep
-boundary.
+In 4.0, field validation queues `DxMessagingRuntimeSettings.SettingsChanged` for
+an idle Editor update. Repeated edits to one asset coalesce until delivery;
+compilation and import postpone it. Live buses then re-apply caps, retention
+modes, and toggles without recreation. Validation itself normalizes local fields
+without changing live buses or shared pools.
 
-Tests can install temporary settings with
-`DxMessagingRuntimeSettingsProvider.Override`. Nested override tokens may be
-disposed in any order: the newest token restores the nearest active ancestor,
-and `DxMessagingStaticState.Reset()` invalidates stale tokens. Each override
-allocates one sealed reference token.
+The provider caches the resource asset until player subsystem initialization or
+`DxMessagingStaticState.Reset()`. 4.0 removes the test-only runtime-settings override
+API; configure the resource asset for application behavior and keep fixture
+configuration in test assemblies.
 
 For the full list of fields, defaults, and tooltip text, see the
 [Runtime Settings reference](../reference/runtime-settings.md).
@@ -127,12 +146,9 @@ A sweep reclaims only empty slots; active registrations are never touched.
 
 Idle sweeps run on a wall-clock cadence. Two triggers can drive a sweep:
 
-- **Emit-time sampling.** Every emit checks whether enough wall time has
-  elapsed since the last sweep. The threshold is
-  `EvictionTickIntervalSeconds`. When it has, the bus runs a sweep before
-  dispatching the message. Sampling the clock periodically keeps the per-emit
-  overhead at one branch on the hot path (every 16th emit samples the wall
-  clock to decide whether enough time has elapsed).
+- **Emit-time sampling.** Every 16th emit samples the wall clock against
+  `EvictionTickIntervalSeconds`. When that interval has elapsed, the bus runs
+  a sweep before dispatching the message.
 - **Unity PlayerLoop hook.** `EvictionPlayerLoopHook` inserts a sweep callback
   into Unity's PlayerLoop so that idle sweeps still run when no emits are
   happening. The hook is installed automatically on Unity 2021.3 and newer
@@ -143,18 +159,21 @@ Idle sweeps are gated by two settings. When `EvictionEnabled` is false neither
 the inline emit-time path nor the PlayerLoop path runs. When
 `EvictionTickIntervalSeconds` is large, sweeps run less often.
 
-Empty slots become eligible only after they have remained empty (and free of
-register, deregister, or dispatch activity) for at least `IdleEvictionSeconds`
-worth of bus activity ticks (advanced on emit, register, deregister, and once
-per frame from the Unity PlayerLoop). The bus tracks per-slot dirty state by
+Empty slots become eligible when their bus activity-tick age is strictly greater
+than the rounded-up `IdleEvictionSeconds` value. This setting retains its legacy
+name; it is a counter-age budget. Emit, register and deregister operations advance
+the counter. The Unity PlayerLoop advances it once when a sweep is due, rather
+than on every frame. With the default budget of 30, the 31st subsequent tick makes
+an untouched empty slot eligible. The bus tracks per-slot dirty state by
 stamping touched slots with an internal tick counter, then revisits only the
 types, targets, interceptors, and handlers that have changed since the
 previous sweep.
 
 On non-Unity hosts the tick counter only advances on bus activity, so an
-inactive bus does not age out empty slots without an explicit `Trim`. Drive
-sweeps by emitting messages periodically or call `Trim` on the bus's owning
-thread outside dispatch. The message bus does not support concurrent access.
+inactive bus does not age out empty slots just because wall time passes.
+Nonforced `Trim` checks the current age without advancing it. Continue bus activity
+to age slots, or call `Trim(force: true)` on the bus's owning thread outside dispatch
+for deterministic reclamation. The message bus does not support concurrent access.
 
 ### Explicit Trim
 
@@ -188,7 +207,7 @@ Method lookup recency always uses LRU, independent of `BufferUseLruEviction`.
 
 ## Tuning by Scenario
 
-The defaults (30 second idle threshold, 5 second tick, LRU pool retention with
+The defaults (30 activity ticks of idle age, 5 seconds between sweeps, LRU pool retention with
 512 distinct entries, both master switches on) are tuned for general-purpose
 projects. Use the table below as a starting point when defaults do not fit.
 
@@ -211,8 +230,8 @@ editing the asset rather than restarting the editor.
 Every successful `Trim` call returns an `IMessageBus.TrimResult`. Its fields
 are read-only counters for the work the sweep performed:
 
-- `TypeSlotsEvicted` is the number of typed-handler-slot entries that were
-  reset across all reclaimed message types.
+- `TypeSlotsEvicted` aggregates bus type-cache entries, typed-handler slots and
+  global slots reclaimed across all message types.
 - `TargetSlotsEvicted` is the number of bus-side target or source context
   entries removed across all reclaimed `InstanceId`s.
 - `PooledCollectionsEvicted` is the number of pooled collections dropped from
@@ -322,10 +341,10 @@ Three settings gate idle sweeps:
 - `EvictionTickIntervalSeconds` controls the minimum interval between sweeps.
   A very large value defers sweeps; zero allows back-to-back sweeps but does
   not force one to run on every emit.
-- `IdleEvictionSeconds` controls when an empty slot becomes eligible. If the
-  threshold is larger than the interval between dispatches that touch the
-  slot, the slot is repeatedly reset and never ages out. Lower the threshold
-  or call `Trim(force: true)` for a deterministic reclaim.
+- `IdleEvictionSeconds` controls the activity-tick budget. Repeated touches
+  reset a slot's age. Wall time alone does not advance this counter; the bus
+  needs activity or due PlayerLoop sweeps. Lower the budget or call
+  `Trim(force: true)` for a deterministic reclaim.
 
 In the [plain .NET runtime build](../reference/compatibility.md#plain-net-runtime),
 the PlayerLoop hook and settings asset are unavailable. Buses use the built-in defaults.

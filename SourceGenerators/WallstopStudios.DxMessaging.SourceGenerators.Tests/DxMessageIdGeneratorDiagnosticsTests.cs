@@ -625,6 +625,144 @@ public readonly struct Omnibus : IUntargetedMessage, ITargetedMessage, IBroadcas
         AssertGeneratedOutputCompilesForIl2Cpp(source);
     }
 
+    /// <summary>
+    /// Compiles generated declarations and their consumers for escaped and ordinary identifiers.
+    /// </summary>
+    /// <remarks>
+    /// 2026-10-11: Escaped identifiers previously caused invalid file hints or unescaped source.
+    /// Source generation must preserve semantic names while emitting valid C# and file hints.
+    /// </remarks>
+    [TestCase("Sample", "Message", "", "", "value")]
+    [TestCase("Sample", "@class", "", "", "value")]
+    [TestCase("Sample", "Message", "@event", "", "value")]
+    [TestCase("Sample", "Message", "", "@for", "value")]
+    [TestCase("Sample", "Message", "Outer<@for>", "", "value")]
+    [TestCase("Sample", "Message", "Outer", "", "@event")]
+    [TestCase("Sample", "@class", "@event<@for>", "@while", "@switch")]
+    [TestCase("@namespace", "Message", "", "", "value")]
+    [TestCase("Sample", "\u03a9", "\u0394", "\u03a3", "\u03c6")]
+    public void GeneratedDeclarationsPreserveEscapedIdentifiers(
+        string namespaceName,
+        string typeName,
+        string containerName,
+        string typeParameter,
+        string fieldName
+    )
+    {
+        string typeParameters = string.IsNullOrEmpty(typeParameter) ? "" : $"<{typeParameter}>";
+        string containerOpen = string.IsNullOrEmpty(containerName)
+            ? ""
+            : $"public partial class {containerName} {{";
+        string containerClose = string.IsNullOrEmpty(containerName) ? "" : "}";
+        string source = $$"""
+using DxMessaging.Core.Attributes;
+
+namespace {{namespaceName}};
+
+{{containerOpen}}
+[DxUntargetedMessage]
+public readonly partial struct {{typeName}}{{typeParameters}}
+{
+    public readonly int {{fieldName}};
+    public static System.Type ReadMessageType() => new {{typeName}}{{typeParameters}}().MessageType;
+}
+{{containerClose}}
+""";
+
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        Assert.That(
+            result.Results.SelectMany(static run => run.GeneratedSources),
+            Is.Not.Empty,
+            "A valid attributed declaration must produce source. Diagnostics:\n"
+                + string.Join(
+                    "\n",
+                    result.Diagnostics.Select(static diagnostic => diagnostic.ToString())
+                )
+                + string.Join("\n", result.Results.Select(static run => run.Exception?.ToString()))
+        );
+        Diagnostic[] errors = GeneratorTestUtilities
+            .CompileGeneratedOutput(source, result)
+            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        Assert.That(
+            errors,
+            Is.Empty,
+            $"Generated output must compile for {containerName}/{typeName}/{typeParameter}/{fieldName}:\n"
+                + string.Join("\n", errors.Select(static diagnostic => diagnostic.ToString()))
+        );
+        AssertGeneratedOutputCompilesForIl2Cpp(source);
+    }
+
+    /// <summary>
+    /// Distinct legal type declarations must retain both generated member sets.
+    /// </summary>
+    /// <remarks>
+    /// 2026-10-11: Generic delimiters previously normalized to identifier underscores,
+    /// so a generic type and a matching nongeneric name could share one file hint.
+    /// </remarks>
+    [TestCase("T", "Packet_T_", false, false)]
+    [TestCase("T", "Packet_T_", false, true)]
+    [TestCase("T_U", "Packet_T_U_", false, false)]
+    [TestCase("@event", "Packet_event_", false, false)]
+    [TestCase("T", "Outer_T_", true, false)]
+    [TestCase("T", "Outer_T_", true, true)]
+    [TestCase("T", "DifferentPacket", false, false)]
+    [TestCase("T", "DifferentOuter", true, true)]
+    public void DistinctTypeNamesKeepGeneratedFilesSeparate(
+        string typeParameter,
+        string nongenericName,
+        bool nested,
+        bool reversed
+    )
+    {
+        string parameters = nested ? "" : $"<{typeParameter}>";
+        string first = $$"""
+[DxUntargetedMessage]
+public readonly partial struct Packet{{parameters}}
+{
+    public readonly int value;
+    public static System.Type ReadGeneratedMember() => new Packet{{parameters}}().MessageType;
+}
+""";
+        string secondType = nested ? "Packet" : nongenericName;
+        string second = $$"""
+[DxUntargetedMessage]
+public readonly partial struct {{secondType}}
+{
+    public readonly int value;
+    public static System.Type ReadGeneratedMember() => new {{secondType}}().MessageType;
+}
+""";
+        if (nested)
+        {
+            first = $"public partial class Outer<{typeParameter}> {{ {first} }}";
+            second = $"public partial class {nongenericName} {{ {second} }}";
+        }
+        string declarations = reversed ? second + first : first + second;
+        string source = $"using DxMessaging.Core.Attributes; namespace Sample {{ {declarations} }}";
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        Assert.That(
+            result.Results.Select(static run => run.Exception),
+            Has.All.Null,
+            "Distinct attributed types must not abort generation. Diagnostics:\n"
+                + string.Join(
+                    "\n",
+                    result.Diagnostics.Select(static diagnostic => diagnostic.ToString())
+                )
+        );
+        Diagnostic[] errors = GeneratorTestUtilities
+            .CompileGeneratedOutput(source, result)
+            .Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        Assert.That(
+            errors,
+            Is.Empty,
+            $"Both generated member sets must compile for {typeParameter}/{nongenericName}/{nested}/{reversed}:\n"
+                + string.Join("\n", errors.Select(static diagnostic => diagnostic.ToString()))
+        );
+        AssertGeneratedOutputCompilesForIl2Cpp(source);
+    }
+
     /*
         ------------------------------------------------------------------------------------------
         Helpers.

@@ -13,12 +13,23 @@ Unity-centric helpers make registration lifecycles explicit and safe.
 unless `emitMessagesWhenDisabled` is enabled. Token enable state and handler activity are
 separate; enabling a token does not activate its GameObject.
 
+During `Configure(..., RebindActive)`, a custom bus cleanup callback can release or replace
+another listener. Remaining owned listeners still migrate. The outer call leaves work accepted
+independently on a released token under that token's caller; it does not migrate that work.
+A cleanup exception propagates without discarding the remaining cached owners.
+
 Destroying an initialized `MessagingComponent` deactivates its shared handler and disposes its
 owned tokens, including tokens created by plain `MonoBehaviour` listeners. This also applies when only the
 `MessagingComponent` is removed. If a custom bus throws during deregistration, cleanup continues
 for other listeners and logs the full exception. Retain the component and listener references
 and retry `Release(listener)` after the bus recovers. An interceptor whose removal fails remains
 registered until that retry succeeds.
+
+`Release(listener)` returns `true` when cleanup completes and removes the cached token.
+A nested release of the same token returns `false` while the owning release is in progress.
+If a deregistration callback accepts new work on the token, the component keeps that work
+cached and returns `false`. Release it after the callback finishes. A cleanup exception also
+keeps the token cached for a public retry.
 
 Unity [only sends `OnDestroy` to previously active GameObjects](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/MonoBehaviour.OnDestroy.html).
 If you create tokens on a host that has never been active, call `Release(listener)` or dispose each token before discarding it. A manual

@@ -62,11 +62,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             int expectedHandlerEntries =
                 sameHandler || distinctPriority ? 1 : benchmarkCase.Cardinality;
             int expectedPriorityEntries = distinctPriority ? benchmarkCase.Cardinality : 1;
-            MessageBus.PriorityStorageObservation busStorage = observation.BusPriorityStorage;
+            PriorityStorageObservation busStorage = observation.BusPriorityStorage;
             Assert.AreEqual(expectedPriorityEntries, busStorage.Entries);
             Assert.GreaterOrEqual(busStorage.MapCapacity, busStorage.Entries);
             Assert.GreaterOrEqual(busStorage.OrderCapacity, busStorage.Entries);
-            MessageHandler.HandlerCacheStorageObservation storage = observation.Storage;
+            HandlerCacheStorageObservation storage = observation.Storage;
             Assert.AreEqual(expectedPriorityEntries, storage.PriorityEntries);
             Assert.AreEqual(expectedHandlerEntries, storage.HandlerEntries);
             AssertStorageCoherent(
@@ -101,7 +101,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                         cardinality
                     )
                 );
-            MessageHandler.HandlerCacheStorageObservation storage = observation.Storage;
+            HandlerCacheStorageObservation storage = observation.Storage;
             Assert.AreEqual(cardinality, storage.HandlerEntries);
             Assert.AreEqual(2 < cardinality, expectedSpill);
             if (UsesRegistrationSlotArena)
@@ -241,7 +241,6 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 {
                     HandlerStorageConstructionKind.HandlerCache,
                     HandlerStorageConstructionKind.PrioritySlot,
-                    HandlerStorageConstructionKind.BusPriorityOwner,
                     HandlerStorageConstructionKind.OrdinaryTypedHandler,
                     HandlerStorageConstructionKind.GlobalTypedHandler,
                 },
@@ -270,19 +269,30 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         [Test]
-        public void FreshBusPriorityOwnerStartsEmptyWithZeroCapacity()
+        public void BusPriorityStorageMaterializesThroughRealRegistration()
         {
-            object owner = MessageBus.CreatePriorityStorageOwnerForBenchmark();
+            MessageBus bus = new();
+            Assert.IsFalse(
+                bus.TryObserveUntargetedPriorityStorageForBenchmark<StorageProbeMessage>(out _)
+            );
+            MessageHandler handler = new(new InstanceId(0x4A123), bus) { active = true };
+            using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            using LeakWatcher watcher = new(bus);
+            _ = token.RegisterUntargeted<StorageProbeMessage>(_ => { });
+            token.Enable();
             Assert.IsTrue(
-                MessageBus.TryObservePriorityStorageOwnerForBenchmark(
-                    owner,
-                    out MessageBus.PriorityStorageObservation observation
+                bus.TryObserveUntargetedPriorityStorageForBenchmark<StorageProbeMessage>(
+                    out PriorityStorageObservation observation
                 )
             );
-            Assert.Zero(observation.Entries);
-            Assert.Zero(observation.MapCapacity);
-            Assert.Zero(observation.OrderCapacity);
+            Assert.AreEqual(1, observation.Entries);
+            Assert.GreaterOrEqual(observation.MapCapacity, 1);
+            Assert.GreaterOrEqual(observation.OrderCapacity, 1);
+            token.UnregisterAll();
         }
+
+        private readonly struct StorageProbeMessage
+            : DxMessaging.Core.Messages.IUntargetedMessage { }
 
         private static void AssertStorageCoherent(
             int entries,

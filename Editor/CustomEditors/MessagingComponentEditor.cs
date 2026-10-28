@@ -8,7 +8,6 @@ namespace DxMessaging.Editor.CustomEditors
     using Core.MessageBus;
     using Core.Messages;
     using DxMessaging.Editor;
-    using DxMessaging.Editor.Testing;
     using DxMessaging.Unity;
     using UnityEditor;
     using UnityEngine;
@@ -104,7 +103,7 @@ namespace DxMessaging.Editor.CustomEditors
             }
 
             MessagingComponentInspectorState inspectorState =
-                MessagingComponentEditorHarness.Capture(component);
+                MessagingComponentInspectorSnapshot.Capture(component);
             ProviderDiagnosticsView providerDiagnostics = inspectorState.ProviderDiagnostics;
 
             if (providerDiagnostics.SerializedProviderMissingWarning)

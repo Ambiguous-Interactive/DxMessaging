@@ -40,7 +40,7 @@ jobs:
           required-label-sets: '[["self-hosted","Windows","RAM-64GB"]]'
 
   benchmarks:
-    name: Benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
+    name: Benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }} ${{ matrix.benchmark-scope }}
     needs:
       - runner-preflight
     runs-on: [self-hosted, Windows, RAM-64GB]
@@ -49,14 +49,26 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
+        # Complete Editor coverage first, before the longer PlayMode timing selections.
+        test-mode:
+          - editmode
+          - playmode
         unity-version:
           - 2021.3.45f1
           - 2022.3.45f1
           - 6000.3.16f1
           - 6000.5.2f1
-        test-mode:
-          - editmode
-          - playmode
+        # Complete PlayMode selections exceed the existing 600-second editor watchdog.
+        # Split every case by PerfBench membership, then the cardinality fixture.
+        benchmark-scope:
+          - coverage
+          - cardinality
+          - remaining
+        exclude:
+          - test-mode: editmode
+            benchmark-scope: cardinality
+          - test-mode: editmode
+            benchmark-scope: remaining
     steps:
       # Contract item 3: the central immutable gate validates the runner-owned
       # editor before any credential reference or checkout. CI never installs,
@@ -166,7 +178,9 @@ jobs:
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           lock-name: wallstop-organization-builds
-          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          require-resource-lifecycle: "true"
+          minimum-release-cooldown-seconds: "0"
+          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-scope }}
           runner-id: ${{ runner.name }}
           github-token: ${{ github.token }}
           timeout-minutes: "300"
@@ -192,6 +206,12 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
           DX_PERF_COMMIT: ${{ github.sha }}
+          DXM_UNITY_TEST_CATEGORY: ${{ matrix.test-mode == 'playmode' && (matrix.benchmark-scope == 'coverage' && '!PerfBench' || 'PerfBench') || '' }}
+          DXM_UNITY_TEST_FILTER: >-
+            ${{ matrix.benchmark-scope == 'cardinality' &&
+            'DxMessaging.Tests.Runtime.Benchmarks.HandlerCardinalityBenchmarks' ||
+            (matrix.benchmark-scope == 'remaining' &&
+            '!DxMessaging.Tests.Runtime.Benchmarks.HandlerCardinalityBenchmarks' || '') }}
         run: |
           # Release (not Debug) code optimization for the editmode/playmode perf
           # legs, mirroring the repo-wide Unity Release-mode contract so the
@@ -205,7 +225,7 @@ jobs:
             -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -TestMode '${{ matrix.test-mode }}' `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
-            -ArtifactsPath '.artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}' `
+            -ArtifactsPath '.artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-scope }}' `
             -ProjectPath $projectPath `
             -CachePath $cachePath `
             -LicenseReturnOwner Central `
@@ -226,8 +246,8 @@ jobs:
         timeout-minutes: 5
         uses: ./.github/actions/dump-unity-log-tail
         with:
-          results-dir: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          label: Benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
+          results-dir: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-scope }}
+          label: Benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }} ${{ matrix.benchmark-scope }}
 
       # CLASS GUARD: Unity can fail before NUnit writes results. The shared
       # composite fails unless a results XML exists AND reports total > 0.
@@ -249,8 +269,8 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/verify-unity-results
         with:
-          results-dir: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          label: Benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }}
+          results-dir: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-scope }}
+          label: Benchmarks ${{ matrix.unity-version }} ${{ matrix.test-mode }} ${{ matrix.benchmark-scope }}
           expected-empty: ${{ steps.compute.outputs.is-empty }}
 
       - name: Redact sensitive data from benchmark artifacts
@@ -269,8 +289,8 @@ jobs:
         timeout-minutes: 10
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: unity-benchmarks-${{ matrix.unity-version }}-${{ matrix.test-mode }}
-          path: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          name: unity-benchmarks-${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-scope }}
+          path: .artifacts/unity/benchmarks/${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-scope }}
           if-no-files-found: warn
           retention-days: 90
 
@@ -305,7 +325,7 @@ jobs:
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           lock-name: wallstop-organization-builds
-          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}
+          holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}-${{ matrix.benchmark-scope }}
           runner-id: ${{ runner.name }}
           resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
           resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}

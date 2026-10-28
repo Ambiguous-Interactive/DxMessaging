@@ -13,16 +13,16 @@ namespace DxMessaging.Core.Diagnostics
     /// Captures a snapshot of a message emission for diagnostics.
     /// </summary>
     /// <remarks>
-    /// When diagnostics are enabled (see <see cref="MessageBus.IMessageBus.GlobalDiagnosticsTargets"/>),
+    /// When diagnostics are enabled (see <see cref="global::DxMessaging.Core.MessageBus.IMessageBus.GlobalDiagnosticsTargets"/>),
     /// the bus and tokens record recent emissions in ring buffers. Each record also carries a trimmed
     /// stack trace that excludes DxMessaging internals, but ONLY when
-    /// <see cref="MessageBus.IMessageBus.GlobalDiagnosticsStackTraces"/> is enabled; capturing a trace
+    /// <see cref="global::DxMessaging.Core.MessageBus.IMessageBus.GlobalDiagnosticsStackTraces"/> is enabled; capturing a trace
     /// costs hundreds of microseconds and tens of allocations per record, so <see cref="stackTrace"/> is
     /// <see cref="string.Empty"/> by default.
     ///
     /// The <see cref="context"/> contains the relevant <see cref="InstanceId"/> for targeted/broadcast messages
     /// (target or source respectively) and is null for untargeted messages. Runtime records emitted by a
-    /// <see cref="MessageBus.MessageBus"/> also carry a <see cref="traceId"/> that token-local delivery records can
+    /// <see cref="global::DxMessaging.Core.MessageBus.MessageBus"/> also carry a <see cref="traceId"/> that token-local delivery records can
     /// use to join a bus emission to the registrations that observed it.
     /// </remarks>
     public readonly struct MessageEmissionData
@@ -37,7 +37,7 @@ namespace DxMessaging.Core.Diagnostics
 
         /// <summary>
         /// Trimmed stack trace captured at the emission site, or <see cref="string.Empty"/> when
-        /// <see cref="MessageBus.IMessageBus.GlobalDiagnosticsStackTraces"/> is disabled (the default).
+        /// <see cref="global::DxMessaging.Core.MessageBus.IMessageBus.GlobalDiagnosticsStackTraces"/> is disabled (the default).
         /// </summary>
         public readonly string stackTrace;
 

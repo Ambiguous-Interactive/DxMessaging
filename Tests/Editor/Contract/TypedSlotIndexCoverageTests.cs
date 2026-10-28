@@ -424,12 +424,14 @@ namespace DxMessaging.Tests.Editor.Contract
                 active = true,
             };
             Action<ProbeMessage> original = _ => { };
-            Action deregistration = handler.RegisterUntargetedMessageHandler(
-                original,
-                original,
-                priority: 17,
-                messageBus: bus
-            );
+            Action deregistration = (
+                handler.RegisterUntargetedMessageHandler(
+                    original,
+                    original,
+                    priority: 17,
+                    messageBus: bus
+                )
+            ).AsAction();
             object typedHandler = ReadTypedHandler<ProbeMessage>(handler, bus);
             Array slots = ReadArrayField(typedHandler, "_slots");
             TypedSlot<ProbeMessage> slot =
@@ -448,12 +450,14 @@ namespace DxMessaging.Tests.Editor.Contract
                     + "closures observe a monotonic slot version bump."
             );
 
-            Action newDeregistration = handler.RegisterUntargetedMessageHandler(
-                original,
-                original,
-                priority: 17,
-                messageBus: bus
-            );
+            Action newDeregistration = (
+                handler.RegisterUntargetedMessageHandler(
+                    original,
+                    original,
+                    priority: 17,
+                    messageBus: bus
+                )
+            ).AsAction();
             object newTypedHandler = ReadTypedHandler<ProbeMessage>(handler, bus);
             Assert.AreNotSame(
                 typedHandler,
@@ -489,12 +493,14 @@ namespace DxMessaging.Tests.Editor.Contract
             };
             int handled = 0;
             Action<ProbeMessage> callback = _ => handled++;
-            Action deregistration = handler.RegisterUntargetedMessageHandler(
-                callback,
-                callback,
-                priority: 17,
-                messageBus: bus
-            );
+            Action deregistration = (
+                handler.RegisterUntargetedMessageHandler(
+                    callback,
+                    callback,
+                    priority: 17,
+                    messageBus: bus
+                )
+            ).AsAction();
             object typedHandler = ReadTypedHandler<ProbeMessage>(handler, bus);
             Array slots = ReadArrayField(typedHandler, "_slots");
             TypedSlot<ProbeMessage> slot =
@@ -584,13 +590,15 @@ namespace DxMessaging.Tests.Editor.Contract
             };
             InstanceId target = new InstanceId(0x5033_0104);
             Action<ProbeTargetedMessage> original = _ => { };
-            Action deregistration = handler.RegisterTargetedMessageHandler(
-                target,
-                original,
-                original,
-                priority: 17,
-                messageBus: bus
-            );
+            Action deregistration = (
+                handler.RegisterTargetedMessageHandler(
+                    target,
+                    original,
+                    original,
+                    priority: 17,
+                    messageBus: bus
+                )
+            ).AsAction();
             object typedHandler = ReadTypedHandler<ProbeTargetedMessage>(handler, bus);
             Array slots = ReadArrayField(typedHandler, "_slots");
             TypedSlot<ProbeTargetedMessage> slot =
@@ -733,15 +741,17 @@ namespace DxMessaging.Tests.Editor.Contract
             Action<IUntargetedMessage> untargeted = _ => { };
             Action<InstanceId, ITargetedMessage> targeted = (_, _) => { };
             Action<InstanceId, IBroadcastMessage> broadcast = (_, _) => { };
-            Action deregistration = handler.RegisterGlobalAcceptAll(
-                untargeted,
-                untargeted,
-                targeted,
-                targeted,
-                broadcast,
-                broadcast,
-                messageBus: bus
-            );
+            Action deregistration = (
+                handler.RegisterGlobalAcceptAll(
+                    untargeted,
+                    untargeted,
+                    targeted,
+                    targeted,
+                    broadcast,
+                    broadcast,
+                    messageBus: bus
+                )
+            ).AsAction();
             object typedHandler = ReadTypedHandler<IMessage>(handler, bus);
             Array globalSlots = ReadArrayField(typedHandler, "_globalSlots");
             TypedGlobalSlot untargetedSlot = (TypedGlobalSlot)

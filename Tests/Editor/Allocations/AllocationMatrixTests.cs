@@ -12,6 +12,7 @@ namespace DxMessaging.Tests.Editor.Allocations
     using DxMessaging.Tests.Editor.Benchmarks;
     using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Benchmarks;
+    using DxMessaging.Tests.Runtime.Core;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using UnityEngine;
@@ -282,6 +283,99 @@ namespace DxMessaging.Tests.Editor.Allocations
                     Action emit = BuildEmitClosure(scenario, bus);
                     RegisterHandler(scenario, token);
                     AllocationAssertions.AssertNoAllocations($"Emit-{scenario.Kind}", emit);
+                }
+            );
+        }
+
+        /// <summary>
+        /// Keeps emission allocation-free after all augmented handler shapes move to
+        /// a different bus. Global callbacks use a class payload; typed callbacks use
+        /// a struct. Registration, rebinding and closure creation precede measurement.
+        /// </summary>
+        [TestCaseSource(
+            typeof(DiagnosticOriginAfterDisableTests),
+            nameof(DiagnosticOriginAfterDisableTests.RebindAllocationCases)
+        )]
+        public void ReboundTokenBindingEmitIsZeroAlloc(
+            MessageScenario scenario,
+            bool action,
+            bool global
+        )
+        {
+            RunWithFreshHarness(
+                scenario,
+                (token, original) =>
+                {
+                    MessageBus replacement = MessageBus.CreateForInternalUse(
+                        StopwatchClock.Instance,
+                        idleEvictionTicks: 0,
+                        evictionTickIntervalSeconds: double.PositiveInfinity,
+                        idleEvictionEnabled: false,
+                        trimApiEnabled: true
+                    );
+                    replacement.DiagnosticsMode = false;
+                    original.DiagnosticsMode = false;
+                    token.DiagnosticMode = false;
+                    int calls = 0;
+                    Action receive = () => calls++;
+                    Action oldEmit = DiagnosticOriginAfterDisableTests.CreateReboundAllocationEmit(
+                        original,
+                        scenario,
+                        global
+                    );
+                    Action emit = DiagnosticOriginAfterDisableTests.CreateReboundAllocationEmit(
+                        replacement,
+                        scenario,
+                        global
+                    );
+                    try
+                    {
+                        _ = global
+                            ? DiagnosticOriginAfterDisableTests.RegisterGlobal(
+                                token,
+                                action,
+                                receive
+                            )
+                            : DiagnosticOriginAfterDisableTests.RegisterHandler(
+                                token,
+                                scenario,
+                                action,
+                                receive
+                            );
+                        oldEmit();
+                        Assert.That(
+                            calls,
+                            Is.EqualTo(1),
+                            "Original binding must actually deliver before rebinding."
+                        );
+                        token.Disable();
+                        token.RetargetMessageBus(
+                            replacement,
+                            MessageBusRebindMode.PreserveRegistrations
+                        );
+                        token.Enable();
+                        emit();
+                        Assert.That(
+                            calls,
+                            Is.EqualTo(2),
+                            "Rebound binding must actually deliver before measurement."
+                        );
+                        AllocationAssertions.AssertNoAllocations(
+                            $"Rebound-{scenario.Kind}-Action{action}-Global{global}",
+                            emit
+                        );
+                        Assert.That(
+                            calls,
+                            Is.GreaterThan(2),
+                            "Measured emissions must invoke the live rebound binding."
+                        );
+                    }
+                    finally
+                    {
+                        token.Dispose();
+                        _ = original.Trim(force: true);
+                        _ = replacement.Trim(force: true);
+                    }
                 }
             );
         }
@@ -597,20 +691,23 @@ namespace DxMessaging.Tests.Editor.Allocations
 
         [Test]
         [Category("Allocation")]
-        public void RuntimeSettingsOverrideAllocatesOneReferenceToken()
+        public void CachedRuntimeSettingsLookupAllocatesNothing()
         {
             DxMessagingRuntimeSettings settings =
                 ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
-            Action overrideCycle = () =>
-                DxMessagingRuntimeSettingsProvider.Override(settings).Dispose();
-            using IDisposable isolatedRegistry = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            using IDisposable isolatedRegistry =
+                MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
+            IDisposable fixtureSettings = null;
             try
             {
-                overrideCycle();
+                fixtureSettings = RuntimeSettingsFixture.Override(settings);
+                DxMessagingRuntimeSettings observed = null;
+                Action read = () => observed = DxMessagingRuntimeSettingsProvider.Current;
+                read();
                 long delta = AllocationProbe.MeasureMin(
                     AllocationMeasurementAttempts,
                     prepare: null,
-                    operation: overrideCycle
+                    operation: read
                 );
                 if (delta == AllocationProbe.Unmeasured)
                 {
@@ -618,16 +715,17 @@ namespace DxMessaging.Tests.Editor.Allocations
                         "The GC.Alloc allocation probe is non-functional on this backend."
                     );
                 }
-
+                Assert.AreSame(settings, observed);
                 Assert.AreEqual(
-                    1,
+                    0,
                     delta,
-                    "Override and Dispose must allocate only the existing sealed reference token."
+                    "Reading the existing production settings cache must allocate nothing."
                 );
             }
             finally
             {
-                DxMessagingRuntimeSettingsProvider.ResetForTests();
+                fixtureSettings?.Dispose();
+                RuntimeSettingsFixture.Reset();
                 UnityEngine.Object.DestroyImmediate(settings);
             }
         }

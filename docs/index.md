@@ -53,11 +53,11 @@ See the [Install Guide](getting-started/install.md) for scoped registry, Git URL
 <div class="dx-home-feature-grid">
   <section>
     <h3>Simple primitives</h3>
-    <p>Three message shapes - untargeted, targeted, broadcast - and nothing else to learn. Each contract is an explicit typed struct, and no system holds a reference to any other.</p>
+    <p>Choose untargeted, targeted, or broadcast messages. Senders and receivers share a typed message contract.</p>
   </section>
   <section>
     <h3>Easy to use</h3>
-    <p>Define a struct, register a handler, emit. Registration tokens follow their owner's lifecycle, so handlers remove themselves - no manual unsubscribe, no leaked listeners.</p>
+    <p>Define a message, register a handler, and emit. MessageAwareComponent owns registration cleanup through its Unity lifecycle. Plain C# owners enable and dispose their registration tokens.</p>
   </section>
   <section>
     <h3>Small edits, big impact</h3>
@@ -65,9 +65,12 @@ See the [Install Guide](getting-started/install.md) for scoped registry, Git URL
   </section>
   <section>
     <h3>High performance</h3>
-    <p>Struct messages and readonly by-reference handlers keep steady-state dispatch at zero allocation. Type-indexed routing stays O(1); see the current CI table for measured scenario costs.</p>
+    <p>Ordinary typed steady-state struct dispatch is allocation-free. Global accept-all handlers box structs, and emission-site stack-trace capture allocates. See the performance page for measured scenario costs.</p>
   </section>
 </div>
+
+See the [allocation contract and exceptions](reference/faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc)
+before choosing a dispatch path or enabling diagnostics.
 
 ## Next
 

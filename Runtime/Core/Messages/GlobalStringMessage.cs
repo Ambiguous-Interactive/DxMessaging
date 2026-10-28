@@ -18,8 +18,10 @@ namespace DxMessaging.Core.Messages
     /// </example>
     public readonly struct GlobalStringMessage : IUntargetedMessage<GlobalStringMessage>
     {
+        /// <summary>Gets the type used to route this message through the bus.</summary>
         public Type MessageType => typeof(GlobalStringMessage);
 
+        /// <summary>Text supplied as the message payload.</summary>
         public readonly string message;
 
         /// <summary>

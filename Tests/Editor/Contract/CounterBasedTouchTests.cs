@@ -3,13 +3,17 @@ namespace DxMessaging.Tests.Editor.Contract
     using System;
     using System.Reflection;
     using DxMessaging.Core;
+    using DxMessaging.Core.Internal;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.MessageBus.Internal;
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
     /// <summary>
-    /// Reflection-based contract tests for counter-based slot touch wiring.
+    /// Contract tests for bus tick progress, global slot age, and stale teardown.
     /// These intentionally pin likely private/internal names so implementation
     /// drift fails with focused messages.
     /// </summary>
@@ -51,21 +55,23 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void TypedRegisterUpdatesTouchedSlotLastTouchTicks()
+        public void TypedRegisterAdvancesBusTickAndPublishesLiveSlot()
         {
             MessageBus bus = new MessageBus();
             MessageHandler handler = new MessageHandler(HandlerOwner, bus) { active = true };
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
 
-                IEvictableSlot slot = ReadTypedSlot<ProbeMessage>(
+                TypedSlot<ProbeMessage> slot = ReadTypedSlot<ProbeMessage>(
                     handler,
                     bus,
                     "UntargetedHandleDefault"
@@ -73,7 +79,8 @@ namespace DxMessaging.Tests.Editor.Contract
                 long tick = ReadBusTick(bus);
 
                 Assert.Greater(tick, 0);
-                Assert.AreEqual(tick, slot.LastTouchTicks);
+                Assert.IsFalse(slot.IsEmpty);
+                Assert.AreEqual(1, slot.liveCount);
 
                 deregistration();
             }
@@ -91,11 +98,11 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 MessageBusRegistration deregistration = bus.RegisterGlobalAcceptAll(handler);
-                IEvictableSlot slot = ReadGlobalSlot(bus);
+                BusGlobalSlot slot = ReadGlobalSlot(bus);
                 long tick = ReadBusTick(bus);
 
                 Assert.Greater(tick, 0);
-                Assert.AreEqual(tick, slot.LastTouchTicks);
+                Assert.AreEqual(tick, slot.lastTouchTicks);
 
                 bus.Deregister<IMessage>(in deregistration);
             }
@@ -106,20 +113,22 @@ namespace DxMessaging.Tests.Editor.Contract
         }
 
         [Test]
-        public void TypedDeregisterUpdatesTouchedSlotLastTouchTicks()
+        public void TypedDeregisterAdvancesBusTickAndEmptiesSlot()
         {
             MessageBus bus = new MessageBus();
             MessageHandler handler = new MessageHandler(HandlerOwner, bus) { active = true };
             try
             {
                 Action<ProbeMessage> callback = _ => { };
-                Action deregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 17,
-                    messageBus: bus
-                );
-                IEvictableSlot slot = ReadTypedSlot<ProbeMessage>(
+                Action deregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
+                TypedSlot<ProbeMessage> slot = ReadTypedSlot<ProbeMessage>(
                     handler,
                     bus,
                     "UntargetedHandleDefault"
@@ -130,7 +139,8 @@ namespace DxMessaging.Tests.Editor.Contract
                 long deregisterTick = ReadBusTick(bus);
 
                 Assert.Greater(deregisterTick, registerTick);
-                Assert.AreEqual(deregisterTick, slot.LastTouchTicks);
+                Assert.IsTrue(slot.IsEmpty);
+                Assert.AreEqual(0, slot.liveCount);
             }
             finally
             {
@@ -146,14 +156,14 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 MessageBusRegistration deregistration = bus.RegisterGlobalAcceptAll(handler);
-                IEvictableSlot slot = ReadGlobalSlot(bus);
+                BusGlobalSlot slot = ReadGlobalSlot(bus);
                 long registerTick = ReadBusTick(bus);
 
                 bus.Deregister<IMessage>(in deregistration);
                 long deregisterTick = ReadBusTick(bus);
 
                 Assert.Greater(deregisterTick, registerTick);
-                Assert.AreEqual(deregisterTick, slot.LastTouchTicks);
+                Assert.AreEqual(deregisterTick, slot.lastTouchTicks);
             }
             finally
             {
@@ -169,16 +179,16 @@ namespace DxMessaging.Tests.Editor.Contract
             try
             {
                 MessageBusRegistration staleDeregistration = bus.RegisterGlobalAcceptAll(handler);
-                IEvictableSlot slot = ReadGlobalSlot(bus);
+                BusGlobalSlot slot = ReadGlobalSlot(bus);
 
                 InvokeResetState(bus);
                 long tickAfterReset = ReadBusTick(bus);
-                long touchAfterReset = slot.LastTouchTicks;
+                long touchAfterReset = slot.lastTouchTicks;
 
                 bus.Deregister<IMessage>(in staleDeregistration);
 
                 Assert.AreEqual(tickAfterReset, ReadBusTick(bus));
-                Assert.AreEqual(touchAfterReset, slot.LastTouchTicks);
+                Assert.AreEqual(touchAfterReset, slot.lastTouchTicks);
             }
             finally
             {
@@ -204,13 +214,15 @@ namespace DxMessaging.Tests.Editor.Contract
                 {
                     currentCallCount++;
                 };
-                Action staleDeregistration = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    staleCallback,
-                    priority: 17,
-                    messageBus: bus
-                );
-                IEvictableSlot slot = ReadTypedSlot<ProbeMessage>(
+                Action staleDeregistration = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        staleCallback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
+                TypedSlot<ProbeMessage> slot = ReadTypedSlot<ProbeMessage>(
                     handler,
                     bus,
                     "UntargetedHandleDefault"
@@ -218,12 +230,10 @@ namespace DxMessaging.Tests.Editor.Contract
 
                 InvokeResetState(bus);
                 long tickAfterReset = ReadBusTick(bus);
-                long touchAfterReset = slot.LastTouchTicks;
 
                 staleDeregistration();
 
                 Assert.AreEqual(tickAfterReset, ReadBusTick(bus));
-                Assert.AreEqual(touchAfterReset, slot.LastTouchTicks);
                 Assert.IsTrue(slot.IsEmpty);
 
                 _ = handler.RegisterUntargetedMessageHandler(
@@ -263,14 +273,16 @@ namespace DxMessaging.Tests.Editor.Contract
                 {
                     currentCallCount++;
                 };
-                Action staleDeregistration = handler.RegisterTargetedMessageHandler(
-                    target,
-                    callback,
-                    staleCallback,
-                    priority: 17,
-                    messageBus: bus
-                );
-                IEvictableSlot slot = ReadTypedSlot<TargetedProbeMessage>(
+                Action staleDeregistration = (
+                    handler.RegisterTargetedMessageHandler(
+                        target,
+                        callback,
+                        staleCallback,
+                        priority: 17,
+                        messageBus: bus
+                    )
+                ).AsAction();
+                TypedSlot<TargetedProbeMessage> slot = ReadTypedSlot<TargetedProbeMessage>(
                     handler,
                     bus,
                     "TargetedHandleDefault"
@@ -278,12 +290,10 @@ namespace DxMessaging.Tests.Editor.Contract
 
                 InvokeResetState(bus);
                 long tickAfterReset = ReadBusTick(bus);
-                long touchAfterReset = slot.LastTouchTicks;
 
                 staleDeregistration();
 
                 Assert.AreEqual(tickAfterReset, ReadBusTick(bus));
-                Assert.AreEqual(touchAfterReset, slot.LastTouchTicks);
                 Assert.IsTrue(slot.IsEmpty);
 
                 _ = handler.RegisterTargetedMessageHandler(
@@ -325,25 +335,25 @@ namespace DxMessaging.Tests.Editor.Contract
                 };
                 Action<InstanceId, ITargetedMessage> targeted = (_, _) => { };
                 Action<InstanceId, IBroadcastMessage> broadcast = (_, _) => { };
-                Action staleDeregistration = handler.RegisterGlobalAcceptAll(
-                    originalUntargeted,
-                    staleUntargeted,
-                    targeted,
-                    targeted,
-                    broadcast,
-                    broadcast,
-                    bus
-                );
-                IEvictableSlot slot = ReadTypedGlobalSlot(handler, bus, "UntargetedDefault");
+                Action staleDeregistration = (
+                    handler.RegisterGlobalAcceptAll(
+                        originalUntargeted,
+                        staleUntargeted,
+                        targeted,
+                        targeted,
+                        broadcast,
+                        broadcast,
+                        bus
+                    )
+                ).AsAction();
+                TypedGlobalSlot slot = ReadTypedGlobalSlot(handler, bus, "UntargetedDefault");
 
                 InvokeResetState(bus);
                 long tickAfterReset = ReadBusTick(bus);
-                long touchAfterReset = slot.LastTouchTicks;
 
                 staleDeregistration();
 
                 Assert.AreEqual(tickAfterReset, ReadBusTick(bus));
-                Assert.AreEqual(touchAfterReset, slot.LastTouchTicks);
                 Assert.IsTrue(slot.IsEmpty);
 
                 _ = handler.RegisterGlobalAcceptAll(
@@ -377,23 +387,26 @@ namespace DxMessaging.Tests.Editor.Contract
                 Action<IUntargetedMessage> untargeted = _ => { };
                 Action<InstanceId, ITargetedMessage> targeted = (_, _) => { };
                 Action<InstanceId, IBroadcastMessage> broadcast = (_, _) => { };
-                Action deregistration = handler.RegisterGlobalAcceptAll(
-                    untargeted,
-                    untargeted,
-                    targeted,
-                    targeted,
-                    broadcast,
-                    broadcast,
-                    bus
-                );
-                IEvictableSlot slot = ReadTypedGlobalSlot(handler, bus, "UntargetedDefault");
+                Action deregistration = (
+                    handler.RegisterGlobalAcceptAll(
+                        untargeted,
+                        untargeted,
+                        targeted,
+                        targeted,
+                        broadcast,
+                        broadcast,
+                        bus
+                    )
+                ).AsAction();
+                TypedGlobalSlot slot = ReadTypedGlobalSlot(handler, bus, "UntargetedDefault");
                 long registerTick = ReadBusTick(bus);
 
                 deregistration();
                 long deregisterTick = ReadBusTick(bus);
 
                 Assert.Greater(deregisterTick, registerTick);
-                Assert.AreEqual(deregisterTick, slot.LastTouchTicks);
+                Assert.IsTrue(slot.IsEmpty);
+                Assert.AreEqual(0, slot.liveCount);
             }
             finally
             {
@@ -456,7 +469,7 @@ namespace DxMessaging.Tests.Editor.Contract
                 || type == typeof(uint);
         }
 
-        private static IEvictableSlot ReadGlobalSlot(MessageBus bus)
+        private static BusGlobalSlot ReadGlobalSlot(MessageBus bus)
         {
             FieldInfo field = typeof(MessageBus).GetField(
                 "_globalSlots",
@@ -464,11 +477,11 @@ namespace DxMessaging.Tests.Editor.Contract
             );
             Assert.IsNotNull(field, "MessageBus must retain private field '_globalSlots'.");
             object value = field.GetValue(bus);
-            Assert.IsInstanceOf<IEvictableSlot>(value);
-            return (IEvictableSlot)value;
+            Assert.IsInstanceOf<BusGlobalSlot>(value);
+            return (BusGlobalSlot)value;
         }
 
-        private static IEvictableSlot ReadTypedSlot<TMessage>(
+        private static TypedSlot<TMessage> ReadTypedSlot<TMessage>(
             MessageHandler handler,
             IMessageBus bus,
             string typedSlotIndexName
@@ -482,11 +495,11 @@ namespace DxMessaging.Tests.Editor.Contract
                 typedSlotIndexName
             );
             object slot = slots.GetValue(index);
-            Assert.IsInstanceOf<IEvictableSlot>(slot);
-            return (IEvictableSlot)slot;
+            Assert.IsInstanceOf<TypedSlot<TMessage>>(slot);
+            return (TypedSlot<TMessage>)slot;
         }
 
-        private static IEvictableSlot ReadTypedGlobalSlot(
+        private static TypedGlobalSlot ReadTypedGlobalSlot(
             MessageHandler handler,
             IMessageBus bus,
             string typedGlobalSlotIndexName
@@ -499,8 +512,8 @@ namespace DxMessaging.Tests.Editor.Contract
                 typedGlobalSlotIndexName
             );
             object slot = slots.GetValue(index);
-            Assert.IsInstanceOf<IEvictableSlot>(slot);
-            return (IEvictableSlot)slot;
+            Assert.IsInstanceOf<TypedGlobalSlot>(slot);
+            return (TypedGlobalSlot)slot;
         }
 
         private static object ReadTypedHandler<TMessage>(MessageHandler handler, IMessageBus bus)

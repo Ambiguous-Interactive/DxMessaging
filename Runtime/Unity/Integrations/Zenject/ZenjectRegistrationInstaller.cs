@@ -40,6 +40,7 @@ namespace DxMessaging.Unity.Integrations.Zenject
             );
         }
 
+        /// <summary>Adapts a Zenject container and its optional cached bus to IMessageBusProvider.</summary>
         public sealed class ContainerMessageBusProvider : IMessageBusProvider
         {
             private readonly DiContainer _container;

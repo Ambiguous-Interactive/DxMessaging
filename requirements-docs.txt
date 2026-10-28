@@ -61,7 +61,7 @@ mkdocs==1.6.1
     #   mkdocs-minify-plugin
 mkdocs-get-deps==0.2.2
     # via mkdocs
-mkdocs-git-revision-date-localized-plugin==1.6.1
+mkdocs-git-revision-date-localized-plugin==1.6.2
     # via -r requirements-docs.in
 mkdocs-material==9.8.0
     # via -r requirements-docs.in
@@ -79,7 +79,7 @@ paginate==0.5.7
     # via mkdocs-material
 pathspec==1.1.1
     # via mkdocs
-platformdirs==4.13.5
+platformdirs==4.13.6
     # via mkdocs-get-deps
 pygments==2.21.0
     # via

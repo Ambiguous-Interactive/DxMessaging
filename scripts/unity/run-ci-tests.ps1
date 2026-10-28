@@ -28,6 +28,8 @@ param(
 
     [string]$TestCategory = $(if ($env:DXM_UNITY_TEST_CATEGORY) { $env:DXM_UNITY_TEST_CATEGORY } else { '' }),
 
+    [string]$TestFilter = $(if ($env:DXM_UNITY_TEST_FILTER) { $env:DXM_UNITY_TEST_FILTER } else { '' }),
+
     [switch]$IncludeComparisons,
 
     [switch]$ReleaseCodeOptimization,
@@ -5322,6 +5324,32 @@ function Invoke-StandaloneTestPlayer {
     }
 }
 
+# Keep CLI values as separate arguments; Unity applies category and name filters together.
+function Get-UnityEditorTestArguments {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectPath,
+        [Parameter(Mandatory = $true)][ValidateSet('editmode', 'playmode')][string]$TestPlatform,
+        [Parameter(Mandatory = $true)][string]$ResultsPath,
+        [Parameter(Mandatory = $true)][string]$AssemblyNames,
+        [string]$TestCategory,
+        [string]$TestFilter,
+        [string[]]$AdditionalArguments = @()
+    )
+
+    $arguments = @(
+        '-batchmode', '-nographics', '-projectPath', $ProjectPath,
+        '-runTests', '-testPlatform', $TestPlatform, '-testResults', $ResultsPath,
+        '-assemblyNames', $AssemblyNames, '-releaseCodeOptimization', '-logFile', '-'
+    )
+    if (-not [string]::IsNullOrWhiteSpace($TestCategory)) {
+        $arguments += @('-testCategory', $TestCategory)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($TestFilter)) {
+        $arguments += @('-testFilter', $TestFilter)
+    }
+    return $arguments + $AdditionalArguments
+}
+
 function Invoke-UnityEditor {
     param(
         [Parameter(Mandatory = $true)][string]$EditorPath,
@@ -5331,7 +5359,8 @@ function Invoke-UnityEditor {
         # The shortest caller has a 30-minute step and at most two UPM attempts.
         # Ten minutes per attempt leaves ten minutes for setup and license cleanup.
         [ValidateRange(0, [int]::MaxValue)][int]$TimeoutSeconds = 600,
-        [ValidateRange(1, 300)][int]$ShutdownTimeoutSeconds = 30
+        [ValidateRange(1, 300)][int]$ShutdownTimeoutSeconds = 30,
+        [ref]$ProcessResultRef
     )
 
     # A native pipeline can remain blocked in shutdown (or on a descendant's
@@ -5340,6 +5369,9 @@ function Invoke-UnityEditor {
     # Exact, case-sensitive whole-line terminal messages start a 30-second shutdown
     # deadline. Results written earlier do not start it: framework cleanup still runs.
     # The existing caller validates the fresh result/marker even after a forced exit.
+    if ($null -ne $ProcessResultRef) {
+        $ProcessResultRef.Value = $null
+    }
     $completionPattern = '^(?:Test run completed\. Exiting with code [0-9]+ \([^\r\n]+\)\. Run completed\.|Batchmode quit successfully invoked - shutting down!)$'
     $processResult = Invoke-ProcessWithTreeKillTimeout `
         -FilePath $EditorPath `
@@ -5349,6 +5381,10 @@ function Invoke-UnityEditor {
         -CompletionPattern $completionPattern `
         -LogPath $LogPath `
         -Label $Label
+    # Preserve branch evidence for callers that need it without changing the scalar exit code.
+    if ($null -ne $ProcessResultRef) {
+        $ProcessResultRef.Value = $processResult
+    }
     $exitCode = $processResult.ExitCode
     Clear-NonFatalNativeExitCode -Context $Label
     if ($exitCode -ne 0) {
@@ -5809,7 +5845,11 @@ function Write-StandaloneBuildOutputDiagnostics {
         [Parameter(Mandatory = $true)][string]$Project,
         [Parameter(Mandatory = $true)][string]$ExpectedExe,
         [string]$LogPath,
-        [datetime]$BuildStartedUtc
+        [datetime]$BuildStartedUtc,
+        [string]$Artifacts,
+        [string]$ProfileId,
+        [string]$ProfileSha256,
+        [string]$UnityVersion
     )
 
     Write-Host "::group::Standalone player build output diagnostics"
@@ -5866,13 +5906,26 @@ function Write-StandaloneBuildOutputDiagnostics {
     } catch {
         Write-Host "::warning::Could not collect standalone player build diagnostics: $($_.Exception.Message)"
     }
+    if (-not [string]::IsNullOrWhiteSpace($ProfileId)) {
+        try {
+            Write-NativeBuildInputEvidence `
+                -Project $Project -LogPath $LogPath -Artifacts $Artifacts `
+                -ProfileId $ProfileId -ProfileSha256 $ProfileSha256 `
+                -UnityVersion $UnityVersion
+        } catch {
+            # Evidence collection must preserve the original build failure.
+            Write-Host "::warning::Could not retain failed native build inputs: $_"
+        }
+    }
     Write-Host "::endgroup::"
 }
 
 function Test-StandalonePlayerBuildOutput {
     param(
         [Parameter(Mandatory = $true)][string]$ExpectedExe,
-        [Parameter(Mandatory = $true)][datetime]$BuildStartedUtc
+        [Parameter(Mandatory = $true)][datetime]$BuildStartedUtc,
+        [Parameter(Mandatory = $true)][string]$BuildLogPath,
+        [Parameter(Mandatory = $true)][ValidateSet('IL2CPP', 'Mono2x')][string]$ScriptingBackend
     )
 
     if (-not (Test-Path -LiteralPath $ExpectedExe -PathType Leaf)) {
@@ -5887,6 +5940,27 @@ function Test-StandalonePlayerBuildOutput {
     $dataDir = Join-Path (Split-Path -Parent $ExpectedExe) ("{0}_Data" -f [System.IO.Path]::GetFileNameWithoutExtension($ExpectedExe))
     if (-not (Test-Path -LiteralPath $dataDir -PathType Container)) {
         return "missing player data directory: $dataDir"
+    }
+
+    if (-not (Test-Path -LiteralPath $BuildLogPath -PathType Leaf)) {
+        return "missing build log: $BuildLogPath"
+    }
+    $buildLog = Get-Content -LiteralPath $BuildLogPath -Raw
+    if ($buildLog -match '(?m)^\s*(?:[\w.]+\.)?TestLaunchFailedException:\s*Player build failed(?:\s|$)') {
+        return 'Unity reported a failed player build'
+    }
+    if ($ScriptingBackend -ceq 'IL2CPP') {
+        foreach ($nativePath in @(
+            (Join-Path $exe.DirectoryName 'GameAssembly.dll')
+            (Join-Path $dataDir 'il2cpp_data/Metadata/global-metadata.dat')
+        )) {
+            if (-not (Test-Path -LiteralPath $nativePath -PathType Leaf)) {
+                return "missing IL2CPP player file: $nativePath"
+            }
+            if ((Get-Item -LiteralPath $nativePath).Length -le 0) {
+                return "empty IL2CPP player file: $nativePath"
+            }
+        }
     }
 
     return ''
@@ -7137,6 +7211,10 @@ Assert-RepoRoot -Path $RepoRoot
 $ArtifactsPath = Resolve-FullPath -Path $ArtifactsPath
 New-Item -ItemType Directory -Force -Path $ArtifactsPath | Out-Null
 
+if (-not [string]::IsNullOrWhiteSpace($TestFilter) -and $TestMode -notin @('editmode', 'playmode')) {
+    throw 'TestFilter is supported only for EditMode and PlayMode editor tests.'
+}
+
 $isShippingFidelity = $TestMode -eq 'shipping'
 if ($isShippingFidelity) {
     if (-not [string]::IsNullOrWhiteSpace($AssemblyNames)) {
@@ -7625,7 +7703,9 @@ try {
         }
         $shippingBuildProblem = Test-StandalonePlayerBuildOutput `
             -ExpectedExe $standaloneExe `
-            -BuildStartedUtc $shippingBuildStartedUtc
+            -BuildStartedUtc $shippingBuildStartedUtc `
+            -BuildLogPath $logPath `
+            -ScriptingBackend 'IL2CPP'
         if (
             -not [string]::IsNullOrWhiteSpace($shippingMarkerProblem) -or
             -not [string]::IsNullOrWhiteSpace($shippingBuildProblem)
@@ -7639,7 +7719,10 @@ try {
                 -Project $ProjectPath `
                 -ExpectedExe $standaloneExe `
                 -LogPath $logPath `
-                -BuildStartedUtc $shippingBuildStartedUtc
+                -BuildStartedUtc $shippingBuildStartedUtc `
+                -Artifacts $ArtifactsPath `
+                -ProfileId $canonicalProfileId -ProfileSha256 $canonicalProfileSha256 `
+                -UnityVersion $UnityVersion
             throw "Shipping-fidelity build did not produce fresh complete evidence (marker: $shippingMarkerProblem; player: $shippingBuildProblem; exit code $($shippingBuildResult.ExitCode))."
         }
         if ($shippingBuildResult.TimedOut -or $shippingBuildResult.ExitCode -ne 0) {
@@ -7845,6 +7928,12 @@ try {
                 $incrementalMarkerProblem = 'build marker does not match the incremental invocation nonce'
             }
             if (-not [string]::IsNullOrWhiteSpace($incrementalMarkerProblem)) {
+                Write-StandaloneBuildOutputDiagnostics `
+                    -Project $ProjectPath -ExpectedExe $standaloneExe `
+                    -LogPath $incrementalLogPath -BuildStartedUtc $incrementalBuildStartedUtc `
+                    -Artifacts $incrementalArtifactsPath `
+                    -ProfileId $canonicalProfileId -ProfileSha256 $canonicalProfileSha256 `
+                    -UnityVersion $UnityVersion
                 throw "Incremental shipping build did not produce fresh invocation evidence: $incrementalMarkerProblem."
             }
             if ($incrementalResult.TimedOut -or $incrementalResult.ExitCode -ne 0) {
@@ -8002,7 +8091,9 @@ try {
         # fresh, complete exe) still fails loudly with full diagnostics.
         $standaloneBuildProblem = Test-StandalonePlayerBuildOutput `
             -ExpectedExe $standaloneExe `
-            -BuildStartedUtc $standaloneBuildStartedUtc
+            -BuildStartedUtc $standaloneBuildStartedUtc `
+            -BuildLogPath $logPath `
+            -ScriptingBackend $StandaloneScriptingBackend
         if (-not [string]::IsNullOrWhiteSpace($standaloneBuildProblem)) {
             Write-UnityRunFailureDiagnostics `
                 -Project $ProjectPath `
@@ -8013,7 +8104,10 @@ try {
                 -Project $ProjectPath `
                 -ExpectedExe $standaloneExe `
                 -LogPath $logPath `
-                -BuildStartedUtc $standaloneBuildStartedUtc
+                -BuildStartedUtc $standaloneBuildStartedUtc `
+                -Artifacts $ArtifactsPath `
+                -ProfileId $canonicalProfileId -ProfileSha256 $canonicalProfileSha256 `
+                -UnityVersion $UnityVersion
             if ($buildResult.TimedOut) {
                 throw "Standalone test-player build timed out and the process tree was killed before producing a valid player at $standaloneExe ($standaloneBuildProblem). Raise the limit via DXM_STANDALONE_BUILD_TIMEOUT_SECONDS (0 disables the timeout). See the build log at $logPath."
             }
@@ -8241,18 +8335,14 @@ try {
         # Editor is running tests with -runTests, -quit causes it to QUIT IMMEDIATELY
         # before in-progress tests can complete -- the editor exits 0 having written
         # no results.xml.
-        $testArgs = @(
-            '-batchmode',
-            '-nographics',
-            '-projectPath', $ProjectPath,
-            '-runTests',
-            '-testPlatform', $testPlatform,
-            '-testResults', $resultsPath,
-            '-assemblyNames', $AssemblyNames,
-            '-releaseCodeOptimization',
-            '-logFile', '-'
-        )
-        $testArgs = $testArgs + $categoryArgs + $acceleratorArgs
+        $testArgs = Get-UnityEditorTestArguments `
+            -ProjectPath $ProjectPath `
+            -TestPlatform $testPlatform `
+            -ResultsPath $resultsPath `
+            -AssemblyNames $AssemblyNames `
+            -TestCategory $TestCategory `
+            -TestFilter $TestFilter `
+            -AdditionalArguments $acceleratorArgs
 
         # Delete any STALE results file first so the file validation below can only
         # honor results THIS run wrote (defensive for local re-runs; CI checkout

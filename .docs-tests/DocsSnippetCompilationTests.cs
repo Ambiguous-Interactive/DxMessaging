@@ -1,6 +1,9 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NUnit.Framework;
 
 namespace WallstopStudios.DxMessaging.Docs.Tests;
@@ -8,6 +11,341 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocsSnippetCompilationTests
 {
+    private static readonly CSharpParseOptions UnityReferenceParseOptions = new(
+        LanguageVersion.CSharp9,
+        preprocessorSymbols: new[] { "UNITY_2021_3_OR_NEWER" }
+    );
+
+    /// <summary>Keep bus reference declarations aligned with the actual public interface.</summary>
+    /// <remarks>2026-10-22: Stub compilation accepted obsolete Action return types in API declarations.</remarks>
+    [TestCase("RegisterUntargetedInterceptor")]
+    [TestCase("RegisterTargetedInterceptor")]
+    [TestCase("RegisterBroadcastInterceptor")]
+    [TestCase("RegisterGlobalAcceptAll")]
+    [TestCase("Deregister")]
+    public void BusReferenceSignaturesMatchRuntimeInterface(string methodName)
+    {
+        AssertReferenceSignatures("IMessageBus", methodName);
+    }
+
+    /// <summary>Preserve the names and constraints needed to call the printed token overloads.</summary>
+    /// <remarks>2026-10-22: Reference prototypes omitted constraints and used different parameter names.</remarks>
+    [TestCase("RegisterUntargeted")]
+    [TestCase("RegisterUntargetedPostProcessor")]
+    [TestCase("RegisterGameObjectTargeted")]
+    [TestCase("RegisterComponentTargeted")]
+    [TestCase("RegisterTargeted")]
+    [TestCase("RegisterTargetedWithoutTargeting")]
+    [TestCase("RegisterTargetedPostProcessor")]
+    [TestCase("RegisterTargetedWithoutTargetingPostProcessor")]
+    [TestCase("RegisterGameObjectBroadcast")]
+    [TestCase("RegisterComponentBroadcast")]
+    [TestCase("RegisterBroadcast")]
+    [TestCase("RegisterBroadcastWithoutSource")]
+    [TestCase("RegisterBroadcastPostProcessor")]
+    [TestCase("RegisterBroadcastWithoutSourcePostProcessor")]
+    public void TokenReferenceSignaturesMatchRuntimeDeclarations(string methodName)
+    {
+        AssertReferenceSignatures("MessageRegistrationToken", methodName);
+    }
+
+    private static void AssertReferenceSignatures(string declaringType, string methodName)
+    {
+        string root = ResolveRepoRoot();
+        string referencePath = Path.Combine(root, "docs", "reference", "reference.md");
+        string runtimePath =
+            declaringType == "IMessageBus"
+                ? Path.Combine(root, "Runtime", "Core", "MessageBus", "IMessageBus.cs")
+                : Path.Combine(root, "Runtime", "Core", "MessageRegistrationToken.cs");
+        MethodDeclarationSyntax[] runtimeMethods = CSharpSyntaxTree
+            .ParseText(File.ReadAllText(runtimePath), UnityReferenceParseOptions)
+            .GetRoot()
+            .DescendantNodes()
+            .OfType<MethodDeclarationSyntax>()
+            .Where(method =>
+                method.Identifier.ValueText == methodName
+                && method.Parent is TypeDeclarationSyntax owner
+                && owner.Identifier.ValueText == declaringType
+            )
+            .ToArray();
+        MethodDeclarationSyntax[] documentedMethods = ExtractCodeBlocks(referencePath, "csharp")
+            .SelectMany(snippet =>
+                CSharpSyntaxTree
+                    .ParseText(
+                        "interface ReferenceSignatures {\n" + snippet + "\n}",
+                        UnityReferenceParseOptions
+                    )
+                    .GetRoot()
+                    .DescendantNodes()
+                    .OfType<MethodDeclarationSyntax>()
+            )
+            .Where(method => method.Identifier.ValueText == methodName)
+            .ToArray();
+        string label = referencePath + ": " + declaringType + "." + methodName;
+        Assert.That(documentedMethods, Is.Not.Empty, label + " must be documented");
+        if (declaringType == "IMessageBus")
+        {
+            Assert.That(documentedMethods, Has.Length.EqualTo(1), label + " must appear once");
+        }
+        foreach (MethodDeclarationSyntax documented in documentedMethods)
+        {
+            string[] parameterTypes = documented
+                .ParameterList.Parameters.Select(parameter => SignatureText(parameter.Type))
+                .ToArray();
+            MethodDeclarationSyntax[] matches = runtimeMethods
+                .Where(method =>
+                    method
+                        .ParameterList.Parameters.Select(parameter => SignatureText(parameter.Type))
+                        .SequenceEqual(parameterTypes)
+                )
+                .ToArray();
+            Assert.That(matches, Has.Length.EqualTo(1), label + " must match one actual overload");
+            MethodDeclarationSyntax runtimeMethod = matches[0];
+            Assert.Multiple(() =>
+            {
+                Assert.That(
+                    SignatureText(documented.ReturnType),
+                    Is.EqualTo(SignatureText(runtimeMethod.ReturnType)),
+                    label + " return type"
+                );
+                Assert.That(
+                    SignatureText(documented.TypeParameterList),
+                    Is.EqualTo(SignatureText(runtimeMethod.TypeParameterList)),
+                    label + " type parameters"
+                );
+                Assert.That(
+                    SignatureText(documented.ParameterList),
+                    Is.EqualTo(SignatureText(runtimeMethod.ParameterList)),
+                    label + " parameters"
+                );
+                Assert.That(
+                    documented.ConstraintClauses.Select(SignatureText),
+                    Is.EqualTo(runtimeMethod.ConstraintClauses.Select(SignatureText)),
+                    label + " constraints"
+                );
+            });
+        }
+    }
+
+    private static string SignatureText(SyntaxNode? node)
+    {
+        // The Unity reference shortens UnityEngine types while retaining their public names.
+        return node?.WithoutTrivia()
+                .NormalizeWhitespace()
+                .ToFullString()
+                .Replace("UnityEngine.", string.Empty, StringComparison.Ordinal)
+            ?? string.Empty;
+    }
+
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(3)]
+    public void MigrationEventBridgeOwnsItsEnabledLifetime(int publisherChange)
+    {
+        string migrationPath = Path.Combine(ResolveDocsRoot(), "guides", "migration-guide.md");
+        string[] samples = System
+            .Text.RegularExpressions.Regex.Matches(
+                File.ReadAllText(migrationPath),
+                @"```csharp\s*\r?\n(?<code>[\s\S]*?)```"
+            )
+            .Select(match => match.Groups["code"].Value)
+            .Where(code => code.Contains("public class LegacyBridge :", StringComparison.Ordinal))
+            .ToArray();
+        Assert.That(
+            samples,
+            Has.Length.EqualTo(1),
+            "Expected exactly one documented LegacyBridge sample."
+        );
+
+        /*
+            Execute the documented bridge unchanged. The fixtures supply its publisher,
+            message emission, and Unity types. Null comparisons model a destroyed Unity
+            publisher; native PlayMode evidence verifies the real lifecycle separately.
+        */
+        string fixtures = """
+            namespace UnityEngine
+            {
+                public class MonoBehaviour
+                {
+                    public bool IsDestroyed;
+                    public static bool IsNullForComparison(MonoBehaviour value) =>
+                        ReferenceEquals(value, null) || value.IsDestroyed;
+                    public static bool operator ==(MonoBehaviour left, MonoBehaviour right)
+                    {
+                        if (ReferenceEquals(left, null)) return IsNullForComparison(right);
+                        if (ReferenceEquals(right, null)) return IsNullForComparison(left);
+                        return ReferenceEquals(left, right);
+                    }
+                    public static bool operator !=(MonoBehaviour left, MonoBehaviour right) => !(left == right);
+                    public override bool Equals(object other) => ReferenceEquals(this, other);
+                    public override int GetHashCode() => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(this);
+                }
+                public sealed class SerializeField : System.Attribute { }
+            }
+            public sealed class LegacySystem : UnityEngine.MonoBehaviour
+            {
+                public event System.Action<int> OnSomethingHappened;
+                public int SubscriptionCount => OnSomethingHappened?.GetInvocationList().Length ?? 0;
+                public void Raise(int value) => OnSomethingHappened?.Invoke(value);
+            }
+            public struct SomethingHappened
+            {
+                public int Value;
+                public SomethingHappened(int value) { Value = value; }
+            }
+            public static class EmissionFixture
+            {
+                public static readonly System.Collections.Generic.List<int> Values = new();
+                public static void Emit(this ref SomethingHappened message) => Values.Add(message.Value);
+            }
+            """;
+        string[] platformAssemblies = (
+            (string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!
+        ).Split(Path.PathSeparator);
+        Microsoft.CodeAnalysis.CSharp.CSharpCompilation compilation =
+            Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create(
+                "MigrationBridgeLifecycle",
+                new[]
+                {
+                    Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(
+                        "using UnityEngine;\n" + samples[0] + "\n" + fixtures
+                    ),
+                },
+                platformAssemblies.Select(path =>
+                    Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(path)
+                ),
+                new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(
+                    Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary
+                )
+            );
+        using MemoryStream assemblyBytes = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult result = compilation.Emit(assemblyBytes);
+        Assert.That(
+            result.Success,
+            Is.True,
+            "The actual bridge sample must compile without ignored errors: "
+                + string.Join("\n", result.Diagnostics)
+        );
+        assemblyBytes.Position = 0;
+        System.Runtime.Loader.AssemblyLoadContext loadContext = new(
+            "MigrationBridgeLifecycle",
+            isCollectible: true
+        );
+        try
+        {
+            System.Reflection.Assembly assembly = loadContext.LoadFromStream(assemblyBytes);
+            Type bridgeType = assembly.GetType("LegacyBridge", throwOnError: true)!;
+            Type publisherType = assembly.GetType("LegacySystem", throwOnError: true)!;
+            object bridge = Activator.CreateInstance(bridgeType)!;
+            object originalPublisher = Activator.CreateInstance(publisherType)!;
+            object replacementPublisher = Activator.CreateInstance(publisherType)!;
+            const System.Reflection.BindingFlags instanceMembers =
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic;
+            System.Reflection.FieldInfo publisherField = bridgeType.GetField(
+                "legacySystem",
+                instanceMembers
+            )!;
+            System.Reflection.MethodInfo raise = publisherType.GetMethod("Raise")!;
+            System.Reflection.PropertyInfo subscriptions = publisherType.GetProperty(
+                "SubscriptionCount"
+            )!;
+            IList<int> values =
+                (IList<int>)
+                    assembly.GetType("EmissionFixture")!.GetField("Values")!.GetValue(null)!;
+            int[] firstExpected = { 11 };
+            publisherField.SetValue(bridge, originalPublisher);
+            bridgeType.GetMethod("Awake", instanceMembers)?.Invoke(bridge, null);
+            bridgeType.GetMethod("OnEnable", instanceMembers)?.Invoke(bridge, null);
+            Assert.That(
+                subscriptions.GetValue(originalPublisher),
+                Is.EqualTo(1),
+                "An enabled bridge needs exactly one subscription."
+            );
+            raise.Invoke(originalPublisher, new object[] { 11 });
+            Assert.That(
+                values,
+                Is.EqualTo(firstExpected),
+                "An enabled bridge must forward the original event payload exactly once."
+            );
+
+            object? nextPublisher = publisherChange switch
+            {
+                1 => replacementPublisher,
+                2 => null,
+                _ => originalPublisher,
+            };
+            publisherField.SetValue(bridge, nextPublisher);
+            if (publisherChange == 3)
+            {
+                publisherType.GetField("IsDestroyed")!.SetValue(originalPublisher, true);
+                Assert.That(ReferenceEquals(originalPublisher, null), Is.False);
+                Assert.That(
+                    publisherType
+                        .BaseType!.GetMethod("IsNullForComparison")!
+                        .Invoke(null, new[] { originalPublisher }),
+                    Is.True,
+                    "The destroyed publisher keeps its C# event while comparing equal to Unity null."
+                );
+            }
+            bridgeType.GetMethod("OnDisable", instanceMembers)?.Invoke(bridge, null);
+            raise.Invoke(originalPublisher, new object[] { 22 });
+            raise.Invoke(replacementPublisher, new object[] { 33 });
+            Assert.Multiple(() =>
+            {
+                Assert.That(
+                    subscriptions.GetValue(originalPublisher),
+                    Is.EqualTo(0),
+                    "Disable must remove the original subscription after reassignment or publisher destruction."
+                );
+                Assert.That(
+                    values,
+                    Is.EqualTo(firstExpected),
+                    "Disabled bridges must not forward either publisher's events."
+                );
+            });
+
+            bridgeType.GetMethod("OnEnable", instanceMembers)?.Invoke(bridge, null);
+            raise.Invoke(originalPublisher, new object[] { 44 });
+            raise.Invoke(replacementPublisher, new object[] { 55 });
+            int[] expected = publisherChange switch
+            {
+                1 => new[] { 11, 55 },
+                2 or 3 => new[] { 11 },
+                _ => new[] { 11, 44 },
+            };
+            Assert.That(
+                values,
+                Is.EqualTo(expected),
+                "Re-enable must subscribe only to the configured live publisher; null or destroyed publishers forward nothing."
+            );
+            bridgeType.GetMethod("OnDisable", instanceMembers)?.Invoke(bridge, null);
+            Assert.That(
+                subscriptions.GetValue(originalPublisher),
+                Is.EqualTo(0),
+                "Final disable must leave no original-publisher subscription."
+            );
+            Assert.That(
+                subscriptions.GetValue(replacementPublisher),
+                Is.EqualTo(0),
+                "Final disable must leave no replacement-publisher subscription."
+            );
+            raise.Invoke(originalPublisher, new object[] { 66 });
+            raise.Invoke(replacementPublisher, new object[] { 77 });
+            Assert.That(
+                values,
+                Is.EqualTo(expected),
+                "Neither publisher may retain the bridge after final disable."
+            );
+        }
+        finally
+        {
+            loadContext.Unload();
+        }
+    }
+
     [Test]
     public void DocsTestSdkAcceptsAvailableNet9FeatureBands()
     {
@@ -1108,6 +1446,126 @@ internal sealed class DocsSnippetCompilationTests
         }
     }
 
+    [TestCase("checkout-parent")]
+    [TestCase(".artifacts")]
+    [TestCase("obj")]
+    [TestCase("bin")]
+    public void DocumentationScansPreserveSourcesUnderGeneratedDirectoryAncestors(
+        string parentDirectory
+    )
+    {
+        string temporaryRoot = Path.Combine(
+            Path.GetTempPath(),
+            "dxm-docs-scan-" + Guid.NewGuid().ToString("N")
+        );
+        string repoRoot = Path.Combine(temporaryRoot, parentDirectory, "checkout");
+        string[] allowedDirectories = { "", "object", "binary", ".artifacts-extra" };
+        string[] generatedDirectories = { ".artifacts", "obj", "bin" };
+        List<string> xmlPaths = new();
+        List<string> allPaths = new();
+        List<string> markdownPaths = new();
+        const string xmlSource =
+            "/// <summary><code>int value = 1;</code></summary>\nclass Sample {}";
+        try
+        {
+            foreach (string root in CSharpScanRoots.Append("Samples~"))
+            {
+                foreach (string directory in allowedDirectories)
+                {
+                    string path = Path.Combine(root, directory, "Real.cs");
+                    WriteFixtureFile(path, xmlSource);
+                    allPaths.Add(path);
+                    if (root != "Samples~")
+                    {
+                        xmlPaths.Add(path);
+                    }
+                }
+                foreach (string directory in generatedDirectories)
+                {
+                    WriteFixtureFile(Path.Combine(root, directory, "Generated.cs"), xmlSource);
+                }
+            }
+            foreach (string path in new[] { "docs/real.md", "Samples~/real.md", "README.md" })
+            {
+                WriteFixtureFile(path, "A real documentation input.");
+                allPaths.Add(path);
+                markdownPaths.Add(path);
+            }
+            foreach (string path in new[] { "docs/real.csharp", "docs/overrides/real.html" })
+            {
+                WriteFixtureFile(path, "int value = 1;");
+                allPaths.Add(path);
+            }
+            foreach (string directory in generatedDirectories)
+            {
+                WriteFixtureFile(
+                    Path.Combine("Samples~", directory, "generated.md"),
+                    "Generated input."
+                );
+            }
+
+            Assert.Multiple(() =>
+            {
+                AssertPaths(
+                    GetXmlDocCodeBlocksFrom(repoRoot).Select(data => (string)data.Arguments[0]!),
+                    xmlPaths,
+                    "XML code blocks"
+                );
+                AssertPaths(
+                    GetTemporaryEmitDocumentationSourcesFrom(repoRoot)
+                        .Select(source => source.Path),
+                    allPaths,
+                    "temporary emit documentation"
+                );
+                AssertPaths(
+                    GetBroadcastExampleSourcesFrom(repoRoot).Select(source => source.Path),
+                    allPaths,
+                    "broadcast examples"
+                );
+                AssertPaths(
+                    EnumeratePublishedMarkdownFilesFrom(repoRoot),
+                    markdownPaths,
+                    "published Markdown"
+                );
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(temporaryRoot))
+            {
+                Directory.Delete(temporaryRoot, recursive: true);
+            }
+        }
+
+        void WriteFixtureFile(string relativePath, string text)
+        {
+            string path = Path.Combine(repoRoot, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, text);
+        }
+
+        void AssertPaths(
+            IEnumerable<string> actualPaths,
+            IEnumerable<string> expectedPaths,
+            string scan
+        )
+        {
+            string[] actual = actualPaths
+                .Select(path => Path.GetRelativePath(repoRoot, path).Replace('\\', '/'))
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+            string[] expected = expectedPaths
+                .Select(path => path.Replace('\\', '/'))
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+            Assert.That(
+                actual,
+                Is.EqualTo(expected),
+                $"[{parentDirectory}] {scan} must retain real sources and exclude generated files inside the checkout."
+            );
+        }
+    }
+
     private static readonly string[] CSharpScanRoots = new[]
     {
         "Runtime",
@@ -1117,7 +1575,11 @@ internal sealed class DocsSnippetCompilationTests
 
     private static IEnumerable<TestCaseData> GetXmlDocCodeBlocks()
     {
-        string repoRoot = ResolveRepoRoot();
+        return GetXmlDocCodeBlocksFrom(ResolveRepoRoot());
+    }
+
+    private static IEnumerable<TestCaseData> GetXmlDocCodeBlocksFrom(string repoRoot)
+    {
         int testIndex = 0;
         foreach (string root in CSharpScanRoots)
         {
@@ -1133,7 +1595,7 @@ internal sealed class DocsSnippetCompilationTests
             )
             {
                 // Skip generated/cache directories.
-                string normalized = sourcePath.Replace('\\', '/');
+                string normalized = Path.GetRelativePath(repoRoot, sourcePath).Replace('\\', '/');
                 if (
                     normalized.Contains("/obj/", StringComparison.Ordinal)
                     || normalized.Contains("/bin/", StringComparison.Ordinal)
@@ -1553,8 +2015,14 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
 
     private static IEnumerable<(string Path, string Text)> GetTemporaryEmitDocumentationSources()
     {
-        string docsRoot = ResolveDocsRoot();
-        string repoRoot = ResolveRepoRoot();
+        return GetTemporaryEmitDocumentationSourcesFrom(ResolveRepoRoot());
+    }
+
+    private static IEnumerable<(string Path, string Text)> GetTemporaryEmitDocumentationSourcesFrom(
+        string repoRoot
+    )
+    {
+        string docsRoot = Path.Combine(repoRoot, "docs");
         foreach (
             string markdownPath in Directory.GetFiles(docsRoot, "*.md", SearchOption.AllDirectories)
         )
@@ -1624,7 +2092,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
                 )
             )
             {
-                string normalized = sourcePath.Replace('\\', '/');
+                string normalized = Path.GetRelativePath(repoRoot, sourcePath).Replace('\\', '/');
                 if (
                     normalized.Contains("/obj/", StringComparison.Ordinal)
                     || normalized.Contains("/bin/", StringComparison.Ordinal)
@@ -1645,8 +2113,14 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
 
     private static IEnumerable<(string Path, string Text)> GetBroadcastExampleSources()
     {
-        string repoRoot = ResolveRepoRoot();
-        string docsRoot = ResolveDocsRoot();
+        return GetBroadcastExampleSourcesFrom(ResolveRepoRoot());
+    }
+
+    private static IEnumerable<(string Path, string Text)> GetBroadcastExampleSourcesFrom(
+        string repoRoot
+    )
+    {
+        string docsRoot = Path.Combine(repoRoot, "docs");
 
         foreach (string path in EnumerateTextFiles(docsRoot, "*.md"))
         {
@@ -1708,7 +2182,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
             .GetFiles(root, pattern, SearchOption.AllDirectories)
             .Where(path =>
             {
-                string normalized = path.Replace('\\', '/');
+                string normalized = "/" + Path.GetRelativePath(root, path).Replace('\\', '/');
                 return !normalized.Contains("/obj/", StringComparison.Ordinal)
                     && !normalized.Contains("/bin/", StringComparison.Ordinal)
                     && !normalized.Contains("/.artifacts/", StringComparison.Ordinal);
@@ -1718,8 +2192,12 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
 
     private static IEnumerable<string> EnumeratePublishedMarkdownFiles()
     {
-        string repoRoot = ResolveRepoRoot();
-        string docsRoot = ResolveDocsRoot();
+        return EnumeratePublishedMarkdownFilesFrom(ResolveRepoRoot());
+    }
+
+    private static IEnumerable<string> EnumeratePublishedMarkdownFilesFrom(string repoRoot)
+    {
+        string docsRoot = Path.Combine(repoRoot, "docs");
         string samplesRoot = Path.Combine(repoRoot, "Samples~");
         string readmePath = Path.Combine(repoRoot, "README.md");
 

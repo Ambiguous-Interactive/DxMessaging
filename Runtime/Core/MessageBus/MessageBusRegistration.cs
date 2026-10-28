@@ -14,7 +14,9 @@ namespace DxMessaging.Core.MessageBus
     /// copy it freely, but do NOT inspect or persist its internals. Handles are
     /// process-local, single-thread, and NOT serializable; a handle is meaningless after a
     /// domain reload (its captured generation no longer matches, so deregistration becomes a
-    /// silent no-op) and is not portable across <see cref="IMessageBus"/> implementations.
+    /// silent no-op). A built-in handle belongs to its originating bus instance; passing it to
+    /// another bus is a silent no-op. Custom handles are not portable across
+    /// <see cref="IMessageBus"/> implementations.
     /// </para>
     /// <para>
     /// The <c>default</c> value is the <see cref="None"/> sentinel; deregistering it is a
@@ -46,6 +48,9 @@ namespace DxMessaging.Core.MessageBus
 
         /// <summary><see cref="Kind.None"/> =&gt; an invalid/empty handle; deregistration no-ops.</summary>
         internal readonly Kind kind;
+
+        /// <summary>The originating bus identity marker; null for None and External handles.</summary>
+        internal readonly object owner;
 
         /// <summary>
         /// Sink/scalar-vs-keyed discriminator AND the <see cref="RegistrationLog"/> row key for
@@ -82,8 +87,8 @@ namespace DxMessaging.Core.MessageBus
         internal readonly object capturedPrimary;
 
         /// <summary>
-        /// The keyed (<see cref="Kind.Handler"/> targeted/broadcast) per-type context map captured
-        /// by identity; null otherwise.
+        /// Reserved secondary identity anchor. Built-in registrations leave it null so
+        /// a consumed handle cannot retain a recycled context map.
         /// </summary>
         internal readonly object capturedSecondary;
 
@@ -102,6 +107,7 @@ namespace DxMessaging.Core.MessageBus
         internal readonly InstanceId context;
 
         internal MessageBusRegistration(
+            object owner,
             Kind kind,
             RegistrationMethod method,
             int priority,
@@ -114,6 +120,7 @@ namespace DxMessaging.Core.MessageBus
             InstanceId context
         )
         {
+            this.owner = owner;
             this.kind = kind;
             this.method = method;
             this.priority = priority;
@@ -136,6 +143,7 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         public MessageBusRegistration(long externalId, object externalState)
             : this(
+                null,
                 Kind.External,
                 default,
                 0,
@@ -151,7 +159,9 @@ namespace DxMessaging.Core.MessageBus
         /// <summary>The invalid/empty handle. Deregistering it is a silent no-op.</summary>
         public static readonly MessageBusRegistration None = default;
 
-        /// <summary>True when this handle represents a live registration (not <see cref="None"/>).</summary>
+        /// <summary>True when this handle is nonempty (not <see cref="None"/>).</summary>
+        /// <remarks>This value does not query registration liveness or change after deregistration or bus reset.
+        /// Assign <see cref="None"/> to a retained handle after successful cleanup.</remarks>
         public bool IsValid => kind != Kind.None;
 
         /// <summary>The external id supplied to <see cref="MessageBusRegistration(long, object)"/>; 0 for non-external handles.</summary>
@@ -162,7 +172,8 @@ namespace DxMessaging.Core.MessageBus
 
         /// <inheritdoc />
         public bool Equals(MessageBusRegistration other) =>
-            kind == other.kind
+            ReferenceEquals(owner, other.owner)
+            && kind == other.kind
             && method == other.method
             && priority == other.priority
             && generation == other.generation
@@ -187,22 +198,34 @@ namespace DxMessaging.Core.MessageBus
                 MessageHandler hashes by owner, and delegates by target/method) and avoids the
                 unnecessary collisions those overrides would introduce. (null -> 0.)
             */
-            int hash = (int)kind;
-            hash = (hash * 397) ^ (int)method;
-            hash = (hash * 397) ^ priority;
-            hash = (hash * 397) ^ generation.GetHashCode();
-            hash = (hash * 397) ^ sweepGeneration.GetHashCode();
-            hash = (hash * 397) ^ sequence.GetHashCode();
-            hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(capturedPrimary);
-            hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(capturedSecondary);
-            hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(payload);
-            hash = (hash * 397) ^ context.GetHashCode();
-            return hash;
+            unchecked
+            {
+                int hash = (int)kind;
+                hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(owner);
+                hash = (hash * 397) ^ (int)method;
+                hash = (hash * 397) ^ priority;
+                hash = (hash * 397) ^ generation.GetHashCode();
+                hash = (hash * 397) ^ sweepGeneration.GetHashCode();
+                hash = (hash * 397) ^ sequence.GetHashCode();
+                hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(capturedPrimary);
+                hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(capturedSecondary);
+                hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(payload);
+                hash = (hash * 397) ^ context.GetHashCode();
+                return hash;
+            }
         }
 
+        /// <summary>Compares two values for equality.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>true</c> when both values have the same opaque registration identity; otherwise <c>false</c>.</returns>
         public static bool operator ==(MessageBusRegistration left, MessageBusRegistration right) =>
             left.Equals(right);
 
+        /// <summary>Compares two values for inequality.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>false</c> when both values have the same opaque registration identity; otherwise <c>true</c>.</returns>
         public static bool operator !=(MessageBusRegistration left, MessageBusRegistration right) =>
             !left.Equals(right);
     }

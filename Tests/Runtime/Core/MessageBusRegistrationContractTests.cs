@@ -196,13 +196,25 @@ namespace DxMessaging.Tests.Runtime.Core
             switch (scenario.Kind)
             {
                 case MessageKind.Untargeted:
-                    return bus.HasDispatchStateForTesting<SimpleUntargetedMessage>(method, context);
+                    return MessageBusInspection.HasDispatchState<SimpleUntargetedMessage>(
+                        bus,
+                        method,
+                        context
+                    );
                 case MessageKind.Targeted:
                 case MessageKind.TargetedWithoutTargeting:
-                    return bus.HasDispatchStateForTesting<SimpleTargetedMessage>(method, context);
+                    return MessageBusInspection.HasDispatchState<SimpleTargetedMessage>(
+                        bus,
+                        method,
+                        context
+                    );
                 case MessageKind.Broadcast:
                 case MessageKind.BroadcastWithoutSource:
-                    return bus.HasDispatchStateForTesting<SimpleBroadcastMessage>(method, context);
+                    return MessageBusInspection.HasDispatchState<SimpleBroadcastMessage>(
+                        bus,
+                        method,
+                        context
+                    );
                 default:
                     throw new ArgumentOutOfRangeException(
                         nameof(scenario),

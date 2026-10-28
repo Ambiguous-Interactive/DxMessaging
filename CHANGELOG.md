@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add replayable native Editor settings cache evidence, retaining stopped measurements,
+  descriptive counters, native test results, and cleanup/source provenance
+  ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
 - Add **Tools / Wallstop Studios / DxMessaging / Upgrade 3.x Fast Handlers to 4.0** to preview and
   update consumer callbacks under `Assets`. The command preserves source encoding and line endings,
   applies the batch transactionally, preserves inherited string-handler behavior, upgrades matching
@@ -17,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Correct IntelliSense summaries and references, including cache enumeration, bus reset behavior,
+  global observer message and context parameters, empty-bus debug logging, and deregistration callback boundaries
+  ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503),
+  [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
+- **BREAKING:** Remove the test-only `DxMessagingRuntimeSettingsProvider.Override` API. Configure
+  the runtime settings resource asset for application behavior and keep fixture configuration in
+  test assemblies; see the [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400).
 - Reduce recurring Unity correctness setup by installing only the locked Node.js runtime
   dependencies used to redact and seal test artifacts ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility
@@ -46,9 +56,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Keep failed registration cleanup retryable when diagnostic formatting or a log receiver throws
-  or reenters the token ([#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663)).
+- Prevent registration-handle hashing from throwing in builds with integer overflow checks
+  ([#691](https://github.com/Ambiguous-Interactive/DxMessaging/issues/691)).
 
+- Preserve component cleanup ownership when deregistration callbacks release or register work
+  for the same listener. Failed cleanup remains publicly retryable
+  ([#679](https://github.com/Ambiguous-Interactive/DxMessaging/issues/679)).
+- Clean up subscriptions added by diagnostics after a failed registration build, preserving
+  a retryable lease when cleanup fails ([#677](https://github.com/Ambiguous-Interactive/DxMessaging/issues/677)).
+
+- Keep lease cleanup retryable when callbacks add subscriptions during disposal, and prevent
+  duplicate activation notifications ([#676](https://github.com/Ambiguous-Interactive/DxMessaging/issues/676)).
+
+- Clean up subscriptions when registration-builder setup callbacks throw, preserving a retryable
+  lease when cleanup fails ([#675](https://github.com/Ambiguous-Interactive/DxMessaging/issues/675)).
+
+- Preserve activation when a custom bus registration callback calls `Enable()` on the same token.
+  The owning replay completes without restarting its registration queue, including during retargeting
+  ([#671](https://github.com/Ambiguous-Interactive/DxMessaging/issues/671)).
+
+- Stop reflexive dispatch when a diagnostic receiver resets the bus; newly registered handlers
+  wait for the next emission ([#670](https://github.com/Ambiguous-Interactive/DxMessaging/issues/670)).
+
+- Preserve retryable cleanup across diagnostic callbacks and keep a logger's successful `Disable()`
+  effective during retarget recovery ([#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663),
+  [#668](https://github.com/Ambiguous-Interactive/DxMessaging/issues/668)).
+
+- Fix `InstanceId` XML and JSON data contract serialization by storing the numeric `id` member on its backing field
+  ([#662](https://github.com/Ambiguous-Interactive/DxMessaging/issues/662)).
+
+- **BREAKING:** Make `InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` comparisons
+  follow `IComparable`: values sort after null, and unrelated argument types throw
+  `ArgumentException` ([#661](https://github.com/Ambiguous-Interactive/DxMessaging/issues/661)).
+
+- Stop teardown from attaching pending context cleanup to a typed slot retired by a reentrant
+  bus reset ([#660](https://github.com/Ambiguous-Interactive/DxMessaging/issues/660)).
+
+- Keep reflexive signature keys stable after caller-owned type arrays change, safe for default/null arrays,
+  and usable in checked builds; resolve reflected overloads from the captured signature
+  ([#659](https://github.com/Ambiguous-Interactive/DxMessaging/issues/659)).
+
+- Resolve custom bus cache indices before registration so a throwing or resetting getter cannot
+  leave an inaccessible subscription. Avoid emission getters during registration and teardown
+  ([#655](https://github.com/Ambiguous-Interactive/DxMessaging/issues/655),
+  [#669](https://github.com/Ambiguous-Interactive/DxMessaging/issues/669)).
+
+- Stop diagnostic call-count storage from growing with handles removed during callbacks, while
+  preserving completed deliveries in bounded history
+  ([#674](https://github.com/Ambiguous-Interactive/DxMessaging/issues/674)).
+- Preserve token diagnostic origins when callbacks rebind the token, including pending callbacks
+  and nested deliveries ([#654](https://github.com/Ambiguous-Interactive/DxMessaging/issues/654)).
+- Release consumed typed teardown state after a token disables successfully, preserving staged
+  callbacks for re-enabling while allowing unrelated users of recycled maps to collect
+  ([#653](https://github.com/Ambiguous-Interactive/DxMessaging/issues/653)).
+- Release recycled context maps from consumed keyed registration handles so retaining an old
+  value cannot keep a later unrelated bus and receiver alive
+  ([#652](https://github.com/Ambiguous-Interactive/DxMessaging/issues/652)).
+- Stop targeted and broadcast messages after a keyed handler resets the bus, before any
+  without-context handler runs ([#651](https://github.com/Ambiguous-Interactive/DxMessaging/issues/651)).
+- Preserve outer global accept-all callbacks when nested emissions change their registrations
+  ([#650](https://github.com/Ambiguous-Interactive/DxMessaging/issues/650)).
+- Stop the current emission when a global callback resets the bus, so replacement callbacks
+  receive only fresh emissions ([#649](https://github.com/Ambiguous-Interactive/DxMessaging/issues/649)).
+- Clear deregistered handler caches during static reset so empty storage is reclaimed and
+  fresh global registrations cannot replay disposed callbacks
+  ([#647](https://github.com/Ambiguous-Interactive/DxMessaging/issues/647)).
+- Preserve bus cache and generated lease owner identities across static resets so independent
+  buses keep their callbacks separate and new leases on a retained custom bus receive messages
+  ([#645](https://github.com/Ambiguous-Interactive/DxMessaging/issues/645), [#646](https://github.com/Ambiguous-Interactive/DxMessaging/issues/646)).
+- Apply runtime memory settings on an idle Editor update and clarify the counter-based idle-age
+  tooltip ([#644](https://github.com/Ambiguous-Interactive/DxMessaging/issues/644),
+  [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
+- Preserve token cleanup and retryable failures during custom-bus callbacks, including activation
+  that reuses a staged handle while older cleanup runs
+  ([#642](https://github.com/Ambiguous-Interactive/DxMessaging/issues/642), [#673](https://github.com/Ambiguous-Interactive/DxMessaging/issues/673)).
+
+- Keep token replay valid when a custom-bus registration callback calls `UnregisterAll()` or `Dispose()`; cleared future entries stay inactive and accepted registrations keep their teardown
+  ([#641](https://github.com/Ambiguous-Interactive/DxMessaging/issues/641)).
+
+- Keep registrations removed by an earlier custom-bus callback from activating later in the
+  same token replay ([#639](https://github.com/Ambiguous-Interactive/DxMessaging/issues/639)).
+- Prevent rejected registrations on enabled tokens from reappearing after Disable/Enable
+  ([#638](https://github.com/Ambiguous-Interactive/DxMessaging/issues/638)).
+- Remove obsolete object-search warnings from Message Monitor, Flow Graph, and the diagnostics
+  sample on Unity 6000.4 ([#628](https://github.com/Ambiguous-Interactive/DxMessaging/issues/628)).
+- Fix direct registration handles so passing one to a different bus preserves both buses, and global
+  registrations on different buses keep distinct identities ([#637](https://github.com/Ambiguous-Interactive/DxMessaging/issues/637)).
+- Fix source generation when generic and nongeneric types have colliding generated file names
+  ([#624](https://github.com/Ambiguous-Interactive/DxMessaging/issues/624)).
+- Fix generated message declarations and constructors failing for escaped C# identifiers
+  ([#623](https://github.com/Ambiguous-Interactive/DxMessaging/issues/623)).
+- Stop repeated console-harvester settings searches and scans when the console bridge is disabled
+  ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
 - Fix provider fallback selection in registration builders, components, dependency-injection
   adapters, and emission helpers, including destroyed Unity-backed providers, deferred per-build
   resolution, scoped container fallbacks, and live serialized-handle fallbacks
@@ -60,9 +159,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicit bus and provider are assigned ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Make null provider and empty provider-handle configuration replace a prior explicit component bus
   with the global fallback ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
-- Fix `MessagingComponent` retaining registrations after destruction and delivering to inactive
-  hosts before activation ([#542](https://github.com/Ambiguous-Interactive/DxMessaging/issues/542),
-  [#543](https://github.com/Ambiguous-Interactive/DxMessaging/issues/543)).
+- Fix `MessagingComponent` retaining registrations after destruction, delivering to inactive
+  hosts before activation, and losing listener configuration when callbacks release, replace, or
+  reconfigure listener owners ([#542](https://github.com/Ambiguous-Interactive/DxMessaging/issues/542),
+  [#543](https://github.com/Ambiguous-Interactive/DxMessaging/issues/543),
+  [#683](https://github.com/Ambiguous-Interactive/DxMessaging/issues/683)).
 
 - Fix base-call ignore compiler wiring and batch preparation while preserving consumer options
   ([#537](https://github.com/Ambiguous-Interactive/DxMessaging/issues/537),

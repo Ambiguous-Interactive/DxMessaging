@@ -63,12 +63,26 @@ The generated manifest shape:
 }
 ```
 
+## Committed Local Project
+
+`.unity-test-project` is a separate local host pinned to the release Editor version. Its
+`file:../..` dependency resolves from `Packages/` to the repository root. Keep its Editor revision,
+package sources, and locked dependency maps consistent with that exact Editor distribution.
+Use compatible registry packages for Test Framework and NUnit; newer Editors can embed versions
+that the release Editor does not contain. Check package minimum Editor versions before upgrading
+IDE integrations, and retain every transitive dependency declared by enabled built-in modules.
+
+The CI runner creates its own manifest. `-GenerateOnly` checks that generated project shape;
+it does not resolve or import the committed local project. Verify a clean local import separately.
+
 ## What to Commit vs Gitignore
 
 Committed source of truth:
 
 - `scripts/unity/run-ci-tests.ps1`
 - package source at `Runtime/`, `Editor/`, `Tests/`
+- `.unity-test-project/Packages/manifest.json` and `packages-lock.json`
+- `.unity-test-project/ProjectSettings/ProjectVersion.txt`
 
 Generated and ignored:
 

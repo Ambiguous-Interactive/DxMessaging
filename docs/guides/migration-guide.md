@@ -4,6 +4,36 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 ## Migrating to 4.0.0
 
+### Use compatible comparison arguments
+
+`InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` now follow `IComparable` input
+rules. Comparing an instance with null returns a positive value. Passing an unrelated non-null
+type to `CompareTo(object)` throws `ArgumentException`. `MessageHandler.CompareTo(MessageHandler)`
+also places null before a handler. Earlier versions returned -1 for these inputs.
+
+Pass another value of the same type, or null, when using these methods. Numeric and owner ordering
+for valid values, equality, hashing, and generic comparisons between non-null values keep their
+previous behavior.
+
+### Construct a new reflexive message to change its signature
+
+`MethodSignatureKey` captures its ordered parameter types at construction. Null and empty type
+lists both describe a method with no parameters, and default keys support equality and dictionary
+lookup. The constructor copies each nonempty type list once.
+
+`ReflexiveMessage` uses that captured signature for reflected overload selection. Changing its
+public `parameterTypes` array after construction does not select a different overload. Construct
+a new message with the intended types instead. The `parameters` array still supplies the argument
+values and must remain compatible with the captured signature.
+
+### Remove the test-only runtime settings override
+
+DxMessaging 4.0 removes `DxMessagingRuntimeSettingsProvider.Override`. Configure
+`Assets/Resources/DxMessagingRuntimeSettings.asset` for application settings and read
+`DxMessagingRuntimeSettingsProvider.Current`. Keep any fixture configuration and
+restoration in test assemblies. Resource loading, default settings, player resets,
+and live edits to the asset in the Editor keep their existing behavior.
+
 ### Opt in to inherited string demo handlers
 
 `MessageAwareComponent` no longer registers two targeted `StringMessage` handlers and one
@@ -13,10 +43,22 @@ component overrides the inherited string handler methods, add
 
 Keep calling `base.RegisterMessageHandlers()` so registrations declared by parent components run.
 
-### Update fast handlers to readonly references
+### Observe callback-driven configuration after the outer call
 
-DxMessaging 4.0 makes fast handlers and post-processors readonly. Change explicit handler
-parameters from `ref` to `in`:
+A bus cleanup or provider callback can call `MessagingComponent.Configure` while another
+configuration is in progress. In 4.0, that nested call queues its request. Its provider resolution,
+listener migration, and errors complete through the outermost `Configure` call, preserving each
+request's order and rebind mode.
+
+Move work that requires delivery on the newly configured bus outside the callback, after the
+outermost call returns. Handle queued failures around that outer call: a single error keeps its
+original exception identity; multiple errors appear in `AggregateException.InnerExceptions`.
+See [configuration from callbacks](../advanced/runtime-configuration.md#configuration-from-callbacks).
+
+### Use `in` parameters for fast handlers
+
+Fast handlers and post-processors receive read-only message references in DxMessaging 4.0. Change
+explicit handler parameters from `ref` to `in`:
 
 ```csharp
 // 3.x
@@ -166,7 +208,7 @@ public class Enemy : MonoBehaviour {
 
 #### Why this works
 
-- Old code still works (zero risk)
+- Keep the existing event while adding the message listener; verify that shared listeners do not apply the same effect twice
 - New system is decoupled
 - Team sees immediate value (achievements without wiring)
 - Easy to roll back if needed
@@ -334,16 +376,41 @@ defaults, and the full diagnostic API, see the
 
 ### Pattern 1: Event-to-Message Bridge
 
+Subscribe while the bridge is enabled and unsubscribe when it is disabled. Remember the
+publisher used for the subscription so cleanup still removes the callback if the Inspector
+reference changes. The new reference takes effect on the next enable. An unassigned reference
+leaves the bridge inactive.
+
+This example assumes a legacy publisher exposing `event Action<int> OnSomethingHappened` and
+an untargeted `SomethingHappened(int value)` message. DxMessaging tokens manage message
+subscriptions; they do not remove subscriptions to another object's C# events.
+
+Use `ReferenceEquals` when removing the C# event. A destroyed Unity publisher can still
+have a managed wrapper, even though Unity compares it equal to null. Cleanup must remove
+the callback from that wrapper. The enable check keeps using Unity's null comparison
+to avoid subscribing to a destroyed publisher.
+
 ```csharp
 public class LegacyBridge : MonoBehaviour {
     [SerializeField] private LegacySystem legacySystem;
+    private LegacySystem _subscribedSystem;
 
-    void Awake() {
-        // Old system fires event, we convert to message
-        legacySystem.OnSomethingHappened += (args) => {
-            var msg = new SomethingHappened(args);
-            msg.Emit();
-        };
+    void OnEnable() {
+        if (legacySystem == null) return;
+        _subscribedSystem = legacySystem;
+        _subscribedSystem.OnSomethingHappened += OnSomethingHappened;
+    }
+
+    void OnDisable() {
+        if (!ReferenceEquals(_subscribedSystem, null)) {
+            _subscribedSystem.OnSomethingHappened -= OnSomethingHappened;
+        }
+        _subscribedSystem = null;
+    }
+
+    void OnSomethingHappened(int value) {
+        var msg = new SomethingHappened(value);
+        msg.Emit();
     }
 }
 ```

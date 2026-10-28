@@ -31,7 +31,6 @@ namespace DxMessaging.Tests.Editor
         [TearDown]
         public void TearDown()
         {
-            DxMessagingEmissionCaptureNotice.AssetDatabaseMutationScheduler = null;
             IMessageBus.GlobalDiagnosticsStackTraces = _captureBeforeTest;
         }
 
@@ -230,7 +229,7 @@ namespace DxMessaging.Tests.Editor
         }
 
         [Test]
-        public void EnableCaptureTakesEffectImmediatelyAndPersistsToSettings()
+        public void EnableCaptureTakesEffectImmediatelyAndQueuesSettingsPersistence()
         {
             IMessageBus.GlobalDiagnosticsStackTraces = false;
             /*
@@ -240,8 +239,7 @@ namespace DxMessaging.Tests.Editor
                 without that side effect is the contract that matters -- immediate in-memory effect,
                 deferred durable write.
             */
-            List<Action> scheduled = new();
-            DxMessagingEmissionCaptureNotice.AssetDatabaseMutationScheduler = scheduled.Add;
+            using EditorDelayCallScope scheduled = new(typeof(DxMessagingEmissionCaptureNotice));
 
             DxMessagingEmissionCaptureNotice.EnableCapture();
 

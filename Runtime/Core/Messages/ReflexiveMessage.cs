@@ -7,7 +7,7 @@ namespace DxMessaging.Core.Messages
     /// </summary>
     /// <remarks>
     /// Used by <see cref="ReflexiveMessage"/> to determine which components receive the reflected call.
-    /// - <c>Flat</c>: only the immediate <see cref="UnityEngine.GameObject"/>.
+    /// - <c>Flat</c>: only the immediate <c>UnityEngine.GameObject</c>.
     /// - <c>Upwards</c>: up the transform parent chain.
     /// - <c>Downwards</c>: down into children.
     /// - <c>OnlyIncludeActive</c>: exclude disabled components and components on inactive GameObjects.
@@ -21,10 +21,10 @@ namespace DxMessaging.Core.Messages
     [Flags]
     public enum ReflexiveSendMode
     {
-        [Obsolete("Please use a valid Send Mode")]
         /// <summary>
         /// Legacy sentinel indicating no traversal; not supported.
         /// </summary>
+        [Obsolete("Please use a valid Send Mode")]
         None = 0,
 
         /// <summary>
@@ -48,6 +48,8 @@ namespace DxMessaging.Core.Messages
         OnlyIncludeActive = 1 << 3,
     }
 
+    /// <summary>Lookup identity composed of a method name and a captured ordered parameter-type sequence.</summary>
+    /// <remarks>The default value compares equal to itself and differs from every constructed key.</remarks>
     public readonly struct MethodSignatureKey : IEquatable<MethodSignatureKey>
     {
         private const int HashBase = 5556137;
@@ -62,25 +64,34 @@ namespace DxMessaging.Core.Messages
         /// Creates a lookup key for a reflected method signature.
         /// </summary>
         /// <param name="methodName">Name of the method.</param>
-        /// <param name="parameterTypes">Ordered parameter list expected by the method.</param>
+        /// <param name="parameterTypes">Ordered parameter list captured by the key. Null and empty lists describe no parameters.</param>
+        /// <remarks>Nonempty type lists are copied so caller mutations cannot change equality or dictionary lookup.</remarks>
         public MethodSignatureKey(string methodName, Type[] parameterTypes)
             : this()
         {
             _methodName = methodName ?? throw new ArgumentNullException(nameof(methodName));
-            _parameterTypes = parameterTypes;
+            _parameterTypes =
+                parameterTypes == null || parameterTypes.Length == 0
+                    ? Type.EmptyTypes
+                    : (Type[])parameterTypes.Clone();
             _hashCode = CalculateHashCode();
         }
 
+        internal Type[] CapturedParameterTypes => _parameterTypes ?? Type.EmptyTypes;
+
         private int CalculateHashCode()
         {
-            int hashCode = HashBase + _methodName.GetHashCode();
-            ReadOnlySpan<Type> types = _parameterTypes.AsSpan();
-            for (int i = 0; i < types.Length; ++i)
+            unchecked
             {
-                hashCode = hashCode * HashMultiplier + types[i].GetHashCode();
-            }
+                int hashCode = HashBase + _methodName.GetHashCode();
+                ReadOnlySpan<Type> types = _parameterTypes.AsSpan();
+                for (int i = 0; i < types.Length; ++i)
+                {
+                    hashCode = hashCode * HashMultiplier + types[i].GetHashCode();
+                }
 
-            return hashCode;
+                return hashCode;
+            }
         }
 
         /// <summary>
@@ -109,18 +120,17 @@ namespace DxMessaging.Core.Messages
         /// <returns><c>true</c> when both keys describe the same method.</returns>
         public bool Equals(MethodSignatureKey other)
         {
-            if (
-                _parameterTypes.Length != other._parameterTypes.Length
-                || _methodName != other._methodName
-            )
+            ReadOnlySpan<Type> types = _parameterTypes.AsSpan();
+            ReadOnlySpan<Type> otherTypes = other._parameterTypes.AsSpan();
+            if (types.Length != otherTypes.Length || _methodName != other._methodName)
             {
                 return false;
             }
 
             // ReSharper disable once LoopCanBeConvertedToQuery
-            for (int i = 0; i < _parameterTypes.Length; ++i)
+            for (int i = 0; i < types.Length; ++i)
             {
-                if (_parameterTypes[i] != other._parameterTypes[i])
+                if (types[i] != otherTypes[i])
                 {
                     return false;
                 }
@@ -129,11 +139,19 @@ namespace DxMessaging.Core.Messages
             return true;
         }
 
+        /// <summary>Compares two values for equality.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>true</c> when the method names and ordered parameter types match; otherwise <c>false</c>.</returns>
         public static bool operator ==(MethodSignatureKey left, MethodSignatureKey right)
         {
             return left.Equals(right);
         }
 
+        /// <summary>Compares two values for inequality.</summary>
+        /// <param name="left">Left value to compare.</param>
+        /// <param name="right">Right value to compare.</param>
+        /// <returns><c>false</c> when the method names and ordered parameter types match; otherwise <c>true</c>.</returns>
         public static bool operator !=(MethodSignatureKey left, MethodSignatureKey right)
         {
             return !(left == right);
@@ -146,7 +164,7 @@ namespace DxMessaging.Core.Messages
     /// <remarks>
     /// This message is handled specially by the bus to mimic Unity's <c>SendMessage*</c> patterns while still
     /// flowing through DxMessaging pipelines (interceptors, post-processors, diagnostics).
-    /// It resolves methods on components on or around the targeted <see cref="UnityEngine.GameObject"/> based on
+    /// It resolves methods on components on or around the targeted <c>UnityEngine.GameObject</c> based on
     /// <see cref="sendMode"/> and invokes them with provided <see cref="parameters"/>.
     /// Prefer type-safe message contracts in production; use this to integrate with legacy patterns.
     /// </remarks>
@@ -166,13 +184,23 @@ namespace DxMessaging.Core.Messages
     /// </example>
     public readonly struct ReflexiveMessage : ITargetedMessage<ReflexiveMessage>
     {
+        /// <summary>Gets the type used to route this message through the bus.</summary>
         public Type MessageType => typeof(ReflexiveMessage);
 
+        /// <summary>Name of the method requested by the Unity reflection bridge.</summary>
         public readonly string method;
+
+        /// <summary>Traversal flags used to choose eligible Unity receivers.</summary>
         public readonly ReflexiveSendMode sendMode;
+
+        /// <summary>Arguments forwarded to the reflected method.</summary>
         public readonly object[] parameters;
+
+        /// <summary>Parameter type metadata supplied at construction.</summary>
+        /// <remarks>The lookup signature is captured separately. Mutating this array does not retarget the message.</remarks>
         public readonly Type[] parameterTypes;
 
+        /// <summary>Lookup key used by the reflection cache for this message.</summary>
         public readonly MethodSignatureKey signatureKey;
 
         /// <summary>

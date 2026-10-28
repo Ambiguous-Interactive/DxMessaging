@@ -17,7 +17,7 @@ namespace DxMessaging.Unity
     /// // Configure a MessagingComponent at design time by dragging the asset into a MessagingComponentInstaller
     /// messagingComponentInstaller.SetProvider(CurrentGlobalMessageBusProviderHandle);
     /// </code>
-    /// </summary>
+    /// </example>
     [CreateAssetMenu(
         fileName = "CurrentGlobalMessageBusProvider",
         menuName = "Wallstop Studios/DxMessaging/Message Bus Providers/Current Global Message Bus"

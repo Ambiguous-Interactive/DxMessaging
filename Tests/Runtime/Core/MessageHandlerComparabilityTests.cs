@@ -11,8 +11,7 @@ namespace DxMessaging.Tests.Runtime.Core
     /// Pins the public comparability surface of <see cref="MessageHandler"/>:
     /// equality is defined by owner <see cref="InstanceId"/> (not by instance
     /// identity), GetHashCode derives from the owner and is stable, and CompareTo
-    /// orders handlers by owner id. CompareTo against null or a non-handler object
-    /// returns -1 as documented.
+    /// orders handlers by owner id. Values follow null, and unrelated argument types are rejected.
     /// </summary>
     [TestFixture]
     public sealed class MessageHandlerComparabilityTests
@@ -117,32 +116,12 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
-        public void CompareToNullOrNonHandlerReturnsMinusOne()
+        public void CompareToNullAndUnrelatedArgumentsFollowsInterfaceContract()
         {
-            /*
-                Pinned, documented behavior: CompareTo returns -1 for null and for
-                non-handler objects. Note this inverts the usual IComparable
-                convention (where any instance compares GREATER than null); the XML
-                docs on MessageHandler.CompareTo state -1 explicitly, so the
-                implementation matches its documentation.
-            */
             MessageHandler handler = new(new InstanceId(7));
-
-            Assert.AreEqual(
-                -1,
-                handler.CompareTo((MessageHandler)null),
-                "CompareTo(null handler) must return -1 as documented."
-            );
-            Assert.AreEqual(
-                -1,
-                handler.CompareTo((object)null),
-                "CompareTo(null object) must return -1 as documented."
-            );
-            Assert.AreEqual(
-                -1,
-                handler.CompareTo("not a handler"),
-                "CompareTo(non-handler object) must return -1 as documented."
-            );
+            Assert.That(handler.CompareTo((MessageHandler)null), Is.Positive);
+            Assert.That(handler.CompareTo((object)null), Is.Positive);
+            Assert.Throws<ArgumentException>(() => handler.CompareTo("not a handler"));
         }
 
         [Test]

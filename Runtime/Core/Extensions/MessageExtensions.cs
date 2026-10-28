@@ -8,9 +8,10 @@ namespace DxMessaging.Core.Extensions
     /// Convenience extension methods for emitting messages.
     /// </summary>
     /// <remarks>
-    /// These helpers select the correct dispatch overloads, handle by-ref messages for structs, and default to the
-    /// global bus when none is provided. Overloads exist for Unity <see cref="UnityEngine.GameObject"/> and
-    /// <see cref="UnityEngine.Component"/> to convert to <see cref="Core.InstanceId"/> implicitly.
+    /// These helpers select the dispatch overload and pass struct messages by reference. An explicit bus takes
+    /// precedence over a provider; an unavailable provider or null result falls back to the global bus.
+    /// Unity overloads convert <c>UnityEngine.GameObject</c> and <c>UnityEngine.Component</c> to
+    /// <see cref="Core.InstanceId"/> implicitly.
     /// </remarks>
     /// <example>
     /// <code>
@@ -42,7 +43,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">TargetedMessage to emit.</param>
         /// <param name="target">Target that this message is intended for.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitGameObjectTargeted<TMessage>(
             this TMessage message,
             UnityEngine.GameObject target,
@@ -67,7 +69,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">TargetedMessage to emit.</param>
         /// <param name="target">Target that this message is intended for.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitGameObjectTargeted<TMessage>(
             this ref TMessage message,
             UnityEngine.GameObject target,
@@ -86,7 +89,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">TargetedMessage to emit.</param>
         /// <param name="target">Target that this message is intended for.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitComponentTargeted<TMessage>(
             this TMessage message,
             UnityEngine.Component target,
@@ -111,7 +115,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">TargetedMessage to emit.</param>
         /// <param name="target">Target that this message is intended for.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitComponentTargeted<TMessage>(
             this ref TMessage message,
             UnityEngine.Component target,
@@ -131,7 +136,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">TargetedMessage to emit.</param>
         /// <param name="target">Target that this message is intended for.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitTargeted<TMessage>(
             this TMessage message,
             InstanceId target,
@@ -155,7 +161,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">TargetedMessage to emit.</param>
         /// <param name="target">Target that this message is intended for.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitTargeted<TMessage>(
             this ref TMessage message,
             InstanceId target,
@@ -172,7 +179,8 @@ namespace DxMessaging.Core.Extensions
         /// Emits an UntargetedMessage of the given type.
         /// </summary>
         /// <param name="message">UntargetedMessage to emit.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitUntargeted<TMessage>(
             this TMessage message,
             IMessageBus messageBus = null,
@@ -195,7 +203,7 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <remarks>
         /// This is a convenience shorthand for <c>EmitUntargeted</c> that improves readability when emitting
-        /// messages globally. If <paramref name="messageBus"/> is <c>null</c>, the global bus is used.
+        /// messages globally. A null explicit bus consults the provider first, then falls back to the global bus.
         /// </remarks>
         /// <example>
         /// <code>
@@ -209,7 +217,8 @@ namespace DxMessaging.Core.Extensions
         /// </code>
         /// </example>
         /// <param name="message">Untargeted message to emit.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void Emit<TMessage>(
             this TMessage message,
             IMessageBus messageBus = null,
@@ -231,7 +240,8 @@ namespace DxMessaging.Core.Extensions
         /// Emits an UntargetedMessage of the given type.
         /// </summary>
         /// <param name="message">UntargetedMessage to emit.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitUntargeted<TMessage>(
             this ref TMessage message,
             IMessageBus messageBus = null,
@@ -248,8 +258,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <remarks>
         /// This is a convenience shorthand for <c>EmitUntargeted</c> that improves readability when emitting
-        /// struct messages globally by reference. If <paramref name="messageBus"/> is <c>null</c>, the global
-        /// bus is used.
+        /// struct messages globally by reference. A null explicit bus consults the provider first, then falls
+        /// back to the global bus.
         /// </remarks>
         /// <example>
         /// <code>
@@ -262,7 +272,8 @@ namespace DxMessaging.Core.Extensions
         /// </code>
         /// </example>
         /// <param name="message">Untargeted message to emit.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void Emit<TMessage>(
             this ref TMessage message,
             IMessageBus messageBus = null,
@@ -279,7 +290,7 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <remarks>
         /// Simple shorthand for targeted emission using an <see cref="InstanceId"/>. In Unity, <see cref="InstanceId"/>
-        /// is implicitly convertible from both <see cref="UnityEngine.GameObject"/> and <see cref="UnityEngine.Component"/>.
+        /// is implicitly convertible from both <c>UnityEngine.GameObject</c> and <c>UnityEngine.Component</c>.
         /// Be explicit about what you intend to target:
         /// - If your listeners registered via <c>RegisterGameObjectTargeted</c>, emit at a GameObject.
         /// - If your listeners registered via <c>RegisterComponentTargeted</c>, emit at that Component.
@@ -318,7 +329,7 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <remarks>
         /// Simple shorthand for sourced emission using an <see cref="InstanceId"/>. In Unity, <see cref="InstanceId"/>
-        /// is implicitly convertible from both <see cref="UnityEngine.GameObject"/> and <see cref="UnityEngine.Component"/>.
+        /// is implicitly convertible from both <c>UnityEngine.GameObject</c> and <c>UnityEngine.Component</c>.
         /// Be explicit about what you intend to identify as the source:
         /// - If listeners registered via <c>RegisterGameObjectBroadcast</c>, emit from a GameObject.
         /// - If listeners registered via <c>RegisterComponentBroadcast</c>, emit from that Component.
@@ -358,7 +369,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">BroadcastMessage to emit.</param>
         /// <param name="source">Source of this message.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitGameObjectBroadcast<TMessage>(
             this TMessage message,
             UnityEngine.GameObject source,
@@ -383,7 +395,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">BroadcastMessage to emit.</param>
         /// <param name="source">Source of this message.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitGameObjectBroadcast<TMessage>(
             this ref TMessage message,
             UnityEngine.GameObject source,
@@ -402,7 +415,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">BroadcastMessage to emit.</param>
         /// <param name="source">Source of this message.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitComponentBroadcast<TMessage>(
             this TMessage message,
             UnityEngine.Component source,
@@ -427,7 +441,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">BroadcastMessage to emit.</param>
         /// <param name="source">Source of this message.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitComponentBroadcast<TMessage>(
             this ref TMessage message,
             UnityEngine.Component source,
@@ -447,7 +462,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">BroadcastMessage to emit.</param>
         /// <param name="source">Source of this message.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitBroadcast<TMessage>(
             this TMessage message,
             InstanceId source,
@@ -471,7 +487,8 @@ namespace DxMessaging.Core.Extensions
         /// </summary>
         /// <param name="message">BroadcastMessage to emit.</param>
         /// <param name="source">Source of this message.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitBroadcast<TMessage>(
             this ref TMessage message,
             InstanceId source,
@@ -494,7 +511,8 @@ namespace DxMessaging.Core.Extensions
         /// </remarks>
         /// <param name="message">Message to send to the target.</param>
         /// <param name="target">Target to send the message to.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void Emit(
             this string message,
             InstanceId target,
@@ -518,7 +536,8 @@ namespace DxMessaging.Core.Extensions
         /// </remarks>
         /// <param name="message">String payload to send.</param>
         /// <param name="target">Target to send the message to.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitAt(
             this string message,
             InstanceId target,
@@ -539,7 +558,8 @@ namespace DxMessaging.Core.Extensions
         /// messages over strings for compile-time safety and discoverability.
         /// </remarks>
         /// <param name="message">Message to send globally.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void Emit(
             this string message,
             IMessageBus messageBus = null,
@@ -564,7 +584,8 @@ namespace DxMessaging.Core.Extensions
         /// </remarks>
         /// <param name="message">String payload to broadcast.</param>
         /// <param name="source">Source of the message.</param>
-        /// <param name="messageBus">MessageBus to emit to. If null, uses the GlobalMessageBus.</param>
+        /// <param name="messageBus">Explicit bus override. If null, the provider is consulted before the global bus.</param>
+        /// <param name="messageBusProvider">Provider used when no explicit bus is supplied. Missing or unavailable providers and null results fall back to the global bus.</param>
         public static void EmitFrom(
             this string message,
             InstanceId source,

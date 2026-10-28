@@ -22,18 +22,6 @@ namespace DxMessaging.Editor
         private static bool s_playModeWarningIssued;
         private static bool s_ensureSettingsAssetScheduled;
 
-        internal static Action StaticStateResetter { get; set; } = DxMessagingStaticState.Reset;
-        internal static Func<DxMessagingSettings> PassiveSettingsLoader { get; set; } =
-            DxMessagingSettings.LoadSettingsPassive;
-        internal static Func<DxMessagingSettings> SettingsAssetEnsurer { get; set; } =
-            DxMessagingSettings.GetOrCreateSettings;
-        internal static Action<Action> AssetDatabaseMutationScheduler { get; set; } =
-            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
-        internal static Func<bool> DomainReloadDisabledDetector { get; set; } =
-            IsDomainReloadDisabled;
-        internal static Action<string> DomainReloadWarningLogger { get; set; } =
-            message => Debug.LogWarning(message);
-
         static DxMessagingEditorInitializer()
         {
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
@@ -64,7 +52,7 @@ namespace DxMessaging.Editor
 
         internal static void ApplyEditorSettings()
         {
-            (StaticStateResetter ?? DxMessagingStaticState.Reset)();
+            DxMessagingStaticState.Reset();
 
             /*
                 Issue #210: ApplyEditorSettings is reachable from the [InitializeOnLoad] static
@@ -75,9 +63,7 @@ namespace DxMessaging.Editor
                 mutation-free passive load now; ensure the asset exists/migrates on the next editor
                 tick, off the import window.
             */
-            Func<DxMessagingSettings> passiveSettingsLoader =
-                PassiveSettingsLoader ?? DxMessagingSettings.LoadSettingsPassive;
-            ApplySettingsAndDiagnostics(passiveSettingsLoader());
+            ApplySettingsAndDiagnostics(DxMessagingSettings.LoadSettingsPassive());
             ScheduleEnsureSettingsAsset();
         }
 
@@ -93,10 +79,9 @@ namespace DxMessaging.Editor
                 return;
             }
             s_ensureSettingsAssetScheduled = true;
-            Action<Action> scheduler =
-                AssetDatabaseMutationScheduler
-                ?? DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
-            scheduler(EnsureSettingsAssetThenApplyGlobals);
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(
+                EnsureSettingsAssetThenApplyGlobals
+            );
         }
 
         private static void EnsureSettingsAssetThenApplyGlobals()
@@ -110,9 +95,7 @@ namespace DxMessaging.Editor
             s_ensureSettingsAssetScheduled = false;
             try
             {
-                Func<DxMessagingSettings> settingsAssetEnsurer =
-                    SettingsAssetEnsurer ?? DxMessagingSettings.GetOrCreateSettings;
-                ApplySettingsAndDiagnostics(settingsAssetEnsurer());
+                ApplySettingsAndDiagnostics(DxMessagingSettings.GetOrCreateSettings());
             }
             catch (Exception ex)
             {
@@ -140,18 +123,6 @@ namespace DxMessaging.Editor
             IMessageBus.GlobalMessageBufferSize = settings.MessageBufferSize;
         }
 
-        internal static void ResetTestSeams()
-        {
-            s_playModeWarningIssued = false;
-            s_ensureSettingsAssetScheduled = false;
-            StaticStateResetter = DxMessagingStaticState.Reset;
-            PassiveSettingsLoader = DxMessagingSettings.LoadSettingsPassive;
-            SettingsAssetEnsurer = DxMessagingSettings.GetOrCreateSettings;
-            AssetDatabaseMutationScheduler = DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
-            DomainReloadDisabledDetector = IsDomainReloadDisabled;
-            DomainReloadWarningLogger = message => Debug.LogWarning(message);
-        }
-
         private static void WarnIfDomainReloadDisabled(DxMessagingSettings settings)
         {
             /*
@@ -163,15 +134,14 @@ namespace DxMessaging.Editor
                 s_playModeWarningIssued
                 || settings == null
                 || settings.SuppressDomainReloadWarning
-                || !(DomainReloadDisabledDetector ?? IsDomainReloadDisabled)()
+                || !IsDomainReloadDisabled()
             )
             {
                 return;
             }
 
             s_playModeWarningIssued = true;
-            Action<string> warningLogger = DomainReloadWarningLogger ?? Debug.LogWarning;
-            warningLogger(DomainReloadWarningMessage);
+            Debug.LogWarning(DomainReloadWarningMessage);
         }
 
         private static bool IsDomainReloadDisabled()

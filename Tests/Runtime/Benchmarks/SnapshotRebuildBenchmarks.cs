@@ -62,7 +62,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 state.StaleDispatchCalls,
                 $"{benchmarkCase.Key} reused a stale flat snapshot after replacement."
             );
-            MessageBus.FlatSnapshotStorageObservation storage = state.ObserveSnapshotStorage();
+            FlatSnapshotStorageObservation storage = state.ObserveSnapshotStorage();
             Assert.AreEqual(benchmarkCase.Cardinality, storage.EntryCount);
             Assert.GreaterOrEqual(storage.ArrayCapacity, storage.EntryCount);
             Assert.AreEqual(
@@ -128,7 +128,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     throw new ArgumentOutOfRangeException(nameof(cardinality));
                 }
 
-                _registryScope = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+                _registryScope = MessageBusInspection.IsolateIdleSweepRegistryForBenchmark();
                 _tokens = new MessageRegistrationToken[checked(cardinality * 2)];
                 _activeGenerations = new int[cardinality];
                 try
@@ -231,11 +231,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
 
-            internal MessageBus.FlatSnapshotStorageObservation ObserveSnapshotStorage()
+            internal FlatSnapshotStorageObservation ObserveSnapshotStorage()
             {
                 if (
                     !_bus.TryObserveUntargetedFlatSnapshotStorageForBenchmark<SnapshotRebuildMessage>(
-                        out MessageBus.FlatSnapshotStorageObservation observation
+                        out FlatSnapshotStorageObservation observation
                     )
                 )
                 {
@@ -336,7 +336,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             int occupiedTypeSlots,
             long replacementDispatchCalls,
             long staleDispatchCalls,
-            MessageBus.FlatSnapshotStorageObservation storage
+            FlatSnapshotStorageObservation storage
         )
         {
             DispatchCalls = dispatchCalls;
@@ -357,7 +357,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         internal long StaleDispatchCalls { get; }
 
-        internal MessageBus.FlatSnapshotStorageObservation Storage { get; }
+        internal FlatSnapshotStorageObservation Storage { get; }
     }
 
     public readonly struct SnapshotRebuildBenchmarkResult

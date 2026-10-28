@@ -38,37 +38,37 @@
     "dxBus": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/MessageBus.cs",
-      "sha256": "f7a850d15ea2f493b3b5b1296e0c9062745ea7ea152137260563e9c623b8b332"
+      "sha256": "355e4887a581b5c6a3fe48cc8a531eb52f9d95007970901ac444611feae0e974"
     },
     "dxInterface": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/IMessageBus.cs",
-      "sha256": "4cff1b369b86d8b75a76f95f9f58cb54603de38477783496c29c119d11baf6a4"
+      "sha256": "c0e0e148eb3f9c732de1487f070b67eb49405b9527029f59f9b623725db8ee6d"
     },
     "dxHandler": {
       "origin": "repository",
       "path": "Runtime/Core/MessageHandler.cs",
-      "sha256": "3c6d83c528e3dea3e98edaa33eb649018b36c1047de84cb9298ad89e52cf9c4c"
+      "sha256": "4ebc38d7d904020f5fba6926927ac94da6c9a6967c525bece648c3073fa30ee4"
     },
     "dxToken": {
       "origin": "repository",
       "path": "Runtime/Core/MessageRegistrationToken.cs",
-      "sha256": "328fd44ceca073c41db5252b074294839d4454d5d08bf5a08d92b0246c873c7c"
+      "sha256": "60c0d219f54953163ae7f6bac9e3aa5838d84adf27bbe064f54defdd349e587a"
     },
     "dxFlat": {
       "origin": "repository",
       "path": "Runtime/Core/Internal/FlatDispatch.cs",
-      "sha256": "11bbcc1e0f1da2118290ee6bfc19c7c61611452f7dbc808f1ce0ed979c4ef8aa"
+      "sha256": "26949f25ab084d1947663da4a7d6253a3c081d332f128894d88911763e50a8f9"
     },
     "dxPools": {
       "origin": "repository",
       "path": "Runtime/Core/Pooling/DxPools.cs",
-      "sha256": "4e1ec8359467d87b6eea8b3298d0a67da0e00b35bd614e20bfd3f9875ed20a82"
+      "sha256": "51bbe21e1ff6c56741d2b0cc20606170ea23c0948866a2e4fb3335355829ec0b"
     },
     "dxSettings": {
       "origin": "repository",
       "path": "Runtime/Core/Configuration/DxMessagingRuntimeSettings.cs",
-      "sha256": "aa6d69c8544b663149612e7fbcd3ad93ee74e860f44a40fcb4982107e0c84449"
+      "sha256": "472b3cca0b6e1a3c5bd4e5dd6a110ef40f5cd4b1570536bc77b80fd716452521"
     },
     "reentrantTests": {
       "origin": "repository",

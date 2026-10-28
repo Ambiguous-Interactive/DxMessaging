@@ -38,7 +38,7 @@ By the end of this guide, you will:
 
 **One approach:** The Player script needs references to all 6 systems. Or they all need references to the Player. This can create tight coupling.
 
-**With DxMessaging:** The Player emits one message: `TookDamage(25)`. Interested systems receive it through subscriptions. This approach decouples systems and handles cleanup automatically.
+**With DxMessaging:** The Player emits one message: `TookDamage(25)`. Interested systems receive it through subscriptions. The sender depends on the message type. A `MessageAwareComponent` receiver owns registration cleanup through its Unity lifecycle.
 
 ---
 
@@ -48,13 +48,20 @@ By the end of this guide, you will:
 
 ### What you get
 
-- **Decoupled systems** - no manual subscribe/unsubscribe, leak prevention built-in
+- **Subscription ownership** - `MessageAwareComponent` manages its token; plain C# owners dispose their tokens
 - **Predictable execution** - priority-based ordering, see exactly what runs when
-- **Actually debuggable** - Message Monitor shows emissions and Flow Graph shows
-  loaded-scene component routes
+- **Message inspection** - Inspect [recent emissions](../guides/diagnostics.md#message-monitor) and
+  [loaded-scene component routes](../guides/diagnostics.md#flow-graph) in the Editor
 - **Designed to scale** - works for prototypes and larger codebases
 
+For plain C# owners, enable the token after staging registrations and dispose it when the owner
+scope ends. See the [plain C# observer example](../concepts/listening-patterns.md#development-debug-dump).
+
 ## Quick Start
+
+> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use
+> `ref DamageRequested message` for the receiver callback parameter instead. Keep the registration
+> and emission calls unchanged. See the [4.0 migration guide](../guides/migration-guide.md#migrating-to-400).
 
 1. Define the command
 

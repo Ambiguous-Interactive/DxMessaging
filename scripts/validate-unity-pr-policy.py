@@ -24,6 +24,7 @@ WATCHDOG = Path(".github/workflows/stuck-job-watchdog.yml")
 SHIPPING_MATRIX = Path("scripts/unity/run-shipping-fidelity-matrix.ps1")
 LOCK_ACTION_PREFIX = "Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/"
 REGISTERED_UNITY_AUTOMATION = {
+    ".github/workflows/runner-bootstrap.yml",
     ".github/actions/validate-unity-license/action.yml",
     ".github/workflows/perf-numbers.yml",
     ".github/workflows/release.yml",
@@ -32,6 +33,7 @@ REGISTERED_UNITY_AUTOMATION = {
 }
 # SYNC: Keep scripts/__tests__/ci-aggregate-workflow.test.js UNITY_LOCK_WINDOWS aligned.
 LICENSED_LOCK_WINDOWS = (
+    (Path(".github/workflows/runner-bootstrap.yml"), "shipping-editor-verification"),
     (Path(".github/workflows/unity-tests.yml"), "unity-tests"),
     (Path(".github/workflows/unity-benchmarks.yml"), "benchmarks"),
     (Path(".github/workflows/perf-numbers.yml"), "perf-benchmarks"),
@@ -2677,7 +2679,9 @@ process.stdout.write(JSON.stringify({on: workflow.on, env: job.env, steps: job.s
         "Seal shipping-fidelity evidence bundle":
             endpoint + " && steps.run_shipping.outcome == 'success'",
         "Upload shipping-fidelity artifacts":
-            "steps.redact_tests.outcome == 'success' && steps.seal_shipping.outcome == 'success' && "
+            "steps.redact_tests.outcome == 'success' && "
+            "(steps.run_shipping.outcome == 'failure' || "
+            "(steps.run_shipping.outcome == 'success' && steps.seal_shipping.outcome == 'success')) && "
             "always() && !cancelled() && "
             "steps.acquire_lock.outputs.acquired == 'true' && " + endpoint,
     }
@@ -2687,6 +2691,13 @@ process.stdout.write(JSON.stringify({on: workflow.on, env: job.env, steps: job.s
         actual = " ".join(str(matches[0].get("if", "")).split())
         require(actual == "${{ " + condition + " }}",
                 f"{name}: shipping condition must preserve event, outcome, and cleanup gates")
+    upload = next(step for step in workflow["steps"] if step.get("name") == "Upload shipping-fidelity artifacts")
+    expected_artifact_name = (
+        "unity-${{ matrix.unity-version }}-"
+        "${{ steps.run_shipping.outcome == 'success' && 'shipping' || 'shipping-failure-diagnostics' }}"
+    )
+    require(upload.get("with", {}).get("name") == expected_artifact_name,
+            "failed shipping producers must use the distinct diagnostic artifact identity")
     for step in workflow["steps"]:
         require("DXM_RUN_SHIPPING" not in (step.get("env") or {}),
                 "the shared shipping predicate env is retired; steps must embed the dispatch predicate")
@@ -2740,6 +2751,16 @@ def validate_grouped_unity_correctness() -> None:
     mutations = [
         ("manual shipping enabled by default", "default: false", "default: true"),
         ("manual input loses boolean typing", "type: boolean", "type: string"),
+        (
+            "failed producer loses diagnostic identity",
+            "steps.run_shipping.outcome == 'success' && 'shipping' || 'shipping-failure-diagnostics'",
+            "steps.run_shipping.outcome == 'failure' && 'shipping' || 'shipping-failure-diagnostics'",
+        ),
+        (
+            "successful producer bypasses seal",
+            "(steps.run_shipping.outcome == 'success' && steps.seal_shipping.outcome == 'success')",
+            "steps.run_shipping.outcome == 'success'",
+        ),
         (
             "shipping runs on push",
             "github.event_name == 'workflow_dispatch'",
@@ -2962,7 +2983,10 @@ def validate_grouped_unity_correctness() -> None:
         "if-no-files-found: error" in shipping_upload
         and "!cancelled()" in shipping_upload
         and "steps.acquire_lock.outputs.acquired == 'true'" in shipping_upload
-        and "unity-${{ matrix.unity-version }}-shipping" in shipping_upload
+        and (
+            "name: unity-${{ matrix.unity-version }}-"
+            "${{ steps.run_shipping.outcome == 'success' && 'shipping' || 'shipping-failure-diagnostics' }}"
+        ) in shipping_upload
         and ".artifacts/unity/${{ matrix.unity-version }}-shipping" in shipping_upload,
         "shipping fidelity must upload isolated evidence after lock acquisition, skip cancellation, and fail when it is absent",
     )
@@ -3526,14 +3550,14 @@ def performance_baseline_script(render_script: str) -> str:
 def target_map_rows(metric: str = "operationsPerSecond=1000") -> list[str]:
     rows: list[str] = []
     for key_count in (1, 4, 16, 256, 4096):
-        for operation in ("Hit", "Miss", "Churn"):
+        for operation in ("Hit", "Miss", "ChurnWithTrim"):
             rows.append(
                 "DXM_TARGET_MAP_BENCHMARK "
                 f"scenario=TargetMap_{key_count}_{operation} "
                 f"keyCount={key_count} operation={operation} {metric}"
             )
         rows.append(
-            f"DXM_TARGET_MAP_CONSTRUCTION keyCount={key_count} wallClockMs=1 {metric}"
+            f"DXM_INT_KEY_MAP_CONSTRUCTION keyCount={key_count} wallClockMs=1 {metric}"
         )
     return rows
 
@@ -3569,6 +3593,18 @@ def validate_performance_evidence_guards(render_script: str) -> None:
     script = performance_evidence_script(render_script)
     cases = (
         ("complete evidence", rows, 0, ""),
+        (
+            "retired exact-slot churn workload",
+            [row.replace("ChurnWithTrim", "Churn") for row in rows],
+            1,
+            "does not exactly match",
+        ),
+        (
+            "retired context-map constructor workload",
+            [row.replace("DXM_INT_KEY_MAP_CONSTRUCTION", "DXM_TARGET_MAP_CONSTRUCTION") for row in rows],
+            1,
+            "does not exactly match",
+        ),
         (
             "missing Standalone identity",
             rows[1:],

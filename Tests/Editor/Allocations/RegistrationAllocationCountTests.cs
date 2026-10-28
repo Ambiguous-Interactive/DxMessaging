@@ -81,6 +81,12 @@ namespace DxMessaging.Tests.Editor.Allocations
     /// </description></item>
     /// </list>
     /// <para>
+    /// Immutable invocation bindings separate diagnostic origin from replayed staging.
+    /// First activation and different-bus replay create a binding; same-bus replay reuses
+    /// it. The historical savings above describe earlier changes. Native counts must
+    /// qualify the current representation before publishing a registration-cost claim.
+    /// </para>
+    /// <para>
     /// The counting rows use <see cref="AllocationProbe"/> (the <c>GC.Alloc</c> profiler
     /// recorder) rather than a <c>GC.GetTotalMemory</c> byte delta, which is vacuously
     /// 0 under Unity's Boehm GC. Diagnostics are forced OFF (the default

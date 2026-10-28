@@ -30,6 +30,12 @@ namespace DxMessaging.Tests.Runtime
         /// </summary>
         protected IMessageBus Inner => _inner ?? throw new NotImplementedException();
 
+        /// <summary>
+        /// Cold leak accounting can inspect the forwarded built-in bus. A partial
+        /// stub has no source; doubles with independent storage can override this.
+        /// </summary>
+        internal virtual IMessageBus RegistrationCountSource => _inner;
+
         public virtual bool DiagnosticsMode => Inner.DiagnosticsMode;
 
         public virtual int RegisteredGlobalSequentialIndex => Inner.RegisteredGlobalSequentialIndex;

@@ -100,27 +100,37 @@ namespace DxMessaging.Tests.Runtime.Core
             new[] { 1, 2, 3 },
             1,
             new[] { 2, 3 },
-            Description = "Remove first element by value"
+            Description = "Remove first element by value",
+            TestName = nameof(RemoveBehaviorDataDriven) + "(FirstElement)"
         )]
         [TestCase(
             new[] { 1, 2, 3 },
             2,
             new[] { 1, 3 },
-            Description = "Remove middle element by value"
+            Description = "Remove middle element by value",
+            TestName = nameof(RemoveBehaviorDataDriven) + "(MiddleElement)"
         )]
         [TestCase(
             new[] { 1, 2, 3 },
             3,
             new[] { 1, 2 },
-            Description = "Remove last element by value"
+            Description = "Remove last element by value",
+            TestName = nameof(RemoveBehaviorDataDriven) + "(LastElement)"
         )]
         [TestCase(
             new[] { 1, 2, 3 },
             99,
             new[] { 1, 2, 3 },
-            Description = "Remove non-existent element"
+            Description = "Remove non-existent element",
+            TestName = nameof(RemoveBehaviorDataDriven) + "(MissingElement)"
         )]
-        [TestCase(new[] { 1 }, 1, new int[0], Description = "Remove only element")]
+        [TestCase(
+            new[] { 1 },
+            1,
+            new int[0],
+            Description = "Remove only element",
+            TestName = nameof(RemoveBehaviorDataDriven) + "(OnlyElement)"
+        )]
         public void RemoveBehaviorDataDriven(int[] initial, int toRemove, int[] expected)
         {
             CyclicBuffer<int> buffer = new(initial.Length, initial);
@@ -152,19 +162,22 @@ namespace DxMessaging.Tests.Runtime.Core
             new[] { 1, 2, 2, 3 },
             2,
             new[] { 1, 2, 3 },
-            Description = "Remove first occurrence of duplicate"
+            Description = "Remove first occurrence of duplicate",
+            TestName = nameof(RemoveDuplicatesBehavior) + "(FirstDuplicate)"
         )]
         [TestCase(
             new[] { 2, 2, 2 },
             2,
             new[] { 2, 2 },
-            Description = "Remove first of all duplicates"
+            Description = "Remove first of all duplicates",
+            TestName = nameof(RemoveDuplicatesBehavior) + "(AllDuplicates)"
         )]
         [TestCase(
             new[] { 1, 1, 1 },
             1,
             new[] { 1, 1 },
-            Description = "Remove first of identical elements"
+            Description = "Remove first of identical elements",
+            TestName = nameof(RemoveDuplicatesBehavior) + "(IdenticalElements)"
         )]
         public void RemoveDuplicatesBehavior(int[] initial, int toRemove, int[] expected)
         {

@@ -2,6 +2,7 @@
 namespace DxMessaging.Tests.Editor.Allocations
 {
     using System;
+    using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Extensions;
     using DxMessaging.Core.MessageBus;
@@ -50,6 +51,115 @@ namespace DxMessaging.Tests.Editor.Allocations
             _diagnosticsScope?.Dispose();
             _diagnosticsScope = null;
             MessagingDebug.LogFunction = _savedLogFunction;
+        }
+
+        private static IEnumerable<TestCaseData> TypedWithoutContextAllocationCases()
+        {
+            foreach (MessageScenario scenario in MessageScenarios.AllKinds)
+            {
+                if (scenario.Kind != MessageKind.Targeted && scenario.Kind != MessageKind.Broadcast)
+                {
+                    continue;
+                }
+                foreach (bool fast in new[] { false, true })
+                {
+                    foreach (bool featured in new[] { false, true })
+                    {
+                        yield return new TestCaseData(scenario, fast, featured).SetName(
+                            $"TypedWithoutContextAllocation_{scenario.Kind}_Fast{fast}_Featured{featured}"
+                        );
+                    }
+                }
+            }
+        }
+
+        /// <summary>Checks both handle phases after warming fast and featured dispatch plans.</summary>
+        [TestCaseSource(nameof(TypedWithoutContextAllocationCases))]
+        public void TypedAndWithoutContextHandlePhasesRemainAllocationFree(
+            MessageScenario scenario,
+            bool fast,
+            bool featured
+        )
+        {
+            RunWithFreshHarness(
+                scenario,
+                (token, bus) =>
+                {
+                    string label = scenario + ",fast=" + fast + ",featured=" + featured;
+                    int primaryCalls = 0;
+                    int variantCalls = 0;
+                    switch (scenario.Kind)
+                    {
+                        case MessageKind.Targeted:
+                        {
+                            if (fast)
+                            {
+                                _ = token.RegisterTargeted<SimpleTargetedMessage>(
+                                    StableTarget,
+                                    (in SimpleTargetedMessage _) => ++primaryCalls
+                                );
+                                _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
+                                    (in InstanceId _, in SimpleTargetedMessage __) => ++variantCalls
+                                );
+                            }
+                            else
+                            {
+                                _ = token.RegisterTargeted<SimpleTargetedMessage>(
+                                    StableTarget,
+                                    _ => ++primaryCalls
+                                );
+                                _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
+                                    (_, __) => ++variantCalls
+                                );
+                            }
+                            break;
+                        }
+                        case MessageKind.Broadcast:
+                        {
+                            if (fast)
+                            {
+                                _ = token.RegisterBroadcast<SimpleBroadcastMessage>(
+                                    StableSource,
+                                    (in SimpleBroadcastMessage _) => ++primaryCalls
+                                );
+                                _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
+                                    (in InstanceId _, in SimpleBroadcastMessage __) =>
+                                        ++variantCalls
+                                );
+                            }
+                            else
+                            {
+                                _ = token.RegisterBroadcast<SimpleBroadcastMessage>(
+                                    StableSource,
+                                    _ => ++primaryCalls
+                                );
+                                _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
+                                    (_, __) => ++variantCalls
+                                );
+                            }
+                            break;
+                        }
+                        default:
+                        {
+                            throw new InvalidOperationException(
+                                $"Unhandled MessageKind {scenario.Kind}."
+                            );
+                        }
+                    }
+                    if (featured)
+                    {
+                        _ = RegisterAllowingInterceptor(scenario.WithInterceptor(true), token);
+                    }
+                    Action emit = BuildEmitClosure(scenario, bus);
+                    AllocationAssertions.AssertNoAllocations("TypedWithoutContext-" + label, emit);
+                    Assert.That(0 < primaryCalls, Is.True, label + ": keyed callbacks ran");
+                    Assert.That(
+                        variantCalls,
+                        Is.EqualTo(primaryCalls),
+                        label + ": both handle phases must deliver once per emission"
+                    );
+                }
+            );
         }
 
         /// <summary>
@@ -261,6 +371,76 @@ namespace DxMessaging.Tests.Editor.Allocations
                     AllocationAssertions.AssertNoAllocations(
                         $"EmitGlobalAcceptAll-{scenario.Kind}",
                         emit
+                    );
+                }
+            );
+        }
+
+        /// <summary>Checks steady global dispatch after nested mutation has displaced a snapshot.</summary>
+        [Test]
+        [Category("Allocation")]
+        public void GlobalSnapshotsRemainAllocationFreeAfterNestedMutation(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(0, 1, 2)] int shape,
+            [Values(3, 8)] int count
+        )
+        {
+            RunWithFreshHarness(
+                scenario,
+                (token, bus) =>
+                {
+                    string label = scenario + ",shape=" + shape + ",count=" + count;
+                    Action emit = BuildClassEmitClosure(scenario, bus);
+                    RegisterClassHandler(scenario, token);
+                    bool mutated = false;
+                    int callbacks = 0;
+                    MessageRegistrationHandle removed = default;
+                    MessageRegistrationHandle RegisterSnapshotCallback(bool fast, Action callback)
+                    {
+                        if (fast)
+                        {
+                            return token.RegisterGlobalAcceptAll(
+                                (in IUntargetedMessage _) => callback(),
+                                (in InstanceId _, in ITargetedMessage __) => callback(),
+                                (in InstanceId _, in IBroadcastMessage __) => callback()
+                            );
+                        }
+                        return token.RegisterGlobalAcceptAll(
+                            _ => callback(),
+                            (_, _) => callback(),
+                            (_, _) => callback()
+                        );
+                    }
+                    RegisterSnapshotCallback(
+                        shape != 0,
+                        () =>
+                        {
+                            if (mutated)
+                            {
+                                return;
+                            }
+                            mutated = true;
+                            token.RemoveRegistration(removed);
+                            RegisterSnapshotCallback(shape == 1, () => ++callbacks);
+                            emit();
+                        }
+                    );
+                    for (int index = 0; index < count - 1; ++index)
+                    {
+                        int captured = index;
+                        removed = RegisterSnapshotCallback(
+                            shape == 1,
+                            () => callbacks += captured + 1
+                        );
+                    }
+                    emit();
+                    int before = callbacks;
+                    AllocationAssertions.AssertNoAllocations("GlobalSnapshots-" + label, emit);
+                    Assert.That(
+                        before < callbacks,
+                        Is.True,
+                        label + ": measured dispatch delivered peers"
                     );
                 }
             );

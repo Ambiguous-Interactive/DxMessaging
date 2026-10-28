@@ -4,6 +4,10 @@ namespace DxMessaging.Core.Configuration
     using MessageBus;
 #if UNITY_2021_3_OR_NEWER
     using UnityEngine;
+#if UNITY_EDITOR
+    using System.Collections.Concurrent;
+    using System.Threading;
+#endif
 
     /// <summary>
     /// Runtime-loaded settings asset that controls memory-reclamation policy and
@@ -31,7 +35,7 @@ namespace DxMessaging.Core.Configuration
         /// <summary>Default soft cap on retained entries in shared pools and the per-bus priority-leaf spare.</summary>
         public const int DefaultBufferMaxDistinctEntries = 512;
 
-        /// <summary>Default idle threshold in seconds before an empty slot is eligible for eviction.</summary>
+        /// <summary>Default counter-age budget for empty slots; the legacy setting name retains Seconds.</summary>
         public const float DefaultIdleEvictionSeconds = 30f;
 
         /// <summary>Default minimum interval between idle sweeps, in seconds.</summary>
@@ -39,7 +43,7 @@ namespace DxMessaging.Core.Configuration
 
         [SerializeField]
         [Tooltip(
-            "Idle threshold in seconds. Empty per-message-type slots are evicted only after going at least this long without a register/deregister/dispatch touch. See IdleEvictionSeconds."
+            "Legacy-named idle-age budget in bus activity ticks, rounded up. Empty slots become eligible when their age exceeds this budget. Wall time controls sweep cadence only. See IdleEvictionSeconds."
         )]
         [Min(0f)]
         internal float _idleEvictionSeconds = DefaultIdleEvictionSeconds;
@@ -92,7 +96,11 @@ namespace DxMessaging.Core.Configuration
 
         private bool _isFallbackInstance;
 
-        /// <summary>Idle threshold in seconds. See <c>_idleEvictionSeconds</c>.</summary>
+        /// <summary>Counter-age budget for empty slots, rounded up; the legacy name retains Seconds.</summary>
+        /// <remarks>
+        /// Bus register, deregister and emit operations advance age. A due PlayerLoop sweep also
+        /// advances it once. Wall time controls sweep cadence; it does not measure this age.
+        /// </remarks>
         public float IdleEvictionSeconds => _idleEvictionSeconds;
 
         /// <summary>Per-pool retained-entry cap. See <c>_bufferMaxDistinctEntries</c>.</summary>
@@ -119,15 +127,14 @@ namespace DxMessaging.Core.Configuration
         internal bool IsFallbackInstance => _isFallbackInstance;
 
         /// <summary>
-        /// Raised when this asset is mutated in the editor or via test-only override.
-        /// Subscribers should be small and re-entrancy-safe; the event is invoked
-        /// synchronously from <c>OnValidate</c>.
+        /// Raised on an idle Editor update after this asset is validated.
+        /// Repeated validations coalesce until that update; subscribers read the latest values.
+        /// Subscribers should be small and re-entrancy-safe.
         /// </summary>
         public static event Action<DxMessagingRuntimeSettings> SettingsChanged;
 
         /// <summary>
-        /// Used by <see cref="DxMessagingRuntimeSettingsProvider.Override"/> to push
-        /// a test-supplied override and notify subscribers.
+        /// Notifies live buses after settings validation.
         /// </summary>
         internal static void RaiseSettingsChanged(DxMessagingRuntimeSettings settings)
         {
@@ -146,6 +153,19 @@ namespace DxMessaging.Core.Configuration
         }
 
 #if UNITY_EDITOR
+        private static readonly ConcurrentQueue<DxMessagingRuntimeSettings> PendingValidations =
+            new ConcurrentQueue<DxMessagingRuntimeSettings>();
+
+        [NonSerialized]
+        private int _validationPending;
+
+        [UnityEditor.InitializeOnLoadMethod]
+        private static void RegisterValidationUpdates()
+        {
+            UnityEditor.EditorApplication.update -= ProcessPendingValidations;
+            UnityEditor.EditorApplication.update += ProcessPendingValidations;
+        }
+
         private void OnValidate()
         {
             if (_idleEvictionSeconds < 0f)
@@ -168,6 +188,49 @@ namespace DxMessaging.Core.Configuration
             {
                 _registrationLogCapacity = 0;
             }
+
+            /*
+                Validation can run during loading. Queue only managed state here; asset
+                inspection and subscribers that mutate live buses run on the Editor thread.
+            */
+            if (Interlocked.CompareExchange(ref _validationPending, 1, 0) == 0)
+            {
+                PendingValidations.Enqueue(this);
+            }
+        }
+
+        private static void ProcessPendingValidations()
+        {
+            if (
+                UnityEditor.EditorApplication.isUpdating
+                || UnityEditor.EditorApplication.isCompiling
+            )
+            {
+                return;
+            }
+
+            /*
+                Bound this update to the requests already queued. A subscriber can validate
+                again; that new request belongs to the next update, preventing recursive drain.
+            */
+            int count = PendingValidations.Count;
+            for (int i = 0; i < count; ++i)
+            {
+                if (!PendingValidations.TryDequeue(out DxMessagingRuntimeSettings settings))
+                {
+                    break;
+                }
+
+                Interlocked.Exchange(ref settings._validationPending, 0);
+                if (settings != null && !settings.IsFallbackInstance)
+                {
+                    settings.ApplyValidatedSettings();
+                }
+            }
+        }
+
+        private void ApplyValidatedSettings()
+        {
             string assetPath = UnityEditor.AssetDatabase.GetAssetPath(this);
             if (
                 !string.IsNullOrEmpty(assetPath)

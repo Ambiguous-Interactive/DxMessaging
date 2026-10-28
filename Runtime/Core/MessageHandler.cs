@@ -9,12 +9,13 @@ namespace DxMessaging.Core
     using MessageBus;
     using Messages;
     using Pooling;
+    using BusType = global::DxMessaging.Core.MessageBus.MessageBus;
 
     /// <summary>
     /// Per-owner handler that executes registered message callbacks.
     /// </summary>
     /// <remarks>
-    /// A <see cref="MessageHandler"/> is typically created and managed by <see cref="Unity.MessagingComponent"/> in Unity.
+    /// A <see cref="MessageHandler"/> is typically created and managed by <c>Unity.MessagingComponent</c> in Unity.
     /// Most user code interacts with the handler through <see cref="MessageRegistrationToken"/>, which stages
     /// registrations and ensures correct enable/disable lifecycles.
     /// </remarks>
@@ -91,8 +92,8 @@ namespace DxMessaging.Core
         /// Gets the baseline global <see cref="IMessageBus"/> instance used when no custom bus is configured.
         /// </summary>
         /// <remarks>
-        /// The instance is recreated when <see cref="DxMessagingStaticState.Reset"/> runs so that domain-reload-disabled
-        /// environments can obtain a clean slate.
+        /// <see cref="DxMessagingStaticState.Reset"/> clears registrations on this instance and selects it as
+        /// the global bus. Its reference remains stable for the lifetime of the application domain.
         /// </remarks>
         public static IMessageBus InitialGlobalMessageBus => _defaultGlobalMessageBus;
 
@@ -122,7 +123,7 @@ namespace DxMessaging.Core
         /// Thrown when <paramref name="messageBus"/> is <see langword="null"/>.
         /// </exception>
         /// <remarks>
-        /// This is primarily intended for integration tests or dependency injection bootstrap code. Invoke
+        /// Use this during dependency injection bootstrap. Invoke
         /// <see cref="ResetGlobalMessageBus"/> when the customisation is no longer required.
         /// </remarks>
         public static void SetGlobalMessageBus(MessageBus.MessageBus messageBus)
@@ -164,7 +165,9 @@ namespace DxMessaging.Core
         /// Restores the global <see cref="Core.MessageBus.MessageBus"/> to the built-in default instance.
         /// </summary>
         /// <remarks>
-        /// The default instance is recreated by <see cref="ResetStatics"/> when the static state reset utility runs.
+        /// Selects the existing default bus without clearing its registrations and invalidates outstanding
+        /// global override scopes. Call <see cref="DxMessagingStaticState.Reset"/> to clear the default bus
+        /// and restore shared configuration.
         /// </remarks>
         public static void ResetGlobalMessageBus()
         {
@@ -197,7 +200,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Recreates the built-in global <see cref="Core.MessageBus.MessageBus"/> and assigns it as the active global bus.
+        /// Clears the built-in default <see cref="Core.MessageBus.MessageBus"/> and selects it as the active global bus.
         /// </summary>
         /// <remarks>
         /// Invoked by <see cref="DxMessagingStaticState.Reset"/> to provide a clean slate when domain reloads are disabled.
@@ -433,6 +436,11 @@ namespace DxMessaging.Core
         /// <summary>
         /// Whether this MessageHandler will process messages.
         /// </summary>
+        /// <remarks>
+        /// The built-in bus checks this before each ordinary handler or post-processor callback.
+        /// Global accept-all groups check it on entry; a running group can finish after it becomes false.
+        /// Interceptor callbacks do not check this field. Changing it leaves registrations in place.
+        /// </remarks>
         public bool active;
 
         /// <summary>
@@ -513,7 +521,13 @@ namespace DxMessaging.Core
             if (GetHandlerForType(messageBus, out TypedHandler<IMessage> handler))
             {
                 long emissionId = messageBus.EmissionId;
-                handler.HandleGlobalUntargeted(ref message, emissionId);
+                long resetGeneration = BusType.GetResetGeneration(messageBus);
+                handler.HandleGlobalUntargeted(
+                    ref message,
+                    emissionId,
+                    messageBus,
+                    resetGeneration
+                );
             }
         }
 
@@ -619,7 +633,14 @@ namespace DxMessaging.Core
             if (GetHandlerForType(messageBus, out TypedHandler<IMessage> handler))
             {
                 long emissionId = messageBus.EmissionId;
-                handler.HandleGlobalTargeted(ref target, ref message, emissionId);
+                long resetGeneration = BusType.GetResetGeneration(messageBus);
+                handler.HandleGlobalTargeted(
+                    ref target,
+                    ref message,
+                    emissionId,
+                    messageBus,
+                    resetGeneration
+                );
             }
         }
 
@@ -644,7 +665,14 @@ namespace DxMessaging.Core
             if (GetHandlerForType(messageBus, out TypedHandler<IMessage> handler))
             {
                 long emissionId = messageBus.EmissionId;
-                handler.HandleGlobalBroadcast(ref source, ref message, emissionId);
+                long resetGeneration = BusType.GetResetGeneration(messageBus);
+                handler.HandleGlobalBroadcast(
+                    ref source,
+                    ref message,
+                    emissionId,
+                    messageBus,
+                    resetGeneration
+                );
             }
         }
 
@@ -652,24 +680,11 @@ namespace DxMessaging.Core
         /// Reference-identity teardown base used by token lifecycle queues. The common
         /// token path is implemented by the token's existing Registration object with
         /// value-type state returned from MessageHandler; concrete wrappers below are
-        /// reserved for direct handler compatibility and overlapping retry spills.
+        /// used when overlapping retry cleanup needs separate ownership.
         /// </summary>
-        /// <remarks>
-        /// The implicit conversion to <see cref="Action"/> exists so the
-        /// handful of internal callers (contract tests through the
-        /// bus&lt;-&gt;handler boundary) that stored the old <see cref="Action"/>
-        /// continue to compile unchanged; it allocates a single delegate ONLY
-        /// when a caller explicitly requests the <see cref="Action"/> form, and
-        /// is never used on the token's common storage path.
-        /// </remarks>
         internal abstract class HandlerDeregistration
         {
             internal abstract void Deregister();
-
-            public static implicit operator Action(HandlerDeregistration deregistration)
-            {
-                return deregistration == null ? null : deregistration.Deregister;
-            }
         }
 
         /// <summary>
@@ -703,12 +718,6 @@ namespace DxMessaging.Core
             {
                 return new InterceptorDeregistration<T>(state);
             }
-
-            public static implicit operator Action(InterceptorDeregistrationState<T> state)
-            {
-                InterceptorDeregistration<T> deregistration = new(state);
-                return deregistration.Deregister;
-            }
         }
 
         internal sealed class InterceptorDeregistration<T> : HandlerDeregistration
@@ -729,7 +738,7 @@ namespace DxMessaging.Core
 
         /// <summary>
         /// Value teardown for one typed global handler slot. Captures the old closure's
-        /// reset/slot guards, erased cache identity, refcount key, and touch/live-count state.
+        /// reset/slot guards, erased cache identity, refcount key, and live-count state.
         /// </summary>
         internal readonly struct GlobalHandlerDeregistrationState
         {
@@ -772,8 +781,7 @@ namespace DxMessaging.Core
                 }
 
                 _cache.BumpVersion();
-                _slot.lastTouchTicks =
-                    global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(_messageBus);
+
                 _ = _cache.DeregisterEntry(_originalHandler, out bool wasLastForEntry);
                 if (wasLastForEntry)
                 {
@@ -825,12 +833,6 @@ namespace DxMessaging.Core
             {
                 return new GlobalAcceptAllDeregistration(state);
             }
-
-            public static implicit operator Action(GlobalAcceptAllDeregistrationState state)
-            {
-                GlobalAcceptAllDeregistration deregistration = new(state);
-                return deregistration.Deregister;
-            }
         }
 
         internal sealed class GlobalAcceptAllDeregistration : HandlerDeregistration
@@ -851,11 +853,14 @@ namespace DxMessaging.Core
         /// <summary>
         /// Registers this MessageHandler to Globally Accept All Messages via the MessageBus, properly handling deregistration.
         /// </summary>
+        /// <param name="originalUntargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="untargetedMessageHandler">MessageHandler to accept all UntargetedMessages.</param>
-        /// <param name="broadcastMessageHandler">MessageHandler to accept all TargetedMessages for all entities.</param>
-        /// <param name="targetedMessageHandler">MessageHandler to accept all BroadcastMessages for all entities.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="originalBroadcastMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
+        /// <param name="broadcastMessageHandler">Handler for broadcast messages and their source.</param>
+        /// <param name="originalTargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
+        /// <param name="targetedMessageHandler">Handler for targeted messages and their target.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal GlobalAcceptAllDeregistrationState RegisterGlobalAcceptAll(
             Action<IUntargetedMessage> originalUntargetedMessageHandler,
             Action<IUntargetedMessage> untargetedMessageHandler,
@@ -867,10 +872,13 @@ namespace DxMessaging.Core
         )
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterGlobalAcceptAll(
                 this
             );
-            TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(messageBus);
+            TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(
+                messageBusIndex
+            );
 
             GlobalHandlerDeregistrationState untargetedDeregistration =
                 typedHandler.AddGlobalUntargetedHandler(
@@ -903,11 +911,14 @@ namespace DxMessaging.Core
         /// <summary>
         /// Registers this MessageHandler to Globally Accept All Messages via the MessageBus, properly handling deregistration.
         /// </summary>
+        /// <param name="originalUntargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="untargetedMessageHandler">MessageHandler to accept all UntargetedMessages.</param>
-        /// <param name="broadcastMessageHandler">MessageHandler to accept all TargetedMessages for all entities.</param>
-        /// <param name="targetedMessageHandler">MessageHandler to accept all BroadcastMessages for all entities.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="originalBroadcastMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
+        /// <param name="broadcastMessageHandler">Handler for broadcast messages and their source.</param>
+        /// <param name="originalTargetedMessageHandler">Delegate identity used to count duplicate registrations and remove them.</param>
+        /// <param name="targetedMessageHandler">Handler for targeted messages and their target.</param>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal GlobalAcceptAllDeregistrationState RegisterGlobalAcceptAll(
             FastHandler<IUntargetedMessage> originalUntargetedMessageHandler,
             FastHandler<IUntargetedMessage> untargetedMessageHandler,
@@ -919,10 +930,13 @@ namespace DxMessaging.Core
         )
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterGlobalAcceptAll(
                 this
             );
-            TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(messageBus);
+            TypedHandler<IMessage> typedHandler = GetOrCreateHandlerForType<IMessage>(
+                messageBusIndex
+            );
 
             GlobalHandlerDeregistrationState untargetedDeregistration =
                 typedHandler.AddGlobalUntargetedHandler(
@@ -957,10 +971,11 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="target">Target Id of TargetedMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedMessageHandler<T>(
             InstanceId target,
             Action<T> originalHandler,
@@ -971,12 +986,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterTargeted<T>(
                 target,
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedHandler(
                 target,
                 originalHandler,
@@ -1004,12 +1020,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterTargeted<T>(
                 target,
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedHandler(
                 target,
                 originalHandler,
@@ -1025,10 +1042,11 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="target">Target Id of TargetedMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedMessageHandler<T>(
             InstanceId target,
             FastHandler<T> originalHandler,
@@ -1039,12 +1057,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterTargeted<T>(
                 target,
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedHandler(
                 target,
                 originalHandler,
@@ -1060,10 +1079,11 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="target">Target Id of TargetedMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedPostProcessor<T>(
             InstanceId target,
             Action<T> originalHandler,
@@ -1074,9 +1094,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedPostProcessor<T>(target, this, priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedPostProcessor(
                 target,
                 originalHandler,
@@ -1092,10 +1113,11 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="target">Target Id of TargetedMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedPostProcessor<T>(
             InstanceId target,
             FastHandler<T> originalHandler,
@@ -1106,9 +1128,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedPostProcessor<T>(target, this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedPostProcessor(
                 target,
                 originalHandler,
@@ -1136,9 +1159,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedPostProcessor<T>(target, this, priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedPostProcessor(
                 target,
                 originalHandler,
@@ -1153,10 +1177,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post-process TargetedMessages for all messages of the provided type via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedWithoutTargetingPostProcessor<T>(
             Action<InstanceId, T> originalHandler,
             Action<InstanceId, T> messageHandler,
@@ -1166,12 +1191,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargetingPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingPostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1185,10 +1211,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post process fast TargetedMessages for all messages of the provided type via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedWithoutTargetingPostProcessor<T>(
             FastHandlerWithContext<T> originalHandler,
             FastHandlerWithContext<T> messageHandler,
@@ -1198,12 +1225,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargetingPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingPostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1230,12 +1258,13 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargetingPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingPostProcessor(
                 originalHandler,
                 flatInvoker,
@@ -1249,10 +1278,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept TargetedMessages without Targeting via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedWithoutTargeting<T>(
             Action<InstanceId, T> originalHandler,
             Action<InstanceId, T> messageHandler,
@@ -1262,9 +1292,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargeting<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingHandler(
                 originalHandler,
                 messageHandler,
@@ -1291,9 +1322,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargeting<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingHandler(
                 originalHandler,
                 flatInvoker,
@@ -1307,10 +1339,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept fast TargetedMessages without Targeting via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterTargetedWithoutTargeting<T>(
             FastHandlerWithContext<T> originalHandler,
             FastHandlerWithContext<T> messageHandler,
@@ -1320,9 +1353,10 @@ namespace DxMessaging.Core
             where T : ITargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterTargetedWithoutTargeting<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddTargetedWithoutTargetingHandler(
                 originalHandler,
                 messageHandler,
@@ -1336,10 +1370,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept UntargetedMessages via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterUntargetedMessageHandler<T>(
             Action<T> originalHandler,
             Action<T> messageHandler,
@@ -1349,11 +1384,12 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterUntargeted<T>(
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddUntargetedHandler(
                 originalHandler,
                 messageHandler,
@@ -1379,11 +1415,12 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterUntargeted<T>(
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddUntargetedHandler(
                 originalHandler,
                 flatInvoker,
@@ -1397,10 +1434,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept fast UntargetedMessages via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterUntargetedMessageHandler<T>(
             FastHandler<T> originalHandler,
             FastHandler<T> messageHandler,
@@ -1410,11 +1448,12 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration = messageBus.RegisterUntargeted<T>(
                 this,
                 priority: priority
             );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddUntargetedHandler(
                 originalHandler,
                 messageHandler,
@@ -1428,10 +1467,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post-process UntargetedMessages via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterUntargetedPostProcessor<T>(
             Action<T> originalHandler,
             Action<T> messageHandler,
@@ -1441,12 +1481,13 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterUntargetedPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddUntargetedPostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1460,10 +1501,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post process fast UntargetedMessages via the MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterUntargetedPostProcessor<T>(
             FastHandler<T> originalHandler,
             FastHandler<T> messageHandler,
@@ -1473,12 +1515,13 @@ namespace DxMessaging.Core
             where T : IUntargetedMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterUntargetedPostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddUntargetedPostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1493,10 +1536,11 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="source">Source Id of BroadcastMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastMessageHandler<T>(
             InstanceId source,
             Action<T> originalHandler,
@@ -1507,9 +1551,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcast<T>(source, this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
 
             return typedHandler.AddSourcedBroadcastHandler(
                 source,
@@ -1538,9 +1583,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcast<T>(source, this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddSourcedBroadcastHandler(
                 source,
                 originalHandler,
@@ -1556,10 +1602,11 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="source">Source Id of BroadcastMessages to listen for.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastMessageHandler<T>(
             InstanceId source,
             FastHandler<T> originalHandler,
@@ -1570,9 +1617,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcast<T>(source, this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddSourcedBroadcastHandler(
                 source,
                 originalHandler,
@@ -1587,10 +1635,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept BroadcastMessage regardless of source via their MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastWithoutSource<T>(
             Action<InstanceId, T> originalHandler,
             Action<InstanceId, T> messageHandler,
@@ -1600,9 +1649,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcastWithoutSource<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddSourcedBroadcastWithoutSourceHandler(
                 originalHandler,
                 messageHandler,
@@ -1629,9 +1679,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcastWithoutSource<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddSourcedBroadcastWithoutSourceHandler(
                 originalHandler,
                 flatInvoker,
@@ -1645,10 +1696,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to accept fast BroadcastMessage regardless of source via their MessageBus, properly handling deregistration.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastWithoutSource<T>(
             FastHandlerWithContext<T> originalHandler,
             FastHandlerWithContext<T> messageHandler,
@@ -1658,9 +1710,10 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterSourcedBroadcastWithoutSource<T>(this, priority: priority);
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddSourcedBroadcastWithoutSourceHandler(
                 originalHandler,
                 messageHandler,
@@ -1675,10 +1728,11 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="source">Source object to listen for BroadcastMessages on.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastPostProcessor<T>(
             InstanceId source,
             Action<T> originalHandler,
@@ -1689,13 +1743,14 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastPostProcessor<T>(
                     source,
                     messageHandler: this,
                     priority: priority
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastPostProcessor(
                 source,
                 originalHandler,
@@ -1711,10 +1766,11 @@ namespace DxMessaging.Core
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
         /// <param name="source">Source object to listen for BroadcastMessages on.</param>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastPostProcessor<T>(
             InstanceId source,
             FastHandler<T> originalHandler,
@@ -1725,13 +1781,14 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastPostProcessor<T>(
                     source,
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastPostProcessor(
                 source,
                 originalHandler,
@@ -1759,13 +1816,14 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastPostProcessor<T>(
                     source,
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastPostProcessor(
                 source,
                 originalHandler,
@@ -1780,10 +1838,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post-processes BroadcastMessage messages for all messages of the provided type.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastWithoutSourcePostProcessor<T>(
             Action<InstanceId, T> originalHandler,
             Action<InstanceId, T> messageHandler,
@@ -1793,12 +1852,13 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastWithoutSourcePostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastWithoutSourcePostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1812,10 +1872,11 @@ namespace DxMessaging.Core
         /// Registers this MessageHandler to post processes fast BroadcastMessage messages for all messages of the provided type.
         /// </summary>
         /// <typeparam name="T">Type of Message to be handled.</typeparam>
+        /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
         /// <param name="messageHandler">Function that actually handles the message.</param>
         /// <param name="priority">Priority at which to run the handler, lower runs earlier than higher.</param>
-        /// <param name="messageBus">IMessageBus override to register with, if any. Null/not provided defaults to the GlobalMessageBus.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <param name="messageBus">Optional bus override. Null uses this handler's default bus.</param>
+        /// <returns>The deregistration state.</returns>
         internal TypedHandler<T>.TypedHandlerDeregistrationState RegisterSourcedBroadcastWithoutSourcePostProcessor<T>(
             FastHandlerWithContext<T> originalHandler,
             FastHandlerWithContext<T> messageHandler,
@@ -1825,12 +1886,13 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastWithoutSourcePostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastWithoutSourcePostProcessor(
                 originalHandler,
                 messageHandler,
@@ -1857,12 +1919,13 @@ namespace DxMessaging.Core
             where T : IBroadcastMessage
         {
             messageBus = ResolveMessageBus(messageBus);
+            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             MessageBusRegistration messageBusDeregistration =
                 messageBus.RegisterBroadcastWithoutSourcePostProcessor<T>(
                     priority: priority,
                     messageHandler: this
                 );
-            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBus);
+            TypedHandler<T> typedHandler = GetOrCreateHandlerForType<T>(messageBusIndex);
             return typedHandler.AddBroadcastWithoutSourcePostProcessor(
                 originalHandler,
                 flatInvoker,
@@ -1879,7 +1942,7 @@ namespace DxMessaging.Core
         /// <param name="interceptor">Interceptor to register.</param>
         /// <param name="priority">Priority to register the interceptor at (interceptors are run from low -> high priority)</param>
         /// <param name="messageBus">Message bus to register the interceptor on.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <returns>The deregistration state.</returns>
         internal InterceptorDeregistrationState<T> RegisterUntargetedInterceptor<T>(
             IMessageBus.UntargetedInterceptor<T> interceptor,
             int priority = 0,
@@ -1902,7 +1965,7 @@ namespace DxMessaging.Core
         /// <param name="interceptor">Interceptor to register.</param>
         /// <param name="priority">Priority to register the interceptor at (interceptors are run from low -> high priority)</param>
         /// <param name="messageBus">Message bus to register the interceptor on.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <returns>The deregistration state.</returns>
         internal InterceptorDeregistrationState<T> RegisterBroadcastInterceptor<T>(
             IMessageBus.BroadcastInterceptor<T> interceptor,
             int priority = 0,
@@ -1925,7 +1988,7 @@ namespace DxMessaging.Core
         /// <param name="interceptor">Interceptor to register.</param>
         /// <param name="priority">Priority to register the interceptor at (interceptors are run from low -> high priority)</param>
         /// <param name="messageBus">Message bus to register the interceptor on.</param>
-        /// <returns>The de-registration action.</returns>
+        /// <returns>The deregistration state.</returns>
         internal InterceptorDeregistrationState<T> RegisterTargetedInterceptor<T>(
             IMessageBus.TargetedInterceptor<T> interceptor,
             int priority = 0,
@@ -1984,12 +2047,12 @@ namespace DxMessaging.Core
         /// Compares this handler with another handler for ordering.
         /// </summary>
         /// <param name="other">Handler to compare.</param>
-        /// <returns>Relative ordering based on <see cref="owner"/>.</returns>
+        /// <returns>Relative ordering based on <see cref="owner"/>; positive for <see langword="null"/>.</returns>
         public int CompareTo(MessageHandler other)
         {
-            if (other == null)
+            if (other is null)
             {
-                return -1;
+                return 1;
             }
 
             return owner.CompareTo(other.owner);
@@ -2000,11 +2063,20 @@ namespace DxMessaging.Core
         /// </summary>
         /// <param name="obj">Object to compare.</param>
         /// <returns>
-        /// Relative ordering when <paramref name="obj"/> is a <see cref="MessageHandler"/>; otherwise <c>-1</c>.
+        /// Relative ordering for another <see cref="MessageHandler"/>; positive for <see langword="null"/>.
         /// </returns>
+        /// <exception cref="ArgumentException">The argument is non-null and has another type.</exception>
         public int CompareTo(object obj)
         {
-            return CompareTo(obj as MessageHandler);
+            if (obj is null)
+            {
+                return 1;
+            }
+            if (obj is MessageHandler other)
+            {
+                return CompareTo(other);
+            }
+            throw new ArgumentException("Object must be a MessageHandler.", nameof(obj));
         }
 
         /// <summary>
@@ -2020,11 +2092,11 @@ namespace DxMessaging.Core
         /// Retrieves an existing Handler for the specific type if it exists, or creates a new Handler if none exist.
         /// </summary>
         /// <typeparam name="T">Type of Message to retrieve a Handler for.</typeparam>
+        /// <param name="messageBusIndex">Stable cache index captured before calling the bus registrar.</param>
         /// <returns>Non-Null Handler for the specific type.</returns>
-        private TypedHandler<T> GetOrCreateHandlerForType<T>(IMessageBus messageBus)
+        private TypedHandler<T> GetOrCreateHandlerForType<T>(int messageBusIndex)
             where T : IMessage
         {
-            int messageBusIndex = messageBus.RegisteredGlobalSequentialIndex;
             if (
                 !_handlersByTypeByMessageBus.TryGetValue(
                     messageBusIndex,
@@ -2078,94 +2150,6 @@ namespace DxMessaging.Core
 
             existingTypedHandler = default;
             return false;
-        }
-
-        internal bool TryObserveFastPriorityHandlerStorage<T>(
-            IMessageBus messageBus,
-            int slotIndex,
-            int priority,
-            out HandlerCacheStorageObservation observation
-        )
-            where T : IMessage
-        {
-            if (!GetHandlerForType(messageBus, out TypedHandler<T> typedHandler))
-            {
-                observation = default;
-                return false;
-            }
-
-            TypedSlot<T> slot = typedHandler._slots[slotIndex];
-            if (
-                slot == null
-                || !slot.byPriority.TryGetValue(priority, out IHandlerActionCache erased)
-                || erased is not HandlerActionCache<FastHandler<T>> cache
-            )
-            {
-                observation = default;
-                return false;
-            }
-
-            observation = new HandlerCacheStorageObservation(
-                slot.byPriority.Count,
-                0,
-                slot.byPriority.EnsureCapacity(0),
-                slot.orderedPriorities.Capacity,
-                true,
-                cache.entries.Count,
-                cache.entries.InlineCapacity,
-                cache.entries.MapCapacity,
-                cache.entries.OrderCapacity,
-                cache.entries.UsesSpillStorage
-            );
-            return true;
-        }
-
-        internal readonly struct HandlerCacheStorageObservation
-        {
-            internal HandlerCacheStorageObservation(
-                int priorityEntries,
-                int priorityInlineCapacity,
-                int priorityMapCapacity,
-                int priorityOrderCapacity,
-                bool priorityUsesSpillStorage,
-                int handlerEntries,
-                int handlerInlineCapacity,
-                int handlerMapCapacity,
-                int handlerOrderCapacity,
-                bool handlerUsesSpillStorage
-            )
-            {
-                PriorityEntries = priorityEntries;
-                PriorityInlineCapacity = priorityInlineCapacity;
-                PriorityMapCapacity = priorityMapCapacity;
-                PriorityOrderCapacity = priorityOrderCapacity;
-                PriorityUsesSpillStorage = priorityUsesSpillStorage;
-                HandlerEntries = handlerEntries;
-                HandlerInlineCapacity = handlerInlineCapacity;
-                HandlerMapCapacity = handlerMapCapacity;
-                HandlerOrderCapacity = handlerOrderCapacity;
-                HandlerUsesSpillStorage = handlerUsesSpillStorage;
-            }
-
-            internal int PriorityEntries { get; }
-
-            internal int PriorityInlineCapacity { get; }
-
-            internal int PriorityMapCapacity { get; }
-
-            internal int PriorityOrderCapacity { get; }
-
-            internal bool PriorityUsesSpillStorage { get; }
-
-            internal int HandlerEntries { get; }
-
-            internal int HandlerInlineCapacity { get; }
-
-            internal int HandlerMapCapacity { get; }
-
-            internal int HandlerOrderCapacity { get; }
-
-            internal bool HandlerUsesSpillStorage { get; }
         }
 
         /// <summary>
@@ -2273,42 +2257,6 @@ namespace DxMessaging.Core
             }
 
             return count;
-        }
-
-        /// <summary>
-        /// Counts retained typed-handler context keys and priority caches for one bus without creating storage.
-        /// </summary>
-        internal void GetRetainedStorageCounts(
-            IMessageBus messageBus,
-            out int contextKeys,
-            out int priorityCaches
-        )
-        {
-            contextKeys = 0;
-            priorityCaches = 0;
-            messageBus = ResolveMessageBus(messageBus);
-            if (
-                !_handlersByTypeByMessageBus.TryGetValue(
-                    messageBus.RegisteredGlobalSequentialIndex,
-                    out MessageCache<object> handlersByType
-                )
-            )
-            {
-                return;
-            }
-
-            foreach (object untypedHandler in handlersByType)
-            {
-                if (untypedHandler is ITypedHandlerSlotSweeper sweeper)
-                {
-                    sweeper.GetRetainedStorageCounts(
-                        out int retainedContexts,
-                        out int retainedPriorities
-                    );
-                    contextKeys += retainedContexts;
-                    priorityCaches += retainedPriorities;
-                }
-            }
         }
 
         /// <summary>
@@ -2791,42 +2739,6 @@ namespace DxMessaging.Core
                     get => _spillMap?.Count ?? _inlineCount;
                 }
 
-                public int InlineCapacity
-                {
-                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                    get => PhysicalInlineCapacity;
-                }
-
-                public int MapCapacity
-                {
-                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                    get => _spillMap?.EnsureCapacity(0) ?? 0;
-                }
-
-                public int OrderCapacity
-                {
-                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                    get => _spillOrder?.Capacity ?? 0;
-                }
-
-                internal int OrderSlotCount
-                {
-                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                    get => _spillOrder?.Count ?? _inlineCount;
-                }
-
-                internal int SkippedPrefixCount
-                {
-                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                    get => _spillOrderStart;
-                }
-
-                public bool UsesSpillStorage
-                {
-                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                    get => _spillMap != null;
-                }
-
                 public Entry this[T key]
                 {
                     set
@@ -2987,20 +2899,6 @@ namespace DxMessaging.Core
                     {
                         CompactSpillOrder();
                     }
-                }
-
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                public T KeyAt(int index)
-                {
-                    if (_spillOrder != null)
-                    {
-                        return _spillOrder[_spillOrderStart + index];
-                    }
-                    if ((uint)_inlineCount <= (uint)index)
-                    {
-                        throw new ArgumentOutOfRangeException(nameof(index));
-                    }
-                    return GetInlineKey(index);
                 }
 
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -3176,7 +3074,9 @@ namespace DxMessaging.Core
                 entry/order drift structurally impossible.
             */
             public OrderedEntries entries;
-            public readonly List<T> cache = new();
+            public List<T> cache = new();
+            private int _globalSnapshotBorrowers;
+            private List<List<T>> _retiredGlobalSnapshots;
             private System.Collections.IList _flatInvokerCache;
             public long version;
             public long lastSeenVersion = -1;
@@ -3184,29 +3084,51 @@ namespace DxMessaging.Core
             public long flatInvokerLastSeenVersion = -1;
             public long flatInvokerLastSeenEmissionId = -1;
 
-            /// <summary>Monotonic version field, read-only on the interface surface.</summary>
-            long DxMessaging.Core.Internal.IHandlerActionCache.Version
+            internal List<T> AcquireGlobalSnapshot(long emissionId)
             {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get => version;
+                List<T> snapshot = TypedHandler<IMessage>.GetOrAddNewHandlerStack(this, emissionId);
+                ++_globalSnapshotBorrowers;
+                return snapshot;
             }
 
-            /// <summary>Most recent dispatcher-observed version; mutable through the staged dispatch path.</summary>
-            long DxMessaging.Core.Internal.IHandlerActionCache.LastSeenVersion
+            internal void ReleaseGlobalSnapshot()
             {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get => lastSeenVersion;
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                set => lastSeenVersion = value;
+                System.Diagnostics.Debug.Assert(0 < _globalSnapshotBorrowers);
+                --_globalSnapshotBorrowers;
+                if (_globalSnapshotBorrowers != 0 || _retiredGlobalSnapshots == null)
+                {
+                    return;
+                }
+                for (int index = 0; index < _retiredGlobalSnapshots.Count; ++index)
+                {
+                    _retiredGlobalSnapshots[index].Clear();
+                }
+                _retiredGlobalSnapshots.Clear();
+                if (DxPools.IntSets.MaxRetained < _retiredGlobalSnapshots.Capacity)
+                {
+                    _retiredGlobalSnapshots = null;
+                }
             }
 
-            /// <summary>Most recent dispatcher-observed bus emission id.</summary>
-            long DxMessaging.Core.Internal.IHandlerActionCache.LastSeenEmissionId
+            internal List<T> PrepareHandlerSnapshotRebuild()
             {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get => lastSeenEmissionId;
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                set => lastSeenEmissionId = value;
+                if (_globalSnapshotBorrowers != 0)
+                {
+                    /*
+                        A nested emission must not overwrite a list already borrowed
+                        by an outer callback or its prefrozen default phase. Keep
+                        displaced lists until every global borrower has exited.
+                    */
+                    List<T> replacement = new List<T>(entries.Count);
+                    _retiredGlobalSnapshots ??= new List<List<T>>();
+                    _retiredGlobalSnapshots.Add(cache);
+                    cache = replacement;
+                }
+                else
+                {
+                    cache.Clear();
+                }
+                return cache;
             }
 
             /// <summary>True iff the ordered entry storage holds zero handlers.</summary>
@@ -3295,7 +3217,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// One-size-fits-all wrapper around all possible Messaging sinks for a particular MessageHandler & MessageType.
+        /// One-size-fits-all wrapper around all possible Messaging sinks for a particular MessageHandler and message type.
         /// </summary>
         /// <typeparam name="T">Message type that this Handler exists to serve.</typeparam>
         internal sealed class TypedHandler<T> : ITypedHandlerSlotSweeper
@@ -3329,37 +3251,6 @@ namespace DxMessaging.Core
 
             internal bool _markedForOuterRemoval;
 
-            void ITypedHandlerSlotSweeper.GetRetainedStorageCounts(
-                out int contextKeys,
-                out int priorityCaches
-            )
-            {
-                contextKeys = 0;
-                priorityCaches = 0;
-                for (int i = 0; i < _slots.Length; ++i)
-                {
-                    TypedSlot<T> slot = _slots[i];
-                    if (slot == null)
-                    {
-                        continue;
-                    }
-
-                    priorityCaches += slot.byPriority.Count;
-                    if (slot.byContext == null)
-                    {
-                        continue;
-                    }
-
-                    contextKeys += slot.byContext.Count;
-                    foreach (
-                        Dictionary<int, IHandlerActionCache> priorities in slot.byContext.Values
-                    )
-                    {
-                        priorityCaches += priorities.Count;
-                    }
-                }
-            }
-
             bool ITypedHandlerSlotSweeper.HasPendingContextCleanup
             {
                 get
@@ -3387,7 +3278,7 @@ namespace DxMessaging.Core
             /// (<c>ContainsEntry</c> / <c>BumpVersion</c> / <c>DeregisterEntry</c>)
             /// so it needs no delegate-shape type argument. Tokens embed this value
             /// in their existing Registration object; compatibility callers can
-            /// convert it to an allocation-backed wrapper or <see cref="Action"/>.
+            /// convert it to a wrapper with separate ownership.
             /// </summary>
             internal readonly struct TypedHandlerDeregistrationState
             {
@@ -3520,12 +3411,19 @@ namespace DxMessaging.Core
                     cache.BumpVersion();
 
                     _messageBus.Deregister<T>(in _busRegistration);
-                    if (_slot != null)
+
+                    /*
+                        A foreign bus callback can reset and retire the captured slot. Check the
+                        reset identities again before touching its former cache or pending work.
+                    */
+                    if (
+                        !global::DxMessaging.Core.MessageBus.MessageBus.IsResetGenerationCurrent(
+                            _messageBus,
+                            _resetGeneration
+                        ) || (_slot != null && _slot.version != _slotVersion)
+                    )
                     {
-                        _slot.lastTouchTicks =
-                            global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(
-                                _messageBus
-                            );
+                        return;
                     }
 
                     _ = cache.DeregisterEntry(_originalHandler, out bool wasLastForEntry);
@@ -3555,12 +3453,6 @@ namespace DxMessaging.Core
                 )
                 {
                     return new TypedHandlerDeregistration(state);
-                }
-
-                public static implicit operator Action(TypedHandlerDeregistrationState state)
-                {
-                    TypedHandlerDeregistration deregistration = new(state);
-                    return deregistration.Deregister;
                 }
             }
 
@@ -3864,6 +3756,7 @@ namespace DxMessaging.Core
             /// </summary>
             /// <param name="message">Message to emit.</param>
             /// <param name="priority">Priority at which to run the handlers.</param>
+            /// <param name="emissionId">Identifier used to reuse callback snapshots within one emission.</param>
             public void HandleUntargeted(ref T message, int priority, long emissionId)
             {
                 RunFastHandlers(
@@ -3886,6 +3779,7 @@ namespace DxMessaging.Core
             /// <param name="target">Target the message is for.</param>
             /// <param name="message">Message to emit.</param>
             /// <param name="priority">Priority at which to run the handlers.</param>
+            /// <param name="emissionId">Identifier used to reuse callback snapshots within one emission.</param>
             public void HandleTargeted(
                 ref InstanceId target,
                 ref T message,
@@ -3915,6 +3809,7 @@ namespace DxMessaging.Core
             /// <param name="target">Target the message is for.</param>
             /// <param name="message">Message to emit.</param>
             /// <param name="priority">Priority at which to run the handlers.</param>
+            /// <param name="emissionId">Identifier used to reuse callback snapshots within one emission.</param>
             public void HandleTargetedWithoutTargeting(
                 ref InstanceId target,
                 ref T message,
@@ -3944,6 +3839,7 @@ namespace DxMessaging.Core
             /// <param name="source">Source the message is from.</param>
             /// <param name="message">Message to emit.</param>
             /// <param name="priority">Priority at which to run the handlers.</param>
+            /// <param name="emissionId">Identifier used to reuse callback snapshots within one emission.</param>
             public void HandleSourcedBroadcast(
                 ref InstanceId source,
                 ref T message,
@@ -3973,6 +3869,7 @@ namespace DxMessaging.Core
             /// <param name="source">Source the message is from.</param>
             /// <param name="message">Message to emit.</param>
             /// <param name="priority">Priority at which to run the handlers.</param>
+            /// <param name="emissionId">Identifier used to reuse callback snapshots within one emission.</param>
             public void HandleSourcedBroadcastWithoutSource(
                 ref InstanceId source,
                 ref T message,
@@ -4000,42 +3897,80 @@ namespace DxMessaging.Core
             /// Emits the UntargetedMessage to all global listeners.
             /// </summary>
             /// <param name="message">Message to emit.</param>
-            public void HandleGlobalUntargeted(ref IUntargetedMessage message, long emissionId)
+            /// <param name="emissionId">Current emission's snapshot identity.</param>
+            /// <param name="messageBus">Bus whose reset generation guards each callback.</param>
+            /// <param name="resetGeneration">Generation captured before the first callback.</param>
+            public void HandleGlobalUntargeted(
+                ref IUntargetedMessage message,
+                long emissionId,
+                IMessageBus messageBus,
+                long resetGeneration
+            )
             {
                 HandlerActionCache<FastHandler<IUntargetedMessage>> fastCache = GetGlobalCache<
                     FastHandler<IUntargetedMessage>
                 >(TypedGlobalSlotIndex.UntargetedFast);
-                RunFastHandlers(fastCache, ref message, emissionId);
                 HandlerActionCache<Action<IUntargetedMessage>> cache = GetGlobalCache<
                     Action<IUntargetedMessage>
                 >(TypedGlobalSlotIndex.UntargetedDefault);
-                /*
-                    Live-count fast path. Cross-handler in-flight snapshot
-                    semantics do not apply to the global accept-all path: the
-                    bus dispatch loop calls PrefreezeGlobalUntargetedForEmission
-                    lazily per-entry inside InvokeGlobalUntargetedEntry, after
-                    earlier-priority handlers have already run. A sibling
-                    MessageHandler that removes this handler's entry mid-emit
-                    drains cache.entries before the lazy prefreeze can capture
-                    a snapshot, so cache.cache rebuilds from the now-empty
-                    entries. Bailing on cache.entries.Count == 0 is therefore
-                    equivalent to bailing after GetOrAddNewHandlerStack would
-                    return an empty list, and is documented behavior for the
-                    global path.
-                */
-                if (cache?.entries is not { Count: > 0 })
+                List<FastHandler<IUntargetedMessage>> fastSnapshot =
+                    fastCache?.AcquireGlobalSnapshot(emissionId);
+                bool defaultBorrowed = false;
+                try
                 {
-                    return;
-                }
+                    List<Action<IUntargetedMessage>> handlers = cache?.AcquireGlobalSnapshot(
+                        emissionId
+                    );
+                    defaultBorrowed = cache != null;
+                    RunFastHandlers(
+                        fastCache,
+                        ref message,
+                        emissionId,
+                        messageBus,
+                        resetGeneration,
+                        fastSnapshot
+                    );
+                    if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                    {
+                        return;
+                    }
 
-                List<Action<IUntargetedMessage>> handlers = GetOrAddNewHandlerStack(
-                    cache,
-                    emissionId
-                );
-                int handlersCount = handlers.Count;
-                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
+                    /*
+                        Live-count fast path. Cross-handler in-flight snapshot
+                        semantics do not apply to the global accept-all path: the
+                        bus dispatch loop calls PrefreezeGlobalUntargetedForEmission
+                        lazily per-entry inside InvokeGlobalUntargetedEntry, after
+                        earlier-priority handlers have already run. A sibling
+                        MessageHandler that removes this handler's entry mid-emit
+                        drains cache.entries before the lazy prefreeze can capture
+                        a snapshot, so cache.cache rebuilds from the now-empty
+                        entries. Bailing on cache.entries.Count == 0 is therefore
+                        equivalent to bailing after GetOrAddNewHandlerStack would
+                        return an empty list, and is documented behavior for the
+                        global path.
+                    */
+                    if (cache?.entries is not { Count: > 0 })
+                    {
+                        return;
+                    }
+
+                    int handlersCount = handlers.Count;
+                    for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
+                    {
+                        handlers[i](message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
+                    }
+                }
+                finally
                 {
-                    handlers[i](message);
+                    if (defaultBorrowed)
+                    {
+                        cache.ReleaseGlobalSnapshot();
+                    }
+                    fastCache?.ReleaseGlobalSnapshot();
                 }
             }
 
@@ -4044,39 +3979,73 @@ namespace DxMessaging.Core
             /// </summary>
             /// <param name="target">Target that this message is intended for.</param>
             /// <param name="message">Message to emit.</param>
+            /// <param name="emissionId">Current emission's snapshot identity.</param>
+            /// <param name="messageBus">Bus whose reset generation guards each callback.</param>
+            /// <param name="resetGeneration">Generation captured before the first callback.</param>
             public void HandleGlobalTargeted(
                 ref InstanceId target,
                 ref ITargetedMessage message,
-                long emissionId
+                long emissionId,
+                IMessageBus messageBus,
+                long resetGeneration
             )
             {
                 HandlerActionCache<FastHandlerWithContext<ITargetedMessage>> fastCache =
                     GetGlobalCache<FastHandlerWithContext<ITargetedMessage>>(
                         TypedGlobalSlotIndex.TargetedFast
                     );
-                RunFastHandlers(ref target, fastCache, ref message, emissionId);
-
                 HandlerActionCache<Action<InstanceId, ITargetedMessage>> cache = GetGlobalCache<
                     Action<InstanceId, ITargetedMessage>
                 >(TypedGlobalSlotIndex.TargetedDefault);
-                /*
-                    Live-count fast path. See comment in HandleGlobalUntargeted
-                    for why the global accept-all path bails on
-                    cache.entries.Count == 0 rather than reading the snapshot.
-                */
-                if (cache?.entries is not { Count: > 0 })
+                List<FastHandlerWithContext<ITargetedMessage>> fastSnapshot =
+                    fastCache?.AcquireGlobalSnapshot(emissionId);
+                bool defaultBorrowed = false;
+                try
                 {
-                    return;
-                }
+                    List<Action<InstanceId, ITargetedMessage>> handlers =
+                        cache?.AcquireGlobalSnapshot(emissionId);
+                    defaultBorrowed = cache != null;
+                    RunFastHandlers(
+                        ref target,
+                        fastCache,
+                        ref message,
+                        emissionId,
+                        messageBus,
+                        resetGeneration,
+                        fastSnapshot
+                    );
+                    if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                    {
+                        return;
+                    }
 
-                List<Action<InstanceId, ITargetedMessage>> handlers = GetOrAddNewHandlerStack(
-                    cache,
-                    emissionId
-                );
-                int handlersCount = handlers.Count;
-                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
+                    /*
+                        Live-count fast path. See comment in HandleGlobalUntargeted
+                        for why the global accept-all path bails on
+                        cache.entries.Count == 0 rather than reading the snapshot.
+                    */
+                    if (cache?.entries is not { Count: > 0 })
+                    {
+                        return;
+                    }
+
+                    int handlersCount = handlers.Count;
+                    for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
+                    {
+                        handlers[i](target, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
+                    }
+                }
+                finally
                 {
-                    handlers[i](target, message);
+                    if (defaultBorrowed)
+                    {
+                        cache.ReleaseGlobalSnapshot();
+                    }
+                    fastCache?.ReleaseGlobalSnapshot();
                 }
             }
 
@@ -4085,118 +4054,212 @@ namespace DxMessaging.Core
             /// </summary>
             /// <param name="source">Source that this message is from.</param>
             /// <param name="message">Message to emit.</param>
+            /// <param name="emissionId">Current emission's snapshot identity.</param>
+            /// <param name="messageBus">Bus whose reset generation guards each callback.</param>
+            /// <param name="resetGeneration">Generation captured before the first callback.</param>
             public void HandleGlobalBroadcast(
                 ref InstanceId source,
                 ref IBroadcastMessage message,
-                long emissionId
+                long emissionId,
+                IMessageBus messageBus,
+                long resetGeneration
             )
             {
                 HandlerActionCache<FastHandlerWithContext<IBroadcastMessage>> fastCache =
                     GetGlobalCache<FastHandlerWithContext<IBroadcastMessage>>(
                         TypedGlobalSlotIndex.BroadcastFast
                     );
-                RunFastHandlers(ref source, fastCache, ref message, emissionId);
-
                 HandlerActionCache<Action<InstanceId, IBroadcastMessage>> cache = GetGlobalCache<
                     Action<InstanceId, IBroadcastMessage>
                 >(TypedGlobalSlotIndex.BroadcastDefault);
-                /*
-                    Live-count fast path. See comment in HandleGlobalUntargeted
-                    for why the global accept-all path bails on
-                    cache.entries.Count == 0 rather than reading the snapshot.
-                */
-                if (cache?.entries is not { Count: > 0 })
+                List<FastHandlerWithContext<IBroadcastMessage>> fastSnapshot =
+                    fastCache?.AcquireGlobalSnapshot(emissionId);
+                bool defaultBorrowed = false;
+                try
                 {
-                    return;
-                }
+                    List<Action<InstanceId, IBroadcastMessage>> handlers =
+                        cache?.AcquireGlobalSnapshot(emissionId);
+                    defaultBorrowed = cache != null;
+                    RunFastHandlers(
+                        ref source,
+                        fastCache,
+                        ref message,
+                        emissionId,
+                        messageBus,
+                        resetGeneration,
+                        fastSnapshot
+                    );
+                    if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                    {
+                        return;
+                    }
 
-                List<Action<InstanceId, IBroadcastMessage>> handlers = GetOrAddNewHandlerStack(
-                    cache,
-                    emissionId
-                );
-                int handlersCount = handlers.Count;
-                switch (handlersCount)
-                {
-                    case 1:
+                    /*
+                        Live-count fast path. See comment in HandleGlobalUntargeted
+                        for why the global accept-all path bails on
+                        cache.entries.Count == 0 rather than reading the snapshot.
+                    */
+                    if (cache?.entries is not { Count: > 0 })
                     {
-                        handlers[0](source, message);
                         return;
                     }
-                    case 2:
+
+                    int handlersCount = handlers.Count;
+                    switch (handlersCount)
                     {
-                        handlers[0](source, message);
-                        if (handlers.Count < 2)
+                        case 1:
                         {
+                            handlers[0](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
                             return;
                         }
-                        handlers[1](source, message);
-                        return;
+                        case 2:
+                        {
+                            handlers[0](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 2)
+                            {
+                                return;
+                            }
+                            handlers[1](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            return;
+                        }
+                        case 3:
+                        {
+                            handlers[0](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 2)
+                            {
+                                return;
+                            }
+                            handlers[1](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 3)
+                            {
+                                return;
+                            }
+                            handlers[2](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            return;
+                        }
+                        case 4:
+                        {
+                            handlers[0](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 2)
+                            {
+                                return;
+                            }
+                            handlers[1](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 3)
+                            {
+                                return;
+                            }
+                            handlers[2](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 4)
+                            {
+                                return;
+                            }
+                            handlers[3](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            return;
+                        }
+                        case 5:
+                        {
+                            handlers[0](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 2)
+                            {
+                                return;
+                            }
+                            handlers[1](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 3)
+                            {
+                                return;
+                            }
+                            handlers[2](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 4)
+                            {
+                                return;
+                            }
+                            handlers[3](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            if (handlers.Count < 5)
+                            {
+                                return;
+                            }
+                            handlers[4](source, message);
+                            if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                            {
+                                return;
+                            }
+                            return;
+                        }
                     }
-                    case 3:
+
+                    for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                     {
-                        handlers[0](source, message);
-                        if (handlers.Count < 2)
+                        handlers[i](source, message);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
                         {
                             return;
                         }
-                        handlers[1](source, message);
-                        if (handlers.Count < 3)
-                        {
-                            return;
-                        }
-                        handlers[2](source, message);
-                        return;
-                    }
-                    case 4:
-                    {
-                        handlers[0](source, message);
-                        if (handlers.Count < 2)
-                        {
-                            return;
-                        }
-                        handlers[1](source, message);
-                        if (handlers.Count < 3)
-                        {
-                            return;
-                        }
-                        handlers[2](source, message);
-                        if (handlers.Count < 4)
-                        {
-                            return;
-                        }
-                        handlers[3](source, message);
-                        return;
-                    }
-                    case 5:
-                    {
-                        handlers[0](source, message);
-                        if (handlers.Count < 2)
-                        {
-                            return;
-                        }
-                        handlers[1](source, message);
-                        if (handlers.Count < 3)
-                        {
-                            return;
-                        }
-                        handlers[2](source, message);
-                        if (handlers.Count < 4)
-                        {
-                            return;
-                        }
-                        handlers[3](source, message);
-                        if (handlers.Count < 5)
-                        {
-                            return;
-                        }
-                        handlers[4](source, message);
-                        return;
                     }
                 }
-
-                for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
+                finally
                 {
-                    handlers[i](source, message);
+                    if (defaultBorrowed)
+                    {
+                        cache.ReleaseGlobalSnapshot();
+                    }
+                    fastCache?.ReleaseGlobalSnapshot();
                 }
             }
 
@@ -4346,9 +4409,11 @@ namespace DxMessaging.Core
             /// Adds a TargetedHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
             /// <param name="target">Target the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedHandler(
                 InstanceId target,
@@ -4410,9 +4475,11 @@ namespace DxMessaging.Core
             /// Adds a fast TargetedHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
             /// <param name="target">Target the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedHandler(
                 InstanceId target,
@@ -4437,9 +4504,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a TargetedWithoutTargetingHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedWithoutTargetingHandler(
                 Action<InstanceId, T> originalHandler,
@@ -4504,9 +4573,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a fast TargetedWithoutTargetingHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedWithoutTargetingHandler(
                 FastHandlerWithContext<T> originalHandler,
@@ -4532,9 +4603,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a UntargetedHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddUntargetedHandler(
                 Action<T> originalHandler,
@@ -4599,9 +4672,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a fast UntargetedHandler to listen to Messages of the given type, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddUntargetedHandler(
                 FastHandler<T> originalHandler,
@@ -4628,9 +4703,11 @@ namespace DxMessaging.Core
             /// Adds a SourcedBroadcastHandler to listen to Messages of the given type from an entity, returning a deregistration action.
             /// </summary>
             /// <param name="source">The Source of the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddSourcedBroadcastHandler(
                 InstanceId source,
@@ -4691,9 +4768,11 @@ namespace DxMessaging.Core
             /// Adds a fast SourcedBroadcastHandler to listen to Messages of the given type from an entity, returning a deregistration action.
             /// </summary>
             /// <param name="source">The Source of the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddSourcedBroadcastHandler(
                 InstanceId source,
@@ -4718,9 +4797,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a SourcedBroadcastWithoutSourceHandler to listen to Messages of the given type from an entity, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddSourcedBroadcastWithoutSourceHandler(
                 Action<InstanceId, T> originalHandler,
@@ -4787,9 +4868,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a fast SourcedBroadcastWithoutSourceHandler to listen to Messages of the given type from an entity, returning a deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddSourcedBroadcastWithoutSourceHandler(
                 FastHandlerWithContext<T> originalHandler,
@@ -4816,8 +4899,10 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Global UntargetedHandler to listen to all Untargeted Messages of all types, returning the deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalUntargetedHandler(
                 Action<IUntargetedMessage> originalHandler,
                 Action<IUntargetedMessage> handler,
@@ -4835,8 +4920,10 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Global fast UntargetedHandler to listen to all Untargeted Messages of all types, returning the deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalUntargetedHandler(
                 FastHandler<IUntargetedMessage> originalHandler,
                 FastHandler<IUntargetedMessage> handler,
@@ -4854,8 +4941,10 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Global TargetedHandler to listen to all Targeted Messages of all types for all entities, returning the deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalTargetedHandler(
                 Action<InstanceId, ITargetedMessage> originalHandler,
                 Action<InstanceId, ITargetedMessage> handler,
@@ -4873,8 +4962,10 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Global fast TargetedHandler to listen to all Targeted Messages of all types for all entities (along with the target instance id), returning the deregistration action.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalTargetedHandler(
                 FastHandlerWithContext<ITargetedMessage> originalHandler,
                 FastHandlerWithContext<ITargetedMessage> handler,
@@ -4890,10 +4981,12 @@ namespace DxMessaging.Core
             }
 
             /// <summary>
-            /// Adds a Global BroadcastHandler to listen to all Targeted Messages of all types for all entities, returning the deregistration action.
+            /// Adds a global handler for broadcast messages of any type with their source.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalBroadcastHandler(
                 Action<InstanceId, IBroadcastMessage> originalHandler,
                 Action<InstanceId, IBroadcastMessage> handler,
@@ -4909,10 +5002,12 @@ namespace DxMessaging.Core
             }
 
             /// <summary>
-            /// Adds a Global fast BroadcastHandler to listen to all Targeted Messages of all types for all entities (along with the source instance id), returning the deregistration action.
+            /// Adds a global handler for broadcast messages of any type with their source.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
-            /// <returns>De-registration action to unregister the handler.</returns>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
+            /// <returns>Cleanup state for this handler.</returns>
             public GlobalHandlerDeregistrationState AddGlobalBroadcastHandler(
                 FastHandlerWithContext<IBroadcastMessage> originalHandler,
                 FastHandlerWithContext<IBroadcastMessage> handler,
@@ -4930,9 +5025,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds an Untargeted post-processor to be called after all other handlers have been called.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddUntargetedPostProcessor(
                 Action<T> originalHandler,
@@ -4965,9 +5062,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a fast Untargeted post-processor to be called after all other handlers have been called.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddUntargetedPostProcessor(
                 FastHandler<T> originalHandler,
@@ -4994,9 +5093,11 @@ namespace DxMessaging.Core
             /// Adds a Targeted post-processor to be called after all other handlers have been called.
             /// </summary>
             /// <param name="target">Target the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedPostProcessor(
                 InstanceId target,
@@ -5058,9 +5159,11 @@ namespace DxMessaging.Core
             /// Adds a Targeted post-processor to be called after all other handlers have been called.
             /// </summary>
             /// <param name="target">Target the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedPostProcessor(
                 InstanceId target,
@@ -5085,9 +5188,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Targeted post-processor to be called after all other handlers have been called after every message of the given type.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedWithoutTargetingPostProcessor(
                 Action<InstanceId, T> originalHandler,
@@ -5154,9 +5259,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Targeted post-processor to be called after all other handlers have been called after every message of the given type.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddTargetedWithoutTargetingPostProcessor(
                 FastHandlerWithContext<T> originalHandler,
@@ -5183,9 +5290,11 @@ namespace DxMessaging.Core
             /// Adds a Broadcast post-processor to be called after all other handlers have been called.
             /// </summary>
             /// <param name="source">The Source the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddBroadcastPostProcessor(
                 InstanceId source,
@@ -5247,9 +5356,11 @@ namespace DxMessaging.Core
             /// Adds a fast Broadcast post-processor to be called after all other handlers have been called.
             /// </summary>
             /// <param name="source">The Source the handler is for.</param>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddBroadcastPostProcessor(
                 InstanceId source,
@@ -5274,9 +5385,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a Broadcast post-processor to be called after all other handlers have been called for every message of the given type.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddBroadcastWithoutSourcePostProcessor(
                 Action<InstanceId, T> originalHandler,
@@ -5342,9 +5455,11 @@ namespace DxMessaging.Core
             /// <summary>
             /// Adds a fast Broadcast post-processor to be called after all other handlers have been called.
             /// </summary>
+            /// <param name="originalHandler">Delegate identity used to count duplicate registrations and remove them.</param>
             /// <param name="handler">Relevant MessageHandler.</param>
             /// <param name="deregistration">Deregistration action for the handler.</param>
             /// <param name="priority">Priority at which to add the handler.</param>
+            /// <param name="messageBus">Bus captured for reset validation and deregistration.</param>
             /// <returns>De-registration action to unregister the handler.</returns>
             public TypedHandlerDeregistrationState AddBroadcastWithoutSourcePostProcessor(
                 FastHandlerWithContext<T> originalHandler,
@@ -5431,13 +5546,7 @@ namespace DxMessaging.Core
                 cache.entries[originalHandler] = entry;
                 cache.version++;
                 TypedSlot<T> slot = FindContextSlot(handlersByContext);
-                if (slot != null)
-                {
-                    slot.lastTouchTicks =
-                        global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(
-                            messageBus
-                        );
-                }
+
                 if (firstRegistration && slot != null)
                 {
                     slot.liveCount++;
@@ -5883,27 +5992,19 @@ namespace DxMessaging.Core
             private static void RunFastHandlers<TMessage, TU>(
                 HandlerActionCache<FastHandler<TU>> cache,
                 ref TMessage message,
-                long emissionId
+                long emissionId,
+                IMessageBus messageBus,
+                long resetGeneration,
+                List<FastHandler<TU>> globalSnapshot = null
             )
                 where TMessage : IMessage
                 where TU : IMessage
             {
                 /*
-                    Snapshot semantics: do not bail on the live entry storage
-                    count. A mid-emit removal can drain entries while the pinned
-                    emission snapshot in cache.cache still holds the handlers we
-                    must invoke. Read the snapshot first and bail only if the
-                    snapshot itself is empty.
-
-                    Perf note: GetOrAddNewHandlerStack is now invoked on every
-                    call (including for empty caches that the previous fast-path
-                    would have skipped). The cost is one
-                    emission-id/version compare and -- only when the per-emission
-                    snapshot has not been pinned yet -- a single pass over
-                    cache.entries to materialise an empty list. The win is
-                    correctness across cross-handler mid-emit removals where the
-                    pinned snapshot in cache.cache still holds handlers the live
-                    entry storage no longer reaches.
+                    Global dispatch supplies the list borrowed before either
+                    callback phase. Other callers resolve the emission list here.
+                    Check the snapshot count rather than live entries, which can
+                    change while an outer emission still owns its callbacks.
                 */
                 if (cache == null)
                 {
@@ -5911,7 +6012,8 @@ namespace DxMessaging.Core
                 }
 
                 ref TU typedMessage = ref DxUnsafe.As<TMessage, TU>(ref message);
-                List<FastHandler<TU>> handlers = GetOrAddNewHandlerStack(cache, emissionId);
+                List<FastHandler<TU>> handlers =
+                    globalSnapshot ?? GetOrAddNewHandlerStack(cache, emissionId);
                 int handlersCount = handlers.Count;
                 if (handlersCount == 0)
                 {
@@ -5922,76 +6024,136 @@ namespace DxMessaging.Core
                     case 1:
                     {
                         handlers[0](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 2:
                     {
                         handlers[0](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 3:
                     {
                         handlers[0](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 4:
                     {
                         handlers[0](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 4)
                         {
                             return;
                         }
                         handlers[3](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 5:
                     {
                         handlers[0](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 4)
                         {
                             return;
                         }
                         handlers[3](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 5)
                         {
                             return;
                         }
                         handlers[4](in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                 }
@@ -5999,20 +6161,28 @@ namespace DxMessaging.Core
                 for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](in typedMessage);
+                    if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                    {
+                        return;
+                    }
                 }
             }
 
+            // Legacy direct callers omit the bus; global dispatch supplies its reset boundary.
             private static void RunFastHandlers<TMessage, TU>(
                 ref InstanceId context,
                 HandlerActionCache<FastHandlerWithContext<TU>> cache,
                 ref TMessage message,
-                long emissionId
+                long emissionId,
+                IMessageBus messageBus = null,
+                long resetGeneration = 0,
+                List<FastHandlerWithContext<TU>> globalSnapshot = null
             )
                 where TMessage : IMessage
                 where TU : IMessage
             {
                 /*
-                    Snapshot semantics: see comment on the FastHandler<TU> overload.
+                    Snapshot ownership follows the FastHandler<TU> overload.
                     The pinned emission snapshot may still hold handlers even when
                     the live entry storage has been drained mid-emit.
                 */
@@ -6022,10 +6192,8 @@ namespace DxMessaging.Core
                 }
 
                 ref TU typedMessage = ref DxUnsafe.As<TMessage, TU>(ref message);
-                List<FastHandlerWithContext<TU>> handlers = GetOrAddNewHandlerStack(
-                    cache,
-                    emissionId
-                );
+                List<FastHandlerWithContext<TU>> handlers =
+                    globalSnapshot ?? GetOrAddNewHandlerStack(cache, emissionId);
                 int handlersCount = handlers.Count;
                 if (handlersCount == 0)
                 {
@@ -6036,76 +6204,136 @@ namespace DxMessaging.Core
                     case 1:
                     {
                         handlers[0](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 2:
                     {
                         handlers[0](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 3:
                     {
                         handlers[0](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 4:
                     {
                         handlers[0](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 4)
                         {
                             return;
                         }
                         handlers[3](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                     case 5:
                     {
                         handlers[0](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 2)
                         {
                             return;
                         }
                         handlers[1](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 3)
                         {
                             return;
                         }
                         handlers[2](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 4)
                         {
                             return;
                         }
                         handlers[3](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         if (handlers.Count < 5)
                         {
                             return;
                         }
                         handlers[4](in context, in typedMessage);
+                        if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                        {
+                            return;
+                        }
                         return;
                     }
                 }
@@ -6113,6 +6341,10 @@ namespace DxMessaging.Core
                 for (int i = 0; i < handlersCount && i < handlers.Count; ++i)
                 {
                     handlers[i](in context, in typedMessage);
+                    if (!BusType.IsResetGenerationCurrent(messageBus, resetGeneration))
+                    {
+                        return;
+                    }
                 }
             }
 
@@ -6782,16 +7014,12 @@ namespace DxMessaging.Core
             }
 
             /*
-                Mid-dispatch clear contract: the List returned here is the LIVE
-                cache.cache list, not a copy. IHandlerActionCache.Reset() (bus
-                reset / sweep eviction) clears it IN PLACE, so every dispatch
-                loop that indexes the returned list re-checks list.Count before
-                each invocation past the first (and the >5 fallback loops bound
-                on the live Count). A reset fired from inside a handler then
-                cleanly stops the in-flight bucket: no peer delegate runs and
-                nothing throws. The re-check is a single inlined List.Count
-                field read on data already in cache, so steady-state dispatch
-                cost is unchanged.
+                Global dispatch borrows its cached lists before running either
+                delegate phase. Rebuilding a borrowed cache replaces the list;
+                final borrower release scrubs the displaced lists. Reset still
+                clears the current list in place. Per-callback bus generations
+                stop invalidated global emissions even when their old list was
+                displaced. Legacy callers without global borrows retain live Count checks.
             */
             internal static List<TU> GetOrAddNewHandlerStack<TU>(
                 HandlerActionCache<TU> actionCache,
@@ -6805,10 +7033,10 @@ namespace DxMessaging.Core
                         /*
                             Rebuild in the ordered map's first-registration order.
                             This branch only runs on registration churn, never on
-                            steady-state dispatch, and reuses the snapshot list.
+                            steady-state dispatch. Borrowed lists are replaced so nested
+                            rebuilds preserve their outer readers.
                         */
-                        List<TU> list = actionCache.cache;
-                        list.Clear();
+                        List<TU> list = actionCache.PrepareHandlerSnapshotRebuild();
                         actionCache.entries.PrepareForOrderedIteration();
                         int orderedCount = actionCache.entries.Count;
                         for (int i = 0; i < orderedCount; ++i)
@@ -6879,8 +7107,6 @@ namespace DxMessaging.Core
                 IMessageBus messageBus
             )
             {
-                slot.lastTouchTicks =
-                    global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(messageBus);
                 HandlerActionCache<TU> cache = slot.cache as HandlerActionCache<TU>;
                 if (cache == null)
                 {
@@ -7221,13 +7447,7 @@ namespace DxMessaging.Core
                 cache.entries[originalHandler] = entry;
                 cache.version++;
                 TypedSlot<T> slot = FindPrioritySlot(handlers);
-                if (slot != null)
-                {
-                    slot.lastTouchTicks =
-                        global::DxMessaging.Core.MessageBus.MessageBus.GetCurrentTouchTick(
-                            messageBus
-                        );
-                }
+
                 if (slot != null && !slot.orderedPriorities.Contains(priority))
                 {
                     slot.orderedPriorities.Add(priority);

@@ -506,6 +506,17 @@ When diagnostics are enabled, buses and tokens record message emissions in a rin
 - Manually-created records and legacy direct handler dispatches keep
   `traceId = 0`; tools treat those as local evidence only.
 
+> **Changed in 4.0.0:** Disabling, retargeting, and re-enabling a token inside a callback preserves
+> the originating bus for that delivery and its pending frozen callbacks. Fresh deliveries use
+> the rebound bus. Nested deliveries keep their own scoped trace IDs.
+
+Tokens record successful callbacks after they return, using `DiagnosticMode` at that point.
+Call counts belong to registrations that are still staged when the callback returns. Removing a
+registration inside its callback prevents its counter from being recreated. Its completed delivery
+can still enter the bounded emission history with the original registration handle.
+A callback that throws adds no token emission record. Resetting the originating bus clears its
+current scoped trace ID; records completed after that reset can carry `traceId = 0`.
+
 ```csharp
 using DxMessaging.Core.MessageBus;
 
@@ -531,10 +542,28 @@ even when `enabled` is false. For example, the plain .NET build uses it to repor
 unsupported reflexive dispatch. Set `LogFunction` to `null` to discard logs from both
 overloads. Formatting and receiver exceptions propagate to the caller.
 
+The built-in bus can log unmatched typed messages at `LogLevel.Info` when
+`MessagingDebug.enabled` is true and `LogFunction` is non-null. This also applies to
+an empty bus, independently of its `DiagnosticsMode` setting. An empty typed emit
+advances the emission sequence and leaves registration counts unchanged; a message
+formatter or log receiver that throws can still interrupt the call.
+
+In 4.0, a reset from reflexive diagnostic logging stops the current emission before
+further reflexive work or typed callbacks. Registrations created by that log receiver
+remain available for the next emission.
+
 In 4.0, a logger that throws while `Enable()` rolls back a failed registration leaves
 pending cleanup visible through `Enabled`. Call `Disable()` to finish that cleanup
 before enabling staged handlers again. A logger that disables or clears the token
 during recovery keeps the resulting cleanup state.
+
+During active retarget recovery, a successful `Disable()` from either logging callback
+keeps the token disabled. `UnregisterAll()` also clears staged handlers. If rollback
+completes without callback cleanup, recovery restores registrations on the previous bus.
+
+Handler and global accept-all registration read a custom bus's `RegisteredGlobalSequentialIndex`
+before calling its registrar. If that getter throws, the registrar has not run. This ordering also applies
+to `Enable()` replay and active retargeting. Keep the index stable for the bus storage's lifetime.
 
 ## Per-Environment Configuration
 

@@ -70,7 +70,7 @@ namespace DxMessaging.Core.DataStructure
         /// <summary>Maximum number of elements retained in the buffer.</summary>
         public int Capacity { get; private set; }
 
-        /// <summary>Current number of elements stored (<= <see cref="Capacity"/>).</summary>
+        /// <summary>Current number of elements stored (&lt;= <see cref="Capacity"/>).</summary>
         public int Count { get; private set; }
 
         private readonly List<T> _buffer;

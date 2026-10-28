@@ -5,9 +5,10 @@ namespace DxMessaging.Tests.Runtime
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using NUnit.Framework;
+    using BusType = DxMessaging.Core.MessageBus.MessageBus;
 
     /// <summary>
-    /// Snapshots the public registration counters of an
+    /// Snapshots live registrations and public counters of an
     /// <see cref="IMessageBus"/> on construction and asserts on
     /// <see cref="Dispose"/> that the counters returned to their starting
     /// values. Intended to bracket a unit of work that should leave the bus
@@ -15,16 +16,23 @@ namespace DxMessaging.Tests.Runtime
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Counter source: this watcher reads every public registration counter on
+    /// Built-in buses and forwarding test doubles are inspected for a cold live
+    /// registration count, including duplicate reference counts and callbacks sharing
+    /// one priority container. Arbitrary custom buses supply only their public
+    /// counters, which may not detect additions within an existing container.
+    /// Every individual counter pair must return to baseline, even when their total
+    /// delta is zero. Equal-count replacements within one category remain outside
+    /// a count-based check; behavioral assertions must pin ownership and callbacks.
+    /// This watcher reads every public registration counter on
     /// <see cref="IMessageBus"/>: <see cref="IMessageBus.RegisteredUntargeted"/>,
     /// <see cref="IMessageBus.RegisteredTargeted"/>,
     /// <see cref="IMessageBus.RegisteredBroadcast"/>,
     /// <see cref="IMessageBus.RegisteredInterceptors"/>,
     /// <see cref="IMessageBus.RegisteredPostProcessors"/>, and
     /// <see cref="IMessageBus.RegisteredGlobalAcceptAll"/>. Every counter is part of
-    /// the public surface, so registration accounting does not inspect internal storage. If a
-    /// future API adds a seventh registration kind, <see cref="Snapshot"/> and
-    /// <see cref="LeakedRegistrations"/> need to be extended in lock-step.
+    /// the public surface; those counter checks do not inspect internal storage. If a
+    /// future API adds a seventh registration kind, extend the public counter
+    /// snapshots, pair invariant, custom-bus fallback, and built-in live query.
     /// Slot occupancy counters (<see cref="IMessageBus.OccupiedTypeSlots"/> and
     /// <see cref="IMessageBus.OccupiedTargetSlots"/>) are also captured and
     /// reported. They are enforced only by <see cref="WatchWithSlots"/> so the
@@ -35,12 +43,10 @@ namespace DxMessaging.Tests.Runtime
     /// reads internal storage only at snapshot boundaries or on explicit queries.
     /// </para>
     /// <para>
-    /// Allocation note: the <see cref="Snapshot"/> getter and the
-    /// <see cref="LeakedRegistrations"/> getter both walk the per-message-type
-    /// caches that back <see cref="IMessageBus.RegisteredInterceptors"/> and
-    /// <see cref="IMessageBus.RegisteredPostProcessors"/>. Each call is O(types),
-    /// so callers reading these properties in tight loops should snapshot at
-    /// region boundaries instead of polling every frame.
+    /// Allocation note: live <see cref="Snapshot"/> and
+    /// <see cref="LeakedRegistrations"/> queries traverse built-in registration
+    /// stores or the custom bus's public counters. Capture at region boundaries;
+    /// do not poll these properties in a dispatch or allocation measurement window.
     /// </para>
     /// </remarks>
     /// <example>
@@ -58,6 +64,9 @@ namespace DxMessaging.Tests.Runtime
     public sealed class LeakWatcher : IDisposable
     {
         private readonly IMessageBus _bus;
+        private readonly BusType _registrationCountBus;
+        private readonly int _initialLiveRegistrations;
+        private int _finalLiveRegistrations;
         private readonly bool _throwOnLeak;
         private readonly string _label;
         private readonly int _initialUntargeted;
@@ -121,6 +130,16 @@ namespace DxMessaging.Tests.Runtime
                 );
             }
 
+            IMessageBus registrationCountSource = _bus;
+            while (
+                registrationCountSource is DelegatingMessageBus forwardingBus
+                && forwardingBus.RegistrationCountSource != null
+            )
+            {
+                registrationCountSource = forwardingBus.RegistrationCountSource;
+            }
+            _registrationCountBus = registrationCountSource as BusType;
+
             _throwOnLeak = throwOnLeak;
             _label = label;
             _watchSlots = watchSlots;
@@ -131,6 +150,7 @@ namespace DxMessaging.Tests.Runtime
             _initialInterceptors = _bus.RegisteredInterceptors;
             _initialPostProcessors = _bus.RegisteredPostProcessors;
             _initialGlobalAcceptAll = _bus.RegisteredGlobalAcceptAll;
+            _initialLiveRegistrations = Snapshot;
             _initialTypeSlotCount = _bus.OccupiedTypeSlots;
             _initialTargetSlotCount = _bus.OccupiedTargetSlots;
             if (_handler != null)
@@ -197,15 +217,17 @@ namespace DxMessaging.Tests.Runtime
         /// can compare against <see cref="InitialSnapshot"/>.
         /// </summary>
         /// <remarks>
-        /// Each access walks the per-message-type caches behind
-        /// <see cref="IMessageBus.RegisteredInterceptors"/> and
-        /// <see cref="IMessageBus.RegisteredPostProcessors"/>, so the call is
-        /// O(types). Avoid polling this property inside a tight loop.
+        /// Built-in buses walk live registration references; other buses sum their six
+        /// public counters. Avoid polling this property inside a tight loop.
         /// </remarks>
         public int Snapshot
         {
             get
             {
+                if (_registrationCountBus != null)
+                {
+                    return MessageBusInspection.CountLiveRegistrations(_registrationCountBus);
+                }
                 return _bus.RegisteredUntargeted
                     + _bus.RegisteredTargeted
                     + _bus.RegisteredBroadcast
@@ -216,16 +238,10 @@ namespace DxMessaging.Tests.Runtime
         }
 
         /// <summary>
-        /// The total registration count captured at construction. Frozen for
+        /// The live registration count captured at construction. Frozen for
         /// the lifetime of the watcher.
         /// </summary>
-        public int InitialSnapshot =>
-            _initialUntargeted
-            + _initialTargeted
-            + _initialBroadcast
-            + _initialInterceptors
-            + _initialPostProcessors
-            + _initialGlobalAcceptAll;
+        public int InitialSnapshot => _initialLiveRegistrations;
 
         /// <summary>
         /// The live occupied-slot count across per-message-type and
@@ -248,35 +264,11 @@ namespace DxMessaging.Tests.Runtime
         /// which the disposal-time delta is returned.
         /// </summary>
         /// <remarks>
-        /// Each pre-disposal access pays the same O(types) walk as
+        /// Each pre-disposal access pays the same cold registration walk as
         /// <see cref="Snapshot"/>. Snapshot at region boundaries.
         /// </remarks>
-        public int LeakedRegistrations
-        {
-            get
-            {
-                if (_disposed)
-                {
-                    return TotalDelta(
-                        _finalUntargeted,
-                        _finalTargeted,
-                        _finalBroadcast,
-                        _finalInterceptors,
-                        _finalPostProcessors,
-                        _finalGlobalAcceptAll
-                    );
-                }
-
-                return TotalDelta(
-                    _bus.RegisteredUntargeted,
-                    _bus.RegisteredTargeted,
-                    _bus.RegisteredBroadcast,
-                    _bus.RegisteredInterceptors,
-                    _bus.RegisteredPostProcessors,
-                    _bus.RegisteredGlobalAcceptAll
-                );
-            }
-        }
+        public int LeakedRegistrations =>
+            (_disposed ? _finalLiveRegistrations : Snapshot) - _initialLiveRegistrations;
 
         /// <summary>
         /// Number of occupied per-message-type slots leaked relative to the
@@ -333,7 +325,7 @@ namespace DxMessaging.Tests.Runtime
         /// </summary>
         /// <remarks>
         /// Allocates one string per call. Pre-disposal calls walk the live bus
-        /// counters (O(types)); post-disposal calls read the snapshot taken
+        /// counters and registration references; post-disposal calls read the snapshot taken
         /// inside <see cref="Dispose"/>. Safe to call before or after disposal.
         /// </remarks>
         public string DescribeDelta()
@@ -353,21 +345,15 @@ namespace DxMessaging.Tests.Runtime
                 ? _finalTargetSlotCount
                 : _bus.OccupiedTargetSlots;
 
-            int delta = TotalDelta(
-                currentUntargeted,
-                currentTargeted,
-                currentBroadcast,
-                currentInterceptors,
-                currentPostProcessors,
-                currentGlobalAcceptAll
-            );
+            int currentLiveRegistrations = _disposed ? _finalLiveRegistrations : Snapshot;
+            int delta = currentLiveRegistrations - _initialLiveRegistrations;
 
             string scope = string.IsNullOrEmpty(_label) ? string.Empty : $" ({_label})";
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "LeakWatcher{0}: delta={1} (Untargeted {2}->{3}, Targeted {4}->{5}, "
                     + "Broadcast {6}->{7}, Interceptors {8}->{9}, PostProcessors {10}->{11}, "
-                    + "GlobalAcceptAll {12}->{13}, TypeSlots {14}->{15}, TargetSlots {16}->{17}).{18}",
+                    + "GlobalAcceptAll {12}->{13}, TypeSlots {14}->{15}, TargetSlots {16}->{17}, LiveRegistrations {19}->{20}).{18}",
                 scope,
                 delta,
                 _initialUntargeted,
@@ -386,7 +372,9 @@ namespace DxMessaging.Tests.Runtime
                 currentTypeSlotCount,
                 _initialTargetSlotCount,
                 currentTargetSlotCount,
-                DescribeHandlerStorage()
+                DescribeHandlerStorage(),
+                _initialLiveRegistrations,
+                currentLiveRegistrations
             );
         }
 
@@ -410,6 +398,7 @@ namespace DxMessaging.Tests.Runtime
             _finalInterceptors = _bus.RegisteredInterceptors;
             _finalPostProcessors = _bus.RegisteredPostProcessors;
             _finalGlobalAcceptAll = _bus.RegisteredGlobalAcceptAll;
+            _finalLiveRegistrations = Snapshot;
             _finalTypeSlotCount = _bus.OccupiedTypeSlots;
             _finalTargetSlotCount = _bus.OccupiedTargetSlots;
             if (_handler != null)
@@ -421,21 +410,26 @@ namespace DxMessaging.Tests.Runtime
                 );
             }
 
-            int delta = TotalDelta(
-                _finalUntargeted,
-                _finalTargeted,
-                _finalBroadcast,
-                _finalInterceptors,
-                _finalPostProcessors,
-                _finalGlobalAcceptAll
-            );
+            int delta = _finalLiveRegistrations - _initialLiveRegistrations;
+            bool registrationCountersAreClean =
+                _initialUntargeted == _finalUntargeted
+                && _initialTargeted == _finalTargeted
+                && _initialBroadcast == _finalBroadcast
+                && _initialInterceptors == _finalInterceptors
+                && _initialPostProcessors == _finalPostProcessors
+                && _initialGlobalAcceptAll == _finalGlobalAcceptAll;
             int typeSlotDelta = _finalTypeSlotCount - _initialTypeSlotCount;
             int targetSlotDelta = _finalTargetSlotCount - _initialTargetSlotCount;
             bool slotDeltaIsClean = !_watchSlots || (typeSlotDelta == 0 && targetSlotDelta == 0);
             bool handlerStorageIsClean =
                 _finalHandlerContexts == _initialHandlerContexts
                 && _finalHandlerPriorityCaches == _initialHandlerPriorityCaches;
-            if (delta == 0 && slotDeltaIsClean && handlerStorageIsClean)
+            if (
+                delta == 0
+                && registrationCountersAreClean
+                && slotDeltaIsClean
+                && handlerStorageIsClean
+            )
             {
                 return;
             }
@@ -458,7 +452,7 @@ namespace DxMessaging.Tests.Runtime
                     + "type slot delta={14}, target slot delta={15}. "
                     + "Untargeted {2}->{3}, Targeted {4}->{5}, Broadcast {6}->{7}, "
                     + "Interceptors {8}->{9}, PostProcessors {10}->{11}, GlobalAcceptAll {12}->{13}, "
-                    + "TypeSlots {16}->{17}, TargetSlots {18}->{19}.{20}",
+                    + "TypeSlots {16}->{17}, TargetSlots {18}->{19}, LiveRegistrations {21}->{22}.{20}",
                 scope,
                 delta,
                 _initialUntargeted,
@@ -479,7 +473,9 @@ namespace DxMessaging.Tests.Runtime
                 _finalTypeSlotCount,
                 _initialTargetSlotCount,
                 _finalTargetSlotCount,
-                DescribeHandlerStorage()
+                DescribeHandlerStorage(),
+                _initialLiveRegistrations,
+                _finalLiveRegistrations
             );
         }
 
@@ -508,27 +504,6 @@ namespace DxMessaging.Tests.Runtime
                 _initialHandlerPriorityCaches,
                 priorities
             );
-        }
-
-        private int TotalDelta(
-            int untargeted,
-            int targeted,
-            int broadcast,
-            int interceptors,
-            int postProcessors,
-            int globalAcceptAll
-        )
-        {
-            int sumNow =
-                untargeted + targeted + broadcast + interceptors + postProcessors + globalAcceptAll;
-            int sumThen =
-                _initialUntargeted
-                + _initialTargeted
-                + _initialBroadcast
-                + _initialInterceptors
-                + _initialPostProcessors
-                + _initialGlobalAcceptAll;
-            return sumNow - sumThen;
         }
     }
 }

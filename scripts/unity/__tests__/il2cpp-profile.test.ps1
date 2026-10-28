@@ -80,6 +80,10 @@ try {
         'Get-StandalonePlayerManifest',
         'Write-JsonArtifact',
         'Write-NativeBuildInputEvidence',
+        'Write-StandaloneBuildOutputDiagnostics',
+        'Write-StandaloneDirectorySnapshot',
+        'Get-NativeExitCodeDescription',
+        'ConvertTo-UnsignedExitHex',
         'New-ConfiguratorSource',
         'New-StandaloneBuildModifierSource',
         'New-ShippingFidelityBuilderSource',
@@ -98,6 +102,13 @@ try {
         }
         Invoke-Expression $definition.Extent.Text
     }
+
+    $exitCodeDescriptions = $runnerAst.Find({
+        param($node)
+        $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+            $node.Left.Extent.Text -ceq '$script:NativeExitCodeDescriptions'
+    }, $true)
+    Invoke-Expression $exitCodeDescriptions.Extent.Text
 
     $repositoryCatalogPath = Join-Path $repoRoot 'scripts/unity/comparison-evidence-catalog-v1.json'
     $repositoryCatalog = Get-Content -LiteralPath $repositoryCatalogPath -Raw | ConvertFrom-Json
@@ -203,12 +214,100 @@ try {
     $noResponseManifest = Get-Content -LiteralPath (Join-Path $nativeArtifacts 'native-build-inputs/retained-manifest.json') -Raw | ConvertFrom-Json
     Assert-That 'Windows separators and zero observed response references preserve both graph inputs' (@($noResponseManifest.files).Count -eq 2 -and $noResponseManifest.graphSelection -ceq 'cached-backend-dag-companions')
 
+    # Execute the production failure branches and native collector. Analyzer
+    # text diagnostics are unrelated to retaining build graph evidence.
+    function Write-UnityRunFailureDiagnostics {
+        param($Project, $LogPath, $CscLabel, $DiagnosticsLabel)
+    }
+    $failureCases = @(
+        @{ Mode = 'clean'; Prefix = 'Shipping-fidelity build did not produce fresh complete evidence'; HasContext = $true; HasProfile = $true },
+        @{ Mode = 'incremental'; Prefix = 'Incremental shipping build did not produce fresh invocation evidence'; HasContext = $true; HasProfile = $true },
+        @{ Mode = 'standalone'; Prefix = 'Editor build produced invalid DxMessaging test player output'; HasContext = $true; HasProfile = $true },
+        @{ Mode = 'clean'; Prefix = 'Shipping-fidelity build did not produce fresh complete evidence'; HasContext = $false; HasProfile = $true },
+        @{ Mode = 'incremental'; Prefix = 'Incremental shipping build did not produce fresh invocation evidence'; HasContext = $false; HasProfile = $true },
+        @{ Mode = 'standalone'; Prefix = 'Editor build produced invalid DxMessaging test player output'; HasContext = $false; HasProfile = $true },
+        @{ Mode = 'standalone'; Prefix = 'Editor build produced invalid DxMessaging test player output'; HasContext = $true; HasProfile = $false }
+    )
+    $failureOutcomes = [Collections.Generic.List[object]]::new()
+    foreach ($failureCase in $failureCases) {
+        $failureThrows = @($runnerAst.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.ThrowStatementAst] -and
+                $node.Extent.Text.StartsWith('throw "' + $failureCase.Prefix)
+        }, $true))
+        Assert-That "one production failure for $($failureCase.Mode)" ($failureThrows.Count -eq 1)
+        $failureBranch = $failureThrows[0].Parent
+        while ($failureBranch -isnot [Management.Automation.Language.IfStatementAst]) {
+            $failureBranch = $failureBranch.Parent
+        }
+
+        $ProjectPath = $nativeProject
+        $ArtifactsPath = Join-Path $fixtureRoot ("failed-{0}-{1}-{2}" -f $failureCase.Mode, $failureCase.HasContext, $failureCase.HasProfile)
+        $logPath = $nativeLog
+        $UnityVersion = $testUnityVersion
+        $canonicalProfileId = if ($failureCase.HasProfile) { $profile.profileId } else { '' }
+        $canonicalProfileSha256 = $profileSha256
+        $standaloneExe = Join-Path $nativeProject 'Build/FailedPlayer.exe'
+        $standaloneBuildStartedUtc = [datetime]::UtcNow
+        $shippingBuildStartedUtc = $standaloneBuildStartedUtc
+        $incrementalBuildStartedUtc = $standaloneBuildStartedUtc
+        $incrementalLogPath = $nativeLog
+        $incrementalArtifactsPath = $ArtifactsPath
+        $shippingMarkerProblem = 'fixture missing marker'
+        $shippingBuildProblem = 'fixture missing exe'
+        $incrementalMarkerProblem = 'fixture missing marker'
+        $standaloneBuildProblem = 'fixture missing exe'
+        $shippingBuildResult = [pscustomobject]@{ ExitCode = 1; TimedOut = $false }
+        $buildResult = $shippingBuildResult
+        if ($failureCase.HasContext) {
+            [IO.File]::WriteAllText($nativeLog, "$nativeInvocation`n$nativeBackend`n$nativeResponse`n")
+        } else {
+            [IO.File]::WriteAllText($nativeLog, 'No current player build graph exists.')
+            Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'native-build-inputs/manifest.json') -Value @{ stale = $true }
+        }
+
+        $observedFailure = ''
+        try {
+            & ([scriptblock]::Create($failureBranch.Extent.Text))
+        } catch {
+            $observedFailure = $_.Exception.Message
+        }
+        $manifestPath = Join-Path $ArtifactsPath 'native-build-inputs/manifest.json'
+        $captured = Test-Path -LiteralPath $manifestPath -PathType Leaf
+        $expectedCapture = $failureCase.HasContext -and $failureCase.HasProfile
+        $failureOutcomes.Add([pscustomobject]@{
+            mode = $failureCase.Mode; context = $failureCase.HasContext; profile = $failureCase.HasProfile
+            originalFailurePreserved = $observedFailure.StartsWith($failureCase.Prefix)
+            observedFailure = $observedFailure
+            captured = $captured; expectedCapture = $expectedCapture
+        })
+        if ($captured -and $expectedCapture) {
+            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            Assert-That 'failed build context binds the current log and profile' (
+                $manifest.profileSha256 -ceq $profileSha256 -and
+                $manifest.unredactedBuildLogSha256 -ceq (Get-FileHash -LiteralPath $nativeLog -Algorithm SHA256).Hash.ToLowerInvariant() -and
+                @($manifest.files).Count -eq 3
+            )
+            foreach ($record in $manifest.files) {
+                Assert-That 'failed build graph inputs retain exact source bytes' (
+                    $record.sourceSha256 -ceq (Get-FileHash -LiteralPath (Join-Path $nativeProject $record.sourcePath) -Algorithm SHA256).Hash.ToLowerInvariant() -and
+                    $record.sourceSha256 -ceq (Get-FileHash -LiteralPath (Join-Path $ArtifactsPath ('native-build-inputs/' + $record.retainedPath)) -Algorithm SHA256).Hash.ToLowerInvariant()
+                )
+            }
+        }
+    }
+    Write-Host ('Failed build capture outcomes: ' + (ConvertTo-Json -InputObject @($failureOutcomes.ToArray()) -Compress))
+    foreach ($outcome in $failureOutcomes) {
+        Assert-That "original $($outcome.mode) failure survives context=$($outcome.context), profile=$($outcome.profile)" $outcome.originalFailurePreserved
+        Assert-That "current $($outcome.mode) context retention=$($outcome.expectedCapture)" ($outcome.captured -eq $outcome.expectedCapture)
+    }
+
     $nativeCallSites = @($runnerAst.FindAll({
         param($node)
         $node -is [System.Management.Automation.Language.CommandAst] -and
             $node.GetCommandName() -ceq 'Write-NativeBuildInputEvidence'
     }, $true))
-    Assert-That 'clean shipping, incremental shipping, and canonical standalone retain native inputs after their build' ($nativeCallSites.Count -eq 3)
+    Assert-That 'three successful build paths and shared failure diagnostics retain native inputs' ($nativeCallSites.Count -eq 4)
 
     $generatedSources = @(
         New-ConfiguratorSource -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256

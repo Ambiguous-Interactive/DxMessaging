@@ -2,28 +2,49 @@
 
 ## Snapshot Semantics: Frozen Listener Lists
 
-**IMPORTANT:** DxMessaging uses snapshot semantics for message emissions. When a message is emitted, the system creates a snapshot of all current listeners (interceptors, handlers, and post-processors). This snapshot is "frozen" for the duration of that emission.
+DxMessaging freezes listener lists at the phase boundaries described below. Changing
+registrations does not rewrite an already captured list for the current emission.
 
-### What this means
+### What this means for a captured list
 
-- Listeners added during emission will **not** be invoked for the current message
-- Newly registered listeners will only become active starting with the **next** emission
-- Listeners removed during emission will still complete their execution for the current message
-- This behavior applies to all registration types: handlers, interceptors, and post-processors
-- This behavior applies to all message categories: Untargeted, Targeted, and Broadcast
+Typed handler and post-processor snapshots keep their callback membership once captured:
 
-One phase boundary is deliberately not frozen. Interceptors run **before** the
-handler snapshot is taken, so a handler that an interceptor deregisters is gone
-before that snapshot exists and does **not** run for the current message.
+- Registering a listener does not add it to a snapshot already in use.
+- Removing a registration does not remove its callback from that snapshot.
+- The acquisition points below determine whether a change affects a later phase of the same emission.
+
+Interceptors run **before** the bus captures the handler snapshot. When an interceptor removes a
+handler, the bus leaves it out of that list and does **not** call it for the current message.
 Deregistering a handler from another handler or from a post-processor follows
 the frozen rule above; deregistering a handler from an interceptor takes effect
-immediately. Post-processor snapshots are taken before interceptors run, so they
+immediately. The bus captures post-processor snapshots before interceptors run, so they
 follow the frozen rule in every case.
 
 In 3.2.3 and later, this rule also covers the first post-processor registered
 for a message type and one registered for a target or source that an interceptor
 selects during the emission. Both start on the next emission. A processor removed
 from an interceptor-selected route still finishes the current emission.
+
+Global accept-all subscriptions freeze each `MessageHandler`'s lists when the bus
+reaches that handler. An earlier handler can change what a later handler
+receives in the same emission. Fast callbacks run before Action callbacks. If callbacks remove all
+Action registrations before that phase begins, the bus skips the Action phase.
+
+Without-context handle phases have separate acquisition points. The bus captures targeted without-targeting
+handlers when that phase begins, so a keyed handler can change its callbacks.
+Without-source broadcast handlers reuse a populated snapshot captured before keyed handling;
+when that route was empty, the later phase can capture newly registered handlers.
+
+**Fixed in v4.0.0:** A nested global emission uses the changed registrations while
+the outer emission keeps its captured callbacks. Removing a peer and registering a
+replacement before a nested emit no longer drops the outer peer or delivers the
+outer message to the replacement. Reset still stops the invalidated emission.
+
+If a callback resets a `MessageBus` or bumps its reset generation, that emission stops
+before any remaining handler or post-processor phase. This includes the later
+without-targeting or without-source handle phase, even when the callback registers
+replacement listeners before returning. A nested or later emission uses the
+registrations that remain after the reset.
 
 #### Example
 
@@ -52,6 +73,20 @@ secondEvent.Emit();  // Both DoWork() and ProcessLater() execute
 - Makes debugging and reasoning about message flow easier
 
 This snapshot behavior is extensively tested in the [Mutation During Emission tests](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Tests/Runtime/Core/MutationDuringEmissionTests.cs).
+
+### Handler activity during callbacks
+
+The built-in `MessageBus` reads `MessageHandler.active` at these points:
+
+| Registration                                                                   | When activity is checked                 | Setting it to false inside a callback                                                                                         |
+| ------------------------------------------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Ordinary handlers and post-processors, including without-context registrations | Before each callback                     | The bus skips that handler's remaining callbacks.                                                                             |
+| Global accept-all                                                              | Before entering a handler's group        | Remaining callbacks in a group already running can still run. Nested and later emissions check activity again on group entry. |
+| Interceptors                                                                   | The owner activity field is not checked. | Registered callbacks keep running.                                                                                            |
+
+Changing activity leaves registrations in place. Call `token.Disable()` to remove live token
+registrations, or `token.UnregisterAll()` to clear staging as well. Callbacks already captured
+follow the snapshot rules above. Reset and exception handling still apply.
 
 ---
 

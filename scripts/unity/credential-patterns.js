@@ -508,7 +508,7 @@ function structuredText(text, visit, format, depth = 0, rewrite = true) {
   };
   if (depth > 8) invalid("nested-structure-depth");
   const scalar = (value, key = "", element) => {
-    if (contextualPattern(key, value, element)) return visit(value, key, element);
+    if (!/^[\[\{"<]/.test(value.trimStart()) || contextualPattern(key, value, element)) return visit(value, key, element);
     return (
       (/^[\[\{"<]/.test(value.trimStart())
         ? structuredText(value, visit, undefined, depth + 1, rewrite)

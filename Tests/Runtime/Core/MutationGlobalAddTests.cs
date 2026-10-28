@@ -16,16 +16,11 @@ namespace DxMessaging.Tests.Runtime.Core
         /// A global-accept-all listener registered from inside a handler's body
         /// during emission must not fire in the current emission (snapshot
         /// semantics) but must fire on the next emission. Parameterized over the
-        /// kinds that carry a component target (Targeted, Broadcast) via
-        /// <see cref="MessageScenarios.KindsWithComponentTarget"/>; the prior
-        /// Targeted/Broadcast pair collapsed into this single method.
+        /// three message kinds via <see cref="MessageScenarios.AllKinds"/>.
         /// </summary>
         [Test]
         public void GlobalAcceptAllAddDuringEmission(
-            [ValueSource(
-                typeof(MessageScenarios),
-                nameof(MessageScenarios.KindsWithComponentTarget)
-            )]
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario
         )
         {
@@ -96,6 +91,14 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             switch (scenario.Kind)
             {
+                case MessageKind.Untargeted:
+                {
+                    return ScenarioHarness.RegisterUntargeted<SimpleUntargetedMessage>(
+                        scenario,
+                        token,
+                        (in SimpleUntargetedMessage _) => onInvoked()
+                    );
+                }
                 case MessageKind.Targeted:
                 {
                     return ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
@@ -119,7 +122,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new ArgumentOutOfRangeException(
                         nameof(scenario),
                         scenario.Kind,
-                        "MutationGlobalAddTests only covers component-target kinds."
+                        "MutationGlobalAddTests requires a supported message kind."
                     );
                 }
             }
@@ -129,6 +132,12 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             switch (scenario.Kind)
             {
+                case MessageKind.Untargeted:
+                {
+                    SimpleUntargetedMessage message = new();
+                    ScenarioHarness.EmitUntargeted(scenario, ref message);
+                    return;
+                }
                 case MessageKind.Targeted:
                 {
                     SimpleTargetedMessage message = new();
@@ -146,7 +155,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new ArgumentOutOfRangeException(
                         nameof(scenario),
                         scenario.Kind,
-                        "MutationGlobalAddTests only covers component-target kinds."
+                        "MutationGlobalAddTests requires a supported message kind."
                     );
                 }
             }

@@ -281,6 +281,8 @@ jobs:
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           lock-name: wallstop-organization-builds
+          require-resource-lifecycle: "true"
+          minimum-release-cooldown-seconds: "0"
           holder-id-suffix: release-editmode
           runner-id: ${{ runner.name }}
           github-token: ${{ github.token }}

@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;
 using DxMessaging.Core.Messages;
@@ -261,6 +262,69 @@ public sealed class RuntimeContractTests
             }
             bus.Trim(force: true);
         }
+    }
+
+    [Test]
+    public void ConsumedBusHandleDoesNotRetainItsOwner()
+    {
+        ConsumedHandleProbe empty = CreateConsumedHandleProbe(retainHandle: false);
+        ConsumedHandleProbe retained = CreateConsumedHandleProbe(retainHandle: true);
+        CollectConsumedHandleOwners();
+        bool emptyOwnerAlive = empty.Owner.IsAlive;
+        bool retainedOwnerAlive = retained.Owner.IsAlive;
+        retained.Handle = default;
+        CollectConsumedHandleOwners();
+        bool ownerAliveAfterClear = retained.Owner.IsAlive;
+        GC.KeepAlive(empty);
+        GC.KeepAlive(retained);
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                emptyOwnerAlive,
+                Is.False,
+                "The empty-handle control must release its private bus."
+            );
+            Assert.That(
+                retainedOwnerAlive,
+                Is.False,
+                "A consumed raw handle must not retain its bus and unrelated subscriptions."
+            );
+            Assert.That(
+                ownerAliveAfterClear,
+                Is.False,
+                "Clearing the handle must also release the owner."
+            );
+        });
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ConsumedHandleProbe CreateConsumedHandleProbe(bool retainHandle)
+    {
+        MessageBus differentBus = new MessageBus();
+        MessageHandler handler = new MessageHandler(new InstanceId(704), differentBus);
+        MessageBus origin = new MessageBus();
+        using LeakWatcher leaks = new LeakWatcher(origin);
+        MessageBusRegistration registration = origin.RegisterUntargeted<StructMessage>(handler);
+        origin.Deregister<StructMessage>(in registration);
+        return new ConsumedHandleProbe
+        {
+            Handle = retainHandle ? registration : default,
+            Owner = new WeakReference(origin),
+        };
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void CollectConsumedHandleOwners()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+    }
+
+    private sealed class ConsumedHandleProbe
+    {
+        internal MessageBusRegistration Handle;
+        internal WeakReference Owner;
     }
 
     private readonly struct StructMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage

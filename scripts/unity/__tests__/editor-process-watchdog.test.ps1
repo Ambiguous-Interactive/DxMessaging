@@ -32,12 +32,20 @@ try {
         }
         [System.IO.File]::WriteAllText($scriptPath, $body)
         $timer = [System.Diagnostics.Stopwatch]::StartNew()
+        $processDetails = $null
         $exitCode = Invoke-UnityEditor -EditorPath $pwsh `
             -Arguments @('-NoLogo', '-NoProfile', '-File', $scriptPath) `
-            -Label $case -LogPath $logPath -TimeoutSeconds 15 -ShutdownTimeoutSeconds 1
+            -Label $case -LogPath $logPath -TimeoutSeconds 15 -ShutdownTimeoutSeconds 1 `
+            -ProcessResultRef ([ref]$processDetails)
         $timer.Stop()
         $expected = switch ($case) { 'normal' { 0 } 'shutdown' { 124 } 'stderr-shutdown' { 124 } default { 7 } }
         if ($exitCode -ne $expected) { throw "$case returned $exitCode instead of $expected" }
+        if ($processDetails.ExitCode -ne $exitCode -or
+            $processDetails.TimedOut -ne ($expected -eq 124) -or
+            $processDetails.CompletionObserved -ne ($case -ne 'lookalike') -or
+            -not $processDetails.ProcessSettingsVerified -or $processDetails.ProcessId -le 0) {
+            throw "$case lost process-owner evidence: $($processDetails | ConvertTo-Json -Compress)"
+        }
         if ($case -in @('shutdown', 'stderr-shutdown') -and $timer.Elapsed.TotalSeconds -ge 10) {
             throw 'Completed work waited for the total timeout instead of the shutdown deadline.'
         }
@@ -62,12 +70,22 @@ Write-Output 'Test run completed. Exiting with code 0 (Ok). Run completed.'
 Wait-Event -Timeout 30 | Out-Null
 '@)
     $treeLog = Join-Path $fixture 'child-tree.log'
+    $treeStartedUtc = [DateTime]::UtcNow.ToString('O')
+    $treeClock = [Diagnostics.Stopwatch]::StartNew()
+    $treeProcessDetails = $null
     try {
         $treeExit = Invoke-UnityEditor -EditorPath $pwsh `
             -Arguments @('-NoLogo', '-NoProfile', '-File', $childScript, '-PidPath', $treePidPath) `
-            -Label 'shutdown process tree' -LogPath $treeLog -TimeoutSeconds 15 -ShutdownTimeoutSeconds 1
+            -Label 'shutdown process tree' -LogPath $treeLog -TimeoutSeconds 15 -ShutdownTimeoutSeconds 1 `
+            -ProcessResultRef ([ref]$treeProcessDetails)
+        $treeClock.Stop()
+        $treeEndedUtc = [DateTime]::UtcNow.ToString('O')
         $treeText = Get-Content -LiteralPath $treeLog -Raw
-        if ($treeExit -ne 124 -or $treeText -notmatch 'child-pid=(\d+)') { throw 'Child-tree fixture did not run.' }
+        if ($treeExit -ne 124 -or $treeText -notmatch 'child-pid=(\d+)') {
+            $elapsed = $treeClock.Elapsed.TotalSeconds.ToString('R', [Globalization.CultureInfo]::InvariantCulture)
+            $details = $treeProcessDetails | ConvertTo-Json -Compress
+            throw "Child-tree fixture did not run: exit=$treeExit; pidFileExists=$(Test-Path -LiteralPath $treePidPath); startedUtc=$treeStartedUtc; endedUtc=$treeEndedUtc; elapsedSeconds=$elapsed; processResult=$details; log=$treeText"
+        }
         $childProcess = Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue
         if ($childProcess) {
             try {
@@ -75,6 +93,7 @@ Wait-Event -Timeout 30 | Out-Null
             } finally { $childProcess.Dispose() }
         }
     } finally {
+        $treeClock.Stop()
         if (Test-Path -LiteralPath $treePidPath) {
             $childProcess = Get-Process -Id ([int][IO.File]::ReadAllText($treePidPath)) -ErrorAction SilentlyContinue
             if ($childProcess) {
@@ -181,7 +200,155 @@ exit 0
         }
         if ($rejected -ne ($case -ne 'passed')) { throw "$case had the wrong artifact verdict." }
     }
-    Write-Host 'Editor watchdog and result-validation cases passed.'
+    # Exercise the maintained Editor argument builder through the real process owner.
+    $argumentDump = Join-Path $fixture 'dump-arguments.ps1'
+    [System.IO.File]::WriteAllText($argumentDump, @'
+param([string]$OutputPath)
+[System.IO.File]::WriteAllText($OutputPath, (ConvertTo-Json -InputObject @($args) -Compress))
+'@)
+    $cardinalityFixture = 'DxMessaging.Tests.Runtime.Benchmarks.HandlerCardinalityBenchmarks'
+    $selections = @(
+        @{ Name = 'unfiltered'; Category = ''; Filter = '' },
+        @{ Name = 'coverage'; Category = '!PerfBench'; Filter = '' },
+        @{ Name = 'cardinality'; Category = 'PerfBench'; Filter = $cardinalityFixture },
+        @{ Name = 'remaining'; Category = 'PerfBench'; Filter = "!$cardinalityFixture" },
+        @{ Name = 'pattern'; Category = 'Allocation;MemoryReclaim'; Filter = 'Fixture\.Method\(two words\)' }
+    )
+    foreach ($selection in $selections) {
+        $outputPath = Join-Path $fixture ("arguments-{0}.json" -f $selection.Name)
+        $arguments = @(Get-UnityEditorTestArguments `
+            -ProjectPath (Join-Path $fixture 'project with spaces') -TestPlatform playmode `
+            -ResultsPath (Join-Path $fixture 'results with spaces.xml') `
+            -AssemblyNames 'Assembly.One;Assembly.Two' `
+            -TestCategory $selection.Category -TestFilter $selection.Filter `
+            -AdditionalArguments @('-CacheServerIPAddress', 'cache.example:10080'))
+        if (@($arguments | Where-Object { $_ -eq '-testFilter' }).Count -ne [int]([bool]$selection.Filter)) {
+            throw "$($selection.Name) has the wrong test-name filter count."
+        }
+        if ($selection.Filter) {
+            $index = [array]::IndexOf($arguments, '-testFilter')
+            if ($arguments[$index + 1] -cne $selection.Filter) { throw 'TestFilter changed before launch.' }
+        }
+        $roundtrip = Invoke-ProcessWithTreeKillTimeout -FilePath $pwsh `
+            -Arguments (@('-NoLogo', '-NoProfile', '-File', $argumentDump, '-OutputPath', $outputPath) + $arguments) `
+            -Label $selection.Name -LogPath (Join-Path $fixture ("arguments-{0}.log" -f $selection.Name)) `
+            -TimeoutSeconds 15
+        if ($roundtrip.ExitCode -ne 0 -or $roundtrip.TimedOut) { throw 'Editor argument transport failed.' }
+        $actual = @(Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json)
+        if ((ConvertTo-Json -InputObject $actual -Compress) -cne (ConvertTo-Json -InputObject $arguments -Compress)) {
+            throw "$($selection.Name) changed arguments across the actual child process."
+        }
+    }
+    $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+    foreach ($mode in @('standalone', 'shipping')) {
+        $rejection = & $pwsh -NoLogo -NoProfile -NonInteractive -File $runner `
+            -UnityVersion '2021.3.45f1' -TestMode $mode -AssemblyNames 'Assembly.One' `
+            -ArtifactsPath (Join-Path $fixture "rejected-$mode") -RepoRoot $repoRoot `
+            -TestFilter $cardinalityFixture -GenerateOnly -SkipCiAnalyzers 2>&1 | Out-String
+        if ($LASTEXITCODE -eq 0 -or $rejection -notmatch 'TestFilter is supported only for EditMode and PlayMode') {
+            throw "$mode did not reject an unsupported Editor name filter: $rejection"
+        }
+    }
+    # Execute the maintained guard with owned file layouts; these placeholders are never launched.
+    $buildOutputCases = @(
+        @('partial', 'IL2CPP', 'partial', 'ok', 'missing IL2CPP'),
+        @('metadata-missing', 'IL2CPP', 'no-metadata', 'ok', 'missing IL2CPP'),
+        @('native-missing', 'IL2CPP', 'no-native', 'ok', 'missing IL2CPP'),
+        @('empty-native', 'IL2CPP', 'empty-native', 'ok', 'empty IL2CPP'),
+        @('empty-metadata', 'IL2CPP', 'empty-metadata', 'ok', 'empty IL2CPP'),
+        @('complete', 'IL2CPP', 'complete', 'ok', '^$'),
+        @('cached-native', 'IL2CPP', 'cached', 'ok', '^$'),
+        @('mono', 'Mono2x', 'partial', 'ok', '^$'),
+        @('failed-complete', 'IL2CPP', 'complete', 'failed', 'reported a failed'),
+        @('failed-mono', 'Mono2x', 'partial', 'failed', 'reported a failed'),
+        @('benign-postbuild', 'IL2CPP', 'complete', 'shutdown', '^$'),
+        @('lookalike', 'IL2CPP', 'complete', 'lookalike', '^$'),
+        @('missing-log', 'IL2CPP', 'complete', 'missing', 'missing build log'),
+        @('qualified-failure', 'IL2CPP', 'complete', 'qualified-failed', 'reported a failed'),
+        @('missing-exe', 'IL2CPP', 'missing-exe', 'ok', 'missing exe'),
+        @('stale-exe', 'IL2CPP', 'stale', 'ok', 'stale exe'),
+        @('missing-data', 'IL2CPP', 'missing-data', 'ok', 'missing player data')
+    )
+    foreach ($case in $buildOutputCases) {
+        $name, $backend, $payload, $logKind, $expectedProblem = $case
+        $directory = Join-Path $fixture ("player output/$name")
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        $exe = Join-Path $directory 'Player.exe'
+        $data = Join-Path $directory 'Player_Data'
+        $started = [DateTime]::UtcNow.AddSeconds(-1)
+        if ($payload -ne 'missing-exe') { [IO.File]::WriteAllText($exe, 'fixture executable; never launched') }
+        if ($payload -ne 'missing-data') { New-Item -ItemType Directory -Path $data | Out-Null }
+        $native = Join-Path $directory 'GameAssembly.dll'
+        $metadata = Join-Path $data 'il2cpp_data/Metadata/global-metadata.dat'
+        if ($payload -notin @('partial', 'no-native', 'missing-exe', 'missing-data', 'stale')) {
+            [IO.File]::WriteAllText($native, $(if ($payload -eq 'empty-native') { '' } else { 'native fixture' }))
+        }
+        if ($payload -notin @('partial', 'no-metadata', 'missing-exe', 'missing-data', 'stale')) {
+            New-Item -ItemType Directory -Path (Split-Path -Parent $metadata) -Force | Out-Null
+            [IO.File]::WriteAllText($metadata, $(if ($payload -eq 'empty-metadata') { '' } else { 'metadata fixture' }))
+        }
+        if ($payload -eq 'cached') {
+            (Get-Item -LiteralPath $native).LastWriteTimeUtc = $started.AddYears(-1)
+            (Get-Item -LiteralPath $metadata).LastWriteTimeUtc = $started.AddYears(-1)
+        }
+        if ($payload -eq 'stale') { (Get-Item -LiteralPath $exe).LastWriteTimeUtc = $started.AddHours(-1) }
+        $buildLog = Join-Path $directory 'build.log'
+        if ($logKind -ne 'missing') {
+            $body = switch ($logKind) {
+                'failed' { 'TestLaunchFailedException: Player build failed' }
+                'qualified-failed' { 'UnityEditor.TestTools.TestRunner.TestLaunchFailedException: Player build failed' }
+                'shutdown' { "Build completed with a result of 'Succeeded'`nFatal error. System.AccessViolationException during shutdown" }
+                'lookalike' { 'Note: TestLaunchFailedException: Player build failed is an example message' }
+                default { "Build completed with a result of 'Succeeded'" }
+            }
+            [IO.File]::WriteAllText($buildLog, $body)
+        }
+        $problem = [string](Test-StandalonePlayerBuildOutput -ExpectedExe $exe `
+            -BuildStartedUtc $started -BuildLogPath $buildLog -ScriptingBackend $backend)
+        if ($problem -notmatch $expectedProblem) { throw "$name returned '$problem', expected '$expectedProblem'." }
+    }
+    # Bind the helper's accepted backends to the public runner contract.
+    $runnerBackend = @($ast.ParamBlock.Parameters | Where-Object {
+        $_.Name.VariablePath.UserPath -ceq 'StandaloneScriptingBackend'
+    })
+    $outputDefinition = @($ast.EndBlock.Statements | Where-Object {
+        $_ -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $_.Name -ceq 'Test-StandalonePlayerBuildOutput'
+    })
+    $outputBackend = @($outputDefinition.Body.ParamBlock.Parameters | Where-Object {
+        $_.Name.VariablePath.UserPath -ceq 'ScriptingBackend'
+    })
+    $runnerValues = @($runnerBackend.Attributes | Where-Object { $_.TypeName.Name -ceq 'ValidateSet' })
+    $outputValues = @($outputBackend.Attributes | Where-Object { $_.TypeName.Name -ceq 'ValidateSet' })
+    if ($runnerBackend.Count -ne 1 -or $outputBackend.Count -ne 1 -or
+        $runnerValues.Count -ne 1 -or $outputValues.Count -ne 1 -or
+        (ConvertTo-Json -InputObject @($runnerValues.PositionalArguments.Value) -Compress) -cne
+        (ConvertTo-Json -InputObject @($outputValues.PositionalArguments.Value) -Compress)) {
+        throw 'Build output validation does not accept the public runner backend values.'
+    }
+    $outputCalls = @($ast.FindAll({ param($node)
+        $node -is [System.Management.Automation.Language.CommandAst] -and
+        $node.GetCommandName() -eq 'Test-StandalonePlayerBuildOutput'
+    }, $true))
+    if ($outputCalls.Count -ne 2) { throw 'Review every maintained output-validation callsite.' }
+    foreach ($call in $outputCalls) {
+        $arguments = @{}
+        for ($index = 1; $index -lt $call.CommandElements.Count; ++$index) {
+            $element = $call.CommandElements[$index]
+            if ($element -is [System.Management.Automation.Language.CommandParameterAst]) {
+                $arguments[$element.ParameterName] = $call.CommandElements[$index + 1].Extent.Text
+            }
+        }
+        if ($arguments.BuildLogPath -cne '$logPath') { throw 'Build output validation lost its current build log.' }
+        $expectedBackend = switch ($arguments.BuildStartedUtc) {
+            '$shippingBuildStartedUtc' { "'IL2CPP'" }
+            '$standaloneBuildStartedUtc' { '$StandaloneScriptingBackend' }
+            default { throw 'Unknown standalone output-validation caller.' }
+        }
+        if ($arguments.ScriptingBackend -cne $expectedBackend) { throw 'Build output validation lost the selected backend.' }
+    }
+    Write-Host 'Seventeen build-output layouts and both current-log/backend callsites passed.'
+    Write-Host 'Editor watchdog and result-validation and argument-transport cases passed.'
 } finally {
     Remove-Item -LiteralPath $fixture -Recurse -Force
 }

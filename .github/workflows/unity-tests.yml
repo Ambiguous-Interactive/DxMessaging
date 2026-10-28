@@ -217,6 +217,24 @@ jobs:
           lfs: true
           persist-credentials: false
 
+      - name: Select project cache from tracked input paths
+        id: source_cache
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $sourceFiles = @(git ls-files -- Runtime Editor Tests 'Samples~')
+          if ($LASTEXITCODE -ne 0 -or $sourceFiles.Count -eq 0) {
+            throw 'Cannot select a Unity project cache without tracked package input paths.'
+          }
+          $hasher = [System.Security.Cryptography.SHA256]::Create()
+          try {
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes(($sourceFiles -join "`n"))
+            $sourceSetHash = [System.BitConverter]::ToString($hasher.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
+          } finally {
+            $hasher.Dispose()
+          }
+          "DXM_UNITY_SOURCE_SET_KEY=$($sourceSetHash.Substring(0, 8))" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Print runner diagnostics
         timeout-minutes: 2
         # Composite action runs PowerShell internally; `shell: bash` on this
@@ -325,6 +343,8 @@ jobs:
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           lock-name: wallstop-organization-builds
+          require-resource-lifecycle: "true"
+          minimum-release-cooldown-seconds: "0"
           # Every matrix axis is part of the holder identity, so each expanded
           # leg owns a distinct lock holder.
           holder-id-suffix: ${{ matrix.unity-version }}-${{ matrix.test-mode }}-all-modes
@@ -371,6 +391,7 @@ jobs:
               -LicenseReturnOwner $licenseReturnOwner
           } else {
             $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-editmode'
+            $projectPath = "${projectPath}-$env:DXM_UNITY_SOURCE_SET_KEY"
             $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
             ./scripts/unity/run-ci-tests.ps1 `
               -UnityVersion '${{ matrix.unity-version }}' `
@@ -401,6 +422,7 @@ jobs:
           DXM_UNITY_TEST_CATEGORY: "!Stress;!Performance;!Allocation;!MemoryReclaim;!PerfBench;!PerfGate;!PerfBaseline"
         run: |
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-playmode'
+          $projectPath = "${projectPath}-$env:DXM_UNITY_SOURCE_SET_KEY"
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
@@ -430,6 +452,7 @@ jobs:
           DXM_UNITY_TEST_CATEGORY: "!Stress;!Performance;!Allocation;!MemoryReclaim;!PerfBench;!PerfGate;!PerfBaseline"
         run: |
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-standalone'
+          $projectPath = "${projectPath}-$env:DXM_UNITY_SOURCE_SET_KEY"
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
           ./scripts/unity/run-ci-tests.ps1 `
             -UnityVersion '${{ matrix.unity-version }}' `
@@ -592,6 +615,10 @@ jobs:
         with:
           paths: |
             .artifacts/unity
+          parallel-paths: |
+            ${{ !inputs.shipping_fidelity && !inputs.consumer_install_validation && format('.artifacts/unity/{0}-editmode', matrix.unity-version) || '' }}
+            ${{ !inputs.shipping_fidelity && !inputs.consumer_install_validation && format('.artifacts/unity/{0}-playmode', matrix.unity-version) || '' }}
+            ${{ !inputs.shipping_fidelity && !inputs.consumer_install_validation && format('.artifacts/unity/{0}-standalone', matrix.unity-version) || '' }}
 
       # Content-addressed retention for issue #508. The manifest names every evidence
       # file with its SHA-256 and embeds the normalized matrix result, so the uploaded
@@ -650,10 +677,13 @@ jobs:
           retention-days: 14
 
       - name: Upload shipping-fidelity artifacts
+        # A failed producer retains diagnostics under a distinct artifact name.
+        # Successful evidence still requires sealing and replay.
         if: >-
           ${{
             steps.redact_tests.outcome == 'success' &&
-            steps.seal_shipping.outcome == 'success' &&
+            (steps.run_shipping.outcome == 'failure' ||
+            (steps.run_shipping.outcome == 'success' && steps.seal_shipping.outcome == 'success')) &&
             always() &&
             !cancelled() &&
             steps.acquire_lock.outputs.acquired == 'true' &&
@@ -664,7 +694,7 @@ jobs:
         timeout-minutes: 10
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: unity-${{ matrix.unity-version }}-shipping
+          name: unity-${{ matrix.unity-version }}-${{ steps.run_shipping.outcome == 'success' && 'shipping' || 'shipping-failure-diagnostics' }}
           path: .artifacts/unity/${{ matrix.unity-version }}-shipping
           include-hidden-files: true
           if-no-files-found: error

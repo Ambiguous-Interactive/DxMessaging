@@ -102,12 +102,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             try
             {
                 Action<UntargetedOne> callback = _ => { };
-                deregister = handler.RegisterUntargetedMessageHandler(
-                    callback,
-                    callback,
-                    priority: 0,
-                    messageBus: bus
-                );
+                deregister = (
+                    handler.RegisterUntargetedMessageHandler(
+                        callback,
+                        callback,
+                        priority: 0,
+                        messageBus: bus
+                    )
+                ).AsAction();
                 UntargetedOne message = new UntargetedOne();
                 bus.UntargetedBroadcast(ref message);
 
@@ -520,7 +522,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 settings._bufferMaxDistinctEntries = 4;
                 settings._bufferUseLruEviction = true;
                 settings._idleEvictionSeconds = 0f;
-                overrideToken = DxMessagingRuntimeSettingsProvider.Override(settings);
+                overrideToken = RuntimeSettingsFixture.Override(settings);
                 MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
                 using IDisposable cleanup = ForceTrimCleanup(bus);
 
@@ -537,7 +539,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 token.RemoveRegistration(handle);
                 EmitSweepProbe(bus);
                 _ = bus.Trim(force: false);
-                Assert.Greater(bus.GetContextDictPoolDiagnosticsForTesting().Cached, 0);
+                Assert.Greater(MessageBusInspection.ContextMapPoolDiagnostics().Cached, 0);
 
                 GameObject outerTarget = new(
                     nameof(RuntimeSettingsHotReloadAppliesCaps) + "_Outer",
@@ -575,17 +577,17 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 outer.EmitTargeted(outerTargetId, bus);
 
                 Assert.Greater(
-                    bus.ReflexiveDispatchPoolDiagnostics.Cached,
+                    MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
                     0,
                     "Nested reflexive delivery must warm the per-bus state pool."
                 );
                 Assert.AreEqual(
                     4,
-                    bus.ReflexiveDispatchPoolMaxRetained,
+                    MessageBusInspection.ReflexiveDispatchPoolMaxRetained(bus),
                     "The reflexive state pool must inherit the initial retained-entry cap."
                 );
                 Assert.IsTrue(
-                    bus.ReflexiveDispatchPoolUsesLru,
+                    MessageBusInspection.ReflexiveDispatchPoolUsesLru(bus),
                     "The reflexive state pool must inherit the initial LRU policy."
                 );
 
@@ -596,19 +598,19 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 Assert.AreEqual(0, DxPools.ObjectLists.MaxRetained);
                 Assert.IsFalse(DxPools.ObjectLists.UseLru);
                 Assert.AreEqual(0, DxPools.DescribeAll().ObjectLists.Cached);
-                Assert.AreEqual(0, bus.GetContextDictPoolDiagnosticsForTesting().Cached);
+                Assert.AreEqual(0, MessageBusInspection.ContextMapPoolDiagnostics().Cached);
                 Assert.AreEqual(
                     0,
-                    bus.ReflexiveDispatchPoolDiagnostics.Cached,
+                    MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
                     "Lowering the cap to zero must drain retained reflexive states."
                 );
                 Assert.AreEqual(
                     0,
-                    bus.ReflexiveDispatchPoolMaxRetained,
+                    MessageBusInspection.ReflexiveDispatchPoolMaxRetained(bus),
                     "Hot reload must apply the zero cap to the reflexive state pool."
                 );
                 Assert.IsFalse(
-                    bus.ReflexiveDispatchPoolUsesLru,
+                    MessageBusInspection.ReflexiveDispatchPoolUsesLru(bus),
                     "Hot reload must apply the LIFO policy to the reflexive state pool."
                 );
                 GC.KeepAlive(bus);
@@ -646,7 +648,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 () => { }
             );
             firstDeregister();
-            object firstSpare = bus.RecycledHandlerCacheForTesting;
+            object firstSpare = MessageBusInspection.RecycledHandlerCache(bus);
             Assert.IsNotNull(
                 firstSpare,
                 "[{0}] removing the sole priority handler must retain one detached empty leaf.",
@@ -661,7 +663,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 () => { }
             );
             Assert.IsNull(
-                bus.RecycledHandlerCacheForTesting,
+                MessageBusInspection.RecycledHandlerCache(bus),
                 "[{0}] the retained leaf must be rented while the replacement route is live.",
                 scenario.DisplayName
             );
@@ -669,7 +671,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
             Assert.AreSame(
                 firstSpare,
-                bus.RecycledHandlerCacheForTesting,
+                MessageBusInspection.RecycledHandlerCache(bus),
                 "[{0}] scalar/context and handle/post routes must return the same leaf identity.",
                 scenario.DisplayName
             );
@@ -700,17 +702,17 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
 
             bus.Deregister<UntargetedOne>(in first);
-            object retained = bus.RecycledHandlerCacheForTesting;
+            object retained = MessageBusInspection.RecycledHandlerCache(bus);
             bus.Deregister<UntargetedOne>(in second);
 
             Assert.AreSame(
                 retained,
-                bus.RecycledHandlerCacheForTesting,
+                MessageBusInspection.RecycledHandlerCache(bus),
                 "Returning a second empty leaf must not replace or grow the one-entry spare."
             );
             bus.ResetState();
             Assert.IsNull(
-                bus.RecycledHandlerCacheForTesting,
+                MessageBusInspection.RecycledHandlerCache(bus),
                 "ResetState must release the detached empty priority leaf."
             );
             firstHandler.active = false;
@@ -726,7 +728,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             try
             {
                 settings._bufferMaxDistinctEntries = 2;
-                overrideToken = DxMessagingRuntimeSettingsProvider.Override(settings);
+                overrideToken = RuntimeSettingsFixture.Override(settings);
                 MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
                 using IDisposable cleanup = ForceTrimCleanup(bus);
                 MessageHandler firstHandler = new MessageHandler(new InstanceId(0x5A17_0020), bus)
@@ -750,14 +752,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
                 Assert.AreEqual(
                     2,
-                    bus.RecycledHandlerCacheHighWaterForTesting,
+                    MessageBusInspection.RecycledHandlerCacheHighWater(bus),
                     "A leaf at the configured distinct-handler cap must remain eligible."
                 );
 
                 settings._bufferMaxDistinctEntries = 1;
                 DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
                 Assert.IsNull(
-                    bus.RecycledHandlerCacheForTesting,
+                    MessageBusInspection.RecycledHandlerCache(bus),
                     "Lowering the cap below a retained leaf's high-water must drain it immediately."
                 );
 
@@ -766,7 +768,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 bus.Deregister<UntargetedOne>(in first);
                 bus.Deregister<UntargetedOne>(in second);
                 Assert.IsNull(
-                    bus.RecycledHandlerCacheForTesting,
+                    MessageBusInspection.RecycledHandlerCache(bus),
                     "An active leaf whose high-water exceeds the lowered cap must drop on return."
                 );
 
@@ -777,14 +779,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 bus.Deregister<UntargetedOne>(in small);
                 Assert.AreEqual(
                     1,
-                    bus.RecycledHandlerCacheHighWaterForTesting,
+                    MessageBusInspection.RecycledHandlerCacheHighWater(bus),
                     "A replacement leaf within the cap must be eligible for reuse."
                 );
 
                 settings._bufferMaxDistinctEntries = 0;
                 DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
                 Assert.IsNull(
-                    bus.RecycledHandlerCacheForTesting,
+                    MessageBusInspection.RecycledHandlerCache(bus),
                     "Hot reload to cap zero must drain the retained leaf immediately."
                 );
                 MessageBusRegistration zeroCap = bus.RegisterUntargeted<UntargetedOne>(
@@ -793,7 +795,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 );
                 bus.Deregister<UntargetedOne>(in zeroCap);
                 Assert.IsNull(
-                    bus.RecycledHandlerCacheForTesting,
+                    MessageBusInspection.RecycledHandlerCache(bus),
                     "Cap zero must keep subsequent empty priority leaves out of retention."
                 );
                 firstHandler.active = false;
@@ -838,7 +840,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 "Repeated forced trim must not count an already-drained priority leaf."
             );
             Assert.IsNull(
-                bus.RecycledHandlerCacheForTesting,
+                MessageBusInspection.RecycledHandlerCache(bus),
                 "Forced trim must release the detached priority leaf."
             );
             handler.active = false;
@@ -856,7 +858,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 settings._evictionEnabled = false;
                 settings._idleEvictionSeconds = 30f;
                 settings._evictionTickIntervalSeconds = 60f;
-                overrideToken = DxMessagingRuntimeSettingsProvider.Override(settings);
+                overrideToken = RuntimeSettingsFixture.Override(settings);
                 FakeClock clock = new FakeClock();
                 MessageBus bus = MessageBus.CreateForInternalUse(clock);
                 using IDisposable cleanup = ForceTrimCleanup(bus);
@@ -909,7 +911,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 settings._enableTrimApi = false;
                 settings._evictionEnabled = true;
                 settings._bufferMaxDistinctEntries = 4;
-                overrideToken = DxMessagingRuntimeSettingsProvider.Override(settings);
+                overrideToken = RuntimeSettingsFixture.Override(settings);
                 MessageBus bus = MessageBus.CreateForInternalUse(new FakeClock());
                 MessageRegistrationToken token = CreateEnabledToken(bus);
                 MessageRegistrationHandle handle = RegisterFirst(
@@ -918,7 +920,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     DefaultContext
                 );
                 token.RemoveRegistration(handle);
-                object retainedHandlerCache = bus.RecycledHandlerCacheForTesting;
+                object retainedHandlerCache = MessageBusInspection.RecycledHandlerCache(bus);
                 Assert.IsNotNull(
                     retainedHandlerCache,
                     "Removing the sole handler must create the retained empty priority leaf."
@@ -934,7 +936,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 Assert.AreEqual(cachedBefore, DxPools.DescribeAll().ObjectLists.Cached);
                 Assert.AreSame(
                     retainedHandlerCache,
-                    bus.RecycledHandlerCacheForTesting,
+                    MessageBusInspection.RecycledHandlerCache(bus),
                     "Disabled Trim must preserve the retained empty priority leaf identity."
                 );
             }
@@ -962,7 +964,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             {
                 settings._bufferMaxDistinctEntries = 4;
                 settings._bufferUseLruEviction = true;
-                overrideToken = DxMessagingRuntimeSettingsProvider.Override(settings);
+                overrideToken = RuntimeSettingsFixture.Override(settings);
                 _ = DxPools.TrimAll(force: true);
                 MessageBus bus = MessageBus.CreateForInternalUse(
                     new FakeClock(),
@@ -1053,14 +1055,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 */
                 firstDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () => { });
                 CollectionPoolDiagnostics afterFirstRent =
-                    bus.GetContextDictPoolDiagnosticsForTesting();
+                    MessageBusInspection.ContextMapPoolDiagnostics();
                 firstDeregister();
                 firstDeregister = null;
                 EmitSweepProbe(bus);
 
                 IMessageBus.TrimResult firstTrim = bus.Trim(force: false);
                 CollectionPoolDiagnostics afterReturn =
-                    bus.GetContextDictPoolDiagnosticsForTesting();
+                    MessageBusInspection.ContextMapPoolDiagnostics();
 
                 Assert.GreaterOrEqual(
                     firstTrim.TargetSlotsEvicted,
@@ -1085,7 +1087,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     DefaultContext,
                     () => { }
                 );
-                CollectionPoolDiagnostics afterRent = bus.GetContextDictPoolDiagnosticsForTesting();
+                CollectionPoolDiagnostics afterRent =
+                    MessageBusInspection.ContextMapPoolDiagnostics();
 
                 Assert.Greater(
                     afterRent.Hits,
@@ -1151,7 +1154,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
                 IMessageBus.TrimResult trimResult = bus.Trim(force: false);
                 CollectionPoolDiagnostics afterReturn =
-                    bus.GetContextDictPoolDiagnosticsForTesting();
+                    MessageBusInspection.ContextMapPoolDiagnostics();
 
                 Assert.GreaterOrEqual(
                     trimResult.TargetSlotsEvicted,
@@ -1173,7 +1176,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     DefaultContext,
                     () => currentCalls++
                 );
-                CollectionPoolDiagnostics afterRent = bus.GetContextDictPoolDiagnosticsForTesting();
+                CollectionPoolDiagnostics afterRent =
+                    MessageBusInspection.ContextMapPoolDiagnostics();
 
                 Assert.Greater(
                     afterRent.Hits,
@@ -1262,7 +1266,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 IMessageBus.TrimResult oversizedTrim = bus.Trim(force: false);
                 PoolDiagnosticsSnapshot oversizedPools = DxPools.DescribeAll();
                 CollectionPoolDiagnostics oversizedContextPool =
-                    bus.GetContextDictPoolDiagnosticsForTesting();
+                    MessageBusInspection.ContextMapPoolDiagnostics();
 
                 Assert.GreaterOrEqual(
                     oversizedTrim.TargetSlotsEvicted,
@@ -1299,7 +1303,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
                 PoolDiagnosticsSnapshot smallPools = DxPools.DescribeAll();
                 CollectionPoolDiagnostics smallContextPool =
-                    bus.GetContextDictPoolDiagnosticsForTesting();
+                    MessageBusInspection.ContextMapPoolDiagnostics();
                 Assert.Greater(
                     smallPools.InstanceIdLists.Cached,
                     0,
@@ -1362,7 +1366,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 _ = bus.Trim(force: false);
 
                 Assert.Greater(
-                    bus.GetContextDictPoolDiagnosticsForTesting().Cached,
+                    MessageBusInspection.ContextMapPoolDiagnostics().Cached,
                     0,
                     "Setup must return at least one bus context dictionary to the static pool."
                 );
@@ -1371,7 +1375,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
                 Assert.AreEqual(
                     0,
-                    bus.GetContextDictPoolDiagnosticsForTesting().Cached,
+                    MessageBusInspection.ContextMapPoolDiagnostics().Cached,
                     "DxMessagingStaticState.Reset must drain the bus-owned static context dictionary pool."
                 );
             }
@@ -1424,7 +1428,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
                 Assert.AreEqual(
                     0,
-                    bus.GetContextDictPoolDiagnosticsForTesting().Cached,
+                    MessageBusInspection.ContextMapPoolDiagnostics().Cached,
                     "The oversized context dictionary must remain live while one target is still registered."
                 );
 
@@ -1435,7 +1439,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 
                 Assert.AreEqual(
                     0,
-                    bus.GetContextDictPoolDiagnosticsForTesting().Cached,
+                    MessageBusInspection.ContextMapPoolDiagnostics().Cached,
                     "The oversized context dictionary must be dropped even when it empties across multiple sweeps."
                 );
             }
@@ -2057,6 +2061,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
+        /// <remarks>
+        /// 2026-10-26: reflection-only closed generic registration calls had no generated code on
+        /// Unity 2021 IL2CPP. Static row and column calls execute the same 32-by-32 type matrix
+        /// so every combination is visible to the ahead-of-time compiler before this test runs.
+        /// </remarks>
         [Test]
         public void TypedHandlerOuterWrappersReclaimedAtScaleAfterTrim()
         {
@@ -2065,29 +2074,18 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             using LeakWatcher watcher = LeakWatcher.WatchWithSlots(bus);
             MessageHandler handler = CreateActiveHandler(bus);
             List<Action> deregistrations = new List<Action>(1024);
-            MethodInfo registerMethod = typeof(MemoryReclamationTests).GetMethod(
-                nameof(RegisterUntargetedGenericDirect),
-                BindingFlags.Static | BindingFlags.NonPublic
-            );
-            Type[] markerTypes = RegistrationFloodMarkerTypes;
 
             try
             {
-                foreach (Type outerMarker in markerTypes)
+                foreach (
+                    Action<
+                        MessageHandler,
+                        MessageBus,
+                        List<Action>
+                    > registerRow in RegistrationFloodRows
+                )
                 {
-                    foreach (Type innerMarker in markerTypes)
-                    {
-                        Type messageType = typeof(RegistrationFloodMessage<,>).MakeGenericType(
-                            outerMarker,
-                            innerMarker
-                        );
-                        deregistrations.Add(
-                            (Action)
-                                registerMethod
-                                    .MakeGenericMethod(messageType)
-                                    .Invoke(null, new object[] { handler, bus })
-                        );
-                    }
+                    registerRow(handler, bus, deregistrations);
                 }
 
                 Assert.AreEqual(
@@ -2266,7 +2264,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             settings._evictionTickIntervalSeconds = 0f;
             settings._enableTrimApi = true;
             settings._evictionEnabled = true;
-            overrideToken = DxMessagingRuntimeSettingsProvider.Override(settings);
+            overrideToken = RuntimeSettingsFixture.Override(settings);
             MessageBus bus = MessageBus.CreateForInternalUse(clock, idleEvictionTicks: 0);
             DxPools.Configure(settings);
             DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
@@ -2412,54 +2410,64 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 case MessageKind.Untargeted:
                 {
                     Action<UntargetedOne> callback = _ => onMessage();
-                    return handler.RegisterUntargetedMessageHandler(
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterUntargetedMessageHandler(
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.Targeted:
                 {
                     Action<TargetedOne> callback = _ => onMessage();
-                    return handler.RegisterTargetedMessageHandler(
-                        context,
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterTargetedMessageHandler(
+                            context,
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.Broadcast:
                 {
                     Action<BroadcastOne> callback = _ => onMessage();
-                    return handler.RegisterSourcedBroadcastMessageHandler(
-                        context,
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterSourcedBroadcastMessageHandler(
+                            context,
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.TargetedWithoutTargeting:
                 {
                     Action<InstanceId, TargetedOne> callback = (_, _) => onMessage();
-                    return handler.RegisterTargetedWithoutTargeting(
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterTargetedWithoutTargeting(
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.BroadcastWithoutSource:
                 {
                     Action<InstanceId, BroadcastOne> callback = (_, _) => onMessage();
-                    return handler.RegisterSourcedBroadcastWithoutSource(
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterSourcedBroadcastWithoutSource(
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 default:
                 {
@@ -2481,54 +2489,64 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 case MessageKind.Untargeted:
                 {
                     Action<UntargetedOne> callback = _ => onMessage();
-                    return handler.RegisterUntargetedPostProcessor(
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterUntargetedPostProcessor(
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.Targeted:
                 {
                     Action<TargetedOne> callback = _ => onMessage();
-                    return handler.RegisterTargetedPostProcessor(
-                        context,
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterTargetedPostProcessor(
+                            context,
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.Broadcast:
                 {
                     Action<BroadcastOne> callback = _ => onMessage();
-                    return handler.RegisterSourcedBroadcastPostProcessor(
-                        context,
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterSourcedBroadcastPostProcessor(
+                            context,
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.TargetedWithoutTargeting:
                 {
                     Action<InstanceId, TargetedOne> callback = (_, _) => onMessage();
-                    return handler.RegisterTargetedWithoutTargetingPostProcessor(
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterTargetedWithoutTargetingPostProcessor(
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.BroadcastWithoutSource:
                 {
                     Action<InstanceId, BroadcastOne> callback = (_, _) => onMessage();
-                    return handler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 default:
                 {
@@ -2550,34 +2568,40 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 case MessageKind.Untargeted:
                 {
                     Action<UntargetedTwo> callback = _ => onMessage();
-                    return handler.RegisterUntargetedMessageHandler(
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterUntargetedMessageHandler(
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.Targeted:
                 {
                     Action<TargetedTwo> callback = _ => onMessage();
-                    return handler.RegisterTargetedMessageHandler(
-                        context,
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterTargetedMessageHandler(
+                            context,
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.Broadcast:
                 {
                     Action<BroadcastTwo> callback = _ => onMessage();
-                    return handler.RegisterSourcedBroadcastMessageHandler(
-                        context,
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterSourcedBroadcastMessageHandler(
+                            context,
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 default:
                 {
@@ -2599,34 +2623,40 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 case MessageKind.Untargeted:
                 {
                     Action<UntargetedThree> callback = _ => onMessage();
-                    return handler.RegisterUntargetedMessageHandler(
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterUntargetedMessageHandler(
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.Targeted:
                 {
                     Action<TargetedThree> callback = _ => onMessage();
-                    return handler.RegisterTargetedMessageHandler(
-                        context,
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterTargetedMessageHandler(
+                            context,
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 case MessageKind.Broadcast:
                 {
                     Action<BroadcastThree> callback = _ => onMessage();
-                    return handler.RegisterSourcedBroadcastMessageHandler(
-                        context,
-                        callback,
-                        callback,
-                        priority: 0,
-                        messageBus: bus
-                    );
+                    return (
+                        handler.RegisterSourcedBroadcastMessageHandler(
+                            context,
+                            callback,
+                            callback,
+                            priority: 0,
+                            messageBus: bus
+                        )
+                    ).AsAction();
                 }
                 default:
                 {
@@ -2672,12 +2702,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             where T : IUntargetedMessage<T>
         {
             Action<T> callback = _ => { };
-            return handler.RegisterUntargetedMessageHandler(
-                callback,
-                callback,
-                priority: 0,
-                messageBus: bus
-            );
+            return (
+                handler.RegisterUntargetedMessageHandler(
+                    callback,
+                    callback,
+                    priority: 0,
+                    messageBus: bus
+                )
+            ).AsAction();
         }
 
         private static void EmitFirst(MessageScenario scenario, MessageBus bus, InstanceId context)
@@ -2735,41 +2767,227 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
         }
 
-        private static readonly Type[] RegistrationFloodMarkerTypes =
+        private static readonly Action<
+            MessageHandler,
+            MessageBus,
+            List<Action>
+        >[] RegistrationFloodRows =
         {
-            typeof(RegistrationFloodMarker00),
-            typeof(RegistrationFloodMarker01),
-            typeof(RegistrationFloodMarker02),
-            typeof(RegistrationFloodMarker03),
-            typeof(RegistrationFloodMarker04),
-            typeof(RegistrationFloodMarker05),
-            typeof(RegistrationFloodMarker06),
-            typeof(RegistrationFloodMarker07),
-            typeof(RegistrationFloodMarker08),
-            typeof(RegistrationFloodMarker09),
-            typeof(RegistrationFloodMarker10),
-            typeof(RegistrationFloodMarker11),
-            typeof(RegistrationFloodMarker12),
-            typeof(RegistrationFloodMarker13),
-            typeof(RegistrationFloodMarker14),
-            typeof(RegistrationFloodMarker15),
-            typeof(RegistrationFloodMarker16),
-            typeof(RegistrationFloodMarker17),
-            typeof(RegistrationFloodMarker18),
-            typeof(RegistrationFloodMarker19),
-            typeof(RegistrationFloodMarker20),
-            typeof(RegistrationFloodMarker21),
-            typeof(RegistrationFloodMarker22),
-            typeof(RegistrationFloodMarker23),
-            typeof(RegistrationFloodMarker24),
-            typeof(RegistrationFloodMarker25),
-            typeof(RegistrationFloodMarker26),
-            typeof(RegistrationFloodMarker27),
-            typeof(RegistrationFloodMarker28),
-            typeof(RegistrationFloodMarker29),
-            typeof(RegistrationFloodMarker30),
-            typeof(RegistrationFloodMarker31),
+            RegisterRegistrationFloodRow<RegistrationFloodMarker00>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker01>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker02>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker03>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker04>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker05>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker06>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker07>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker08>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker09>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker10>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker11>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker12>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker13>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker14>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker15>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker16>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker17>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker18>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker19>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker20>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker21>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker22>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker23>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker24>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker25>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker26>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker27>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker28>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker29>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker30>,
+            RegisterRegistrationFloodRow<RegistrationFloodMarker31>,
         };
+
+        private static void RegisterRegistrationFloodRow<TOuter>(
+            MessageHandler handler,
+            MessageBus bus,
+            List<Action> deregistrations
+        )
+        {
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker00>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker01>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker02>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker03>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker04>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker05>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker06>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker07>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker08>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker09>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker10>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker11>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker12>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker13>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker14>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker15>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker16>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker17>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker18>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker19>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker20>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker21>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker22>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker23>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker24>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker25>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker26>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker27>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker28>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker29>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker30>(
+                handler,
+                bus,
+                deregistrations
+            );
+            RegisterRegistrationFloodEntry<TOuter, RegistrationFloodMarker31>(
+                handler,
+                bus,
+                deregistrations
+            );
+        }
+
+        private static void RegisterRegistrationFloodEntry<TOuter, TInner>(
+            MessageHandler handler,
+            MessageBus bus,
+            List<Action> deregistrations
+        )
+        {
+            deregistrations.Add(
+                RegisterUntargetedGenericDirect<RegistrationFloodMessage<TOuter, TInner>>(
+                    handler,
+                    bus
+                )
+            );
+        }
 
         private readonly struct RegistrationFloodMessage<TOuter, TInner>
             : IUntargetedMessage<RegistrationFloodMessage<TOuter, TInner>> { }

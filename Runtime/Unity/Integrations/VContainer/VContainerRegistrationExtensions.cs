@@ -25,7 +25,7 @@ namespace DxMessaging.Unity.Integrations.VContainer
         /// pattern would still latch onto a clock-taking private overload whose
         /// <see cref="IDxMessagingClock"/> dependency is not registered. Always prefer this
         /// helper. Calling this helper alongside a bare bus registration raises a
-        /// <c>VContainerException</c> at <see cref="IContainerBuilder.Build"/> time.
+        /// <c>VContainerException</c> at <see cref="ContainerBuilder.Build"/> time.
         /// </summary>
         /// <param name="builder">Container builder receiving the registration.</param>
         /// <param name="lifetime">Lifetime to assign to the registration. Defaults to <see cref="Lifetime.Singleton"/>.</param>

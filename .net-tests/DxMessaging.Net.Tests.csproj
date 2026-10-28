@@ -5,6 +5,41 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile
+      Include="../Tests/Runtime/Core/DifferentialBusTraceTests.cs"
+      Link="DifferentialBusTraceTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/DifferentialBusTrace.cs"
+      Link="DifferentialBusTrace.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/MessageBusTraceAdapter.cs"
+      Link="MessageBusTraceAdapter.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/DiagnosticsScope.cs"
+      Link="DiagnosticsScope.cs"
+    />
+    <Compile Include="../Tests/Runtime/TestUtilities/GlobalBusScope.cs" Link="GlobalBusScope.cs" />
+    <Compile Include="../Tests/Runtime/TestUtilities/CleanupScope.cs" Link="CleanupScope.cs" />
+    <Compile Include="../Tests/Runtime/TestUtilities/FakeClock.cs" Link="FakeClock.cs" />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenDiagnosticStagedCountsTests.cs"
+      Link="TokenDiagnosticStagedCountsTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/BuilderSetupFailureOwnershipTests.cs"
+      Link="BuilderSetupFailureOwnershipTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/LeaseReentrantOwnershipTests.cs"
+      Link="LeaseReentrantOwnershipTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/BuilderDiagnosticOwnershipTests.cs"
+      Link="BuilderDiagnosticOwnershipTests.cs"
+    />
     <ProjectReference Include="../.net/DxMessaging.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageReference Include="NUnit" Version="5.0.0" />
@@ -22,14 +57,175 @@
       Include="../Tests/Runtime/TestUtilities/ScenarioHarness.cs"
       Link="ScenarioHarness.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/StorageInspection.cs"
+      Link="StorageInspection.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/BenchmarkStorageScopes.cs"
+      Link="BenchmarkStorageScopes.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/StorageObservations.cs"
+      Link="StorageObservations.cs"
+    />
+    <Compile Include="../Tests/Runtime/TestUtilities/MapInspection.cs" Link="MapInspection.cs" />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/EntryStorageInspection.cs"
+      Link="EntryStorageInspection.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/ReflexiveStorageInspection.cs"
+      Link="ReflexiveStorageInspection.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/MessageBusInspection.cs"
+      Link="MessageBusInspection.cs"
+    />
     <Compile Include="../Tests/Runtime/TestUtilities/LeakWatcher.cs" Link="LeakWatcher.cs" />
     <Compile
       Include="../Tests/Runtime/TestUtilities/DelegatingMessageBus.cs"
       Link="DelegatingMessageBus.cs"
     />
     <Compile
+      Include="../Tests/Runtime/Core/TokenCleanupSnapshotOwnershipTests.cs"
+      Link="TokenCleanupSnapshotOwnershipTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenRollbackReentryTests.cs"
+      Link="TokenRollbackReentryTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenReentrantEnableTests.cs"
+      Link="TokenReentrantEnableTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/ReflexiveLoggingResetBoundaryTests.cs"
+      Link="ReflexiveLoggingResetBoundaryTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/ForeignIndexGetterLifecycleTests.cs"
+      Link="ForeignIndexGetterLifecycleTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/ForeignBusRegistrationTests.cs"
+      Link="ForeignBusRegistrationTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenRetargetLoggingCleanupTests.cs"
+      Link="TokenRetargetLoggingCleanupTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/TokenRollbackLoggingTests.cs"
       Link="TokenRollbackLoggingTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenRegistrationFailureTests.cs"
+      Link="TokenRegistrationFailureTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenReplayWithdrawalTests.cs"
+      Link="TokenReplayWithdrawalTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenTeardownReentrancyTests.cs"
+      Link="TokenTeardownReentrancyTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/GlobalResetBoundaryTests.cs"
+      Link="GlobalResetBoundaryTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/GlobalNestedMutationTests.cs"
+      Link="GlobalNestedMutationTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/HistoricalPostRouteOwnershipTests.cs"
+      Link="HistoricalPostRouteOwnershipTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TypedWithoutContextResetBoundaryTests.cs"
+      Link="TypedWithoutContextResetBoundaryTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/GlobalNestedSnapshotReclamationTests.cs"
+      Link="GlobalNestedSnapshotReclamationTests.cs"
+    />
+    <Compile Include="../Tests/Runtime/Core/IntKeyMapTests.cs" Link="IntKeyMapTests.cs" />
+    <Compile
+      Include="../Tests/Runtime/Core/BusIdentityResetTests.cs"
+      Link="BusIdentityResetTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/TypedSlotShapeTests.cs"
+      Link="TypedSlotShapeTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/MessageBusInvariantTests.cs"
+      Link="MessageBusInvariantTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/BusGlobalSlotLiveCountTests.cs"
+      Link="BusGlobalSlotLiveCountTests.cs"
+    />
+    <Compile Include="../Tests/Editor/Contract/ReflectionHelpers.cs" Link="ReflectionHelpers.cs" />
+    <Compile
+      Include="../Tests/Runtime/Core/ProductionAssemblySurfaceTests.cs"
+      Link="ProductionAssemblySurfaceTests.cs"
+    />
+    <Compile Include="../Tests/Editor/EditorProductionCalls.cs" Link="EditorProductionCalls.cs" />
+    <Compile
+      Include="../Tests/Editor/Contract/SweepRegistryInspection.cs"
+      Link="SweepRegistryInspection.cs"
+    />
+    <Compile Include="../Editor/Analyzers/BaseCallIlInspector.cs" Link="BaseCallIlInspector.cs" />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/HandlerDeregistrationActions.cs"
+      Link="HandlerDeregistrationActions.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/ConsumedContextHandleRetentionTests.cs"
+      Link="ConsumedContextHandleRetentionTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/DisabledTokenRetentionTests.cs"
+      Link="DisabledTokenRetentionTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/DiagnosticOriginAfterDisableTests.cs"
+      Link="DiagnosticOriginAfterDisableTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/OrderedHandlerEntryLifecycleTests.cs"
+      Link="OrderedHandlerEntryLifecycleTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/ForeignTouchGetterLifecycleTests.cs"
+      Link="ForeignTouchGetterLifecycleTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/CounterBasedTouchTests.cs"
+      Link="CounterBasedTouchTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/EvictionSweepContractTests.cs"
+      Link="EvictionSweepContractTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/MethodSignatureKeyValueTests.cs"
+      Link="MethodSignatureKeyValueTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/RetiredCleanupSlotTests.cs"
+      Link="RetiredCleanupSlotTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/ComparableContractTests.cs"
+      Link="ComparableContractTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/InstanceIdDataContractTests.cs"
+      Link="InstanceIdDataContractTests.cs"
     />
   </ItemGroup>
 </Project>

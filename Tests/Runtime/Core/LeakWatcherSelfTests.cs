@@ -674,10 +674,7 @@ namespace DxMessaging.Tests.Runtime.Core
             settings._evictionEnabled = true;
             settings._idleEvictionSeconds = 0f;
             settings._evictionTickIntervalSeconds = 0f;
-            return new RuntimeSettingsScope(
-                DxMessagingRuntimeSettingsProvider.Override(settings),
-                settings
-            );
+            return new RuntimeSettingsScope(RuntimeSettingsFixture.Override(settings), settings);
         }
 
         private sealed class RuntimeSettingsScope : IDisposable

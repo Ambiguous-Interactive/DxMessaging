@@ -27,8 +27,9 @@ via `Resources.Load<DxMessagingRuntimeSettings>("DxMessagingRuntimeSettings")`.
 On a load miss the runtime hands out a defaulted in-memory instance so the
 package always has a usable settings object. Field changes raise
 `SettingsChanged`, which live buses subscribe to so they can re-apply caps
-without recreation. The asset is hot-reloadable: edits saved to disk while
-Play mode is running take effect on the next sweep boundary.
+without recreation. In 4.0, validation queues one notification per asset until an
+idle Editor update. Edits made during compilation or import stay pending until
+the Editor is idle; subscribers then read the latest values.
 
 The plain [.NET runtime build](compatibility.md#plain-net-runtime) does not include
 this provider or its `ScriptableObject` settings type. Buses use the built-in defaults;
@@ -56,8 +57,8 @@ Two creation paths put the asset in place:
   `Assets/Resources/DxMessagingRuntimeSettings.asset` directly, creating the
   `Assets/Resources` folder if it does not already exist.
 
-The asset's `OnValidate` warns when an asset path lies outside a `Resources/`
-folder because `Resources.Load` would not find it there.
+After validation, an idle Editor update warns when the asset path lies outside
+a `Resources/` folder because `Resources.Load` would not find it there.
 
 ---
 
@@ -65,7 +66,7 @@ folder because `Resources.Load` would not find it there.
 
 | Name                           | C# property                   | Type  | Default                                      | Min | Tooltip                                                                                                                                                                                                                                             | Hot-reload | When to change                                                                                                                |
 | ------------------------------ | ----------------------------- | ----- | -------------------------------------------- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Idle Eviction Seconds          | `IdleEvictionSeconds`         | float | 30.0                                         | 0   | Idle threshold in seconds. Empty per-message-type slots are evicted only after going at least this long without a register/deregister/dispatch touch.                                                                                               | Yes        | Lower for leak diagnosis or aggressive reclaim; raise for high-throughput scenarios where slots empty briefly between bursts. |
+| Idle Eviction Seconds          | `IdleEvictionSeconds`         | float | 30.0                                         | 0   | Legacy-named idle-age budget in bus activity ticks, rounded up. Empty slots become eligible when their age exceeds this budget. Wall time controls sweep cadence only.                                                                              | Yes        | Lower for leak diagnosis or aggressive reclaim; raise for high-throughput scenarios where slots empty briefly between bursts. |
 | Buffer Max Distinct Entries    | `BufferMaxDistinctEntries`    | int   | 512                                          | 0   | Caps retained pool entries, empty priority-leaf size, successful reflexive method lookups, and each reflexive scratch buffer capacity. Zero disables retention. Reflexive method lookups always use LRU; the one-entry spare has no eviction order. | Yes        | Lower on memory-constrained targets; raise when profiling shows repeated lookup or scratch allocation from a small cap.       |
 | Buffer Use LRU Eviction        | `BufferUseLruEviction`        | bool  | true                                         | --  | When true, shared and per-bus collection pools use LRU eviction; otherwise pools behave as a bounded LIFO stack.                                                                                                                                    | Yes        | Switch to LIFO when access patterns are short-lived bursts; keep LRU for steady-state reuse.                                  |
 | Enable Trim API                | `EnableTrimApi`               | bool  | true                                         | --  | When true, IMessageBus.Trim performs its work; when false it is a no-op returning default. Lets shipped titles disable on-demand reclamation.                                                                                                       | Yes        | Disable in shipped titles that do not call Trim and do not want third-party code to force a sweep.                            |
@@ -74,9 +75,19 @@ folder because `Resources.Load` would not find it there.
 | Message Buffer Size            | `MessageBufferSize`           | int   | `IMessageBus.DefaultMessageBufferSize` (100) | 0   | Diagnostic message buffer size used when the bus is constructed. Mirrors IMessageBus.DefaultMessageBufferSize so the runtime asset can override the global default without touching code.                                                           | Yes        | Raise for longer history when debugging; set to 0 to discard emission history and skip the ring buffer.                       |
 | Registration Log Capacity      | `RegistrationLogCapacity`     | int   | 1024                                         | 0   | Maximum registration-history entries per bus. Oldest entries are overwritten; zero disables storage.                                                                                                                                                | Yes        | Raise for a longer registration trace; set to 0 to discard registration history.                                              |
 
+`IdleEvictionSeconds` retains its legacy name. The bus rounds its value up to an
+integer activity-tick budget and requires a strictly greater age before eviction.
+Register, deregister and emit operations advance the counter. A due PlayerLoop sweep
+advances it once; the hook does not add a tick on every frame. With the default
+budget of 30, 30 subsequent ticks retain an empty slot and the 31st makes it eligible.
+`EvictionTickIntervalSeconds` separately controls the minimum wall time between
+automatic sweeps. Explicit `Trim` checks the current age without advancing it;
+use `Trim(force: true)` to reclaim a quiet bus without waiting for more activity.
+
 The `Min` column reflects the `[Min(...)]` attribute that the editor enforces
 on numeric fields. Editor-time `OnValidate` clamps negative values back to
-zero before raising `SettingsChanged`.
+zero immediately. Asset-path checks and `SettingsChanged` delivery wait for an
+idle Editor update.
 
 ---
 
@@ -89,7 +100,7 @@ reference the same defaults the asset ships with:
 | ------------------------------------ | -------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `ResourceName`                       | `string` | `"DxMessagingRuntimeSettings"` | Resource name (no extension) used by `Resources.Load`.                                                                               |
 | `DefaultBufferMaxDistinctEntries`    | `int`    | 512                            | Default cap for retained pool entries, priority-leaf size, successful reflexive lookups, and each reflexive scratch buffer capacity. |
-| `DefaultIdleEvictionSeconds`         | `float`  | 30                             | Default idle threshold in seconds before an empty slot becomes stale.                                                                |
+| `DefaultIdleEvictionSeconds`         | `float`  | 30                             | Default counter-age budget before an empty slot becomes eligible; the legacy name retains Seconds.                                   |
 | `DefaultEvictionTickIntervalSeconds` | `float`  | 5                              | Default minimum interval between idle sweeps, in seconds.                                                                            |
 
 Reference these constants from test fixtures and bootstrap code rather than
@@ -163,7 +174,7 @@ public readonly struct TrimResult : IEquatable<TrimResult>
 
 | Field                      | Description                                                                                                                                                                                 |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TypeSlotsEvicted`         | Number of typed-handler slots reset across all reclaimed message types.                                                                                                                     |
+| `TypeSlotsEvicted`         | Aggregate number of bus type-cache entries, typed-handler slots and global slots reclaimed.                                                                                                 |
 | `TargetSlotsEvicted`       | Number of bus target or source context entries removed.                                                                                                                                     |
 | `PooledCollectionsEvicted` | Number of pooled collections dropped from shared pools (`DxPools` plus the bus-owned context-dictionary pool), per-bus reflexive-dispatch pools, and the per-bus empty priority-leaf spare. |
 | `LiveTypeSlotsRemaining`   | Number of occupied type slots remaining after the trim; equal to a post-trim read of `OccupiedTypeSlots`.                                                                                   |
@@ -175,10 +186,14 @@ The struct overrides `ToString()` and implements equality on all four fields.
 ## Hot-Reload Semantics
 
 `DxMessagingRuntimeSettings` raises the static event
-`DxMessagingRuntimeSettings.SettingsChanged` from its editor `OnValidate` and
-from `DxMessagingRuntimeSettingsProvider.Override`. Subscribers should be
-small and re-entrancy-safe; the event is invoked synchronously on the calling
-thread.
+`DxMessagingRuntimeSettings.SettingsChanged` on an idle Editor update after
+validation. In 4.0, `OnValidate` clamps only local fields and queues the asset;
+it does not inspect the AssetDatabase or invoke subscribers. Repeated validations
+of one asset coalesce, and subscribers read its latest values on the main Editor
+thread. Compilation and import postpone delivery. A destroyed queued asset is
+discarded. Validation requested by a subscriber waits for another update.
+Transient fallback creation does not broadcast defaults on that update. Subscribers
+should be small and re-entrancy-safe.
 
 ```csharp
 public static event Action<DxMessagingRuntimeSettings> SettingsChanged;
@@ -208,43 +223,15 @@ subscriptions from previous Play mode sessions from firing.
 
 ---
 
-## Test Override
+## Settings lifetime
 
-`DxMessagingRuntimeSettingsProvider.Override(DxMessagingRuntimeSettings settings)`
-pushes a test-supplied settings instance as the active `Current` value and
-returns an `IDisposable`. Each call allocates one sealed reference token; the
-interface return does not add boxing. Disposing nested tokens in any order
-restores the nearest active ancestor, or the settings that were current before
-the override chain began. Ending a covered ancestor does not raise a transient
-event. The push and each effective restore raise `SettingsChanged` so subscribed
-buses re-apply caps in both directions. `DxMessagingStaticState.Reset()`
-invalidates every older token, so disposing stale test state cannot replace a
-new configuration.
+Use `DxMessagingRuntimeSettingsProvider.Current` to read the resource asset or its
+default fallback. The provider clears its cached reference on player subsystem
+initialization and `DxMessagingStaticState.Reset()`, then loads settings on the next read.
 
-```csharp
-using System;
-using DxMessaging.Core.Configuration;
-using UnityEngine;
-
-public static class TestSettingsExample
-{
-    public static void RunWithCustomSettings()
-    {
-        DxMessagingRuntimeSettings testSettings =
-            ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
-        // Test-only: production code should not call Override directly.
-        using (IDisposable token =
-            DxMessagingRuntimeSettingsProvider.Override(testSettings))
-        {
-            // Bus reads testSettings until token is disposed.
-        }
-    }
-}
-```
-
-The provider is intended for tests and bootstrap code that needs to inject a
-specific configuration. Production code should rely on the loaded asset (or
-the defaulted fallback) rather than calling `Override` directly.
+4.0 removes the test-only `DxMessagingRuntimeSettingsProvider.Override` API.
+Configure `Assets/Resources/DxMessagingRuntimeSettings.asset` for application settings.
+Keep fixture configuration and restoration in test assemblies.
 
 ---
 

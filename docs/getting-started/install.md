@@ -4,14 +4,17 @@ This page helps you install DxMessaging into a Unity 2021.3+ project using the U
 
 ## Quick Reference
 
-| Method                       | Command/URL                                                | Auto-Updates |
-| ---------------------------- | ---------------------------------------------------------- | ------------ |
-| **OpenUPM** (Recommended)    | `openupm add com.wallstop-studios.dxmessaging`             | Yes          |
-| **Git URL**                  | `https://github.com/Ambiguous-Interactive/DxMessaging.git` | No           |
-| **NPM Scoped Registry**      | Add registry + resolve                                     | Yes          |
-| **From Releases**            | Download npm `.tgz`                                        | No           |
-| **From Source**              | Clone/download zip                                         | No           |
-| **Manual** (not recommended) | Edit manifest.json                                         | No           |
+| Method                       | Command/URL                                                | Update action                       |
+| ---------------------------- | ---------------------------------------------------------- | ----------------------------------- |
+| **OpenUPM** (Recommended)    | `openupm add com.wallstop-studios.dxmessaging`             | Select a version in UPM             |
+| **Git URL**                  | `https://github.com/Ambiguous-Interactive/DxMessaging.git` | Reinstall at a chosen revision      |
+| **npm Scoped Registry**      | Add registry + resolve                                     | Select a version in UPM             |
+| **From Releases**            | Download npm `.tgz`                                        | Download and import a new package   |
+| **From Source**              | Clone/download zip                                         | Update the embedded checkout        |
+| **Manual** (not recommended) | Edit manifest.json                                         | Edit the dependency in the manifest |
+
+Registry installs expose available versions in Package Manager. To upgrade, select a version and
+apply the update as described in [Unity's package update guide](https://docs.unity3d.com/2021.3/Documentation/Manual/upm-ui-update.html).
 
 ## Methods
 
@@ -19,7 +22,7 @@ This page helps you install DxMessaging into a Unity 2021.3+ project using the U
 
 The easiest way to install DxMessaging is via [OpenUPM](https://openupm.com/packages/com.wallstop-studios.dxmessaging/).
 
-If you have the [openupm-cli](https://openupm.com/docs/getting-started.html) installed, run:
+If you have the [OpenUPM CLI](https://openupm.com/docs/getting-started-cli) installed, run:
 
 ```bash
 openupm add com.wallstop-studios.dxmessaging
@@ -27,7 +30,7 @@ openupm add com.wallstop-studios.dxmessaging
 
 #### Benefits of OpenUPM
 
-- Automatic update notifications in Unity Package Manager
+- Available versions and update controls in Unity Package Manager
 - Easy dependency management
 - Simple one-command installation
 - Version history and changelogs available on the [OpenUPM page](https://openupm.com/packages/com.wallstop-studios.dxmessaging/)
@@ -45,7 +48,7 @@ https://github.com/Ambiguous-Interactive/DxMessaging.git
 
 - Click Add. Unity imports the package and its analyzers/generators.
 
-### NPM Scoped Registry
+### npm Scoped Registry
 
 1. Open Unity Package Manager
 1. Open the Advanced Package Settings
@@ -59,7 +62,9 @@ Unity will notify you of version updates when using scoped registries.
 
 ### From Releases
 
-Check out the latest [Releases](https://github.com/Ambiguous-Interactive/DxMessaging/releases) to download the npm `.tgz` package, a classic `.unitypackage`, and their `.sha256` checksums. Every release ships the `.unitypackage` as a required asset; verify a download with `sha256sum -c <file>.sha256`.
+Open the [latest package release](https://github.com/Ambiguous-Interactive/DxMessaging/releases/latest)
+and download the npm `.tgz` package or classic `.unitypackage`, plus its matching `.sha256` checksum.
+Verify the download with `sha256sum -c <file>.sha256`.
 
 ### From Source
 

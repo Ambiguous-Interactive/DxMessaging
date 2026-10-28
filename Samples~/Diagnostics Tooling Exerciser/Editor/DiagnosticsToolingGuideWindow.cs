@@ -313,7 +313,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
 
         private static DiagnosticsToolingExerciser FindRunner()
         {
-#if UNITY_6000_5_OR_NEWER
+#if UNITY_6000_4_OR_NEWER
             return Object.FindAnyObjectByType<DiagnosticsToolingExerciser>(
                 FindObjectsInactive.Exclude
             );
@@ -328,7 +328,7 @@ namespace WallstopStudios.DxMessagingSamples.DiagnosticsToolingExerciser.Editor
 
         private static DiagnosticsToolingReceiver[] FindReceivers()
         {
-#if UNITY_6000_5_OR_NEWER
+#if UNITY_6000_4_OR_NEWER
             return Object.FindObjectsByType<DiagnosticsToolingReceiver>(
                 FindObjectsInactive.Exclude
             );

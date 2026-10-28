@@ -16,6 +16,15 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
     [Generator]
     public sealed class DxAutoConstructorGenerator : ISourceGenerator
     {
+        private static readonly SymbolDisplayFormat DeclarationNameFormat = new(
+            typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameOnly,
+            genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
+            miscellaneousOptions: SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers
+        );
+
+        private static readonly SymbolDisplayFormat IdentifierNameFormat =
+            DeclarationNameFormat.WithGenericsOptions(SymbolDisplayGenericsOptions.None);
+
         private static readonly DiagnosticDescriptor InvalidOptionalDefaultDiagnostic = new(
             id: "DXMSG005",
             title: "Invalid optional default value",
@@ -252,9 +261,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 string hintName =
                     $"{typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.AutoGenConstructor.g.cs"
                         .Replace("global::", "")
-                        .Replace("<", "_")
-                        .Replace(">", "_")
-                        .Replace(",", "_"); // Clean hint name for file system
+                        .Replace("@", "")
+                        .Replace("<", "-")
+                        .Replace(">", "-")
+                        .Replace(",", "-"); // Hyphens cannot collide with legal C# identifier characters.
 
                 context.AddSource(hintName, SourceText.From(generatedSource, Encoding.UTF8));
             }
@@ -312,16 +322,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 };
 
                 // Render generic parameters for the container
-                string containerTypeParams =
-                    0 < container.TypeParameters.Length
-                        ? "<"
-                            + string.Join(", ", container.TypeParameters.Select(static p => p.Name))
-                            + ">"
-                        : string.Empty;
+                string containerName = container.ToDisplayString(DeclarationNameFormat);
 
                 // Do not repeat modifiers like sealed/abstract/static/readonly/ref here to avoid changing semantics across parts
                 containersOpen.AppendLine(
-                    $"{currentIndent}{containerAccessibility} partial {containerKind} {container.Name}{containerTypeParams}"
+                    $"{currentIndent}{containerAccessibility} partial {containerKind} {containerName}"
                 );
                 containersOpen.Append(currentIndent).AppendLine("{");
                 currentIndent += Indent;
@@ -330,13 +335,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             string innerIndent = currentIndent; // indent level for the target (innermost) type
 
             // Use simple identifier + type parameters (no containers) because we are inside container wrappers
-            string typeGenericParams =
-                0 < typeSymbol.TypeParameters.Length
-                    ? "<"
-                        + string.Join(", ", typeSymbol.TypeParameters.Select(static p => p.Name))
-                        + ">"
-                    : string.Empty;
-            string typeName = typeSymbol.Name + typeGenericParams;
+            string typeName = typeSymbol.ToDisplayString(DeclarationNameFormat);
             bool typeIsRecord = IsRecordDeclaration(typeSymbol);
             string typeKind = typeSymbol.TypeKind switch
             {
@@ -387,6 +386,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             {
                 string fieldType = field.Type.ToDisplayString(fieldTypeFormat);
                 string fieldName = field.Name;
+                string parameterName = field.ToDisplayString(IdentifierNameFormat);
                 string? defaultExpr = null;
                 bool isOptional = false;
 
@@ -507,8 +507,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     break; // only one DxOptionalParameterAttribute expected
                 }
 
-                parameterDetails.Add((fieldType, fieldName, isOptional, defaultExpr));
-                constructorBody.AppendLine($"{Indent}{Indent}    this.{fieldName} = {fieldName};");
+                parameterDetails.Add((fieldType, parameterName, isOptional, defaultExpr));
+                constructorBody.AppendLine(
+                    $"{Indent}{Indent}    this.{parameterName} = {parameterName};"
+                );
             }
 
             for (int i = 0; i < parameterDetails.Count; i++)
@@ -557,7 +559,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     $"{Indent}    /// <summary>",
                     $"{Indent}    /// Auto-generated constructor by DxAutoGenConstructorGenerator.",
                     $"{Indent}    /// </summary>",
-                    $"{innerIndent}    {constructorAccessibility} {typeSymbol.Name}({constructorParams})",
+                    $"{innerIndent}    {constructorAccessibility} {typeSymbol.ToDisplayString(IdentifierNameFormat)}({constructorParams})",
                     $"{innerIndent}    {{",
                     $"{constructorBody}",
                     $"{innerIndent}    }}",

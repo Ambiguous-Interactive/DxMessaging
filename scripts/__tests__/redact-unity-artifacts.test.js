@@ -116,6 +116,50 @@ const BINARY_BLOB = Buffer.concat([
   Buffer.from(FAKE_SERIAL, "utf8"),
   Buffer.from([0x00])
 ]);
+for (const [name, prefix, offset, accepted] of VECTORS.oversizedFiles) {
+  test(`oversized artifact classification preserves ${name}`, (t) => {
+    const { root, target } = artifactFile(Buffer.alloc(0), name);
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const fd = fs.openSync(target, "r+");
+    try {
+      fs.ftruncateSync(fd, 566423552);
+      fs.writeSync(fd, Buffer.from(prefix), 0, prefix.length, offset);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const written = [];
+    const read = fs.readSync;
+    let calls = 0;
+    const shortRead = name === "short-utf16.pdb" && t.mock.method(fs, "readSync", (fd, buffer, offset, length, position) => read(fd, buffer, offset, calls++ < 2 ? 1 : length, position));
+    let failedFd;
+    const readFailure =
+      name === "read-error.pdb" &&
+      t.mock.method(fs, "readSync", (descriptor) => {
+        failedFd = descriptor;
+        throw new Error("Simulated oversized input read failure.");
+      });
+    assert.equal(invokeCli(root, written), accepted ? 0 : 2, name);
+    assert.match(
+      written.join(""),
+      readFailure ? /could not be read/ : accepted ? /1 opaque or binary/ : /over the .* cap/,
+      name
+    );
+    if (readFailure) {
+      readFailure.mock.restore();
+      assert.throws(() => fs.fstatSync(failedFd), { code: "EBADF" });
+    }
+    shortRead && shortRead.mock.restore();
+    assert.equal(fs.statSync(target).size, 566423552, name);
+    const sample = Buffer.alloc(prefix.length);
+    const check = fs.openSync(target, "r");
+    try {
+      fs.readSync(check, sample, 0, sample.length, offset);
+    } finally {
+      fs.closeSync(check);
+    }
+    assert.deepEqual(sample, Buffer.from(prefix), name);
+  });
+}
 function writeArtifactTree() {
   const root = temporaryDirectory();
   fs.mkdirSync(path.join(root, "logs", "deep"), { recursive: true });
@@ -521,6 +565,13 @@ test("entity-heavy account input cannot exhaust the scrubber", () => {
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0);
 });
+test("repeated NUnit scalar contexts use the document cache", () => {
+  // 2026-10-26: expanded native suites repeated contextual scans before reaching the scalar cache.
+  const pattern = CREDENTIAL_PATTERNS.find(({ id }) => id === "credential-assignment").pattern, original = pattern.exec;
+  let calls = 0;
+  try { pattern.exec = function (...args) { calls++; return original.apply(this, args); }; assert.deepEqual(findSensitiveData(`<test-run>${'<test-case name="TokenCase"/>'.repeat(1024)}</test-run>`, ".xml"), []); assert.equal(calls, 1); }
+  finally { pattern.exec = original; }
+});
 test("repeated sensitive Bee JSON scalars are scanned once per document", () => {
   // 2026-09-13: repeated Bee paths made the 20-cell shipping redaction gate exceed two minutes.
   const value = "C:/Users/runner/Library/Bee/artifacts/WinPlayerBuildProgram/il2cppOutput/build/Data/Metadata/global-metadata.dat";
@@ -649,60 +700,21 @@ for (const [label, bytes, expectedEncoding] of DECODE_CASES) {
     );
   });
 }
-test("a log carrying a stray NUL is normalized and redacted", () => {
-  const { root, target } = artifactFile(STRAY_NUL_LOG, "unity.log");
-  const result = redactDirectory(root);
-  assert.deepEqual(
-    result.changed.map((file) => file.path),
-    ["unity.log"],
-    "stray NUL: one NUL byte must not take a whole Unity log out of the scan"
-  );
-  const rewritten = fs.readFileSync(target);
-  assert.ok(!rewritten.includes(FAKE_SERIAL), "stray NUL: the serial must be gone");
-  assert.ok(
-    rewritten.includes("[redacted:unity-serial]"),
-    "stray NUL: the placeholder must name the kind that was removed"
-  );
-  assert.ok(!rewritten.includes(0), "stray NUL: normalization must remove the separator byte");
-  assert.equal(result.totals.get("stray-nul-byte"), 1);
-});
-test("redaction removes a NUL inserted inside a sensitive token before matching", () => {
-  const splitSerial = FAKE_SERIAL.replace("FAKE-FAKE", "FAKE\0-\0FAKE");
-  const { root, target } = artifactFile(splitSerial, "unity.log");
-  const result = redactDirectory(root);
-  const rewritten = fs.readFileSync(target, "utf8");
-  assert.equal(rewritten, "[redacted:unity-serial]");
-  assert.equal(result.totals.get("stray-nul-byte"), 2);
-  assert.equal(result.totals.get("unity-serial"), 1);
-});
-test("a UTF-16LE log behind a byte-order mark is redacted and re-encoded as UTF-16LE", () => {
-  const { root, target } = artifactFile(UTF16LE_BOM_LOG, "configure.log");
-  const result = redactDirectory(root);
-  assert.deepEqual(
-    result.changed.map((file) => file.path),
-    ["configure.log"],
-    "utf16le: a PowerShell-written log is text and must be scanned"
-  );
-  const rewritten = fs.readFileSync(target);
-  assert.deepEqual(
-    rewritten.subarray(0, 2),
-    Buffer.from([0xff, 0xfe]),
-    "utf16le: the byte-order mark must survive so the file still reads as UTF-16LE"
-  );
-  const text = rewritten.toString("utf16le");
-  assert.ok(!text.includes(FAKE_SERIAL), "utf16le: the serial must be gone");
-  assert.ok(
-    text.includes("[redacted:unity-serial]"),
-    "utf16le: the rewrite must be re-encoded in the encoding it was read from"
-  );
-});
-test("a rewritten UTF-8 log preserves its byte-order mark", () => {
-  const { root, target } = artifactFile(UTF8_BOM_LOG);
-  redactDirectory(root);
-  const rewritten = fs.readFileSync(target);
-  assert.deepEqual(rewritten.subarray(0, 3), Buffer.from([0xef, 0xbb, 0xbf]));
-  assert.ok(!rewritten.includes(Buffer.from(FAKE_HOST)));
-});
+for (const [label, original, encoding, expected, nulCount, kind] of VECTORS.nulAndBomFiles) {
+  test(`redaction preserves encoding and removes ${label}`, (t) => {
+    const { root, target } = artifactFile(Buffer.from(original, encoding), "unity.log");
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const result = redactDirectory(root);
+    assert.deepEqual(
+      result.changed.map((file) => file.path),
+      ["unity.log"],
+      label
+    );
+    assert.deepEqual(fs.readFileSync(target), Buffer.from(expected, encoding), label);
+    assert.equal(result.totals.get("stray-nul-byte") ?? 0, nulCount, label);
+    assert.equal(result.totals.get(kind), 1, label);
+  });
+}
 for (const [label, bytes] of [
   ["UTF-8 web host", Buffer.from("URL https://bâtisseur/path", "utf8")],
   ["UTF-8 UNC host", Buffer.from("path=\\\\构建机\\share\\file", "utf8")],
@@ -829,11 +841,7 @@ for (const [fileName, suffix] of [
     const original = Buffer.concat([fs.readFileSync(source), Buffer.from(suffix)]);
     const { root, target } = artifactFile(original, fileName);
     const result = redactDirectory(root);
-    assert.deepEqual(
-      fs.readFileSync(target),
-      original,
-      "PNG bytes must never be rewritten as text"
-    );
+    assert.deepEqual(fs.readFileSync(target), original, "PNG bytes must not change");
     assert.equal(result.binaryCount, 1);
     assert.deepEqual(result.changed, []);
   });

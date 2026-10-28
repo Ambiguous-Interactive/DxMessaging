@@ -22,7 +22,7 @@ namespace DxMessaging.Editor
     /// </summary>
     internal static class DxMessagingEmissionCaptureNotice
     {
-        /// <summary>Name of the enable button, so tests and surfaces can find it.</summary>
+        /// <summary>Name of the enable button shared by the diagnostic surfaces.</summary>
         internal const string EnableButtonName = "dxmessaging-enable-emission-capture";
 
         /// <summary>Short suffix for a collapsed header, e.g. "Stack trace (capture off)".</summary>
@@ -44,12 +44,6 @@ namespace DxMessaging.Editor
         internal static bool CaptureEnabled => IMessageBus.GlobalDiagnosticsStackTraces;
 
         /// <summary>
-        /// Test seam mirroring the inspector overlay's: lets a test run the settings write inline
-        /// instead of waiting on <c>delayCall</c> plus an editor-idle tick.
-        /// </summary>
-        internal static Action<Action> AssetDatabaseMutationScheduler { get; set; }
-
-        /// <summary>
         /// Turns capture on for this session immediately, then persists it to the settings asset so
         /// it survives a domain reload. The in-memory flip is deliberately NOT deferred: the user
         /// clicked a button and expects the next emission to carry a site, while the asset write
@@ -59,10 +53,7 @@ namespace DxMessaging.Editor
         {
             IMessageBus.GlobalDiagnosticsStackTraces = true;
 
-            Action<Action> schedule =
-                AssetDatabaseMutationScheduler
-                ?? DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
-            schedule(() =>
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() =>
             {
                 try
                 {

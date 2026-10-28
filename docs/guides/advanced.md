@@ -22,9 +22,23 @@ Lifecycles and tokens
   - Manual: `var token = messagingComponent.Create(this);`
 - Enable/Disable
   - Call `token.Enable()` in `OnEnable` and `token.Disable()` in `OnDisable`.
-  - Idempotent; safe to call multiple times.
+  - Idempotent; repeated calls are safe.
+  - Removing a staged handle from a custom-bus registration callback keeps that entry inactive
+    during the current replay. A replacement staged on a disabled token activates on
+    the next Disable/Enable cycle.
+  - If a custom bus rejects a registration on an enabled token before changing its registrations,
+    that call leaves no staged entry to replay later.
+  - A failed `Enable()` keeps registrations that you staged before enabling the token. If `Enabled` is
+    false, retry `Enable()` after the bus recovers, or remove those handles. If rollback leaves
+    `Enabled` true, finish cleanup with `Disable()` before enabling again.
 - Clearing
-  - A successful `token.UnregisterAll()` disables and clears staged registrations plus token-local diagnostics.
+  - `token.UnregisterAll()` removes current registrations and clears token-local diagnostics when
+    cleanup finishes.
+  - Custom-bus deregistration callbacks may call token cleanup again. In-flight cleanup runs once;
+    a failed action keeps its original handle retryable, even if a callback clears or reuses its slot.
+  - In 4.0, cleanup applies only to the registrations selected when that pass starts. Registrations
+    accepted by a callback, including reactivation of a staged handle, keep the token enabled for
+    another cleanup pass. Call `UnregisterAll()` again after the callback stops adding registrations.
   - `token.RemoveRegistration(handle)` removes a single registration.
   - `token.AsDisposable(handle)` returns a copy-safe concrete value type. Keep that concrete type
     to avoid `IDisposable` boxing. Only the first successful removal has an effect; a failed removal
@@ -137,7 +151,7 @@ for cleanup failures and hosts that have never been active.
 
 Re-register after release (opt-in)
 
-`MessagingComponent.Release` permanently disposes a listener's token; by default
+When cleanup completes, `MessagingComponent.Release` removes the listener's cached token; by default
 the listener stays unregistered across later enable/disable cycles. Override
 `ReregisterOnEnableAfterRelease` on a `MessageAwareComponent` to opt into
 automatic recovery: the next enable re-creates the token and replays
@@ -145,6 +159,7 @@ automatic recovery: the next enable re-creates the token and replays
 
 > **Fixed in v4.0.0:** A retained reference can release a listener after Unity destroys it.
 > `Release` disposes the token and removes the cached listener before returning `true`.
+> A nested release or new work accepted during cleanup returns `false` and keeps the cleanup owner cached.
 
 ```csharp
 using DxMessaging.Unity;
@@ -250,11 +265,14 @@ Do's
 
 ## Important behavior note: Snapshot Semantics
 
-- When a message is emitted, DxMessaging takes a snapshot of all current listeners (handlers, interceptors, post-processors).
-- Listeners registered **during** an emission will **not** run for that emission -- they only become active for the **next** emission.
-- This prevents infinite loops (e.g., a handler that registers itself won't recurse).
-- This applies to all message types (Untargeted, Targeted, Broadcast) and all listener types.
-- See [Interceptors & Ordering](../concepts/interceptors-and-ordering.md#snapshot-semantics-frozen-listener-lists) for detailed examples.
+Listener lists freeze when each dispatch phase acquires them. Registration changes can affect
+later phases whose lists have not been captured; they do not rewrite a list already in use.
+See [Snapshot Semantics](../concepts/interceptors-and-ordering.md#snapshot-semantics-frozen-listener-lists)
+for the acquisition points and global accept-all rules.
+
+Handler activity is checked separately from list membership. See
+[Handler activity during callbacks](../concepts/interceptors-and-ordering.md#handler-activity-during-callbacks)
+before using `MessageHandler.active` to control delivery during an emission.
 
 Don'ts
 

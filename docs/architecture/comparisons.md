@@ -1439,26 +1439,15 @@ Add/remove systems without affecting others
 
 #### What You Gain
 
-- [x] Isolation - Local buses per test, zero global state
+- [x] Isolated routing - Pass a local bus to each test participant and dispose its tokens
 - [x] Observability - Count messages, inspect payloads easily
-- [x] Determinism - Priority-based ordering eliminates flakiness
+- [x] Explicit ordering - Priorities determine handler order
 
 ##### Example
 
-```csharp
-// Test with isolated bus
-[Test]
-public void TestAchievementSystem() {
-    var testBus = new MessageBus();
-    var token = MessageRegistrationToken.Create(achievementHandler, testBus);
-
-    var gameObject = new GameObject();
-    var msg = new EnemyKilled("Boss", 10);
-    msg.EmitGameObjectBroadcast(gameObject, testBus);
-
-    Assert.IsTrue(achievementSystem.Unlocked("BossSlayer"));
-}
-```
+See the [complete local-bus test in the README](https://github.com/Ambiguous-Interactive/DxMessaging#local-bus-islands-for-testing)
+for a subscription that enables its token, verifies delivery, and disposes the token even when an
+assertion fails. Separate buses isolate routing; runtime settings and pools remain shared.
 
 **Verdict:** DxMessaging makes integration testing easier, unit testing slightly more verbose.
 

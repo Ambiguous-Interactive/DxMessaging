@@ -40,6 +40,8 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 internal sealed class DocsObsoleteApiReferenceTests
 {
     private static readonly string[] SourceScanRoots = { "Runtime", "Editor" };
+    private static readonly string[] GeneratedDirectoryNames = { ".artifacts", "obj", "bin" };
+    private static readonly string[] ExpectedFixtureObsoleteMembers = { "RealApi.OldValue" };
     private static readonly string[] ExpectedProbeMembers = { "Probe.Removed" };
 
     // Resolve + parse once per test-run process: both tests share the same Roslyn scan of
@@ -129,6 +131,60 @@ internal sealed class DocsObsoleteApiReferenceTests
             Assert.That(discovered, Does.Contain("MessageBusRebindMode.Unknown"));
             Assert.That(discovered, Does.Contain("ReflexiveSendMode.None"));
         });
+    }
+
+    /// <remarks>
+    /// Issue #617: absolute-path exclusions rejected real source whenever a checkout's parent
+    /// was named .artifacts, obj, or bin. Exclusions apply only inside the repository root.
+    /// </remarks>
+    [TestCase("ordinary")]
+    [TestCase(".artifacts")]
+    [TestCase("obj")]
+    [TestCase("bin")]
+    public void ObsoleteMemberScanUsesRepositoryRelativeGeneratedDirectoryExclusions(
+        string parentDirectory
+    )
+    {
+        string temporaryRoot = Path.Combine(
+            Path.GetTempPath(),
+            "dxm-obsolete-worktree-" + Guid.NewGuid().ToString("N")
+        );
+        string repoRoot = Path.Combine(temporaryRoot, parentDirectory, "checkout");
+        string runtimeRoot = Path.Combine(repoRoot, "Runtime");
+        try
+        {
+            Directory.CreateDirectory(runtimeRoot);
+            File.WriteAllText(
+                Path.Combine(runtimeRoot, "RealApi.cs"),
+                "class RealApi { [System.Obsolete] public int OldValue; }"
+            );
+            foreach (string generatedDirectory in GeneratedDirectoryNames)
+            {
+                string generatedRoot = Path.Combine(runtimeRoot, generatedDirectory);
+                Directory.CreateDirectory(generatedRoot);
+                File.WriteAllText(
+                    Path.Combine(generatedRoot, "GeneratedApi.cs"),
+                    "class GeneratedApi { [System.Obsolete] public int OldValue; }"
+                );
+            }
+
+            string[] discovered = CollectObsoleteMembers(repoRoot)
+                .Select(member => member.QualifiedName)
+                .ToArray();
+            Assert.That(
+                discovered,
+                Is.EqualTo(ExpectedFixtureObsoleteMembers),
+                "An enclosing generated-directory name must preserve real sources; repository-local "
+                    + "generated directories must still be excluded."
+            );
+        }
+        finally
+        {
+            if (Directory.Exists(temporaryRoot))
+            {
+                Directory.Delete(temporaryRoot, recursive: true);
+            }
+        }
     }
 
     [TestCase("ordinary")]

@@ -14,6 +14,12 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
     [Generator]
     public sealed class DxMessageIdGenerator : ISourceGenerator
     {
+        private static readonly SymbolDisplayFormat DeclarationNameFormat = new(
+            typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameOnly,
+            genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
+            miscellaneousOptions: SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers
+        );
+
         /*
             Base IMessage interface (used for implementation checks if needed, and property names)
             *** Assumes the user has defined this interface in their code ***
@@ -502,9 +508,10 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 string implHintName =
                     $"{messageInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.IMessage.g.cs"
                         .Replace("global::", "")
-                        .Replace("<", "_")
-                        .Replace(">", "_")
-                        .Replace(",", "_"); // Clean hint name
+                        .Replace("@", "")
+                        .Replace("<", "-")
+                        .Replace(">", "-")
+                        .Replace(",", "-"); // Hyphens cannot collide with legal C# identifier characters.
 
                 context.AddSource(implHintName, SourceText.From(implSource, Encoding.UTF8));
                 generatedAttributedTypes.Add(messageInfo.TypeSymbol);
@@ -576,16 +583,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     _ => "class",
                 };
 
-                string containerTypeParams =
-                    0 < container.TypeParameters.Length
-                        ? "<"
-                            + string.Join(", ", container.TypeParameters.Select(static p => p.Name))
-                            + ">"
-                        : string.Empty;
+                string containerName = container.ToDisplayString(DeclarationNameFormat);
 
                 // Avoid repeating sealed/abstract/static/readonly/ref to prevent conflicting semantics
                 containersOpen.AppendLine(
-                    $"{currentIndent}{containerAccessibility} partial {containerKind} {container.Name}{containerTypeParams}"
+                    $"{currentIndent}{containerAccessibility} partial {containerKind} {containerName}"
                 );
                 containersOpen.Append(currentIndent).AppendLine("{");
                 currentIndent += Indent;
@@ -594,13 +596,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             string innerIndent = currentIndent;
 
             // Use unqualified nested identifier for declaration (containers already opened)
-            string typeGenericParams =
-                0 < typeSymbol.TypeParameters.Length
-                    ? "<"
-                        + string.Join(", ", typeSymbol.TypeParameters.Select(static p => p.Name))
-                        + ">"
-                    : string.Empty;
-            string typeNameWithGenerics = typeSymbol.Name + typeGenericParams;
+            string typeNameWithGenerics = typeSymbol.ToDisplayString(DeclarationNameFormat);
             string fullyQualifiedName = typeSymbol.ToDisplayString(
                 SymbolDisplayFormat.FullyQualifiedFormat
             );

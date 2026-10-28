@@ -18,8 +18,10 @@ namespace DxMessaging.Core.Messages
     /// </example>
     public readonly struct SourcedStringMessage : IBroadcastMessage<SourcedStringMessage>
     {
+        /// <summary>Gets the type used to route this message through the bus.</summary>
         public Type MessageType => typeof(SourcedStringMessage);
 
+        /// <summary>Text supplied as the message payload.</summary>
         public readonly string message;
 
         /// <summary>

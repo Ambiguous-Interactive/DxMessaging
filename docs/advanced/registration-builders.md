@@ -101,6 +101,12 @@ options.UnityOwner = gameObject;  // or any Component
 
 When omitted, a synthetic owner ID is generated automatically. `UnityOwner` takes precedence over `Owner` when both are set.
 
+Automatically generated owner IDs remain consumed until the application domain ends.
+`DxMessagingStaticState.Reset()` does not reuse them, so leases on a preserved custom bus
+keep separate handlers across resets. This also applies to leases that have not yet been
+activated. `Build()` throws `InvalidOperationException` if the negative synthetic owner
+range is exhausted. Explicit `Owner` and `UnityOwner` values still take precedence.
+
 ### Message Bus Selection
 
 Control which bus handles registrations:
@@ -182,13 +188,15 @@ A `MessageRegistrationLease` wraps the created token and provides lifecycle mana
 
 ### Properties
 
-| Property     | Type                       | Description                           |
-| ------------ | -------------------------- | ------------------------------------- |
-| `Token`      | `MessageRegistrationToken` | The underlying registration token     |
-| `Handler`    | `MessageHandler`           | The handler hosting registrations     |
-| `MessageBus` | `IMessageBus`              | The bus used for registrations        |
-| `Owner`      | `InstanceId`               | The owner identifier                  |
-| `IsActive`   | `bool`                     | Whether the lease is currently active |
+| Property     | Type                       | Description                                             |
+| ------------ | -------------------------- | ------------------------------------------------------- |
+| `Token`      | `MessageRegistrationToken` | The underlying registration token                       |
+| `Handler`    | `MessageHandler`           | The handler hosting registrations                       |
+| `MessageBus` | `IMessageBus`              | Selector captured at build; null selects the global bus |
+| `Owner`      | `InstanceId`               | The owner identifier                                    |
+| `IsActive`   | `bool`                     | State maintained by lease operations                    |
+
+Retargeting the token does not change `MessageBus`. Manage activation through the lease to keep its state and lifecycle hooks synchronized; direct token operations do not update `IsActive`.
 
 ### Activation Methods
 
@@ -202,7 +210,10 @@ lease.Deactivate();
 
 - `Activate()` throws `ObjectDisposedException` if called after disposal
 - `Deactivate()` is safe to call multiple times or after disposal
-- If `ActivateOnBuild` activation throws, the builder disposes the partially constructed lease before throwing again. If cleanup itself cannot finish because deregistration remains retryable, `Build()` throws `MessageRegistrationBuildException`; dispose `exception.Lease` after resolving the cleanup failure.
+- **4.0:** A nested `Activate()` from a registration callback returns while the outer call owns activation. Disposal during registration prevents `OnActivate` and attempts to release newly accepted subscriptions.
+- **4.0:** If a cleanup callback adds a subscription, `Token.Enabled` and `IsActive` can stay true. Retry `Dispose()` to release it. The `OnDispose` hook runs once.
+- **4.0:** If cleanup diagnostics stage or enable registrations, `Build()` releases them or throws `MessageRegistrationBuildException` with a recovery lease. Diagnostic exceptions propagate after cleanup completes. The recovery exception takes priority while cleanup remains live.
+- **4.0:** If `Configure`, `OnBuild`, or `ActivateOnBuild` activation throws, `Build()` cleans up its token before throwing again. If deregistration remains retryable, `Build()` throws `MessageRegistrationBuildException`; dispose `exception.Lease` after resolving the cleanup failure. Its `ActivationException` property contains the original setup or activation failure, and `CleanupException` contains the first cleanup failure. `CleanupException` is null when callbacks add cleanup work without throwing.
 
 ### Dispose Pattern
 

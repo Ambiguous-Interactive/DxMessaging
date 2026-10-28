@@ -2,6 +2,7 @@ namespace DxMessaging.Core
 {
     using System;
     using System.Collections.Generic;
+    using System.Runtime.CompilerServices;
     using System.Runtime.ExceptionServices;
     using DataStructure;
     using Diagnostics;
@@ -15,6 +16,8 @@ namespace DxMessaging.Core
     /// Staged registrations are created via the various <c>Register*</c> methods and are activated when
     /// <see cref="Enable"/> is called; they are torn down on <see cref="Disable"/>.
     /// This pattern works especially well with Unity lifecycles.
+    /// A bus rejection during an enabled token's Register call removes that call's staged entry.
+    /// A failed Enable retains previously staged handles so their registrations can be retried.
     /// </remarks>
     /// <example>
     /// <code>
@@ -46,15 +49,19 @@ namespace DxMessaging.Core
         /// Whether new registrations activate immediately.
         /// </summary>
         /// <remarks>
-        /// Pending cleanup after a failure can keep this true. Complete cleanup before
-        /// treating the token as inactive. Rollback publishes this state before diagnostic
-        /// formatting or log receivers run.
+        /// Pending cleanup after a failure, or a registration accepted during teardown, can keep
+        /// this true. Complete cleanup before treating the token as inactive.
+        /// Rollback publishes this state before diagnostic formatting or log receivers run.
         /// </remarks>
         public bool Enabled => _enabled;
 
         /// <summary>
         /// When <c>true</c>, collects per-registration call counts and emission history.
         /// </summary>
+        /// <remarks>
+        /// Counts belong to staged registrations. A completed callback can still record bounded
+        /// emission history after its registration has been removed.
+        /// </remarks>
         public bool DiagnosticMode
         {
             get => _diagnosticMode;
@@ -67,22 +74,20 @@ namespace DxMessaging.Core
             Maps each staged registration handle to the unified per-handle Registration
             object the public Register* methods built. Calling Registration.Register()
             (re)registers the handler on the bus and returns the matching
-            HandlerDeregistration. The Registration object IS the collapsed staging
-            state: it replaces (a) the per-registration staging Func display class, (b)
-            the staging Func delegate itself, and (c) the nested AugmentedHandler
-            local-function delegate -- the captured target/source, user handler,
-            priority, and kind are now plain fields, and the diagnostics-augmented
-            invoker is an instance method bound to the object (the FastHandler<T> handed
-            to MessageHandler is (FastHandler<T>)registration.AugmentedHandlerScalar).
-            The registration also owns its common teardown state, eliminating the separate
-            HandlerDeregistration object; an allocation-backed wrapper is created only for
-            overlapping retry/recovery state. Net ~ -3 managed allocations per registration.
+            HandlerDeregistration. The Registration object stores the staged kind,
+            target/source, user handler and priority without a staging Func or closure.
+            A separate immutable binding owns the augmented invokers and their resolved
+            bus. Replays on the same bus reuse that binding; a different bus gets a new
+            binding so frozen callbacks retain their own diagnostic origin. Binding
+            creation is a registration cost, never a steady-state emission allocation.
+            The registration also owns its common teardown state; an allocation-backed
+            wrapper is created only for overlapping retry/recovery state.
             The central replay loop pairs
             the Registration with its handle and performs the AddDeregistration. The
             re-entrancy snapshot semantics are unchanged: the replay queue captures the
             Registration reference (exactly as it previously captured the staging Func),
-            so a registration removed mid-replay is still replayed if it was already
-            snapshotted.
+            so an accepted registration removed during its own bus callback retains
+            its teardown, while an entry removed before its replay turn stays inactive.
             Token-owned arena. A handle identifies a slot and the globally unique id that
             occupied it. Both are validated, so stale handles remain harmless after slot reuse.
             The doubly-linked live list preserves registration order while the singly-linked
@@ -100,8 +105,9 @@ namespace DxMessaging.Core
             teardown, or retarget actually needs them.
         */
         private List<StagedRegistration> _registrationReplayQueue;
+        private bool _isReplayingRegistrations;
         private List<TeardownIdentity> _teardownQueue;
-        private Dictionary<MessageRegistrationHandle, int> _rollbackCounts;
+        private HashSet<TeardownIdentity> _rollbackBaseline;
         private List<MessageRegistrationHandle> _activeRetargetHandles;
         private Dictionary<MessageRegistrationHandle, object> _orphanDeregistrations;
 
@@ -120,7 +126,7 @@ namespace DxMessaging.Core
             the dispatch-time AugmentedHandler bodies, all guarded by _diagnosticMode, so
             production-with-diagnostics-off never triggers the allocation. Teardown
             (ClearDiagnosticState / RemoveRegistrationState /
-            PruneRegistrationStateToFailedDeregistrations) clears through the backing
+            PruneRegistrationStateToPendingDeregistrations) clears through the backing
             fields to avoid materializing a collection just to empty it.
         */
         private Dictionary<MessageRegistrationHandle, int> _callCountsBacking;
@@ -141,7 +147,10 @@ namespace DxMessaging.Core
             InstanceId? context = null
         )
         {
-            _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
+            if (TryGetSlot(handle.Slot, handle.Id, out _))
+            {
+                _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
+            }
             long traceId =
                 messageBus is DxMessaging.Core.MessageBus.MessageBus concreteBus
                 && concreteBus.IsDispatching
@@ -1182,7 +1191,7 @@ namespace DxMessaging.Core
         /// <param name="acceptAllUntargeted">Action handler functionality for UntargetedMessages.</param>
         /// <param name="acceptAllTargeted">Action handler functionality for TargetedMessages.</param>
         /// <param name="acceptAllBroadcast">Action handler functionality for BroadcastMessages.</param>
-        /// <returns>A handle that allows for registration and de-registration.</returns>
+        /// <returns>Handle for removing this registration from the token.</returns>
         public MessageRegistrationHandle RegisterGlobalAcceptAll(
             Action<IUntargetedMessage> acceptAllUntargeted,
             Action<InstanceId, ITargetedMessage> acceptAllTargeted,
@@ -1204,7 +1213,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Stages a registration of the provided MessageHandler to accept every message that is broadcast.
+        /// Stages global observers for untargeted, targeted, and broadcast messages.
         /// </summary>
         /// <note>
         /// DOES NOT ACTUALLY REGISTER THE HANDLER IF NOT ENABLED. To register, a call to Enable() is needed.
@@ -1212,7 +1221,7 @@ namespace DxMessaging.Core
         /// <param name="acceptAllUntargeted">Handler for any untargeted message.</param>
         /// <param name="acceptAllTargeted">Handler for any targeted message with target context.</param>
         /// <param name="acceptAllBroadcast">Handler for any broadcast message with source context.</param>
-        /// <returns>A handle that allows for registration and de-registration.</returns>
+        /// <returns>Handle for removing this registration from the token.</returns>
         /// <example>
         /// <code>
         /// _ = token.RegisterGlobalAcceptAll(
@@ -1358,8 +1367,20 @@ namespace DxMessaging.Core
             */
             if (_enabled)
             {
-                MessageHandler.HandlerDeregistration actualDeregistration =
-                    registration.RegisterValidated();
+                MessageHandler.HandlerDeregistration actualDeregistration;
+                try
+                {
+                    actualDeregistration = registration.RegisterValidated();
+                }
+                catch
+                {
+                    /*
+                        No handle reached the caller. A reentrant bus may already have removed or
+                        reused this slot, so retire only the failed registration's original identity.
+                    */
+                    RemoveRegistrationState(slotIndex, handle.Id);
+                    throw;
+                }
                 AddDeregistration(slotIndex, handle.Id, actualDeregistration);
             }
 
@@ -1367,8 +1388,15 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Enables the token if not already enabled. Executes all staged registrations.
+        /// Activates staged registrations in their original registration order.
         /// </summary>
+        /// <remarks>
+        /// Handles staged while disabled remain valid if replay fails. If rollback leaves
+        /// <see cref="Enabled"/> true, finish cleanup with <see cref="Disable"/> before retrying
+        /// <see cref="Enable"/>. If cleanup completes, retry Enable after the bus recovers.
+        /// A nested Enable from a registration callback returns while the outer replay owns
+        /// activation. The outer call determines success or failure.
+        /// </remarks>
         /// <note>
         /// Idempotent.
         /// </note>
@@ -1380,7 +1408,7 @@ namespace DxMessaging.Core
         /// </example>
         public void Enable()
         {
-            if (_enabled)
+            if (_enabled || _isReplayingRegistrations)
             {
                 return;
             }
@@ -1397,15 +1425,22 @@ namespace DxMessaging.Core
                     so replay tolerates re-entrant registration mutation.
                 */
                 QueueRegistrationsInOrder();
-                InvokeRegistrationQueueWithRollback();
+                InvokeRegistrationQueueWithRollback(out _);
             }
 
             _enabled = true;
         }
 
         /// <summary>
-        /// Disables the token if not already disabled. Executes all staged de-registrations.
+        /// Runs active cleanup while retaining staged handlers for a later <see cref="Enable"/>.
         /// </summary>
+        /// <remarks>
+        /// Attempts the cleanup queued at the start, then rethrows the first failure. Failed
+        /// cleanup keeps its original handle retryable. Cleanup accepted by a callback waits
+        /// for a later pass, including reactivation of an existing staged handle.
+        /// <see cref="Enabled"/> stays true while cleanup remains.
+        /// Retry after the bus recovers or the callback stops adding registrations.
+        /// </remarks>
         /// <note>
         /// Idempotent.
         /// </note>
@@ -1430,8 +1465,14 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Disables the token and clears all registrations, de-registrations, and token-local diagnostic state.
+        /// Removes registrations and token-local diagnostic state while preserving any cleanup accepted during the call.
         /// </summary>
+        /// <remarks>
+        /// Failed cleanup keeps its original handle retryable and rethrows the first failure
+        /// after other queued cleanup is attempted. Registrations accepted during teardown
+        /// retain cleanup for a later pass. Repeat after the bus recovers or the callback stops
+        /// adding registrations. <see cref="Enabled"/> stays true while cleanup remains.
+        /// </remarks>
         /// <example>
         /// <code>
         /// var h = token.RegisterUntargeted&lt;SceneLoaded&gt;(OnScene);
@@ -1442,7 +1483,7 @@ namespace DxMessaging.Core
         public void UnregisterAll()
         {
             Exception deregistrationException = InvokeDeregistrationQueue();
-            if (deregistrationException == null)
+            if (deregistrationException == null && _deregistrationCount == 0)
             {
                 _enabled = false;
                 ClearRegistrationArena();
@@ -1451,13 +1492,22 @@ namespace DxMessaging.Core
             }
 
             _enabled = 0 < _deregistrationCount;
-            PruneRegistrationStateToFailedDeregistrations();
-            ExceptionDispatchInfo.Capture(deregistrationException).Throw();
+            PruneRegistrationStateToPendingDeregistrations();
+            if (deregistrationException != null)
+            {
+                ExceptionDispatchInfo.Capture(deregistrationException).Throw();
+            }
         }
 
         /// <summary>
         /// Retargets staged registrations to use a new message bus, re-registering active handlers if needed.
         /// </summary>
+        /// <remarks>
+        /// Failed active replay selects the previous bus for later registrations. Pending cleanup
+        /// on another bus stays retryable; finish cleanup before enabling again. If diagnostic formatting
+        /// or a log receiver successfully finishes pending rollback cleanup through <see cref="Disable"/>
+        /// or <see cref="UnregisterAll"/>, recovery preserves that cleanup instead of replaying staging.
+        /// </remarks>
         /// <param name="messageBus">Bus override to apply. Pass <c>null</c> to resume using the handler default.</param>
         /// <param name="rebindMode">Determines whether existing registrations should move to the supplied bus immediately.</param>
         public void RetargetMessageBus(IMessageBus messageBus, MessageBusRebindMode rebindMode)
@@ -1515,14 +1565,18 @@ namespace DxMessaging.Core
                     equal-priority dispatch order survives a bus retarget.
                 */
                 QueueRegistrationsInOrder();
+                bool cleanupCompletedDuringLogging = false;
                 try
                 {
-                    InvokeRegistrationQueueWithRollback();
+                    InvokeRegistrationQueueWithRollback(out cleanupCompletedDuringLogging);
                     _enabled = true;
                 }
                 catch (Exception exception)
                 {
-                    RestoreRegistrationsAfterRetargetFailure(previousMessageBus);
+                    RestoreRegistrationsAfterRetargetFailure(
+                        previousMessageBus,
+                        cleanupCompletedDuringLogging
+                    );
                     ExceptionDispatchInfo.Capture(exception).Throw();
                     throw;
                 }
@@ -1558,52 +1612,102 @@ namespace DxMessaging.Core
                 return;
             }
 
-            if (existing is PendingDeregistration pending)
-            {
-                pending.Add(deregistration);
-                return;
-            }
-
-            /*
-                A second de-registration accumulated on this handle: promote the inline object to a
-                PendingDeregistration holder that preserves the ordering / partial-failure / rollback
-                semantics for the multi-de-registration (retarget-recovery replay) case.
-            */
-            PendingDeregistration promoted = new();
-            promoted.Add((MessageHandler.HandlerDeregistration)existing);
-            promoted.Add(deregistration);
-            _slots[slotIndex].Deregistration = promoted;
+            _slots[slotIndex].Deregistration = MergeDeregistrations(existing, deregistration);
         }
 
         private void AddOrphanDeregistration(
             MessageRegistrationHandle handle,
-            MessageHandler.HandlerDeregistration deregistration
+            object value,
+            bool prepend = false
         )
         {
             Dictionary<MessageRegistrationHandle, object> orphans = _orphanDeregistrations ??=
                 new Dictionary<MessageRegistrationHandle, object>();
             if (!orphans.TryGetValue(handle, out object existing))
             {
-                orphans.Add(handle, deregistration);
+                orphans.Add(handle, value);
                 ++_deregistrationCount;
                 return;
             }
 
-            if (existing is PendingDeregistration pending)
-            {
-                pending.Add(deregistration);
-                return;
-            }
-
-            PendingDeregistration promoted = new();
-            promoted.Add((MessageHandler.HandlerDeregistration)existing);
-            promoted.Add(deregistration);
-            orphans[handle] = promoted;
+            orphans[handle] = prepend
+                ? MergeDeregistrations(value, existing)
+                : MergeDeregistrations(existing, value);
         }
 
-        // Logical de-registration count for a _deregistrations value (inline object == 1).
-        private static int DeregistrationCount(object value) =>
-            value is PendingDeregistration pending ? pending.Count : 1;
+        private static PendingDeregistration MergeDeregistrations(object first, object second)
+        {
+            PendingDeregistration combined = first as PendingDeregistration;
+            if (combined == null)
+            {
+                combined = new PendingDeregistration();
+                combined.Add((MessageHandler.HandlerDeregistration)first);
+            }
+
+            if (second is PendingDeregistration pending)
+            {
+                combined.AddRange(pending);
+            }
+            else
+            {
+                combined.Add((MessageHandler.HandlerDeregistration)second);
+            }
+            return combined;
+        }
+
+        /// <summary>Temporarily transfers one cleanup value to its invoking owner.</summary>
+        /// <remarks>2026-10-18: Nested cleanup must not invoke or consume an in-flight value twice.</remarks>
+        private Exception InvokeOwnedDeregistration(
+            MessageRegistrationHandle handle,
+            object value,
+            int startIndex,
+            bool isOrphan
+        )
+        {
+            if (isOrphan)
+            {
+                _orphanDeregistrations.Remove(handle);
+            }
+            else
+            {
+                _slots[handle.Slot].Deregistration = null;
+            }
+            --_deregistrationCount;
+
+            Exception exception = InvokeDeregistration(value, startIndex, out bool shouldRemove);
+            if (!shouldRemove)
+            {
+                RestoreOwnedDeregistration(handle, value);
+            }
+            return exception;
+        }
+
+        private void RestoreOwnedDeregistration(MessageRegistrationHandle handle, object value)
+        {
+            /*
+                Reentrant cleanup can clear or reuse the slot and accept another cleanup.
+                Restore the older obligation first, or retain it as an orphan after retirement.
+            */
+            if (TryGetSlot(handle.Slot, handle.Id, out RegistrationSlot slot))
+            {
+                if (slot.Deregistration == null)
+                {
+                    _slots[handle.Slot].Deregistration = value;
+                    ++_deregistrationCount;
+                }
+                else
+                {
+                    _slots[handle.Slot].Deregistration = MergeDeregistrations(
+                        value,
+                        slot.Deregistration
+                    );
+                }
+            }
+            else
+            {
+                AddOrphanDeregistration(handle, value, prepend: true);
+            }
+        }
 
         /*
             Invokes the de-registration tail [startIndex..) for a _deregistrations value. For the
@@ -1649,10 +1753,8 @@ namespace DxMessaging.Core
             }
         }
 
-        private Dictionary<MessageRegistrationHandle, int> SnapshotDeregistrationCounts()
+        private void SnapshotDeregistrations(HashSet<TeardownIdentity> snapshot)
         {
-            Dictionary<MessageRegistrationHandle, int> snapshot = _rollbackCounts ??=
-                new Dictionary<MessageRegistrationHandle, int>();
             snapshot.Clear();
             for (
                 int slotIndex = _registrationHead;
@@ -1661,25 +1763,74 @@ namespace DxMessaging.Core
             )
             {
                 RegistrationSlot slot = _slots[slotIndex];
-                if (slot.Deregistration != null)
-                {
-                    snapshot[MessageRegistrationHandle.FromIdentity(slot.Id, slotIndex)] =
-                        DeregistrationCount(slot.Deregistration);
-                }
+                AppendDeregistrationSnapshot(snapshot, slotIndex, slot.Id, slot.Deregistration);
             }
-
             if (_orphanDeregistrations != null)
             {
                 foreach (
                     KeyValuePair<MessageRegistrationHandle, object> entry in _orphanDeregistrations
                 )
                 {
-                    snapshot[entry.Key] = DeregistrationCount(entry.Value);
+                    AppendDeregistrationSnapshot(
+                        snapshot,
+                        entry.Key.Slot,
+                        entry.Key.Id,
+                        entry.Value
+                    );
                 }
             }
-
-            return snapshot;
         }
+
+        private static void AppendDeregistrationSnapshot(
+            ICollection<TeardownIdentity> destination,
+            int slot,
+            long id,
+            object value,
+            HashSet<TeardownIdentity> baseline = null
+        )
+        {
+            if (value is PendingDeregistration pending)
+            {
+                pending.AppendSnapshot(destination, slot, id, baseline);
+            }
+            else if (value != null)
+            {
+                AppendDeregistrationSnapshotEntry(
+                    destination,
+                    slot,
+                    id,
+                    (MessageHandler.HandlerDeregistration)value,
+                    0,
+                    baseline
+                );
+            }
+        }
+
+        private static void AppendDeregistrationSnapshotEntry(
+            ICollection<TeardownIdentity> destination,
+            int slot,
+            long id,
+            MessageHandler.HandlerDeregistration deregistration,
+            int order,
+            HashSet<TeardownIdentity> baseline
+        )
+        {
+            TeardownIdentity identity = new TeardownIdentity(
+                slot,
+                id,
+                deregistration,
+                GetDeregistrationVersion(deregistration),
+                order
+            );
+            if (baseline == null || !baseline.Contains(identity))
+            {
+                destination.Add(identity);
+            }
+        }
+
+        private static int GetDeregistrationVersion(
+            MessageHandler.HandlerDeregistration deregistration
+        ) => deregistration is Registration registration ? registration.DeregistrationVersion : 0;
 
         private void RestoreMissingRegistrationsAfterRetargetDeregistrationFailure(
             IMessageBus previousMessageBus,
@@ -1695,7 +1846,7 @@ namespace DxMessaging.Core
             QueueMissingRegistrationsInOrder(activeRetargetHandles);
             try
             {
-                InvokeRegistrationQueueWithRollback();
+                InvokeRegistrationQueueWithRollback(out _);
             }
             catch (Exception exception)
             {
@@ -1710,10 +1861,13 @@ namespace DxMessaging.Core
             }
         }
 
-        private void RestoreRegistrationsAfterRetargetFailure(IMessageBus previousMessageBus)
+        private void RestoreRegistrationsAfterRetargetFailure(
+            IMessageBus previousMessageBus,
+            bool cleanupCompletedDuringLogging
+        )
         {
             _messageBus = previousMessageBus;
-            if (_registrationCount == 0)
+            if (cleanupCompletedDuringLogging || _registrationCount == 0)
             {
                 _enabled = 0 < _deregistrationCount;
                 return;
@@ -1722,7 +1876,7 @@ namespace DxMessaging.Core
             QueueRegistrationsWithoutRetryableDeregistrationsInOrder();
             try
             {
-                InvokeRegistrationQueueWithRollback();
+                InvokeRegistrationQueueWithRollback(out _);
                 _enabled = true;
             }
             catch (Exception restoreException)
@@ -1797,14 +1951,18 @@ namespace DxMessaging.Core
             }
         }
 
+        /// <summary>Replays registrations still staged when their turn begins.</summary>
+        /// <remarks>2026-10-17: Skip a later entry removed or replaced by an earlier registration callback.</remarks>
         private void InvokeRegistrationReplayQueue()
         {
+            bool wasReplaying = _isReplayingRegistrations;
+            _isReplayingRegistrations = true;
             try
             {
                 foreach (StagedRegistration staged in GetRegistrationReplayQueue())
                 {
                     Registration registration = staged.Registration;
-                    if (registration == null)
+                    if (registration == null || !TryGetSlot(staged.Slot, staged.Id, out _))
                     {
                         continue;
                     }
@@ -1817,6 +1975,7 @@ namespace DxMessaging.Core
             finally
             {
                 _registrationReplayQueue?.Clear();
+                _isReplayingRegistrations = wasReplaying;
             }
         }
 
@@ -1842,152 +2001,194 @@ namespace DxMessaging.Core
             }
         }
 
-        private Exception InvokeDeregistrationQueue(
-            Dictionary<MessageRegistrationHandle, int> baselineCounts = null
-        )
+        private Exception InvokeDeregistrationQueue(HashSet<TeardownIdentity> baseline = null)
         {
             if (_deregistrationCount == 0)
             {
                 return null;
             }
-
-            bool scopedToAddedDeregistrations = baselineCounts != null;
-            List<TeardownIdentity> teardownQueue = _teardownQueue ??= new List<TeardownIdentity>();
-            teardownQueue.Clear();
-            for (
-                int slotIndex = _registrationHead;
-                0 <= slotIndex;
-                slotIndex = _slots[slotIndex].Next
-            )
-            {
-                RegistrationSlot slot = _slots[slotIndex];
-                if (slot.Deregistration != null)
-                {
-                    teardownQueue.Add(new TeardownIdentity(slotIndex, slot.Id, isOrphan: false));
-                }
-            }
-
-            bool hasOrphanSnapshot =
-                _orphanDeregistrations != null && 0 < _orphanDeregistrations.Count;
-            if (hasOrphanSnapshot)
-            {
-                foreach (MessageRegistrationHandle handle in _orphanDeregistrations.Keys)
-                {
-                    teardownQueue.Add(new TeardownIdentity(handle.Slot, handle.Id, isOrphan: true));
-                }
-            }
-
-            /*
-                Global handle ids are monotonic and therefore encode original registration order.
-                Capture and sort BEFORE invoking anything: reentrant teardown additions are deferred
-                to the next pass rather than joining this snapshot.
-            */
-            if (hasOrphanSnapshot)
-            {
-                teardownQueue.Sort(TeardownIdentityComparer.Instance);
-            }
+            List<TeardownIdentity> queue = _teardownQueue ?? new List<TeardownIdentity>();
+            _teardownQueue = null;
+            queue.Clear();
             Exception firstException = null;
             try
             {
-                foreach (TeardownIdentity identity in teardownQueue)
+                for (
+                    int slotIndex = _registrationHead;
+                    0 <= slotIndex;
+                    slotIndex = _slots[slotIndex].Next
+                )
                 {
-                    MessageRegistrationHandle handle = MessageRegistrationHandle.FromIdentity(
-                        identity.Id,
-                        identity.Slot
+                    RegistrationSlot slot = _slots[slotIndex];
+                    AppendDeregistrationSnapshot(
+                        queue,
+                        slotIndex,
+                        slot.Id,
+                        slot.Deregistration,
+                        baseline
                     );
-                    object value;
-                    if (identity.IsOrphan)
+                }
+                bool hasOrphans =
+                    _orphanDeregistrations != null && 0 < _orphanDeregistrations.Count;
+                if (hasOrphans)
+                {
+                    foreach (
+                        KeyValuePair<
+                            MessageRegistrationHandle,
+                            object
+                        > entry in _orphanDeregistrations
+                    )
                     {
-                        if (
-                            _orphanDeregistrations == null
-                            || !_orphanDeregistrations.TryGetValue(handle, out value)
-                        )
-                        {
-                            continue;
-                        }
+                        AppendDeregistrationSnapshot(
+                            queue,
+                            entry.Key.Slot,
+                            entry.Key.Id,
+                            entry.Value,
+                            baseline
+                        );
                     }
-                    else
-                    {
-                        if (!TryGetSlot(identity.Slot, identity.Id, out RegistrationSlot slot))
-                        {
-                            continue;
-                        }
-
-                        value = slot.Deregistration;
-                        if (value == null)
-                        {
-                            continue;
-                        }
-                    }
-
-                    int startIndex = 0;
-                    if (scopedToAddedDeregistrations)
-                    {
-                        if (baselineCounts.TryGetValue(handle, out int baselineCount))
-                        {
-                            startIndex = baselineCount;
-                        }
-
-                        if (DeregistrationCount(value) <= startIndex)
-                        {
-                            continue;
-                        }
-                    }
-
-                    Exception exception = InvokeDeregistration(
-                        value,
-                        startIndex,
-                        out bool shouldRemove
-                    );
+                    queue.Sort(TeardownIdentityComparer.Instance);
+                }
+                /*
+                    Each entry owns an exact action/version, not a mutable slot's later contents.
+                    Nested cleanup can consume it; later accepted replacements stay outside this pass.
+                */
+                foreach (TeardownIdentity identity in queue)
+                {
+                    Exception exception = InvokeSnapshotDeregistration(identity);
                     if (exception != null)
                     {
                         firstException ??= exception;
-                    }
-
-                    if (shouldRemove)
-                    {
-                        if (identity.IsOrphan)
-                        {
-                            _orphanDeregistrations.Remove(handle);
-                            --_deregistrationCount;
-                        }
-                        else if (TryGetSlot(identity.Slot, identity.Id, out _))
-                        {
-                            _slots[identity.Slot].Deregistration = null;
-                            --_deregistrationCount;
-                        }
                     }
                 }
             }
             finally
             {
-                teardownQueue.Clear();
+                queue.Clear();
+                _teardownQueue = queue;
             }
-
             return firstException;
         }
 
-        private void InvokeRegistrationQueueWithRollback()
+        private Exception InvokeSnapshotDeregistration(TeardownIdentity identity)
         {
-            Dictionary<MessageRegistrationHandle, int> rollbackBaseline =
-                SnapshotDeregistrationCounts();
+            if (GetDeregistrationVersion(identity.Deregistration) != identity.Version)
+            {
+                return null;
+            }
+            MessageRegistrationHandle handle = MessageRegistrationHandle.FromIdentity(
+                identity.Id,
+                identity.Slot
+            );
+            object remaining;
+            if (
+                TryGetSlot(identity.Slot, identity.Id, out RegistrationSlot slot)
+                && RemoveSnapshotDeregistration(
+                    slot.Deregistration,
+                    identity.Deregistration,
+                    out remaining
+                )
+            )
+            {
+                _slots[identity.Slot].Deregistration = remaining;
+                if (remaining == null)
+                {
+                    --_deregistrationCount;
+                }
+            }
+            else if (
+                _orphanDeregistrations != null
+                && _orphanDeregistrations.TryGetValue(handle, out object orphan)
+                && RemoveSnapshotDeregistration(orphan, identity.Deregistration, out remaining)
+            )
+            {
+                if (remaining == null)
+                {
+                    _orphanDeregistrations.Remove(handle);
+                    --_deregistrationCount;
+                }
+                else
+                {
+                    _orphanDeregistrations[handle] = remaining;
+                }
+            }
+            else
+            {
+                return null;
+            }
             try
             {
-                InvokeRegistrationReplayQueue();
+                identity.Deregistration?.Deregister();
+                return null;
             }
             catch (Exception exception)
             {
-                RollBackDeregistrationsAfterRegistrationFailure(rollbackBaseline);
-                _enabled = 0 < _deregistrationCount;
-                ExceptionDispatchInfo.Capture(exception).Throw();
-                throw;
+                RestoreOwnedDeregistration(handle, identity.Deregistration);
+                return exception;
+            }
+        }
+
+        private static bool RemoveSnapshotDeregistration(
+            object value,
+            MessageHandler.HandlerDeregistration selected,
+            out object remaining
+        )
+        {
+            remaining = value;
+            if (value is PendingDeregistration pending)
+            {
+                if (!pending.Remove(selected))
+                {
+                    return false;
+                }
+                remaining = pending.Count == 0 ? null : pending;
+                return true;
+            }
+            if (!ReferenceEquals(value, selected) || value == null)
+            {
+                return false;
+            }
+            remaining = null;
+            return true;
+        }
+
+        private void InvokeRegistrationQueueWithRollback(out bool cleanupCompletedDuringLogging)
+        {
+            cleanupCompletedDuringLogging = false;
+            HashSet<TeardownIdentity> rollbackBaseline =
+                _rollbackBaseline ?? new HashSet<TeardownIdentity>();
+            _rollbackBaseline = null;
+            try
+            {
+                SnapshotDeregistrations(rollbackBaseline);
+                try
+                {
+                    InvokeRegistrationReplayQueue();
+                }
+                catch (Exception exception)
+                {
+                    RollBackDeregistrationsAfterRegistrationFailure(
+                        rollbackBaseline,
+                        out cleanupCompletedDuringLogging
+                    );
+                    _enabled = 0 < _deregistrationCount;
+                    ExceptionDispatchInfo.Capture(exception).Throw();
+                    throw;
+                }
+            }
+            finally
+            {
+                rollbackBaseline.Clear();
+                _rollbackBaseline = rollbackBaseline;
             }
         }
 
         private void RollBackDeregistrationsAfterRegistrationFailure(
-            Dictionary<MessageRegistrationHandle, int> rollbackBaseline
+            HashSet<TeardownIdentity> rollbackBaseline,
+            out bool cleanupCompletedDuringLogging
         )
         {
+            cleanupCompletedDuringLogging = false;
             if (_deregistrationCount == 0)
             {
                 return;
@@ -1999,13 +2200,26 @@ namespace DxMessaging.Core
                 Publish pending cleanup before entering either user-code boundary.
             */
             _enabled = 0 < _deregistrationCount;
-            if (rollbackException != null && MessagingDebug.enabled)
+            bool pendingBeforeLogging = _enabled;
+            try
             {
-                MessagingDebug.Log(
-                    LogLevel.Error,
-                    "Failed to roll back partial registration after token replay failure: {0}",
-                    rollbackException
-                );
+                if (rollbackException != null && MessagingDebug.enabled)
+                {
+                    MessagingDebug.Log(
+                        LogLevel.Error,
+                        "Failed to roll back partial registration after token replay failure: {0}",
+                        rollbackException
+                    );
+                }
+            }
+            finally
+            {
+                /*
+                    A logger can finish pending cleanup and then throw. Preserve that completed
+                    cleanup in outer retarget recovery without suppressing the logger exception.
+                    Natural rollback completion occurred before logging and still restores staging.
+                */
+                cleanupCompletedDuringLogging = pendingBeforeLogging && _deregistrationCount == 0;
             }
         }
 
@@ -2019,7 +2233,7 @@ namespace DxMessaging.Core
             _emissionBufferBacking?.Clear();
         }
 
-        private void PruneRegistrationStateToFailedDeregistrations()
+        private void PruneRegistrationStateToPendingDeregistrations()
         {
             int slotIndex = _registrationTail;
             while (0 <= slotIndex)
@@ -2070,6 +2284,19 @@ namespace DxMessaging.Core
                 _registrationTail = slot.Previous;
             }
 
+            if (slot.Deregistration != null)
+            {
+                /*
+                    A teardown callback may accept another cleanup under this handle. Removing
+                    staging must keep that accepted obligation reachable through orphan cleanup.
+                */
+                --_deregistrationCount;
+                AddOrphanDeregistration(
+                    MessageRegistrationHandle.FromIdentity(id, slotIndex),
+                    slot.Deregistration
+                );
+            }
+
             MessageRegistrationHandle handle = MessageRegistrationHandle.FromIdentity(
                 id,
                 slotIndex
@@ -2092,7 +2319,11 @@ namespace DxMessaging.Core
         /// <summary>
         /// Removes a single staged registration by handle.
         /// </summary>
-        /// <param name="handle">Handle returned from a Register* method.</param>
+        /// <param name="handle">Handle returned by a registration on this token.</param>
+        /// <remarks>
+        /// A cleanup failure is rethrown and retains the original handle for retry. Removing a
+        /// handle with no staged registration or pending cleanup has no effect.
+        /// </remarks>
         /// <example>
         /// <code>
         /// var h = token.RegisterUntargeted&lt;SceneLoaded&gt;(OnScene);
@@ -2110,19 +2341,16 @@ namespace DxMessaging.Core
             object value = slot.Deregistration;
             if (value != null)
             {
-                Exception deregistrationException = InvokeDeregistration(
+                Exception deregistrationException = InvokeOwnedDeregistration(
+                    handle,
                     value,
                     0,
-                    out bool shouldRemove
+                    isOrphan: false
                 );
-                if (shouldRemove && TryGetSlot(handle.Slot, handle.Id, out _))
-                {
-                    _slots[handle.Slot].Deregistration = null;
-                    --_deregistrationCount;
-                }
 
                 if (deregistrationException != null)
                 {
+                    _enabled = 0 < _deregistrationCount;
                     ExceptionDispatchInfo.Capture(deregistrationException).Throw();
                 }
             }
@@ -2145,15 +2373,11 @@ namespace DxMessaging.Core
                 return;
             }
 
-            Exception exception = InvokeDeregistration(value, 0, out bool shouldRemove);
-            if (shouldRemove)
-            {
-                _orphanDeregistrations.Remove(handle);
-                --_deregistrationCount;
-            }
+            Exception exception = InvokeOwnedDeregistration(handle, value, 0, isOrphan: true);
 
             if (exception != null)
             {
+                _enabled = 0 < _deregistrationCount;
                 ExceptionDispatchInfo.Capture(exception).Throw();
             }
         }
@@ -2217,9 +2441,12 @@ namespace DxMessaging.Core
             _registrationTail = -1;
             _registrationCount = 0;
             _deregistrationCount = 0;
-            _registrationReplayQueue?.Clear();
+            /*
+                Replay owns its snapshot until its finally block. Clearing that list here
+                would invalidate an active enumerator when a bus callback clears the token.
+            */
             _teardownQueue?.Clear();
-            _rollbackCounts?.Clear();
+            _rollbackBaseline?.Clear();
             _activeRetargetHandles?.Clear();
             _orphanDeregistrations?.Clear();
         }
@@ -2260,17 +2487,63 @@ namespace DxMessaging.Core
             public int NextFree;
         }
 
-        private readonly struct TeardownIdentity
+        private readonly struct TeardownIdentity : IEquatable<TeardownIdentity>
         {
             public readonly int Slot;
             public readonly long Id;
-            public readonly bool IsOrphan;
+            public readonly MessageHandler.HandlerDeregistration Deregistration;
+            public readonly int Version;
+            public readonly int Order;
 
-            public TeardownIdentity(int slot, long id, bool isOrphan)
+            public TeardownIdentity(
+                int slot,
+                long id,
+                MessageHandler.HandlerDeregistration deregistration,
+                int version,
+                int order
+            )
             {
                 Slot = slot;
                 Id = id;
-                IsOrphan = isOrphan;
+                Deregistration = deregistration;
+                Version = version;
+                Order = order;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool Equals(TeardownIdentity other) =>
+                Slot == other.Slot
+                && Id == other.Id
+                && Version == other.Version
+                && ReferenceEquals(Deregistration, other.Deregistration);
+
+            public override bool Equals(object obj) =>
+                obj is TeardownIdentity other && Equals(other);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool operator ==(TeardownIdentity left, TeardownIdentity right) =>
+                left.Equals(right);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool operator !=(TeardownIdentity left, TeardownIdentity right) =>
+                !left.Equals(right);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = (Slot * 397) ^ Id.GetHashCode();
+                    hash = (hash * 397) ^ Version;
+                    return (hash * 397)
+                        ^ (
+                            Deregistration == null
+                                ? 0
+                                : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(
+                                    Deregistration
+                                )
+                        );
+                }
             }
         }
 
@@ -2280,7 +2553,8 @@ namespace DxMessaging.Core
 
             public int Compare(TeardownIdentity left, TeardownIdentity right)
             {
-                return left.Id.CompareTo(right.Id);
+                int idOrder = left.Id.CompareTo(right.Id);
+                return idOrder == 0 ? left.Order.CompareTo(right.Order) : idOrder;
             }
         }
 
@@ -2413,9 +2687,8 @@ namespace DxMessaging.Core
                     exactly as the List form did, rather than jumping the new entry ahead of
                     the survivors into the head slot. The overflow loop re-reads its Count,
                     so such a tail-appended entry is still invoked in the same pass -- the
-                    List form's behavior preserved. (The stored Actions are pure bus
-                    de-registration callbacks, so this re-entrancy is not reachable through
-                    the public API today; the guard keeps the invariant honest regardless.)
+                    List form's behavior preserved. Appending during an invocation must
+                    preserve the logical tail rather than replacing an already consumed head.
                 */
                 if (!_hasHead && (_overflow == null || _overflow.Count == 0))
                 {
@@ -2425,6 +2698,84 @@ namespace DxMessaging.Core
                 }
 
                 (_overflow ??= new List<MessageHandler.HandlerDeregistration>()).Add(action);
+            }
+
+            internal void AddRange(PendingDeregistration pending)
+            {
+                if (pending._hasHead)
+                {
+                    Add(pending._head);
+                }
+                if (pending._overflow != null)
+                {
+                    for (int index = 0; index < pending._overflow.Count; ++index)
+                    {
+                        Add(pending._overflow[index]);
+                    }
+                }
+            }
+
+            internal void AppendSnapshot(
+                ICollection<TeardownIdentity> destination,
+                int slot,
+                long id,
+                HashSet<TeardownIdentity> baseline
+            )
+            {
+                int order = 0;
+                if (_hasHead)
+                {
+                    AppendDeregistrationSnapshotEntry(
+                        destination,
+                        slot,
+                        id,
+                        _head,
+                        order++,
+                        baseline
+                    );
+                }
+                if (_overflow != null)
+                {
+                    foreach (MessageHandler.HandlerDeregistration entry in _overflow)
+                    {
+                        AppendDeregistrationSnapshotEntry(
+                            destination,
+                            slot,
+                            id,
+                            entry,
+                            order++,
+                            baseline
+                        );
+                    }
+                }
+            }
+
+            internal bool Remove(MessageHandler.HandlerDeregistration selected)
+            {
+                if (_hasHead && ReferenceEquals(_head, selected))
+                {
+                    _head = null;
+                    _hasHead = false;
+                    if (_overflow != null && 0 < _overflow.Count)
+                    {
+                        _head = _overflow[0];
+                        _hasHead = true;
+                        _overflow.RemoveAt(0);
+                    }
+                    return true;
+                }
+                if (_overflow != null)
+                {
+                    for (int index = 0; index < _overflow.Count; ++index)
+                    {
+                        if (ReferenceEquals(_overflow[index], selected))
+                        {
+                            _overflow.RemoveAt(index);
+                            return true;
+                        }
+                    }
+                }
+                return false;
             }
 
             internal Exception InvokeFrom(int startIndex)
@@ -2540,13 +2891,11 @@ namespace DxMessaging.Core
         }
 
         /*
-            The unified per-handle staging object. Replaces, per registration, the old
-            staging Func<handle, HandlerDeregistration> display class + delegate AND the
-            nested AugmentedHandler local-function delegate. The captured staging state
-            (owning token, handle, user handler delegate, target/source InstanceId,
-            priority, kind) lives in plain fields; the diagnostics-augmented invoker is
-            an instance method bound to this object (so MessageHandler still receives a
-            delegate on the hot path -- no virtual/interface call per dispatch).
+            The unified per-handle staging object holds the owning token, handle,
+            user delegate, target/source, priority and kind without a staging Func.
+            Its current immutable invocation binding owns the augmented delegates and
+            resolved bus. Older frozen delegates keep their own binding through replay;
+            MessageHandler still invokes a delegate without per-dispatch virtual calls.
 
             The base is non-generic so _registrations / the replay queue can hold every
             registration polymorphically. The constrained MessageHandler.Register*<T>
@@ -2562,7 +2911,19 @@ namespace DxMessaging.Core
         {
             protected readonly MessageRegistrationToken Token;
             public MessageRegistrationHandle Handle;
-            private IMessageBus _registeredMessageBus;
+
+            internal int DeregistrationVersion { get; private set; }
+
+            protected bool TryClaimInlineDeregistration()
+            {
+                /* A saturated action is never reused; immutable spill wrappers remain independent. */
+                if (DeregistrationVersion == int.MaxValue)
+                {
+                    return false;
+                }
+                ++DeregistrationVersion;
+                return true;
+            }
 
             protected Registration(MessageRegistrationToken token)
             {
@@ -2643,9 +3004,7 @@ namespace DxMessaging.Core
 
             protected IMessageBus ResolveRegistrationMessageBus()
             {
-                IMessageBus messageBus = Token._messageBus;
-                _registeredMessageBus = messageBus ?? Token._messageHandler?.DefaultMessageBus;
-                return messageBus;
+                return Token._messageBus;
             }
 
             protected static void ThrowIfNullHandler(object handler, string parameterName)
@@ -2655,10 +3014,34 @@ namespace DxMessaging.Core
                     throw new ArgumentNullException(parameterName);
                 }
             }
+        }
+
+        /*
+            A frozen dispatch delegate owns this binding, rather than the replayed staging
+            object's current bus. Rebinding creates a new target; an older callback and
+            its pending peers keep the old target until their snapshots are released.
+            The token still decides whether to record after the user callback returns.
+        */
+        private abstract class InvocationBinding
+        {
+            protected readonly MessageRegistrationToken Token;
+            private readonly MessageRegistrationHandle _handle;
+            public readonly IMessageBus MessageBus;
+
+            protected InvocationBinding(
+                MessageRegistrationToken token,
+                MessageRegistrationHandle handle,
+                IMessageBus messageBus
+            )
+            {
+                Token = token;
+                _handle = handle;
+                MessageBus = messageBus;
+            }
 
             protected void RecordDiagnosticEmission(IMessage message, InstanceId? context = null)
             {
-                Token.RecordDiagnosticEmission(Handle, _registeredMessageBus, message, context);
+                Token.RecordDiagnosticEmission(_handle, MessageBus, message, context);
             }
         }
 
@@ -2675,7 +3058,7 @@ namespace DxMessaging.Core
                 MessageHandler.TypedHandler<T>.TypedHandlerDeregistrationState deregistration
             )
             {
-                if (_hasInlineDeregistration)
+                if (_hasInlineDeregistration || !TryClaimInlineDeregistration())
                 {
                     return deregistration;
                 }
@@ -2700,6 +3083,7 @@ namespace DxMessaging.Core
                     registration spills into an independent compatibility wrapper.
                 */
                 _hasInlineDeregistration = false;
+                _typedDeregistration = default;
             }
         }
 
@@ -2710,17 +3094,6 @@ namespace DxMessaging.Core
             private readonly InstanceId _context;
             private readonly object _userHandler;
             private readonly int _priority;
-
-            /*
-                Strongly-typed views of _userHandler, resolved ONCE at Register() time
-                (cold) so the per-dispatch augmented invoker calls a typed field directly
-                -- no per-dispatch castclass or kind-switch (which would add an O(handlers)
-                cost on the hot dispatch path). Exactly one is set per registration kind.
-            */
-            private Action<T> _scalarAction;
-            private MessageHandler.FastHandler<T> _scalarFast;
-            private Action<InstanceId, T> _contextAction;
-            private MessageHandler.FastHandlerWithContext<T> _contextFast;
 
             internal TargetedRegistration(
                 MessageRegistrationToken token,
@@ -2757,85 +3130,77 @@ namespace DxMessaging.Core
                 switch (_kind)
                 {
                     case RegistrationKind.TargetedHandlerAction:
-                        _scalarAction = (Action<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedMessageHandler(
                                 _context,
-                                _scalarAction,
-                                AugmentedScalarAction,
+                                (Action<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarAction,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.TargetedHandlerFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedMessageHandler(
                                 _context,
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.TargetedPostProcessorAction:
-                        _scalarAction = (Action<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedPostProcessor(
                                 _context,
-                                _scalarAction,
-                                AugmentedScalarAction,
+                                (Action<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarAction,
                                 _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.TargetedPostProcessorFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedPostProcessor(
                                 _context,
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.TargetedWithoutTargetingAction:
-                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedWithoutTargeting(
-                                _contextAction,
-                                AugmentedContextAction,
+                                (Action<InstanceId, T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextAction,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.TargetedWithoutTargetingFast:
-                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedWithoutTargeting(
-                                _contextFast,
-                                AugmentedContextFast,
+                                (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextFast,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.TargetedWithoutTargetingPostProcessorAction:
-                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
-                                _contextAction,
-                                AugmentedContextAction,
+                                (Action<InstanceId, T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextAction,
                                 _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.TargetedWithoutTargetingPostProcessorFast:
-                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterTargetedWithoutTargetingPostProcessor(
-                                _contextFast,
-                                AugmentedContextFast,
+                                (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextFast,
                                 _priority,
                                 messageBus
                             )
@@ -2872,50 +3237,76 @@ namespace DxMessaging.Core
                 ThrowIfNullHandler(_userHandler, parameterName);
             }
 
-            /*
-                Scalar invokers (targeted handler / post-processor). The user's handler is
-                the identity/dedup key; this flat invoker runs for the default slot. Calls
-                the typed field directly (no castclass) then records the (message, _context)
-                emission, matching the former AugmentedHandler bodies exactly.
-            */
-            private void AugmentedScalarAction(in T message)
+            private Binding _binding;
+
+            private Binding GetBinding(IMessageBus messageBus)
             {
-                _scalarAction(message);
-                if (Token._diagnosticMode)
+                IMessageBus resolvedBus = messageBus ?? Token._messageHandler.DefaultMessageBus;
+                if (_binding == null || !ReferenceEquals(_binding.MessageBus, resolvedBus))
                 {
-                    RecordDiagnosticEmission(message, _context);
+                    _binding = new Binding(this, resolvedBus);
                 }
+                return _binding;
             }
 
-            private void AugmentedScalarFast(in T message)
+            private sealed class Binding : InvocationBinding
             {
-                _scalarFast(in message);
-                if (Token._diagnosticMode)
-                {
-                    RecordDiagnosticEmission(message, _context);
-                }
-            }
+                private readonly Action<T> _scalarAction;
+                private readonly MessageHandler.FastHandler<T> _scalarFast;
+                private readonly Action<InstanceId, T> _contextAction;
+                private readonly MessageHandler.FastHandlerWithContext<T> _contextFast;
+                private readonly InstanceId _context;
 
-            /*
-                Context invokers (without-targeting handler / post-processor). Emission data
-                uses the dispatch-supplied target (the readonly parameter), not the stored _context
-                (default for these kinds), matching the former bodies exactly.
-            */
-            private void AugmentedContextAction(in InstanceId target, in T message)
-            {
-                _contextAction(target, message);
-                if (Token._diagnosticMode)
+                public Binding(TargetedRegistration<T> registration, IMessageBus messageBus)
+                    : base(registration.Token, registration.Handle, messageBus)
                 {
-                    RecordDiagnosticEmission(message, target);
+                    _scalarAction = registration._userHandler as Action<T>;
+                    _scalarFast = registration._userHandler as MessageHandler.FastHandler<T>;
+                    _contextAction = registration._userHandler as Action<InstanceId, T>;
+                    _contextFast =
+                        registration._userHandler as MessageHandler.FastHandlerWithContext<T>;
+                    _context = registration._context;
                 }
-            }
 
-            private void AugmentedContextFast(in InstanceId target, in T message)
-            {
-                _contextFast(in target, in message);
-                if (Token._diagnosticMode)
+                public void AugmentedScalarAction(in T message)
                 {
-                    RecordDiagnosticEmission(message, target);
+                    _scalarAction(message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, _context);
+                    }
+                }
+
+                public void AugmentedScalarFast(in T message)
+                {
+                    _scalarFast(in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, _context);
+                    }
+                }
+
+                /*
+                    Context invokers (without-targeting handler / post-processor). Emission data
+                    uses the dispatch-supplied target (the readonly parameter), not the stored _context
+                    (default for these kinds), matching the former bodies exactly.
+                */
+                public void AugmentedContextAction(in InstanceId target, in T message)
+                {
+                    _contextAction(target, message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, target);
+                    }
+                }
+
+                public void AugmentedContextFast(in InstanceId target, in T message)
+                {
+                    _contextFast(in target, in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, target);
+                    }
                 }
             }
         }
@@ -2926,14 +3317,6 @@ namespace DxMessaging.Core
             private readonly RegistrationKind _kind;
             private readonly object _userHandler;
             private readonly int _priority;
-
-            /*
-                Typed views of _userHandler, resolved once at Register() time (cold) so the
-                per-dispatch invoker calls a typed field directly -- no castclass/switch on
-                the hot path. Exactly one is set per registration kind.
-            */
-            private Action<T> _scalarAction;
-            private MessageHandler.FastHandler<T> _scalarFast;
 
             internal UntargetedRegistration(
                 MessageRegistrationToken token,
@@ -2963,31 +3346,28 @@ namespace DxMessaging.Core
                 switch (_kind)
                 {
                     case RegistrationKind.UntargetedHandlerAction:
-                        _scalarAction = (Action<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterUntargetedMessageHandler(
-                                _scalarAction,
-                                AugmentedScalarAction,
+                                (Action<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarAction,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.UntargetedHandlerFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterUntargetedMessageHandler(
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.UntargetedPostProcessorFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterUntargetedPostProcessor(
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 _priority,
                                 messageBus
                             )
@@ -3008,25 +3388,46 @@ namespace DxMessaging.Core
                 ThrowIfNullHandler(_userHandler, parameterName);
             }
 
-            /*
-                Untargeted scalar invokers. No context: emission data carries the message
-                only, matching the former AugmentedHandler bodies exactly.
-            */
-            private void AugmentedScalarAction(in T message)
+            private Binding _binding;
+
+            private Binding GetBinding(IMessageBus messageBus)
             {
-                _scalarAction(message);
-                if (Token._diagnosticMode)
+                IMessageBus resolvedBus = messageBus ?? Token._messageHandler.DefaultMessageBus;
+                if (_binding == null || !ReferenceEquals(_binding.MessageBus, resolvedBus))
                 {
-                    RecordDiagnosticEmission(message);
+                    _binding = new Binding(this, resolvedBus);
                 }
+                return _binding;
             }
 
-            private void AugmentedScalarFast(in T message)
+            private sealed class Binding : InvocationBinding
             {
-                _scalarFast(in message);
-                if (Token._diagnosticMode)
+                private readonly Action<T> _scalarAction;
+                private readonly MessageHandler.FastHandler<T> _scalarFast;
+
+                public Binding(UntargetedRegistration<T> registration, IMessageBus messageBus)
+                    : base(registration.Token, registration.Handle, messageBus)
                 {
-                    RecordDiagnosticEmission(message);
+                    _scalarAction = registration._userHandler as Action<T>;
+                    _scalarFast = registration._userHandler as MessageHandler.FastHandler<T>;
+                }
+
+                public void AugmentedScalarAction(in T message)
+                {
+                    _scalarAction(message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message);
+                    }
+                }
+
+                public void AugmentedScalarFast(in T message)
+                {
+                    _scalarFast(in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message);
+                    }
                 }
             }
         }
@@ -3038,16 +3439,6 @@ namespace DxMessaging.Core
             private readonly InstanceId _context;
             private readonly object _userHandler;
             private readonly int _priority;
-
-            /*
-                Typed views of _userHandler, resolved once at Register() time (cold) so the
-                per-dispatch invoker calls a typed field directly -- no castclass/switch on
-                the hot path. Exactly one is set per registration kind.
-            */
-            private Action<T> _scalarAction;
-            private MessageHandler.FastHandler<T> _scalarFast;
-            private Action<InstanceId, T> _contextAction;
-            private MessageHandler.FastHandlerWithContext<T> _contextFast;
 
             internal BroadcastRegistration(
                 MessageRegistrationToken token,
@@ -3084,85 +3475,77 @@ namespace DxMessaging.Core
                 switch (_kind)
                 {
                     case RegistrationKind.BroadcastHandlerAction:
-                        _scalarAction = (Action<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastMessageHandler(
                                 _context,
-                                _scalarAction,
-                                AugmentedScalarAction,
+                                (Action<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarAction,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.BroadcastHandlerFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastMessageHandler(
                                 _context,
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.BroadcastPostProcessorAction:
-                        _scalarAction = (Action<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastPostProcessor(
                                 _context,
-                                _scalarAction,
-                                AugmentedScalarAction,
+                                (Action<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarAction,
                                 _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.BroadcastPostProcessorFast:
-                        _scalarFast = (MessageHandler.FastHandler<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastPostProcessor(
                                 _context,
-                                _scalarFast,
-                                AugmentedScalarFast,
+                                (MessageHandler.FastHandler<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedScalarFast,
                                 _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.BroadcastWithoutSourceAction:
-                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastWithoutSource(
-                                _contextAction,
-                                AugmentedContextAction,
+                                (Action<InstanceId, T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextAction,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.BroadcastWithoutSourceFast:
-                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastWithoutSource(
-                                _contextFast,
-                                AugmentedContextFast,
+                                (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextFast,
                                 priority: _priority,
                                 messageBus: messageBus
                             )
                         );
                     case RegistrationKind.BroadcastWithoutSourcePostProcessorAction:
-                        _contextAction = (Action<InstanceId, T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                                _contextAction,
-                                AugmentedContextAction,
+                                (Action<InstanceId, T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextAction,
                                 priority: _priority,
                                 messageBus
                             )
                         );
                     case RegistrationKind.BroadcastWithoutSourcePostProcessorFast:
-                        _contextFast = (MessageHandler.FastHandlerWithContext<T>)_userHandler;
                         return StoreDeregistration(
                             messageHandler.RegisterSourcedBroadcastWithoutSourcePostProcessor(
-                                _contextFast,
-                                AugmentedContextFast,
+                                (MessageHandler.FastHandlerWithContext<T>)_userHandler,
+                                GetBinding(messageBus).AugmentedContextFast,
                                 priority: _priority,
                                 messageBus
                             )
@@ -3191,48 +3574,76 @@ namespace DxMessaging.Core
                 ThrowIfNullHandler(_userHandler, parameterName);
             }
 
-            /*
-                Broadcast scalar invokers. Emission data carries the stored source
-                (_context), matching the former AugmentedHandler bodies exactly.
-            */
-            private void AugmentedScalarAction(in T message)
+            private Binding _binding;
+
+            private Binding GetBinding(IMessageBus messageBus)
             {
-                _scalarAction(message);
-                if (Token._diagnosticMode)
+                IMessageBus resolvedBus = messageBus ?? Token._messageHandler.DefaultMessageBus;
+                if (_binding == null || !ReferenceEquals(_binding.MessageBus, resolvedBus))
                 {
-                    RecordDiagnosticEmission(message, _context);
+                    _binding = new Binding(this, resolvedBus);
                 }
+                return _binding;
             }
 
-            private void AugmentedScalarFast(in T message)
+            private sealed class Binding : InvocationBinding
             {
-                _scalarFast(in message);
-                if (Token._diagnosticMode)
-                {
-                    RecordDiagnosticEmission(message, _context);
-                }
-            }
+                private readonly Action<T> _scalarAction;
+                private readonly MessageHandler.FastHandler<T> _scalarFast;
+                private readonly Action<InstanceId, T> _contextAction;
+                private readonly MessageHandler.FastHandlerWithContext<T> _contextFast;
+                private readonly InstanceId _context;
 
-            /*
-                Broadcast context invokers for the without-source kinds. Emission data uses
-                the dispatch-supplied source (the readonly parameter), not the stored _context
-                (default for these kinds), matching the former bodies exactly.
-            */
-            private void AugmentedContextAction(in InstanceId source, in T message)
-            {
-                _contextAction(source, message);
-                if (Token._diagnosticMode)
+                public Binding(BroadcastRegistration<T> registration, IMessageBus messageBus)
+                    : base(registration.Token, registration.Handle, messageBus)
                 {
-                    RecordDiagnosticEmission(message, source);
+                    _scalarAction = registration._userHandler as Action<T>;
+                    _scalarFast = registration._userHandler as MessageHandler.FastHandler<T>;
+                    _contextAction = registration._userHandler as Action<InstanceId, T>;
+                    _contextFast =
+                        registration._userHandler as MessageHandler.FastHandlerWithContext<T>;
+                    _context = registration._context;
                 }
-            }
 
-            private void AugmentedContextFast(in InstanceId source, in T message)
-            {
-                _contextFast(in source, in message);
-                if (Token._diagnosticMode)
+                public void AugmentedScalarAction(in T message)
                 {
-                    RecordDiagnosticEmission(message, source);
+                    _scalarAction(message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, _context);
+                    }
+                }
+
+                public void AugmentedScalarFast(in T message)
+                {
+                    _scalarFast(in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, _context);
+                    }
+                }
+
+                /*
+                    Broadcast context invokers for the without-source kinds. Emission data uses
+                    the dispatch-supplied source (the readonly parameter), not the stored _context
+                    (default for these kinds), matching the former bodies exactly.
+                */
+                public void AugmentedContextAction(in InstanceId source, in T message)
+                {
+                    _contextAction(source, message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, source);
+                    }
+                }
+
+                public void AugmentedContextFast(in InstanceId source, in T message)
+                {
+                    _contextFast(in source, in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, source);
+                    }
                 }
             }
         }
@@ -3254,7 +3665,7 @@ namespace DxMessaging.Core
                 MessageHandler.InterceptorDeregistrationState<T> deregistration
             )
             {
-                if (_hasInlineDeregistration)
+                if (_hasInlineDeregistration || !TryClaimInlineDeregistration())
                 {
                     return deregistration;
                 }
@@ -3467,11 +3878,11 @@ namespace DxMessaging.Core
                     return StoreDeregistration(
                         messageHandler.RegisterGlobalAcceptAll(
                             _untargetedAction,
-                            AugmentedUntargetedAction,
+                            GetBinding(messageBus).AugmentedUntargetedAction,
                             _targetedAction,
-                            AugmentedTargetedAction,
+                            GetBinding(messageBus).AugmentedTargetedAction,
                             _broadcastAction,
-                            AugmentedBroadcastAction,
+                            GetBinding(messageBus).AugmentedBroadcastAction,
                             messageBus
                         )
                     );
@@ -3480,11 +3891,11 @@ namespace DxMessaging.Core
                 return StoreDeregistration(
                     messageHandler.RegisterGlobalAcceptAll(
                         _untargetedFast,
-                        AugmentedUntargetedFast,
+                        GetBinding(messageBus).AugmentedUntargetedFast,
                         _targetedFast,
-                        AugmentedTargetedFast,
+                        GetBinding(messageBus).AugmentedTargetedFast,
                         _broadcastFast,
-                        AugmentedBroadcastFast,
+                        GetBinding(messageBus).AugmentedBroadcastFast,
                         messageBus
                     )
                 );
@@ -3521,7 +3932,7 @@ namespace DxMessaging.Core
                 MessageHandler.GlobalAcceptAllDeregistrationState deregistration
             )
             {
-                if (_hasInlineDeregistration)
+                if (_hasInlineDeregistration || !TryClaimInlineDeregistration())
                 {
                     return deregistration;
                 }
@@ -3531,57 +3942,93 @@ namespace DxMessaging.Core
                 return this;
             }
 
-            private void AugmentedUntargetedAction(IUntargetedMessage message)
+            private Binding _binding;
+
+            private Binding GetBinding(IMessageBus messageBus)
             {
-                _untargetedAction(message);
-                if (Token._diagnosticMode)
+                IMessageBus resolvedBus = messageBus ?? Token._messageHandler.DefaultMessageBus;
+                if (_binding == null || !ReferenceEquals(_binding.MessageBus, resolvedBus))
                 {
-                    RecordDiagnosticEmission(message);
+                    _binding = new Binding(this, resolvedBus);
                 }
+                return _binding;
             }
 
-            private void AugmentedTargetedAction(InstanceId target, ITargetedMessage message)
+            private sealed class Binding : InvocationBinding
             {
-                _targetedAction(target, message);
-                if (Token._diagnosticMode)
-                {
-                    RecordDiagnosticEmission(message, target);
-                }
-            }
+                private readonly Action<IUntargetedMessage> _untargetedAction;
+                private readonly Action<InstanceId, ITargetedMessage> _targetedAction;
+                private readonly Action<InstanceId, IBroadcastMessage> _broadcastAction;
+                private readonly MessageHandler.FastHandler<IUntargetedMessage> _untargetedFast;
+                private readonly MessageHandler.FastHandlerWithContext<ITargetedMessage> _targetedFast;
+                private readonly MessageHandler.FastHandlerWithContext<IBroadcastMessage> _broadcastFast;
 
-            private void AugmentedBroadcastAction(InstanceId source, IBroadcastMessage message)
-            {
-                _broadcastAction(source, message);
-                if (Token._diagnosticMode)
+                public Binding(GlobalAcceptAllRegistration registration, IMessageBus messageBus)
+                    : base(registration.Token, registration.Handle, messageBus)
                 {
-                    RecordDiagnosticEmission(message, source);
+                    _untargetedAction = registration._untargetedAction;
+                    _targetedAction = registration._targetedAction;
+                    _broadcastAction = registration._broadcastAction;
+                    _untargetedFast = registration._untargetedFast;
+                    _targetedFast = registration._targetedFast;
+                    _broadcastFast = registration._broadcastFast;
                 }
-            }
 
-            private void AugmentedUntargetedFast(in IUntargetedMessage message)
-            {
-                _untargetedFast(in message);
-                if (Token._diagnosticMode)
+                public void AugmentedUntargetedAction(IUntargetedMessage message)
                 {
-                    RecordDiagnosticEmission(message);
+                    _untargetedAction(message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message);
+                    }
                 }
-            }
 
-            private void AugmentedTargetedFast(in InstanceId target, in ITargetedMessage message)
-            {
-                _targetedFast(in target, in message);
-                if (Token._diagnosticMode)
+                public void AugmentedTargetedAction(InstanceId target, ITargetedMessage message)
                 {
-                    RecordDiagnosticEmission(message, target);
+                    _targetedAction(target, message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, target);
+                    }
                 }
-            }
 
-            private void AugmentedBroadcastFast(in InstanceId source, in IBroadcastMessage message)
-            {
-                _broadcastFast(in source, in message);
-                if (Token._diagnosticMode)
+                public void AugmentedBroadcastAction(InstanceId source, IBroadcastMessage message)
                 {
-                    RecordDiagnosticEmission(message, source);
+                    _broadcastAction(source, message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, source);
+                    }
+                }
+
+                public void AugmentedUntargetedFast(in IUntargetedMessage message)
+                {
+                    _untargetedFast(in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message);
+                    }
+                }
+
+                public void AugmentedTargetedFast(in InstanceId target, in ITargetedMessage message)
+                {
+                    _targetedFast(in target, in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, target);
+                    }
+                }
+
+                public void AugmentedBroadcastFast(
+                    in InstanceId source,
+                    in IBroadcastMessage message
+                )
+                {
+                    _broadcastFast(in source, in message);
+                    if (Token._diagnosticMode)
+                    {
+                        RecordDiagnosticEmission(message, source);
+                    }
                 }
             }
         }
@@ -3645,11 +4092,14 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Creates a MessagingRegistrationToken that operates on the given handler.
+        /// Creates a disabled registration token bound to the given handler.
         /// </summary>
         /// <param name="messageHandler">Message handler to register handlers to.</param>
-        /// <param name="messageBus">MessageBus to use for this MessageRegistrationToken. Uses the GlobalMessageBus if left null.</param>
-        /// <returns>MessagingRegistrationToken bound to the MessageHandler.</returns>
+        /// <param name="messageBus">
+        /// Bus override. Pass <see langword="null"/> to use the handler's default bus when a registration activates.
+        /// </param>
+        /// <returns>A disabled token that stages handlers until <see cref="Enable"/> is called.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="messageHandler"/> is null.</exception>
         public static MessageRegistrationToken Create(
             MessageHandler messageHandler,
             IMessageBus messageBus = null
@@ -3664,8 +4114,12 @@ namespace DxMessaging.Core
         }
 
         /// <summary>
-        /// Removes all staged registrations and clears token-local diagnostic state.
+        /// Removes registrations and clears diagnostics when cleanup completes.
         /// </summary>
+        /// <remarks>
+        /// Uses the same failure and reentrancy behavior as <see cref="UnregisterAll"/>. Pending
+        /// cleanup remains owned by the token. Disposal does not prevent later registrations.
+        /// </remarks>
         public void Dispose()
         {
             UnregisterAll();

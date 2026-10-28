@@ -39,6 +39,8 @@ the central lock immediately before the licensed Unity section:
   uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
   with:
     lock-name: wallstop-organization-builds
+    require-resource-lifecycle: "true"
+    minimum-release-cooldown-seconds: "0"
     runner-id: ${{ runner.name }}
     github-token: ${{ github.token }}
     pull-request-number: ${{ github.event.pull_request.number }}
@@ -55,6 +57,11 @@ the reaper can reclaim it.
 The pinned commit above is part of the example. Dependabot is configured to
 ignore the build-lock actions, so bump their pins manually in one commit across
 `.github/workflows` and this page.
+
+The lifecycle requirement rejects missing, invalid, or disabled central configuration.
+The cooldown input accepts the centrally configured duration. Licensed work runs only
+after acquisition succeeds. Every acquired job returns the Unity license, classifies
+cleanup, releases the central lock, and requires confirmed cleanup on every exit path.
 
 The matching release step uses the same immutable lock commit with `if:
 always()`. This lets checkout, cache, Node setup, and assembly discovery split

@@ -8,8 +8,8 @@ namespace DxMessaging.Core.Pooling
 
     /// <summary>
     /// Static, single-threaded pool registry shared by the bus and handler
-    /// subsystems. Instantiated lazily on first use; reconfigured by
-    /// <see cref="Configure"/> when the runtime settings asset changes.
+    /// subsystems. Instantiated lazily on first use. Unity runtime settings
+    /// reconfigure retained-entry limits.
     /// </summary>
     /// <remarks>
     /// Each pool returns the per-entry recycle action that clears the entry

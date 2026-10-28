@@ -56,6 +56,7 @@ namespace DxMessaging.Unity
         /// </summary>
         public virtual MessageRegistrationToken Token => _messageRegistrationToken;
 
+        /// <summary>Token created by the companion MessagingComponent for this listener.</summary>
         protected MessageRegistrationToken _messageRegistrationToken;
 
         /// <summary>
@@ -89,9 +90,16 @@ namespace DxMessaging.Unity
         /// <remarks><b>Changed in v4.0.0.</b> The default is now <c>false</c>.</remarks>
         protected virtual bool RegisterForStringMessages => false;
 
+        /// <summary>Companion component used to create and release this listener token.</summary>
         protected MessagingComponent _messagingComponent;
+
+        /// <summary>Explicit bus override supplied through component configuration, if any.</summary>
         protected IMessageBus _configuredMessageBus;
+
+        /// <summary>Provider configured to supply the bus when no explicit override is used.</summary>
         protected IMessageBusProvider _configuredMessageBusProvider;
+
+        /// <summary>Cached availability handle used when resolving the configured provider.</summary>
         protected MessageBusProviderHandle _configuredMessageBusProviderHandle;
 
 #if UNITY_EDITOR || DEBUG

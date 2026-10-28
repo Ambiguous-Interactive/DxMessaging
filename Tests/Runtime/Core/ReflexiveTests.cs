@@ -13,6 +13,58 @@ namespace DxMessaging.Tests.Runtime.Core
 
     public sealed class ReflexiveTests : MessagingTestBase
     {
+        [TestCase(false, false)]
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        [TestCase(true, true)]
+        public void MutatedMetadataKeepsCapturedOverloadOnColdAndCachedLookup(
+            bool warmCache,
+            bool explicitTypes
+        )
+        {
+            MessageBus bus = new();
+            GameObject host = CreateReflexiveHost("CapturedSignature");
+            SignatureSnapshotReceiverComponent receiver =
+                host.AddComponent<SignatureSnapshotReceiverComponent>();
+            object[] arguments = { 1, 2 };
+            ReflexiveMessage message = explicitTypes
+                ? new ReflexiveMessage(
+                    nameof(SignatureSnapshotReceiverComponent.ReceiveSignature),
+                    ReflexiveSendMode.Flat,
+                    arguments,
+                    new[] { typeof(int), typeof(int) }
+                )
+                : new ReflexiveMessage(
+                    nameof(SignatureSnapshotReceiverComponent.ReceiveSignature),
+                    ReflexiveSendMode.Flat,
+                    arguments
+                );
+            InstanceId target = host;
+            if (warmCache)
+            {
+                message.EmitTargeted(target, bus);
+            }
+            message.parameterTypes[0] = typeof(object);
+            message.parameterTypes[1] = typeof(object);
+            message.EmitTargeted(target, bus);
+            ReflexiveMessage original = new(
+                nameof(SignatureSnapshotReceiverComponent.ReceiveSignature),
+                ReflexiveSendMode.Flat,
+                1,
+                2
+            );
+            original.EmitTargeted(target, bus);
+            Assert.That(receiver.IntegerCalls, Is.EqualTo(warmCache ? 3 : 2));
+            Assert.That(receiver.ObjectCalls, Is.Zero);
+            Assert.That(
+                bus.IsReflexiveMethodCached(
+                    typeof(SignatureSnapshotReceiverComponent),
+                    original.signatureKey
+                ),
+                Is.True
+            );
+        }
+
         [Test]
         public void SuccessfulReflexiveMethodsShareOneLeastRecentlyUsedBound()
         {
@@ -44,14 +96,14 @@ namespace DxMessaging.Tests.Runtime.Core
                     first.EmitTargeted(target, bus);
                     second.EmitTargeted(target, bus);
                     Assert.That(
-                        bus.ReflexiveMethodCacheCount,
+                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
                         Is.EqualTo(2),
                         "Only successful lookups may occupy the two-entry cache."
                     );
                     first.EmitTargeted(target, bus);
                     third.EmitTargeted(target, bus);
                     Assert.That(
-                        bus.ReflexiveMethodCacheCount,
+                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
                         Is.EqualTo(2),
                         "Different component types must share the same global bound."
                     );
@@ -88,7 +140,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     settings._bufferMaxDistinctEntries = 1;
                     DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
                     Assert.That(
-                        bus.ReflexiveMethodCacheCount,
+                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
                         Is.EqualTo(1),
                         "Hot reload must immediately shrink the cache."
                     );
@@ -102,7 +154,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     );
                     bus.Trim(force: true);
                     Assert.That(
-                        bus.ReflexiveMethodCacheCount,
+                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
                         Is.Zero,
                         "Forced trim must release method lookups."
                     );
@@ -113,7 +165,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         "A trimmed method must resolve and invoke again."
                     );
                     Assert.That(
-                        bus.ReflexiveMethodCacheCount,
+                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
                         Is.EqualTo(1),
                         "Repopulation must respect the new capacity."
                     );
@@ -163,11 +215,11 @@ namespace DxMessaging.Tests.Runtime.Core
                         message.EmitTargeted(target, bus);
                     }
                     Assert.That(
-                        bus.ReflexiveMethodCacheCount,
+                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
                         Is.EqualTo(values.Length),
                         "Each successful object-argument signature must occupy one lookup entry."
                     );
-                    int beforeCapacity = bus.ReflexiveMethodCacheCapacity;
+                    int beforeCapacity = MessageBusInspection.ReflexiveMethodCacheCapacity(bus);
                     if (operation == "Force")
                     {
                         bus.Trim(force: true);
@@ -182,12 +234,12 @@ namespace DxMessaging.Tests.Runtime.Core
                         DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
                     }
                     Assert.That(
-                        bus.ReflexiveMethodCacheCount,
+                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
                         Is.EqualTo(operation == "Shrink" ? 2 : 0),
                         $"operation={operation}: cold reclamation must remove obsolete lookup references."
                     );
                     Assert.That(
-                        bus.ReflexiveMethodCacheCapacity,
+                        MessageBusInspection.ReflexiveMethodCacheCapacity(bus),
                         Is.LessThan(beforeCapacity),
                         $"operation={operation}: cold reclamation must release the historical bucket-array peak."
                     );
@@ -228,7 +280,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         "An ambiguous lookup without an exact overload must not invoke either method."
                     );
                     Assert.That(
-                        bus.ReflexiveMethodCacheCount,
+                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
                         Is.Zero,
                         "Ambiguous misses must not occupy the successful-lookup cache."
                     );
@@ -256,7 +308,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         );
                         missing.EmitTargeted(target, bus);
                         Assert.That(
-                            bus.ReflexiveMethodCacheCount,
+                            MessageBusInspection.ReflexiveMethodCacheCount(bus),
                             Is.Zero,
                             $"capacity={capacity}, miss={index}: failed lookups must not be retained."
                         );
@@ -273,7 +325,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         $"capacity={capacity}: disabling caching must not disable dispatch."
                     );
                     Assert.That(
-                        bus.ReflexiveMethodCacheCount,
+                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
                         Is.EqualTo(capacity == 0 ? 0 : 1),
                         $"capacity={capacity}: only successful lookups may be retained."
                     );
@@ -331,17 +383,17 @@ namespace DxMessaging.Tests.Runtime.Core
                         $"nested={nested}, componentBurst={componentBurst}: the burst must still invoke its receiver."
                     );
                     Assert.That(
-                        bus.ReflexiveDispatchPoolDiagnostics.Cached,
+                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
                         Is.Zero,
                         $"nested={nested}, componentBurst={componentBurst}: oversized nested scratch must not enter the pool."
                     );
                     Assert.That(
-                        bus.HasRetainedReflexiveDispatchState,
+                        MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
                         Is.EqualTo(nested),
                         $"nested={nested}, componentBurst={componentBurst}: only small outer scratch may survive."
                     );
                     Assert.That(
-                        bus.ReflexiveDispatchRetainedCapacity,
+                        MessageBusInspection.ReflexiveDispatchRetainedCapacity(bus),
                         Is.LessThanOrEqualTo(8),
                         $"nested={nested}, componentBurst={componentBurst}: retained capacity must be bounded after clearing."
                     );
@@ -352,7 +404,7 @@ namespace DxMessaging.Tests.Runtime.Core
                         $"nested={nested}, componentBurst={componentBurst}: discarded state must be safely rebuilt."
                     );
                     Assert.That(
-                        bus.ReflexiveDispatchPoolDiagnostics.Cached,
+                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
                         Is.Zero,
                         "Repeated oversized sends must not populate the nested pool."
                     );
@@ -405,12 +457,12 @@ namespace DxMessaging.Tests.Runtime.Core
                         $"nested={nested}: trim must not clear active traversal."
                     );
                     Assert.That(
-                        bus.HasRetainedReflexiveDispatchState,
+                        MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
                         Is.False,
                         $"nested={nested}: the active root must be discarded when its lease ends."
                     );
                     Assert.That(
-                        bus.ReflexiveDispatchPoolDiagnostics.Cached,
+                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
                         Is.Zero,
                         $"nested={nested}: a lease predating trim must not re-enter its pool."
                     );
@@ -476,17 +528,17 @@ namespace DxMessaging.Tests.Runtime.Core
                         $"throws={throws}: the nested callback must execute."
                     );
                     Assert.That(
-                        bus.HasRetainedReflexiveDispatchState,
+                        MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
                         Is.False,
                         $"throws={throws}: a zero cap must discard root scratch on unwind."
                     );
                     Assert.That(
-                        bus.ReflexiveDispatchPoolDiagnostics.Cached,
+                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
                         Is.Zero,
                         $"throws={throws}: a zero cap must discard nested scratch on unwind."
                     );
                     Assert.That(
-                        bus.ReflexiveMethodCacheCount,
+                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
                         Is.Zero,
                         $"throws={throws}: hot reload must release successful lookups."
                     );
@@ -522,24 +574,24 @@ namespace DxMessaging.Tests.Runtime.Core
                     InstanceId target = outer;
                     message.EmitTargeted(target, bus);
                     Assert.That(
-                        bus.HasRetainedReflexiveDispatchState,
+                        MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
                         Is.True,
                         "Small root scratch must be retained before the cap falls."
                     );
                     Assert.That(
-                        bus.ReflexiveDispatchPoolDiagnostics.Cached,
+                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
                         Is.EqualTo(1),
                         "Warm nested state must be retained before the cap falls."
                     );
                     settings._bufferMaxDistinctEntries = 1;
                     DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
                     Assert.That(
-                        bus.HasRetainedReflexiveDispatchState,
+                        MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
                         Is.False,
                         "A smaller nonzero cap must release oversized idle root scratch."
                     );
                     Assert.That(
-                        bus.ReflexiveDispatchPoolDiagnostics.Cached,
+                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
                         Is.Zero,
                         "A lower cap must drain retained nested states before reuse."
                     );
@@ -579,8 +631,9 @@ namespace DxMessaging.Tests.Runtime.Core
             try
             {
                 settings._bufferMaxDistinctEntries = capacity;
-                using System.IDisposable settingsOverride =
-                    DxMessagingRuntimeSettingsProvider.Override(settings);
+                using System.IDisposable settingsOverride = RuntimeSettingsFixture.Override(
+                    settings
+                );
                 test(new MessageBus(), settings);
             }
             finally
@@ -909,13 +962,15 @@ namespace DxMessaging.Tests.Runtime.Core
             InstanceId parentId = parent;
             outer.EmitTargeted(parentId, messageBus);
 
-            CollectionPoolDiagnostics firstPool = messageBus.ReflexiveDispatchPoolDiagnostics;
+            CollectionPoolDiagnostics firstPool =
+                MessageBusInspection.ReflexiveDispatchPoolDiagnostics(messageBus);
             Assert.That(firstPool.Cached, Is.EqualTo(1), "Nested state must return to the pool.");
             Assert.That(firstPool.Misses, Is.EqualTo(1), "First nested send must warm one state.");
 
             outer.EmitTargeted(parentId, messageBus);
 
-            CollectionPoolDiagnostics reusedPool = messageBus.ReflexiveDispatchPoolDiagnostics;
+            CollectionPoolDiagnostics reusedPool =
+                MessageBusInspection.ReflexiveDispatchPoolDiagnostics(messageBus);
             Assert.That(reusedPool.Cached, Is.EqualTo(1), "Reused state must return to the pool.");
             Assert.That(reusedPool.Hits, Is.EqualTo(1), "Second nested send must reuse state.");
 
@@ -935,7 +990,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Forced trim must evict the retained nested dispatch state."
             );
             Assert.That(
-                messageBus.ReflexiveDispatchPoolDiagnostics.Cached,
+                MessageBusInspection.ReflexiveDispatchPoolDiagnostics(messageBus).Cached,
                 Is.Zero,
                 "Forced trim must leave no retained nested dispatch state."
             );

@@ -24,6 +24,10 @@ https://github.com/Ambiguous-Interactive/DxMessaging.git
 
 ## Your First Message (3 Steps)
 
+> **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use
+> `ref DamageRequested message` for the receiver callback parameter instead. Keep the registration
+> and emission calls unchanged. See the [4.0 migration guide](../guides/migration-guide.md#migrating-to-400).
+
 ### Step 1: Define a damage command
 
 ```csharp
@@ -79,7 +83,10 @@ The five guarded methods, with what breaks if you forget the base call:
 | `base.OnDestroy()`               | Registrations leak past the component's lifetime; held references prevent GC.                           |
 | `base.RegisterMessageHandlers()` | Registrations declared by a parent component do not register.                                           |
 
-`Start`, `Update`, `FixedUpdate`, `LateUpdate`, and `OnApplicationQuit` are not hooked. You can override them without calling base.
+Declare `Start`, `Update`, `FixedUpdate`, and `LateUpdate` as ordinary Unity message methods;
+`MessageAwareComponent` does not declare them as virtual methods to override. Its virtual
+`OnApplicationQuit` implementation does nothing. An override needs no base call for messaging
+cleanup. Preserve any quit behavior implemented by an intermediate parent class.
 
 See [DXMSG006 in the analyzer reference](../reference/analyzers.md#dxmsg006-missing-base-call) and the symptom-first [troubleshooting guide](../reference/troubleshooting.md).
 

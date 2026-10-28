@@ -315,10 +315,7 @@ namespace DxMessaging.Editor.CustomEditors
                 }
 
                 _refreshRetryScheduled = true;
-                System.Action<System.Action> schedule =
-                    MessageAwareComponentInspectorOverlay.TransientRefreshScheduler
-                    ?? DxMessagingEditorIdle.ScheduleAssetDatabaseMutation;
-                schedule(() =>
+                DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(() =>
                 {
                     _refreshRetryScheduled = false;
                     Refresh();

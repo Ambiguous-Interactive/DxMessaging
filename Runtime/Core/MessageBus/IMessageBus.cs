@@ -27,11 +27,12 @@ namespace DxMessaging.Core.MessageBus
     /// <item><description><see cref="Messages.IBroadcastMessage"/> -- Emitted from a source for any listener.</description></item>
     /// </list>
     /// <para>
-    /// Contract note: emitting any message on a bus with no registered handlers must
-    /// be a silent no-op. Implementations must NOT throw, log, or otherwise surface
-    /// the empty-bus state to the caller. The
-    /// <c>LifecycleEdgeCasesTests.EmitOnEmptyBusIsSilentNoOp</c> test pins this
-    /// contract for every message kind.
+    /// A missing subscription does not itself raise a dispatch error. The built-in
+    /// <see cref="MessageBus"/> can report unmatched typed messages at
+    /// <see cref="LogLevel.Info"/> when <see cref="MessagingDebug.enabled"/> is true
+    /// and <see cref="MessagingDebug.LogFunction"/> is non-null. Message formatting
+    /// and log receiver exceptions propagate to the caller. Empty typed emissions
+    /// still advance the emission sequence without adding registrations.
     /// </para>
     /// </remarks>
     /// <example>
@@ -68,6 +69,8 @@ namespace DxMessaging.Core.MessageBus
         /// </remarks>
         static bool GlobalDiagnosticsStackTraces { get; set; }
 
+        /// <summary>Legacy toggle for whether any diagnostics target is configured.</summary>
+        /// <remarks>Assigning true selects All; assigning false selects Off. Use GlobalDiagnosticsTargets to select environments.</remarks>
         [Obsolete("Use GlobalDiagnosticsTargets instead.")]
         static bool GlobalDiagnosticsMode
         {
@@ -75,6 +78,7 @@ namespace DxMessaging.Core.MessageBus
             set => GlobalDiagnosticsTargets = value ? DiagnosticsTarget.All : DiagnosticsTarget.Off;
         }
 
+        /// <summary>Gets the current emission sequence used by dispatch snapshots.</summary>
         long EmissionId { get; }
 
         /// <summary>
@@ -116,10 +120,30 @@ namespace DxMessaging.Core.MessageBus
         /// </remarks>
         static int GlobalMessageBufferSize { get; set; } = DefaultMessageBufferSize;
 
-        internal static int GlobalSequentialIndex = -1;
+        private static int GlobalSequentialIndex = -1;
 
-        protected static int GenerateNewGlobalSequentialIndex() =>
-            Interlocked.Increment(ref GlobalSequentialIndex);
+        /// <summary>Reserves a bus cache index for the lifetime of the application domain.</summary>
+        /// <exception cref="InvalidOperationException">All representable indices have been issued.</exception>
+        protected static int GenerateNewGlobalSequentialIndex()
+        {
+            while (true)
+            {
+                int current = Volatile.Read(ref GlobalSequentialIndex);
+                if (current == int.MaxValue)
+                {
+                    throw new InvalidOperationException(
+                        "The message bus index space is exhausted."
+                    );
+                }
+                int next = current + 1;
+                if (
+                    Interlocked.CompareExchange(ref GlobalSequentialIndex, next, current) == current
+                )
+                {
+                    return next;
+                }
+            }
+        }
 
         internal static bool ShouldEnableDiagnostics()
         {
@@ -147,6 +171,12 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         bool DiagnosticsMode { get; }
 
+        /// <summary>Identifies the storage used by this bus in each message handler's cache.</summary>
+        /// <remarks>
+        /// Independent bus storage must reserve its own index through
+        /// <see cref="GenerateNewGlobalSequentialIndex"/>. Never reset or reuse an issued index.
+        /// A forwarding wrapper uses its underlying bus's index when both share that storage.
+        /// </remarks>
         int RegisteredGlobalSequentialIndex { get; }
 
         /// <summary>
@@ -164,6 +194,11 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         readonly struct TrimResult : IEquatable<TrimResult>
         {
+            /// <summary>Creates a report of the storage reclaimed by a trim pass.</summary>
+            /// <param name="typeSlotsEvicted">Number of type cache entries, typed handler slots and global slots reclaimed.</param>
+            /// <param name="targetSlotsEvicted">Number of bus target or source context entries removed.</param>
+            /// <param name="pooledCollectionsEvicted">Number of collections dropped from shared pools.</param>
+            /// <param name="liveTypeSlotsRemaining">Number of occupied type slots remaining after the pass.</param>
             public TrimResult(
                 int typeSlotsEvicted,
                 int targetSlotsEvicted,
@@ -177,26 +212,34 @@ namespace DxMessaging.Core.MessageBus
                 LiveTypeSlotsRemaining = liveTypeSlotsRemaining;
             }
 
-            /// <summary>Number of typed-handler slots reset.</summary>
+            /// <summary>Number of type cache entries, typed handler slots and global slots reclaimed.</summary>
             public int TypeSlotsEvicted { get; }
 
             /// <summary>Number of bus target/source context entries removed.</summary>
             public int TargetSlotsEvicted { get; }
 
-            /// <summary>Number of pooled collections dropped from shared pools.</summary>
+            /// <summary>Number of collections dropped from shared or bus-owned pools and spare storage.</summary>
             public int PooledCollectionsEvicted { get; }
 
             /// <summary>Number of occupied type slots remaining after trim.</summary>
             public int LiveTypeSlotsRemaining { get; }
 
+            /// <summary>Compares all four trim counts with another result.</summary>
+            /// <param name="other">Result to compare.</param>
+            /// <returns><c>true</c> when all four counts match; otherwise <c>false</c>.</returns>
             public bool Equals(TrimResult other) =>
                 TypeSlotsEvicted == other.TypeSlotsEvicted
                 && TargetSlotsEvicted == other.TargetSlotsEvicted
                 && PooledCollectionsEvicted == other.PooledCollectionsEvicted
                 && LiveTypeSlotsRemaining == other.LiveTypeSlotsRemaining;
 
+            /// <summary>Checks whether an object contains the same trim counts.</summary>
+            /// <param name="obj">Object to compare.</param>
+            /// <returns><c>true</c> for a TrimResult with matching counts; otherwise <c>false</c>.</returns>
             public override bool Equals(object obj) => obj is TrimResult other && Equals(other);
 
+            /// <summary>Produces a hash from all four trim counts.</summary>
+            /// <returns>Hash code derived from the reported counts.</returns>
             public override int GetHashCode() =>
                 (
                     TypeSlotsEvicted,
@@ -205,19 +248,35 @@ namespace DxMessaging.Core.MessageBus
                     LiveTypeSlotsRemaining
                 ).GetHashCode();
 
+            /// <summary>Compares two values for equality.</summary>
+            /// <param name="left">Left value to compare.</param>
+            /// <param name="right">Right value to compare.</param>
+            /// <returns><c>true</c> when all four trim counts match; otherwise <c>false</c>.</returns>
             public static bool operator ==(TrimResult left, TrimResult right) => left.Equals(right);
 
+            /// <summary>Compares two values for inequality.</summary>
+            /// <param name="left">Left value to compare.</param>
+            /// <param name="right">Right value to compare.</param>
+            /// <returns><c>false</c> when all four trim counts match; otherwise <c>true</c>.</returns>
             public static bool operator !=(TrimResult left, TrimResult right) =>
                 !left.Equals(right);
 
+            /// <summary>Formats all four named trim counts.</summary>
+            /// <returns>Text containing the reclaimed counts and remaining type-slot count.</returns>
             public override string ToString() =>
                 $"TrimResult(TypeSlotsEvicted={TypeSlotsEvicted}, TargetSlotsEvicted={TargetSlotsEvicted}, PooledCollectionsEvicted={PooledCollectionsEvicted}, LiveTypeSlotsRemaining={LiveTypeSlotsRemaining})";
         }
 
+        /// <summary>Gets the number of stored broadcast priority buckets.</summary>
+        /// <remarks>The built-in bus sums buckets across message types and applicable contexts. Multiple callbacks can share one bucket.</remarks>
         int RegisteredBroadcast { get; }
 
+        /// <summary>Gets the number of stored targeted priority buckets.</summary>
+        /// <remarks>The built-in bus sums buckets across message types and applicable contexts. Multiple callbacks can share one bucket.</remarks>
         int RegisteredTargeted { get; }
 
+        /// <summary>Gets the number of stored untargeted priority buckets.</summary>
+        /// <remarks>The built-in bus sums buckets across message types and applicable contexts. Multiple callbacks can share one bucket.</remarks>
         int RegisteredUntargeted { get; }
 
         /// <summary>
@@ -240,13 +299,13 @@ namespace DxMessaging.Core.MessageBus
         int RegisteredInterceptors { get; }
 
         /// <summary>
-        /// Total number of registered post-processors across all message kinds.
+        /// Number of stored post-processor priority buckets across message kinds.
         /// </summary>
         /// <remarks>
         /// <para>
-        /// Sums per-message-type post-processor handler counts across the untargeted,
+        /// Sums per-message-type post-processor priority buckets across the untargeted,
         /// targeted, targeted-without-targeting, broadcast, and broadcast-without-source
-        /// post-processor sinks. Test infrastructure such as <c>LeakWatcher</c> reads this
+        /// post-processor sinks. Multiple callbacks can share a bucket. <c>LeakWatcher</c> reads this
         /// counter to detect post-processor handles that escape a watched region. Same
         /// single-thread contract as the other counters.
         /// </para>
@@ -423,9 +482,8 @@ namespace DxMessaging.Core.MessageBus
         ///     And returns: true if message handling should continue, false if message handling should be stopped.
         /// </note>
         /// <remarks>
-        /// Interceptor delegates registered with this method are retained for the bus lifetime.
-        /// Calling the returned deregistration action removes the interceptor from dispatch, but
-        /// the delegate reference may remain until the final deregistration of that interceptor.
+        /// Pass the returned handle to <see cref="Deregister{T}"/> to remove this registration
+        /// from dispatch. Other registrations of the same interceptor remain active.
         /// </remarks>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
         MessageBusRegistration RegisterUntargetedInterceptor<T>(
@@ -453,9 +511,8 @@ namespace DxMessaging.Core.MessageBus
         ///     And returns: true if message handling should continue, false if message handling should be stopped.
         /// </note>
         /// <remarks>
-        /// Interceptor delegates registered with this method are retained for the bus lifetime.
-        /// Calling the returned deregistration action removes the interceptor from dispatch, but
-        /// the delegate reference may remain until the final deregistration of that interceptor.
+        /// Pass the returned handle to <see cref="Deregister{T}"/> to remove this registration
+        /// from dispatch. Other registrations of the same interceptor remain active.
         /// </remarks>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
         MessageBusRegistration RegisterTargetedInterceptor<T>(
@@ -483,9 +540,8 @@ namespace DxMessaging.Core.MessageBus
         ///     And returns: true if message handling should continue, false if message handling should be stopped.
         /// </note>
         /// <remarks>
-        /// Interceptor delegates registered with this method are retained for the bus lifetime.
-        /// Calling the returned deregistration action removes the interceptor from dispatch, but
-        /// the delegate reference may remain until the final deregistration of that interceptor.
+        /// Pass the returned handle to <see cref="Deregister{T}"/> to remove this registration
+        /// from dispatch. Other registrations of the same interceptor remain active.
         /// </remarks>
         /// <returns>An opaque registration handle. Pass it to <see cref="Deregister{T}"/> with the same T to stop intercepting messages.</returns>
         MessageBusRegistration RegisterBroadcastInterceptor<T>(
@@ -576,12 +632,13 @@ namespace DxMessaging.Core.MessageBus
         /// Pass the <see cref="MessageBusRegistration"/> returned by the matching
         /// <c>Register*</c> call, using the SAME <typeparamref name="T"/> you registered with
         /// (for <see cref="RegisterGlobalAcceptAll"/>, any <c>T : IMessage</c> such as
-        /// <see cref="Messages.IMessage"/> is accepted, since the global slot is not type-keyed).
+        /// <see cref="IMessage"/> is accepted, since the global slot is not type-keyed).
         /// </para>
         /// <para>
         /// Deregistration is idempotent at the handle level only in the sense that a handle that
         /// has outlived a reset/domain-reload, or a <see cref="MessageBusRegistration.None"/> /
-        /// foreign handle, is a silent no-op. Calling it twice for the same live registration is a
+        /// foreign handle, is a silent no-op. Built-in handles passed to a different bus instance
+        /// also leave both buses unchanged. Calling it twice for the same live registration is a
         /// genuine over-deregistration and is logged (matching the pre-v4 behaviour of invoking
         /// the returned deregistration action twice).
         /// </para>
