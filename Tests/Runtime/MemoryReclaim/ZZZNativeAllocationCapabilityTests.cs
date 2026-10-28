@@ -10,7 +10,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
     /// <summary>Checks native allocation-event observability with forced allocation controls.</summary>
     /// <remarks>
     /// 2026-10-27: this untimed test observes native managed-object allocation events. It does not
-    /// measure GC.Alloc recorder counts, bytes, throughput or whole-owner cost. The counter retains one VM-owned
+    /// measure GC.Alloc recorder counts, throughput or whole-owner cost. Separate SDK controls report
+    /// nominal object sizes, excluding allocator overhead. The counter retains one VM-owned
     /// profiler descriptor until player shutdown. No managed object address enters that context.
     /// </remarks>
     [TestFixture]
@@ -87,6 +88,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     DxmCounterEnd,
                     DxmCounterForeign
                 );
+                NativeObjectSizeRows.MeasureAndAssert();
             }
             finally
             {

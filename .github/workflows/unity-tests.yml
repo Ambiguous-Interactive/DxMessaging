@@ -313,10 +313,12 @@ jobs:
       # legs each took the organization lock, consumed a seat, built for twenty
       # minutes, then died with a message naming neither the host nor the cause.
       # Runs BEFORE the lock so a broken host costs seconds, not a seat.
-      # cspell:ignore NOENTRY Brepro
+      # cspell:ignore NOENTRY Brepro libil
       - name: Require an MSVC C++ toolchain and compile the test-only native counter
         timeout-minutes: 3
         shell: pwsh
+        env:
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
         run: |
           $ErrorActionPreference = 'Stop'
           Set-StrictMode -Version Latest
@@ -342,6 +344,20 @@ jobs:
             Sort-Object { [version]$_.Name } -Descending)
           if ($libraries.Count -eq 0) { throw 'No existing Windows SDK library directory.' }
           $kernel = Join-Path $libraries[0].FullName 'um\x64\kernel32.lib'
+          $contractPath = '.github/perf/native-object-size-sdk-sources.json'
+          $contract = Get-Content -LiteralPath $contractPath -Raw | ConvertFrom-Json
+          if ($contract.unityVersion -ne '${{ matrix.unity-version }}') {
+            throw 'The frozen SDK source contract does not match this Unity version.'
+          }
+          $sdkRoot = Join-Path (Split-Path $env:UNITY_EDITOR_PATH -Parent) 'Data/il2cpp/libil2cpp'
+          $sdkInputs = @($contract.files | ForEach-Object {
+            $path = Join-Path $sdkRoot $_.path
+            $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ((Get-Item -LiteralPath $path).Length -ne $_.bytes -or $hash -ne $_.sha256) {
+              throw "Installed SDK source differs from the frozen size-observer contract: $($_.path)"
+            }
+            $path
+          })
           $source = (Resolve-Path 'Tests/Runtime/MemoryReclaim/DxmNativeAllocationCounter.c.txt').Path
           $build = [IO.Path]::GetFullPath('.artifacts/native-allocation-build')
           $plugins = [IO.Path]::GetFullPath('Tests/Runtime/MemoryReclaim/Plugins/x86_64')
@@ -353,9 +369,10 @@ jobs:
             "/IMPLIB:$(Join-Path $build 'counter.lib')", $kernel)
           cl.exe @arguments 2>&1 | Tee-Object (Join-Path $build 'compile.log')
           if ($LASTEXITCODE -ne 0) { throw "Native counter compiler exited $LASTEXITCODE." }
-          $inputs = @($source, (Join-Path $bin 'cl.exe'), (Join-Path $bin 'link.exe'), $kernel, $dll)
+          $inputs = @($source, (Join-Path $bin 'cl.exe'), (Join-Path $bin 'link.exe'), $kernel, $dll) + $sdkInputs
           [ordered]@{
-            schemaVersion = 1
+            schemaVersion = 2
+            sdkContractSha256 = (Get-FileHash -LiteralPath $contractPath -Algorithm SHA256).Hash.ToLowerInvariant()
             sourceCommit = (git rev-parse HEAD).Trim()
             command = @('cl.exe') + $arguments
             commandSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(

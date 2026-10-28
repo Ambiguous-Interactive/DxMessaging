@@ -1,18 +1,22 @@
-/* Test-only Windows x64 allocation-event counter. No managed callback or heap allocation. */
+/* Test-only Windows x64 counter. No managed callback; SDK size reads have separate controls. */
 typedef void (__cdecl *DxmProcedure)(void);
 typedef void (__cdecl *DxmAllocationCallback)(void *, void *, void *);
 typedef void (__cdecl *DxmShutdownCallback)(void *);
 typedef void (__cdecl *DxmInstall)(void *, DxmShutdownCallback);
 typedef void (__cdecl *DxmInstallAllocation)(DxmAllocationCallback);
 typedef void (__cdecl *DxmSetEvents)(int);
+typedef unsigned int (__cdecl *DxmObjectSize)(void *);
+typedef int (__cdecl *DxmClassSize)(void *);
 
 __declspec(dllimport) void * __stdcall GetModuleHandleA(const char *name);
 __declspec(dllimport) DxmProcedure __stdcall GetProcAddress(void *module, const char *name);
 __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId(void);
 __int64 __cdecl _InterlockedIncrement64(volatile __int64 *value);
+__int64 __cdecl _InterlockedExchangeAdd64(volatile __int64 *value, __int64 addition);
 __int64 __cdecl _InterlockedExchange64(volatile __int64 *value, __int64 replacement);
 __int64 __cdecl _InterlockedCompareExchange64(volatile __int64 *value, __int64 replacement, __int64 comparand);
 #pragma intrinsic(_InterlockedIncrement64)
+#pragma intrinsic(_InterlockedExchangeAdd64)
 #pragma intrinsic(_InterlockedExchange64)
 #pragma intrinsic(_InterlockedCompareExchange64)
 
@@ -21,6 +25,8 @@ typedef union DxmBinding {
     DxmInstall install;
     DxmInstallAllocation installAllocation;
     DxmSetEvents setEvents;
+    DxmObjectSize objectSize;
+    DxmClassSize classSize;
 } DxmBinding;
 
 typedef struct DxmState {
@@ -29,6 +35,14 @@ typedef struct DxmState {
     volatile __int64 foreign;
     volatile __int64 badContext;
     volatile __int64 recording;
+    volatile __int64 nominalBytes;
+    volatile __int64 nominalClasses;
+    volatile __int64 sizeErrors;
+    volatile __int64 sizing;
+    volatile __int64 minimumSize;
+    volatile __int64 maximumSize;
+    volatile __int64 minimumClass;
+    volatile __int64 maximumClass;
     unsigned long thread;
     int installed;
     int detached;
@@ -37,6 +51,8 @@ typedef struct DxmState {
 __declspec(align(8)) static DxmState state;
 static DxmInstallAllocation installAllocation;
 static DxmSetEvents setEvents;
+static DxmObjectSize objectSize;
+static DxmClassSize classSize;
 
 static __int64 Read(volatile __int64 *value)
 {
@@ -45,15 +61,44 @@ static __int64 Read(volatile __int64 *value)
 
 static void __cdecl OnAllocation(void *context, void *object, void *objectClass)
 {
-    (void)object;
-    (void)objectClass;
+    __int64 mode;
     _InterlockedIncrement64(&state.total);
     if (context != &state) {
         _InterlockedIncrement64(&state.badContext);
     }
-    if (Read(&state.recording) != 0) {
+    mode = Read(&state.recording);
+    if (mode != 0) {
         if (GetCurrentThreadId() == state.thread) {
             _InterlockedIncrement64(&state.owner);
+            if (mode == 2) {
+                unsigned int size;
+                int instanceSize;
+                if (context != &state || object == 0 || objectClass == 0) {
+                    _InterlockedIncrement64(&state.sizeErrors);
+                    return;
+                }
+                if (_InterlockedCompareExchange64(&state.sizing, 1, 0) != 0) {
+                    _InterlockedIncrement64(&state.sizeErrors);
+                    return;
+                }
+                size = objectSize(object);
+                instanceSize = classSize(objectClass);
+                if (size < 16 || instanceSize < 16 || (__int64)instanceSize > (__int64)size) {
+                    _InterlockedIncrement64(&state.sizeErrors);
+                } else {
+                    _InterlockedExchangeAdd64(&state.nominalBytes, (__int64)size);
+                    _InterlockedExchangeAdd64(&state.nominalClasses, (__int64)instanceSize);
+                    if (Read(&state.minimumSize) == 0 || (__int64)size < Read(&state.minimumSize))
+                        _InterlockedExchange64(&state.minimumSize, (__int64)size);
+                    if ((__int64)size > Read(&state.maximumSize))
+                        _InterlockedExchange64(&state.maximumSize, (__int64)size);
+                    if (Read(&state.minimumClass) == 0 || instanceSize < Read(&state.minimumClass))
+                        _InterlockedExchange64(&state.minimumClass, instanceSize);
+                    if (instanceSize > Read(&state.maximumClass))
+                        _InterlockedExchange64(&state.maximumClass, instanceSize);
+                }
+                _InterlockedExchange64(&state.sizing, 0);
+            }
         } else {
             _InterlockedIncrement64(&state.foreign);
         }
@@ -103,6 +148,42 @@ __declspec(dllexport) int __cdecl DxmCounterBegin(void)
     return 0;
 }
 
+/* Separate binding and window preserve the original count-only mode. SDK sizes are nominal. */
+__declspec(dllexport) int __cdecl DxmCounterBindSizes(void)
+{
+    DxmBinding first;
+    DxmBinding second;
+    void *module;
+    if (!state.installed || state.detached || Read(&state.recording) != 0 ||
+        GetCurrentThreadId() != state.thread) return 1;
+    module = GetModuleHandleA("GameAssembly.dll");
+    if (module == 0) return 2;
+    first.procedure = GetProcAddress(module, "il2cpp_object_get_size");
+    second.procedure = GetProcAddress(module, "il2cpp_class_instance_size");
+    if (first.procedure == 0 || second.procedure == 0) return 3;
+    objectSize = first.objectSize;
+    classSize = second.classSize;
+    return 0;
+}
+
+__declspec(dllexport) int __cdecl DxmCounterBeginSizes(void)
+{
+    int status;
+    if (objectSize == 0 || classSize == 0) return 3;
+    status = DxmCounterBegin();
+    if (status != 0) return status;
+    _InterlockedExchange64(&state.nominalBytes, 0);
+    _InterlockedExchange64(&state.nominalClasses, 0);
+    _InterlockedExchange64(&state.sizeErrors, 0);
+    _InterlockedExchange64(&state.sizing, 0);
+    _InterlockedExchange64(&state.minimumSize, 0);
+    _InterlockedExchange64(&state.maximumSize, 0);
+    _InterlockedExchange64(&state.minimumClass, 0);
+    _InterlockedExchange64(&state.maximumClass, 0);
+    _InterlockedExchange64(&state.recording, 2);
+    return 0;
+}
+
 __declspec(dllexport) __int64 __cdecl DxmCounterEnd(void)
 {
     _InterlockedExchange64(&state.recording, 0);
@@ -134,4 +215,39 @@ __declspec(dllexport) int __cdecl DxmCounterDetach(void)
     installAllocation((DxmAllocationCallback)0);
     state.detached = 1;
     return 0;
+}
+
+__declspec(dllexport) __int64 __cdecl DxmCounterNominalBytes(void)
+{
+    return Read(&state.nominalBytes);
+}
+
+__declspec(dllexport) __int64 __cdecl DxmCounterNominalClasses(void)
+{
+    return Read(&state.nominalClasses);
+}
+
+__declspec(dllexport) __int64 __cdecl DxmCounterSizeErrors(void)
+{
+    return Read(&state.sizeErrors);
+}
+
+__declspec(dllexport) __int64 __cdecl DxmCounterMinimumSize(void)
+{
+    return Read(&state.minimumSize);
+}
+
+__declspec(dllexport) __int64 __cdecl DxmCounterMaximumSize(void)
+{
+    return Read(&state.maximumSize);
+}
+
+__declspec(dllexport) __int64 __cdecl DxmCounterMinimumClass(void)
+{
+    return Read(&state.minimumClass);
+}
+
+__declspec(dllexport) __int64 __cdecl DxmCounterMaximumClass(void)
+{
+    return Read(&state.maximumClass);
 }

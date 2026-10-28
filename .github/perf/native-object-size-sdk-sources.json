@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "unityVersion": "6000.5.2f1",
+  "revision": "eb73d3b415a1",
+  "officialArchiveSha256": "f9348e410037e3bbc6a0fbf09e085059e46f289f62885403139d52113e6d03fe",
+  "priorWindowsSourcePacketSha256": "ef969b4bb049c463d49bd337e52f8aaaf1385d4dbec7a29f30fd9a1c6a5ed2c3",
+  "files": [
+    {
+      "path": "gc/GCHandle.cpp",
+      "bytes": 13399,
+      "sha256": "dbcca5ca2bc87d4b10d5d77d867656650a726d9b0a911c7d18e81ec2d4a15825"
+    },
+    {
+      "path": "gc/GarbageCollector.cpp",
+      "bytes": 13846,
+      "sha256": "cd7eebcef107da1e47fd3f7b930f5241f3c33bfbb2d84b7751be05551c4c371d"
+    },
+    {
+      "path": "il2cpp-api-functions.h",
+      "bytes": 19855,
+      "sha256": "faab014712db9024df2b94312dc872d58ca911299a74d8282484c10a3654bc8e"
+    },
+    {
+      "path": "il2cpp-api.cpp",
+      "bytes": 37309,
+      "sha256": "0d521ee9aba6612b61ad0f65db2885f0ae696af999fc2d5528c750b61893a6a4"
+    },
+    {
+      "path": "il2cpp-class-internals.h",
+      "bytes": 23078,
+      "sha256": "199634e996c4a65856b8bd232f0c5209f05c51be83274b5d511ccc3fe5231fef"
+    },
+    {
+      "path": "il2cpp-config.h",
+      "bytes": 24000,
+      "sha256": "720c84e6b7bbc8548426cfc48f5a8ebd4a0dc55f60baae56e2cc5e578e66e22e"
+    },
+    {
+      "path": "il2cpp-object-internals.h",
+      "bytes": 37022,
+      "sha256": "a3fb33b8955ea499ce68998dfe8ec25b3624e5972b1a0763cede9d70b7ef0ac5"
+    },
+    {
+      "path": "utils/StringUtils.cpp",
+      "bytes": 5921,
+      "sha256": "003b387c68b1ba68aa6a88c621a73eea7757338db2503778b9a61815a760de4c"
+    },
+    {
+      "path": "utils/StringUtils.h",
+      "bytes": 10644,
+      "sha256": "e7eb1dee38d56f91ea7831ca76addf1c5b2a6d134528063d1316c67ef98b7289"
+    },
+    {
+      "path": "vm/Array.cpp",
+      "bytes": 9803,
+      "sha256": "7ed68f79327d43a6c8766996a30f4fc200c7f69f450c19467ba6e3ddd982d780"
+    },
+    {
+      "path": "vm/Array.h",
+      "bytes": 2545,
+      "sha256": "784ee728da86d7cfbb7e39b848d5dbfe59ec689249c3e059707b02c97bd46aa2"
+    },
+    {
+      "path": "vm/Class.cpp",
+      "bytes": 95613,
+      "sha256": "8ff96a6c2545a47fc5abee8360b9c7d040ee23a7b9a343d1a061365b513fd752"
+    },
+    {
+      "path": "vm/Class.h",
+      "bytes": 14453,
+      "sha256": "bbd93375f917873124dfbbb3cdccf65b9fe79d26e263ac0d980b0b2171e72210"
+    },
+    {
+      "path": "vm/ClassInlines.cpp",
+      "bytes": 4062,
+      "sha256": "7cd61485b75e161f0023a4b80ef7b706f33d6fdc015f7286387655e454119bac"
+    },
+    {
+      "path": "vm/ClassInlines.h",
+      "bytes": 4982,
+      "sha256": "8b66fc13e4e222b2b67cf3c5e71ed7fa89fc7989a509ddfb92a0f910b1f9c244"
+    },
+    {
+      "path": "vm/Object.cpp",
+      "bytes": 14985,
+      "sha256": "a1c1257d9bdb45b5fab18a58996faf63d09034229e1a14e4e04d6ebcdd143cea"
+    },
+    {
+      "path": "vm/Object.h",
+      "bytes": 2919,
+      "sha256": "0b5b3ef6dfa22f8be3bb5bd6e1a5a4515aa1e0063e9d5ea741baca8c045c2e97"
+    },
+    {
+      "path": "vm/Profiler.cpp",
+      "bytes": 7179,
+      "sha256": "22753c3efc2115456bfb49d8bfe7ab71a56c4f9e54bb2639f900879e10c7befb"
+    },
+    {
+      "path": "vm/Profiler.h",
+      "bytes": 1792,
+      "sha256": "ce2292c98c8438d61ea35dabe648f8bc45c6755b6ac9fef6e84d0b272ca0967e"
+    },
+    {
+      "path": "vm/String.cpp",
+      "bytes": 5487,
+      "sha256": "0662d5013ee4f9adacc75a8afa19c0f392693daf1dbb8a84767a833279a5b62a"
+    }
+  ]
+}
