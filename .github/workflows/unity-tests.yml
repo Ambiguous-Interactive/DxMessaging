@@ -150,6 +150,11 @@ jobs:
           - 2022.3.45f1
           - 6000.3.16f1
           - 6000.5.2f1
+        # Private local-project import selection; ordinary current-head scopes qualified separately.
+        exclude:
+          - unity-version: 2021.3.45f1
+          - unity-version: 6000.3.16f1
+          - unity-version: 6000.5.2f1
         # Every leg of this job also builds the standalone IL2CPP player, so the
         # reviewed static map keeps the editor gate verifying the
         # StandaloneWindowsIl2Cpp payload at gate time. A literal EditorOnly
@@ -379,31 +384,38 @@ jobs:
           DXM_UNITY_TEST_CATEGORY: "!Stress;!Performance;!Allocation;!MemoryReclaim;!UnityRuntime;!PerfBench;!PerfGate;!PerfBaseline"
           CONSUMER_INSTALL_VALIDATION: ${{ inputs.consumer_install_validation }}
         run: |
-          if ($env:CONSUMER_INSTALL_VALIDATION -eq 'true') {
-            $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-unitypackage'
-            $licenseReturnOwner = 'Central'
-            ./scripts/unity/export-unitypackage.ps1 `
-              -UnityVersion '${{ matrix.unity-version }}' `
-              -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-editmode' `
-              -ProjectPath $projectPath `
-              -GitRevision '${{ github.sha }}' `
-              -VerifyConsumerInstalls `
-              -LicenseReturnOwner $licenseReturnOwner
+          if ('${{ inputs.consumer_install_validation }}' -eq 'true') {
+            ./.github/perf/local-project-import.ps1 `
+              -EditorPath $env:UNITY_EDITOR_PATH `
+              -OwnedRoot (Join-Path $env:RUNNER_WORKSPACE 'dxm-local-project-import/${{ github.run_id }}-${{ github.run_attempt }}') `
+              -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-editmode'
           } else {
-            $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-editmode'
-            $projectPath = "${projectPath}-$env:DXM_UNITY_SOURCE_SET_KEY"
-            $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
-            ./scripts/unity/run-ci-tests.ps1 `
-              -UnityVersion '${{ matrix.unity-version }}' `
-              -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-              -TestMode editmode `
-              -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
-              -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-editmode' `
-              -ProjectPath $projectPath `
-              -CachePath $cachePath `
-              -LicenseReturnOwner Central `
-              -ReleaseCodeOptimization `
-              -ReleasePlayerBuild
+            if ($env:CONSUMER_INSTALL_VALIDATION -eq 'true') {
+              $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-unitypackage'
+              $licenseReturnOwner = 'Central'
+              ./scripts/unity/export-unitypackage.ps1 `
+                -UnityVersion '${{ matrix.unity-version }}' `
+                -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-editmode' `
+                -ProjectPath $projectPath `
+                -GitRevision '${{ github.sha }}' `
+                -VerifyConsumerInstalls `
+                -LicenseReturnOwner $licenseReturnOwner
+            } else {
+              $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-editmode'
+              $projectPath = "${projectPath}-$env:DXM_UNITY_SOURCE_SET_KEY"
+              $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
+              ./scripts/unity/run-ci-tests.ps1 `
+                -UnityVersion '${{ matrix.unity-version }}' `
+                -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+                -TestMode editmode `
+                -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
+                -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-editmode' `
+                -ProjectPath $projectPath `
+                -CachePath $cachePath `
+                -LicenseReturnOwner Central `
+                -ReleaseCodeOptimization `
+                -ReleasePlayerBuild
+            }
           }
 
       - name: Run Unity PlayMode tests
