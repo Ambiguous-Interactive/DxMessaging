@@ -198,18 +198,21 @@ namespace DxMessaging.Core.MessageBus
                 MessageHandler hashes by owner, and delegates by target/method) and avoids the
                 unnecessary collisions those overrides would introduce. (null -> 0.)
             */
-            int hash = (int)kind;
-            hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(owner);
-            hash = (hash * 397) ^ (int)method;
-            hash = (hash * 397) ^ priority;
-            hash = (hash * 397) ^ generation.GetHashCode();
-            hash = (hash * 397) ^ sweepGeneration.GetHashCode();
-            hash = (hash * 397) ^ sequence.GetHashCode();
-            hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(capturedPrimary);
-            hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(capturedSecondary);
-            hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(payload);
-            hash = (hash * 397) ^ context.GetHashCode();
-            return hash;
+            unchecked
+            {
+                int hash = (int)kind;
+                hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(owner);
+                hash = (hash * 397) ^ (int)method;
+                hash = (hash * 397) ^ priority;
+                hash = (hash * 397) ^ generation.GetHashCode();
+                hash = (hash * 397) ^ sweepGeneration.GetHashCode();
+                hash = (hash * 397) ^ sequence.GetHashCode();
+                hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(capturedPrimary);
+                hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(capturedSecondary);
+                hash = (hash * 397) ^ RuntimeHelpers.GetHashCode(payload);
+                hash = (hash * 397) ^ context.GetHashCode();
+                return hash;
+            }
         }
 
         /// <summary>Compares two values for equality.</summary>

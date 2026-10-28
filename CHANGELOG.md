@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prevent registration-handle hashing from throwing in builds with integer overflow checks
+  ([#691](https://github.com/Ambiguous-Interactive/DxMessaging/issues/691)).
+
 - Preserve component cleanup ownership when deregistration callbacks release or register work
   for the same listener. Failed cleanup remains publicly retryable
   ([#679](https://github.com/Ambiguous-Interactive/DxMessaging/issues/679)).
