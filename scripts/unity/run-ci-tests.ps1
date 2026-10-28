@@ -5689,6 +5689,57 @@ function Write-DuplicateAnalyzerDiagnostics {
     }
 }
 
+function Copy-UnityImportWorkerLogs {
+    param(
+        [Parameter(Mandatory = $true)][string]$Project,
+        [Parameter(Mandatory = $true)][string]$Artifacts
+    )
+
+    # Reused projects can retain older worker logs. These are post-run snapshots,
+    # not proof that a named worker participated in this invocation.
+    try {
+        $sourceDirectory = Join-Path $Project 'Logs'
+        $destination = Join-Path $Artifacts 'import-worker-logs'
+        New-Item -ItemType Directory -Force -Path $destination | Out-Null
+        $records = @(
+            if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
+                foreach ($source in @(Get-ChildItem -LiteralPath $sourceDirectory -File -Filter 'AssetImportWorker*.log' | Sort-Object Name)) {
+                    $sourceLength = $source.Length
+                    $sourceTime = $source.LastWriteTimeUtc.ToString('o')
+                    $copy = Join-Path $destination $source.Name
+                    Copy-Item -LiteralPath $source.FullName -Destination $copy -Force
+                    $copied = Get-Item -LiteralPath $copy
+                    $source.Refresh()
+                    [ordered]@{
+                        name = $copied.Name
+                        preProcessingLength = $copied.Length
+                        preProcessingSha256 = (Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash.ToLowerInvariant()
+                        sourceLengthObserved = $sourceLength
+                        sourceLastWriteTimeUtc = $sourceTime
+                        sourceMetadataUnchangedDuringCopy = (
+                            $source.Length -eq $sourceLength -and
+                            $source.LastWriteTimeUtc.ToString('o') -eq $sourceTime
+                        )
+                    }
+                }
+            }
+        )
+        Write-JsonArtifact -Path (Join-Path $destination 'snapshot.json') -Value ([ordered]@{
+            schemaVersion = 1
+            capturedAtUtc = [DateTime]::UtcNow.ToString('o')
+            scope = 'post-run-reused-project-snapshot'
+            sourceDirectory = 'Logs'
+            currentInvocationMembershipEstablished = $false
+            hashesDescribe = 'copied bytes before ordinary artifact processing'
+            files = @($records)
+        })
+    } catch {
+        # Evidence collection must preserve the original test outcome and the
+        # independent license-return path, including when a log is still open.
+        Write-Host "::warning::Could not retain Unity import worker logs: $($_.Exception.Message)"
+    }
+}
+
 function Write-UnityResultFailureDiagnostics {
     param(
         [string]$LogPath,
@@ -8383,6 +8434,7 @@ try {
     )) {
         Remove-Item -LiteralPath "Env:\$temporaryEnvironmentVariable" -ErrorAction SilentlyContinue
     }
+    Copy-UnityImportWorkerLogs -Project $ProjectPath -Artifacts $ArtifactsPath
     # Standalone/local callers retain deterministic return. Organization CI passes
     # Central so the immediately following trusted return action owns the one
     # authoritative post-activation attempt and its typed evidence.
