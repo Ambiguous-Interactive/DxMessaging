@@ -164,8 +164,11 @@ msg.EmitGameObjectTargeted(gameObject);
 ```
 
 Callbacks that reset the bus cancel the current reflexive emission, including callbacks in custom
-reflection metadata. Emit a new message after the reset to deliver it; the canceled emission does
-not resume.
+reflection metadata. Eligible zero- or one-argument sends use Unity's `GameObject.SendMessage` on
+an active GameObject. If a receiver resets the bus during that call, Unity may still deliver to
+other receivers on the same GameObject. DxMessaging checks for the reset after Unity finishes
+that delivery and does not continue the canceled emission. Emit a new message after the reset
+to deliver it.
 
 Related
 
