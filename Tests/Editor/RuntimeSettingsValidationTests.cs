@@ -475,7 +475,7 @@ namespace DxMessaging.Tests.Editor
                     serialized.FindProperty(nameof(settings._bufferMaxDistinctEntries)).intValue =
                         largestCapacity + 2;
                     Assert.That(
-                        serialized.ApplyModifiedProperties(),
+                        serialized.ApplyModifiedPropertiesWithoutUndo(),
                         Is.True,
                         $"Serialized change {change} must reach Unity validation."
                     );
