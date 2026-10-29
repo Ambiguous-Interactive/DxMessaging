@@ -163,6 +163,10 @@ var msg = new ReflexiveMessage("OnHit", ReflexiveSendMode.Upwards, 10);
 msg.EmitGameObjectTargeted(gameObject);
 ```
 
+Callbacks that reset the bus cancel the current reflexive emission, including callbacks in custom
+reflection metadata. Emit a new message after the reset to deliver it; the canceled emission does
+not resume.
+
 Related
 
 - [Quick Start](../getting-started/quick-start.md)

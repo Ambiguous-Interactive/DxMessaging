@@ -75,8 +75,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The owning replay completes without restarting its registration queue, including during retargeting
   ([#671](https://github.com/Ambiguous-Interactive/DxMessaging/issues/671)).
 
-- Stop reflexive dispatch when a diagnostic receiver resets the bus; newly registered handlers
-  wait for the next emission ([#670](https://github.com/Ambiguous-Interactive/DxMessaging/issues/670)).
+- Stop reflexive dispatch when diagnostic or reflection metadata callbacks reset the bus; canceled
+  lookups do not retain a resolved method, and new handlers wait for the next emission
+  ([#670](https://github.com/Ambiguous-Interactive/DxMessaging/issues/670),
+  [#694](https://github.com/Ambiguous-Interactive/DxMessaging/issues/694)).
 
 - Preserve retryable cleanup across diagnostic callbacks and keep a logger's successful `Disable()`
   effective during retarget recovery ([#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663),

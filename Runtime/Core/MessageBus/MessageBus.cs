@@ -8322,7 +8322,7 @@ namespace DxMessaging.Core.MessageBus
             for (int i = 0; i < components.Count; ++i)
             {
                 MonoBehaviour component = components[i];
-                SendMessage(component, ref message, onlyActive);
+                SendMessage(component, ref message, onlyActive, resetGeneration);
                 if (resetGeneration != _resetGeneration)
                 {
                     return false;
@@ -8335,7 +8335,8 @@ namespace DxMessaging.Core.MessageBus
         private void SendMessage(
             MonoBehaviour recipient,
             ref ReflexiveMessage message,
-            bool onlyActive
+            bool onlyActive,
+            long resetGeneration
         )
         {
             if (recipient == null)
@@ -8355,22 +8356,33 @@ namespace DxMessaging.Core.MessageBus
 
             Action<MonoBehaviour, object[]> method = ResolveReflexiveMethod(
                 recipient.GetType(),
-                ref message
+                ref message,
+                resetGeneration
             );
-            method?.Invoke(recipient, message.parameters);
+            if (resetGeneration == _resetGeneration)
+            {
+                method?.Invoke(recipient, message.parameters);
+            }
         }
 
         /// <summary>Resolves a dispatcher and caches only successful lookups under a global LRU bound.</summary>
         private Action<MonoBehaviour, object[]> ResolveReflexiveMethod(
             Type componentType,
-            ref ReflexiveMessage message
+            ref ReflexiveMessage message,
+            long resetGeneration
         )
         {
             (Type, MethodSignatureKey) lookupKey = (componentType, message.signatureKey);
             Action<MonoBehaviour, object[]> method;
-            if (
-                _methodCache.TryGetValue(lookupKey, out LinkedListNode<ReflexiveMethodEntry> cached)
-            )
+            bool hasCachedMethod = _methodCache.TryGetValue(
+                lookupKey,
+                out LinkedListNode<ReflexiveMethodEntry> cached
+            );
+            if (resetGeneration != _resetGeneration)
+            {
+                return null;
+            }
+            if (hasCachedMethod)
             {
                 method = cached.Value.method;
                 _methodCacheLru.Remove(cached);
@@ -8392,12 +8404,20 @@ namespace DxMessaging.Core.MessageBus
                 }
                 catch (AmbiguousMatchException)
                 {
+                    if (resetGeneration != _resetGeneration)
+                    {
+                        return null;
+                    }
                     MethodInfo[] matchingMethods = componentType.GetMethods(
                         ReflexiveMethodBindingFlags
                     );
                     Span<MethodInfo> span = matchingMethods.AsSpan();
                     for (int i = 0; i < span.Length; ++i)
                     {
+                        if (resetGeneration != _resetGeneration)
+                        {
+                            return null;
+                        }
                         MethodInfo matchingMethod = span[i];
                         if (
                             !string.Equals(
@@ -8423,9 +8443,17 @@ namespace DxMessaging.Core.MessageBus
                     methodInfo = null;
                 }
 
+                if (resetGeneration != _resetGeneration)
+                {
+                    return null;
+                }
                 if (methodInfo != null)
                 {
                     method = CompileMethodAction(methodInfo);
+                    if (resetGeneration != _resetGeneration)
+                    {
+                        return null;
+                    }
                     if (method != null && 0 < _handlerCacheRetentionLimit)
                     {
                         TrimReflexiveMethodCache(_handlerCacheRetentionLimit - 1);
