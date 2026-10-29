@@ -92,6 +92,19 @@ internal static class GeneratorTestUtilities
         return CompileGeneratedOutput(userSource, result, ParseOptions);
     }
 
+    internal static ImmutableArray<Diagnostic> CompileGeneratedOutput(
+        string userSource,
+        GeneratorDriverRunResult result,
+        LanguageVersion languageVersion
+    )
+    {
+        return CompileGeneratedOutput(
+            userSource,
+            result,
+            ParseOptions.WithLanguageVersion(languageVersion)
+        );
+    }
+
     private static ImmutableArray<Diagnostic> CompileGeneratedOutput(
         string userSource,
         GeneratorDriverRunResult result,
