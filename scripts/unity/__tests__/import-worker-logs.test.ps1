@@ -50,6 +50,13 @@ try {
                 throw "Worker bytes, hash or historical timestamp lost for $($record.name)."
             }
         }
+        Get-ChildItem -LiteralPath $logs -File -Filter 'AssetImportWorker*.log' | Remove-Item -Force
+        Copy-UnityImportWorkerLogs -Project $project -Artifacts $artifacts
+        $reused = Get-Content -LiteralPath (Join-Path $destination 'snapshot.json') -Raw | ConvertFrom-Json
+        if (@($reused.files).Count -ne 0 -or
+            @(Get-ChildItem -LiteralPath $destination -File).Count -ne 1) {
+            throw "Reused artifacts retained stale worker logs after collecting $count files."
+        }
     }
 
     $missingArtifacts = Join-Path $fixture 'missing-artifacts'

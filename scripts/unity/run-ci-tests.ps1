@@ -5700,6 +5700,9 @@ function Copy-UnityImportWorkerLogs {
     try {
         $sourceDirectory = Join-Path $Project 'Logs'
         $destination = Join-Path $Artifacts 'import-worker-logs'
+        if (Test-Path -LiteralPath $destination) {
+            Remove-Item -LiteralPath $destination -Recurse -Force -ErrorAction Stop
+        }
         New-Item -ItemType Directory -Force -Path $destination | Out-Null
         $records = @(
             if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
