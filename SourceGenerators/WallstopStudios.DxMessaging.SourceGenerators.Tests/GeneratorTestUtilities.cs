@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
@@ -246,12 +247,55 @@ internal static class GeneratorTestUtilities
         );
     }
 
+    internal static PortableExecutableReference CompileBaseCallAnalyzerParent(string parentSource)
+    {
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            assemblyName: "AnalyzerReferencedParentTests",
+            syntaxTrees: new[]
+            {
+                CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions),
+                CSharpSyntaxTree.ParseText(parentSource, ParseOptions),
+            },
+            references: CoreReferences,
+            options: WarningFatalCompilationOptions
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult result = compilation.Emit(image);
+        if (!result.Success)
+        {
+            throw new InvalidOperationException(
+                "Referenced parent did not compile cleanly:\n"
+                    + string.Join(
+                        "\n",
+                        result.Diagnostics.Select(diagnostic => diagnostic.ToString())
+                    )
+            );
+        }
+
+        return MetadataReference.CreateFromImage(image.ToArray());
+    }
+
+    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerWithCompiledParent(
+        string userSource,
+        PortableExecutableReference compiledParent
+    )
+    {
+        return RunBaseCallAnalyzerCore(
+            userSource,
+            compilationOptions: null,
+            Array.Empty<string>(),
+            Array.Empty<(string path, string contents)>(),
+            compiledParent: compiledParent
+        );
+    }
+
     private static ImmutableArray<Diagnostic> RunBaseCallAnalyzerCore(
         string userSource,
         CSharpCompilationOptions? compilationOptions,
         string[] allowedWarningIds,
         (string path, string contents)[] additionalFiles,
-        params string[] extraStubSources
+        string[]? extraStubSources = null,
+        PortableExecutableReference? compiledParent = null
     )
     {
         SyntaxTree stubs = CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions);
@@ -260,7 +304,12 @@ internal static class GeneratorTestUtilities
         CSharpCompilationOptions effectiveOptions =
             compilationOptions ?? new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
 
-        List<SyntaxTree> syntaxTrees = new(extraStubSources?.Length + 2 ?? 2) { stubs, userTree };
+        List<SyntaxTree> syntaxTrees = new(extraStubSources?.Length + 2 ?? 2);
+        if (compiledParent is null)
+        {
+            syntaxTrees.Add(stubs);
+        }
+        syntaxTrees.Add(userTree);
         if (extraStubSources is { Length: > 0 })
         {
             for (int i = 0; i < extraStubSources.Length; i++)
@@ -275,7 +324,9 @@ internal static class GeneratorTestUtilities
         CSharpCompilation compilation = CSharpCompilation.Create(
             assemblyName: "AnalyzerTests",
             syntaxTrees: syntaxTrees,
-            references: CoreReferences,
+            references: compiledParent is null
+                ? CoreReferences
+                : CoreReferences.Add(compiledParent),
             options: effectiveOptions
         );
 
