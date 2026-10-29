@@ -652,11 +652,23 @@ namespace DxMessaging.Tests.Runtime.Core
                             string context =
                                 $"warmCache={warmCache}, metadataSlot={metadataSlot}, action={action}, cycle={cycle}";
                             bus.ResetState();
-                            GameObject host = CreateReflexiveHost("Metadata" + cycle);
-                            SimpleMessageAwareComponent receiver =
-                                host.GetComponent<SimpleMessageAwareComponent>();
+                            GameObject host = new(
+                                "ReflexiveMetadata" + cycle,
+                                typeof(ReflexiveMetadataReceiver)
+                            );
+                            _spawned.Add(host);
+                            ReflexiveMetadataReceiver receiver =
+                                host.GetComponent<ReflexiveMetadataReceiver>();
+                            MonoBehaviour[] components = host.GetComponents<MonoBehaviour>();
+                            Assert.That(components, Has.Length.EqualTo(1), context);
+                            Assert.That(components[0], Is.SameAs(receiver), context);
                             int deliveries = 0;
-                            receiver.reflexiveTwoArgumentHandler = () => ++deliveries;
+                            receiver.OnMessage = (first, second) =>
+                            {
+                                Assert.That(first, Is.EqualTo(1), context);
+                                Assert.That(second, Is.EqualTo(2), context);
+                                ++deliveries;
+                            };
                             bool armed = false;
                             int callbacks = 0;
                             MetadataCallbackType metadata = new(
@@ -682,9 +694,7 @@ namespace DxMessaging.Tests.Runtime.Core
                             System.Type[] types = { typeof(int), typeof(int) };
                             types[metadataSlot] = metadata;
                             ReflexiveMessage message = new(
-                                nameof(
-                                    SimpleMessageAwareComponent.HandleReflexiveMessageTwoArguments
-                                ),
+                                nameof(ReflexiveMetadataReceiver.Receive),
                                 ReflexiveSendMode.Flat,
                                 new object[] { 1, 2 },
                                 types
