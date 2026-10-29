@@ -163,7 +163,7 @@ namespace DxMessaging.Core.Configuration
         private static void RegisterValidationUpdates()
         {
             UnityEditor.EditorApplication.update -= ProcessPendingValidations;
-            UnityEditor.EditorApplication.update += ProcessPendingValidations;
+            // Deliberate missing-subscription control; never adopt.
         }
 
         private void OnValidate()
