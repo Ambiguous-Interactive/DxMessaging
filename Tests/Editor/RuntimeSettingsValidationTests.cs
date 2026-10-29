@@ -370,6 +370,8 @@ namespace DxMessaging.Tests.Editor
         /// <remarks>
         /// 2026-10-29: direct drain tests cannot detect a missing Editor update subscription.
         /// Drive Unity serialization and its real update loop through the live bus subscriber.
+        /// A cleanup assertion could replace an earlier failure during iterator unwind.
+        /// Restore in finally and check the snapshot only after normal completion.
         /// </remarks>
         [UnityTest]
         public IEnumerator SerializedValidationAutomaticallyUpdatesLiveBusAndPools()
@@ -566,12 +568,12 @@ namespace DxMessaging.Tests.Editor
                     savedContext.MaxRetained
                 );
                 IMessageBus.GlobalMessageBufferSize = savedBufferSize;
-                Assert.That(
-                    DxPools.DescribeAll(),
-                    Is.EqualTo(savedDiagnostics),
-                    "The test must preserve cached shared entries and all lifetime counters."
-                );
             }
+            Assert.That(
+                DxPools.DescribeAll(),
+                Is.EqualTo(savedDiagnostics),
+                "The test must preserve cached shared entries and all lifetime counters."
+            );
         }
 
         private DxMessagingRuntimeSettings CreateSettings()
