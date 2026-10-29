@@ -84,7 +84,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         private static WeakReference CreateNegativeControl() => new(new object());
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private static Probe CreateProbe(bool dictionary, bool invoke)
+        internal static Probe CreateProbe(bool dictionary, bool invoke)
         {
             PlainRoute route = new();
             PlainHandler handler = new(route);
@@ -119,7 +119,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
         }
 
-        private sealed class Probe
+        internal sealed class Probe
         {
             internal readonly WeakReference[] Graph;
             internal readonly int StoredCallbacks;
