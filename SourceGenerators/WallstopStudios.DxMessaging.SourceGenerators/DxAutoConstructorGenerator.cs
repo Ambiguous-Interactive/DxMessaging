@@ -421,7 +421,6 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                                 // Validate expression compatibility with field type
                                 if (
                                     !IsValidDefaultExpression(
-                                        compilation,
                                         semanticModel,
                                         anchorPosition,
                                         field,
@@ -476,30 +475,29 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                         {
                             object? val = arg.Value;
                             defaultExpr = FormatLiteral(val);
-                            // Validate primitive conversion to field type
-                            ITypeSymbol? sourceType = arg.Type;
-                            if (sourceType != null)
+                            // Include value-dependent constant conversions, such as int 7 to byte.
+                            if (
+                                !IsValidDefaultExpression(
+                                    semanticModel,
+                                    anchorPosition,
+                                    field,
+                                    defaultExpr
+                                )
+                            )
                             {
-                                Conversion conv = compilation.ClassifyConversion(
-                                    sourceType,
-                                    field.Type
+                                Location reportLoc =
+                                    attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+                                    ?? field.Locations.FirstOrDefault()
+                                    ?? Location.None;
+                                spc.ReportDiagnostic(
+                                    Diagnostic.Create(
+                                        InvalidOptionalDefaultDiagnostic,
+                                        reportLoc,
+                                        fieldName,
+                                        defaultExpr,
+                                        fieldType
+                                    )
                                 );
-                                if (!conv.IsImplicit)
-                                {
-                                    Location reportLoc =
-                                        attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
-                                        ?? field.Locations.FirstOrDefault()
-                                        ?? Location.None;
-                                    spc.ReportDiagnostic(
-                                        Diagnostic.Create(
-                                            InvalidOptionalDefaultDiagnostic,
-                                            reportLoc,
-                                            fieldName,
-                                            defaultExpr,
-                                            fieldType
-                                        )
-                                    );
-                                }
                             }
                         }
                     }
@@ -632,7 +630,6 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         }
 
         private static bool IsValidDefaultExpression(
-            Compilation compilation,
             SemanticModel semanticModel,
             int anchorPosition,
             IFieldSymbol field,
@@ -653,22 +650,13 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
             try
             {
-                var exprSyntax = SyntaxFactory.ParseExpression(trimmed);
-                var typeInfo = semanticModel.GetSpeculativeTypeInfo(
+                ExpressionSyntax exprSyntax = SyntaxFactory.ParseExpression(trimmed);
+                Conversion conversion = semanticModel.ClassifyConversion(
                     anchorPosition,
                     exprSyntax,
-                    SpeculativeBindingOption.BindAsExpression
+                    field.Type
                 );
-
-                ITypeSymbol? sourceType = typeInfo.Type;
-                if (sourceType == null)
-                {
-                    // Could not bind; let the compiler decide but report as invalid here
-                    return false;
-                }
-
-                Conversion conv = compilation.ClassifyConversion(sourceType, field.Type);
-                return conv.IsImplicit;
+                return conversion.IsImplicit;
             }
             catch (ArgumentException)
             {

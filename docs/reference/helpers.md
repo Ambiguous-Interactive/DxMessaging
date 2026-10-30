@@ -18,7 +18,7 @@
 
 ## DxMessaging Attributes (Your Code Wizards)
 
-DxMessaging provides **3 main attributes** that use source generators to eliminate boilerplate:
+Use the attributes below to declare message types, generate constructors, and set optional defaults:
 
 ### 1. Message Type Attributes (Pick Your Message Category)
 
@@ -256,6 +256,12 @@ public readonly partial struct DefaultExamples
     public readonly float multiplier;
 }
 ```
+
+Optional defaults follow C# implicit constant conversions. For example, `[DxOptionalParameter(7)]`
+sets a `byte` field's default, and `[DxOptionalParameter(0)]` sets an enum field's default.
+Values must fit the field type. The `Expression` property follows the same conversion rules.
+
+> **Changed in 4.0.0:** Valid constant conversions no longer produce DXMSG005.
 
 #### Advanced: Custom Constant Expressions
 
@@ -1000,7 +1006,7 @@ public readonly partial struct MessageA
 ## Related Documentation
 
 - **[API Reference](reference.md)** -- Complete API documentation
-- **[Message Types](../concepts/message-types.md)** -- When to use Untargeted/Targeted/Broadcast
+- **[Message Types](../concepts/message-types.md)** -- When to use untargeted, targeted, and broadcast messages
 - **[Quick Reference](quick-reference.md)** -- Cheat sheet
 - **[Design & Architecture](../architecture/design-and-architecture.md)** -- How source generation works internally
 
