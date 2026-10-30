@@ -54,6 +54,14 @@ namespace DxMessaging.Tests.Editor
                 Is.Null,
                 $"optional={optional}: preserve the nullable field contract."
             );
+            string? obliviousValue = optional
+                ? new OptionalObliviousPacket(1, null).Value
+                : new RequiredObliviousPacket(1, null).Value;
+            Assert.That(
+                obliviousValue,
+                Is.Null,
+                $"optional={optional}: retain the field's disabled annotation context."
+            );
         }
 
         [DxAutoConstructor]
@@ -71,6 +79,25 @@ namespace DxMessaging.Tests.Editor
             [DxOptionalParameter(null)]
             public readonly string? Value;
         }
+
+#nullable disable annotations
+        [DxAutoConstructor]
+        private readonly partial struct RequiredObliviousPacket
+        {
+            public readonly int Required;
+            public readonly string Value;
+        }
+
+        [DxAutoConstructor]
+        private readonly partial struct OptionalObliviousPacket
+        {
+            public readonly int Required;
+
+            [DxOptionalParameter(null)]
+            public readonly string Value;
+        }
+
+#nullable enable annotations
 
         private enum Choice
         {

@@ -267,7 +267,8 @@ Use constants such as `float.NaN`, `double.PositiveInfinity`, and `double.Negati
 as attribute arguments when these values are appropriate defaults. Signed zero keeps its sign.
 
 Constructor parameters retain nullable field annotations, including nullable array and list elements.
-With nullable analysis enabled, nullable callers keep their annotations and nonnullable callers remain checked.
+Fields declared with nullable annotations disabled retain that caller contract.
+Parameters from enabled contexts keep their nullable or nonnullable checks.
 
 > **Changed in 4.0.0:** Generated constructors retain nullable annotations and preserve valid constant conversions, numeric types, non-finite defaults, and signed zero.
 
