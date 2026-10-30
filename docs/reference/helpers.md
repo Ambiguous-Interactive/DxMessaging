@@ -263,7 +263,10 @@ Values must fit the field type. The `Expression` property follows the same conve
 The supplied constant keeps its numeric type: `[DxOptionalParameter(7)]` can default a `byte`
 field, but `[DxOptionalParameter(7.0)]` cannot. The latter is a `double` constant.
 
-> **Changed in 4.0.0:** Default validation follows C# constant conversions and preserves the supplied numeric type.
+Use constants such as `float.NaN`, `double.PositiveInfinity`, and `double.NegativeInfinity`
+as attribute arguments when these values are appropriate defaults. Signed zero keeps its sign.
+
+> **Changed in 4.0.0:** Generated defaults preserve valid constant conversions, numeric types, non-finite values, and signed zero.
 
 #### Advanced: Custom Constant Expressions
 

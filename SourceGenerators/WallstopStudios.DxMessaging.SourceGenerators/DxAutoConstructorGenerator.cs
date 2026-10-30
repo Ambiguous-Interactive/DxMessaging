@@ -605,9 +605,33 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 case ulong ui64:
                     return ui64.ToString(CultureInfo.InvariantCulture) + "UL";
                 case float f:
+                    if (float.IsNaN(f))
+                    {
+                        return "global::System.Single.NaN";
+                    }
+                    if (float.IsPositiveInfinity(f))
+                    {
+                        return "global::System.Single.PositiveInfinity";
+                    }
+                    if (float.IsNegativeInfinity(f))
+                    {
+                        return "global::System.Single.NegativeInfinity";
+                    }
                     return f.ToString("R", CultureInfo.InvariantCulture) + "f";
                 case double d:
-                    return d.ToString("R", CultureInfo.InvariantCulture);
+                    if (double.IsNaN(d))
+                    {
+                        return "global::System.Double.NaN";
+                    }
+                    if (double.IsPositiveInfinity(d))
+                    {
+                        return "global::System.Double.PositiveInfinity";
+                    }
+                    if (double.IsNegativeInfinity(d))
+                    {
+                        return "global::System.Double.NegativeInfinity";
+                    }
+                    return d.ToString("R", CultureInfo.InvariantCulture) + "d";
             }
 
             // Fallback: use ToString(), but this should not occur for attribute constants

@@ -208,6 +208,152 @@ public readonly partial struct Packet
         }
     }
 
+    [TestCaseSource(nameof(FloatingCases))]
+    public void FloatingDefaultsPreserveCompilerValidityAndValueBits(
+        string fieldType,
+        string expression,
+        bool valid,
+        bool namedExpression
+    )
+    {
+        string context = $"{fieldType}, {expression}, namedExpression={namedExpression}";
+        string oracleSource = $$"""
+public static class Oracle
+{
+    public static {{fieldType}} Read({{fieldType}} value = {{expression}}) => value;
+}
+""";
+        Diagnostic[] oracle = CreateCompilation(oracleSource).GetDiagnostics().ToArray();
+        Assert.That(
+            oracle.Any(d => d.Severity == DiagnosticSeverity.Error),
+            Is.EqualTo(!valid),
+            "The compiler must establish floating-default validity: " + context
+        );
+        string argument = namedExpression
+            ? "Expression = " + SyntaxFactory.Literal(expression)
+            : expression;
+        string source = $$"""
+using DxMessaging.Core.Attributes;
+[DxAutoConstructor]
+public readonly partial struct Packet
+{
+    public readonly int Required;
+    [DxOptionalParameter({{argument}})]
+    public readonly {{fieldType}} Value;
+}
+public static class Consumer
+{
+    public static byte[] ReadDefault() => System.BitConverter.GetBytes(new Packet(1).Value);
+    public static byte[] ReadExplicit() => System.BitConverter.GetBytes(({{fieldType}})({{expression}}));
+}
+""";
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
+            parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
+        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(
+            CreateCompilation(source),
+            out Compilation output,
+            out ImmutableArray<Diagnostic> generatorDiagnostics
+        );
+        Assert.That(
+            driver.GetRunResult().Results.Single().Exception,
+            Is.Null,
+            "Complete floating-default generation: " + context
+        );
+        if (!valid)
+        {
+            Assert.That(
+                generatorDiagnostics,
+                Has.Length.EqualTo(1),
+                "Reject the forbidden floating conversion: " + context
+            );
+            Assert.That(
+                generatorDiagnostics[0].Id,
+                Is.EqualTo("DXMSG005"),
+                "Report a default conversion error: " + context
+            );
+            return;
+        }
+        Diagnostic[] diagnostics = output.GetDiagnostics().ToArray();
+        Assert.That(
+            diagnostics,
+            Is.Empty,
+            "Emit compiler-valid floating defaults: "
+                + context
+                + "\n"
+                + string.Join(
+                    "\n",
+                    diagnostics.Concat(generatorDiagnostics).Select(d => d.ToString())
+                )
+        );
+        Assert.That(
+            generatorDiagnostics,
+            Is.Empty,
+            "Accept the compiler-valid floating default: " + context
+        );
+        using MemoryStream stream = new();
+        EmitResult emit = output.Emit(stream);
+        Assert.That(emit.Success, Is.True, "Emit the floating consumer: " + context);
+        stream.Position = 0;
+        AssemblyLoadContext loadContext = new("FloatingDefaultConsumer", isCollectible: true);
+        try
+        {
+            Assembly assembly = loadContext.LoadFromStream(stream);
+            Type consumer = assembly.GetType("Consumer")!;
+            byte[]? actual = consumer.GetMethod("ReadDefault")!.Invoke(null, null) as byte[];
+            byte[]? expected = consumer.GetMethod("ReadExplicit")!.Invoke(null, null) as byte[];
+            Assert.That(actual, Is.Not.Null, "Read generated floating-default bits: " + context);
+            Assert.That(expected, Is.Not.Null, "Read explicit floating-default bits: " + context);
+            Assert.That(actual, Is.EqualTo(expected), "Preserve floating-point bits: " + context);
+        }
+        finally
+        {
+            loadContext.Unload();
+        }
+    }
+
+    private static IEnumerable<TestCaseData> FloatingCases()
+    {
+        foreach (
+            (string type, string expression, bool valid) in new (string, string, bool)[]
+            {
+                ("float", "float.NaN", true),
+                ("float", "float.PositiveInfinity", true),
+                ("float", "float.NegativeInfinity", true),
+                ("float", "-0.0f", true),
+                ("float", "0.0f", true),
+                ("float", "1.0f", true),
+                ("float", "float.Epsilon", true),
+                ("float", "float.MinValue", true),
+                ("float", "float.MaxValue", true),
+                ("double", "double.NaN", true),
+                ("double", "double.PositiveInfinity", true),
+                ("double", "double.NegativeInfinity", true),
+                ("double", "-0.0d", true),
+                ("double", "0.0d", true),
+                ("double", "1.0d", true),
+                ("double", "double.Epsilon", true),
+                ("double", "double.MinValue", true),
+                ("double", "double.MaxValue", true),
+                ("double", "float.NaN", true),
+                ("double", "float.PositiveInfinity", true),
+                ("double", "float.NegativeInfinity", true),
+                ("float", "double.NaN", false),
+                ("float", "double.PositiveInfinity", false),
+                ("float", "double.NegativeInfinity", false),
+            }
+        )
+        {
+            yield return new TestCaseData(type, expression, valid, false).SetName(
+                $"FloatingDefaultsPreserveCompilerValidityAndValueBits(\"{type}\",\"{expression}\",{valid},False)"
+            );
+            yield return new TestCaseData(type, expression, valid, true).SetName(
+                $"FloatingDefaultsPreserveCompilerValidityAndValueBits(\"{type}\",\"{expression}\",{valid},True)"
+            );
+        }
+    }
+
     private static IEnumerable<TestCaseData> TypedConversionCases()
     {
         foreach (
