@@ -260,8 +260,10 @@ public readonly partial struct DefaultExamples
 Optional defaults follow C# implicit constant conversions. For example, `[DxOptionalParameter(7)]`
 sets a `byte` field's default, and `[DxOptionalParameter(0)]` sets an enum field's default.
 Values must fit the field type. The `Expression` property follows the same conversion rules.
+The supplied constant keeps its numeric type: `[DxOptionalParameter(7)]` can default a `byte`
+field, but `[DxOptionalParameter(7.0)]` cannot. The latter is a `double` constant.
 
-> **Changed in 4.0.0:** Valid constant conversions no longer produce DXMSG005.
+> **Changed in 4.0.0:** Default validation follows C# constant conversions and preserves the supplied numeric type.
 
 #### Advanced: Custom Constant Expressions
 

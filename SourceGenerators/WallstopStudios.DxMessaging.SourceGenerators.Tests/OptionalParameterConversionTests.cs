@@ -134,6 +134,117 @@ public static class Consumer
         }
     }
 
+    [TestCaseSource(nameof(TypedConversionCases))]
+    public void TypedAttributeDefaultsPreserveTheirOriginalConstantType(
+        string fieldType,
+        string expression,
+        bool valid,
+        bool namedExpression
+    )
+    {
+        string oracleSource = $$"""
+public enum Choice { None, Other }
+public static class Oracle
+{
+    public static {{fieldType}} Read({{fieldType}} value = {{expression}}) => value;
+}
+""";
+        Diagnostic[] oracle = CreateCompilation(oracleSource).GetDiagnostics().ToArray();
+        string context = $"{fieldType}, {expression}, namedExpression={namedExpression}";
+        Assert.That(
+            oracle.Any(d => d.Severity == DiagnosticSeverity.Error),
+            Is.EqualTo(!valid),
+            "The handwritten default determines conversion validity: "
+                + context
+                + "\n"
+                + string.Join("\n", oracle.Select(d => d.ToString()))
+        );
+        string argument = namedExpression
+            ? "Expression = " + SyntaxFactory.Literal(expression)
+            : expression;
+        string source = $$"""
+using DxMessaging.Core.Attributes;
+public enum Choice { None, Other }
+[DxAutoConstructor]
+public readonly partial struct Packet
+{
+    public readonly int Required;
+    [DxOptionalParameter({{argument}})]
+    public readonly {{fieldType}} Value;
+}
+""";
+        CSharpCompilation input = CreateCompilation(source);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
+            parseOptions: new CSharpParseOptions(LanguageVersion.CSharp9)
+        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(
+            input,
+            out Compilation output,
+            out ImmutableArray<Diagnostic> diagnostics
+        );
+        Assert.That(
+            driver.GetRunResult().Results.Single().Exception,
+            Is.Null,
+            "Complete generation for the typed constant: " + context
+        );
+        Assert.That(
+            diagnostics,
+            Has.Length.EqualTo(valid ? 0 : 1),
+            "Report exactly one invalid default or no diagnostic: " + context
+        );
+        Assert.That(
+            diagnostics.All(d => d.Id == "DXMSG005"),
+            Is.True,
+            "Validate the original expression type before literal rendering: " + context
+        );
+        if (valid)
+        {
+            Assert.That(
+                output.GetDiagnostics(),
+                Is.Empty,
+                "Compile accepted typed defaults: " + context
+            );
+        }
+    }
+
+    private static IEnumerable<TestCaseData> TypedConversionCases()
+    {
+        foreach (
+            (string type, string expression, bool valid) in new (string, string, bool)[]
+            {
+                ("byte", "1.0", false),
+                ("float", "1.0", false),
+                ("int", "1.0", false),
+                ("byte", "(short)7", false),
+                ("sbyte", "(byte)7", false),
+                ("short", "(ushort)7", false),
+                ("ushort", "(short)7", false),
+                ("uint", "(short)7", false),
+                ("ulong", "(short)7", false),
+                ("byte?", "1.0", false),
+                ("Choice", "0d", true),
+                ("byte", "7", true),
+                ("ulong", "1L", true),
+                ("byte", "1u", false),
+                ("byte", "7L", false),
+                ("int", "7u", false),
+                ("ulong", "7u", true),
+                ("int", "(byte)7", true),
+                ("ushort", "(byte)7", true),
+                ("double", "1.0", true),
+                ("float", "1f", true),
+                ("byte?", "7", true),
+                ("Choice", "(byte)0", true),
+                ("Choice", "0L", true),
+            }
+        )
+        {
+            yield return new TestCaseData(type, expression, valid, false);
+            yield return new TestCaseData(type, expression, valid, true);
+        }
+    }
+
     private static IEnumerable<TestCaseData> ConversionCases()
     {
         foreach (

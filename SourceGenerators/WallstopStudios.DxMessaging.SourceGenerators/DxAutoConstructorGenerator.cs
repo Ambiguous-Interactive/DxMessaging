@@ -475,13 +475,16 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                         {
                             object? val = arg.Value;
                             defaultExpr = FormatLiteral(val);
-                            // Include value-dependent constant conversions, such as int 7 to byte.
+                            // Preserve the original constant type when rendering loses its suffix or cast.
+                            string expressionForValidation = arg.Type is { } constantType
+                                ? $"({constantType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({defaultExpr})"
+                                : defaultExpr;
                             if (
                                 !IsValidDefaultExpression(
                                     semanticModel,
                                     anchorPosition,
                                     field,
-                                    defaultExpr
+                                    expressionForValidation
                                 )
                             )
                             {

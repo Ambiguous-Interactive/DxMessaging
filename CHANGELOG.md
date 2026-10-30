@@ -148,9 +148,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#624](https://github.com/Ambiguous-Interactive/DxMessaging/issues/624)).
 - Fix generated message declarations and constructors failing for escaped C# identifiers
   ([#623](https://github.com/Ambiguous-Interactive/DxMessaging/issues/623)).
-- Accept valid C# constant conversions in generated optional constructor defaults, including
-  integer literals for smaller numeric fields and zero for enums
-  ([#696](https://github.com/Ambiguous-Interactive/DxMessaging/issues/696)).
+- Validate generated optional constructor defaults with C# constant conversion rules, preserving
+  the supplied constant's numeric type ([#696](https://github.com/Ambiguous-Interactive/DxMessaging/issues/696)).
 - Fix generated message and constructor declarations failing for C# 9 reference records,
   including nested record containers ([#695](https://github.com/Ambiguous-Interactive/DxMessaging/issues/695)).
 - Stop repeated console-harvester settings searches and scans when the console bridge is disabled
