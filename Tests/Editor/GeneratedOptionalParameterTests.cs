@@ -1,3 +1,5 @@
+#nullable enable
+
 namespace DxMessaging.Tests.Editor
 {
     using DxMessaging.Core.Attributes;
@@ -38,6 +40,36 @@ namespace DxMessaging.Tests.Editor
                 Is.EqualTo(1),
                 "Preserve the explicit required argument."
             );
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void NullableConstructorParametersAcceptNull(bool optional)
+        {
+            string? value = optional
+                ? new OptionalNullablePacket(1, null).Value
+                : new RequiredNullablePacket(1, null).Value;
+            Assert.That(
+                value,
+                Is.Null,
+                $"optional={optional}: preserve the nullable field contract."
+            );
+        }
+
+        [DxAutoConstructor]
+        private readonly partial struct RequiredNullablePacket
+        {
+            public readonly int Required;
+            public readonly string? Value;
+        }
+
+        [DxAutoConstructor]
+        private readonly partial struct OptionalNullablePacket
+        {
+            public readonly int Required;
+
+            [DxOptionalParameter(null)]
+            public readonly string? Value;
         }
 
         private enum Choice

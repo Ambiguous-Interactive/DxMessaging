@@ -366,6 +366,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             SymbolDisplayFormat fieldTypeFormat =
                 SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
                     SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers
+                        | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
                 );
 
             List<(

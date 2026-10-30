@@ -33,6 +33,44 @@ internal static class GeneratorTestUtilities
     /// </summary>
     internal static ImmutableArray<MetadataReference> CompilationReferences => CoreReferences;
 
+    internal static CSharpCompilation CreateAutoConstructorCompilationFromShippedAttributes(
+        string source
+    )
+    {
+        DirectoryInfo? root = new(AppContext.BaseDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
+        {
+            root = root.Parent;
+        }
+        if (root == null)
+        {
+            throw new DirectoryNotFoundException(
+                "Find the repository containing the test assembly."
+            );
+        }
+        string attributes = Path.Combine(root.FullName, "Runtime", "Core", "Attributes");
+        CSharpParseOptions parseOptions = new(LanguageVersion.CSharp9);
+        List<SyntaxTree> trees = new();
+        foreach (
+            string file in new[]
+            {
+                "DxAutoConstructorAttribute.cs",
+                "DxOptionalParameterAttribute.cs",
+            }
+        )
+        {
+            string path = Path.Combine(attributes, file);
+            trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(path), parseOptions, path));
+        }
+        trees.Add(CSharpSyntaxTree.ParseText(source, parseOptions, "UserSource.cs"));
+        return CSharpCompilation.Create(
+            "OptionalParameterConsumer",
+            trees,
+            CoreReferences,
+            WarningFatalCompilationOptions
+        );
+    }
+
     internal static GeneratorDriverRunResult RunDxAutoConstructor(string userSource)
     {
         SyntaxTree attributeTree = CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions);

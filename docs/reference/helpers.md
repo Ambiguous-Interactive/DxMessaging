@@ -266,7 +266,10 @@ field, but `[DxOptionalParameter(7.0)]` cannot. The latter is a `double` constan
 Use constants such as `float.NaN`, `double.PositiveInfinity`, and `double.NegativeInfinity`
 as attribute arguments when these values are appropriate defaults. Signed zero keeps its sign.
 
-> **Changed in 4.0.0:** Generated defaults preserve valid constant conversions, numeric types, non-finite values, and signed zero.
+Constructor parameters retain nullable field annotations, including nullable array and list elements.
+With nullable analysis enabled, nullable callers keep their annotations and nonnullable callers remain checked.
+
+> **Changed in 4.0.0:** Generated constructors retain nullable annotations and preserve valid constant conversions, numeric types, non-finite defaults, and signed zero.
 
 #### Advanced: Custom Constant Expressions
 
