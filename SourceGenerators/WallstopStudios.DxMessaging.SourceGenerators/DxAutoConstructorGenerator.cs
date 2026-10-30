@@ -606,6 +606,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 case ulong ui64:
                     return ui64.ToString(CultureInfo.InvariantCulture) + "UL";
                 case float f:
+                    // Older Mono formatters drop the sign of negative zero.
+                    if (f == 0.0f)
+                    {
+                        return float.IsNegativeInfinity(1.0f / f) ? "-0.0f" : "0.0f";
+                    }
                     if (float.IsNaN(f))
                     {
                         return "global::System.Single.NaN";
@@ -620,6 +625,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     }
                     return f.ToString("R", CultureInfo.InvariantCulture) + "f";
                 case double d:
+                    // Older Mono formatters drop the sign of negative zero.
+                    if (d == 0.0d)
+                    {
+                        return double.IsNegativeInfinity(1.0d / d) ? "-0.0d" : "0.0d";
+                    }
                     if (double.IsNaN(d))
                     {
                         return "global::System.Double.NaN";

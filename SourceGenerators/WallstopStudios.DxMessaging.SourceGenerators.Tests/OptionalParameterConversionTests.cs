@@ -223,7 +223,8 @@ public static class Oracle
     public static {{fieldType}} Read({{fieldType}} value = {{expression}}) => value;
 }
 """;
-        Diagnostic[] oracle = CreateCompilation(oracleSource).GetDiagnostics().ToArray();
+        CSharpCompilation oracleCompilation = CreateCompilation(oracleSource);
+        Diagnostic[] oracle = oracleCompilation.GetDiagnostics().ToArray();
         Assert.That(
             oracle.Any(d => d.Severity == DiagnosticSeverity.Error),
             Is.EqualTo(!valid),
@@ -292,6 +293,26 @@ public static class Consumer
             Is.Empty,
             "Accept the compiler-valid floating default: " + context
         );
+        IParameterSymbol expectedDefault = oracleCompilation
+            .GetTypeByMetadataName("Oracle")!
+            .GetMembers("Read")
+            .OfType<IMethodSymbol>()
+            .Single()
+            .Parameters.Single();
+        IParameterSymbol actualDefault = output
+            .GetTypeByMetadataName("Packet")!
+            .InstanceConstructors.Single(constructor => constructor.Parameters.Length == 2)
+            .Parameters[1];
+        Assert.That(
+            actualDefault.HasExplicitDefaultValue,
+            Is.True,
+            "Expose a compiled optional default: " + context
+        );
+        Assert.That(
+            FloatingDefaultBits(actualDefault),
+            Is.EqualTo(FloatingDefaultBits(expectedDefault)),
+            "Preserve the handwritten compiler's default metadata bits: " + context
+        );
         using MemoryStream stream = new();
         EmitResult emit = output.Emit(stream);
         Assert.That(emit.Success, Is.True, "Emit the floating consumer: " + context);
@@ -312,6 +333,16 @@ public static class Consumer
             loadContext.Unload();
         }
     }
+
+    private static byte[] FloatingDefaultBits(IParameterSymbol parameter) =>
+        parameter.ExplicitDefaultValue switch
+        {
+            float value => BitConverter.GetBytes(value),
+            double value => BitConverter.GetBytes(value),
+            _ => throw new InvalidOperationException(
+                $"Expected a floating default for {parameter.ToDisplayString()}."
+            ),
+        };
 
     private static IEnumerable<TestCaseData> FloatingCases()
     {
