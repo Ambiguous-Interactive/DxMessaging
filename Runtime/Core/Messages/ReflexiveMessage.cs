@@ -166,6 +166,9 @@ namespace DxMessaging.Core.Messages
     /// flowing through DxMessaging pipelines (interceptors, post-processors, diagnostics).
     /// It resolves methods on components on or around the targeted <c>UnityEngine.GameObject</c> based on
     /// <see cref="sendMode"/> and invokes them with provided <see cref="parameters"/>.
+    /// Reflected lookup skips methods with unassigned generic type arguments and preserves compatible
+    /// concrete overloads. It does not infer generic type arguments. Native Unity single-argument
+    /// sends retain Unity's receiver rules.
     /// Prefer type-safe message contracts in production; use this to integrate with legacy patterns.
     /// </remarks>
     /// <example>

@@ -758,12 +758,11 @@ try {
                 {
                     if (saved.Value != null)
                     {
-                        string operation = "move";
+                        // Keep the readable original in place while saving its bytes.
+                        string operation = "copy";
                         try
                         {
-                            File.Move(saved.Key, saved.Value);
-                            operation = "copy";
-                            File.Copy(saved.Value, saved.Key);
+                            File.Copy(saved.Key, saved.Value);
                         }
                         catch (IOException failure)
                         {

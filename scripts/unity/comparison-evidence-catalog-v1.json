@@ -38,7 +38,7 @@
     "dxBus": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/MessageBus.cs",
-      "sha256": "355e4887a581b5c6a3fe48cc8a531eb52f9d95007970901ac444611feae0e974"
+      "sha256": "30b5ebeb3dd10cde6f5546776efab28bca1ed7e00883ebdd81dc309bacd19871"
     },
     "dxInterface": {
       "origin": "repository",
@@ -83,7 +83,7 @@
     "pins": {
       "origin": "repository",
       "path": ".github/comparison-packages.json",
-      "sha256": "b1e55e7704b401402cd457047adc670b9f32e18a60ab29d74337fc9fbab6d4db"
+      "sha256": "81e545ca84d5a6c7e7a48aea5e005bb76436b8cf465a7844a4733dd7ea2c1dc4"
     },
     "untargetedPayload": {
       "origin": "repository",

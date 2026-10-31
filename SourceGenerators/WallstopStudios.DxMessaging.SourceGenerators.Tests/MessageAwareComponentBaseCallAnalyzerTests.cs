@@ -1076,6 +1076,43 @@ namespace Sample
         AssertSingle(diagnostics, "DXMSG006", DiagnosticSeverity.Warning);
     }
 
+    [TestCase("{ get; } = false;", DiagnosticSeverity.Warning)]
+    [TestCase(
+        "{ get { throw new System.InvalidOperationException(); } }",
+        DiagnosticSeverity.Warning
+    )]
+    [TestCase("{ get => false; }", DiagnosticSeverity.Info)]
+    [TestCase("{ get { return false; } }", DiagnosticSeverity.Info)]
+    public void PropertyGetterSeverityRequiresAnExplicitLiteralFalseReturn(
+        string propertyBody,
+        DiagnosticSeverity expectedSeverity
+    )
+    {
+        string source = $$"""
+namespace Sample
+{
+    public sealed class Player : DxMessaging.Unity.MessageAwareComponent
+    {
+        protected override bool RegisterForStringMessages {{propertyBody}}
+        protected override void RegisterMessageHandlers() { }
+    }
+}
+""";
+
+        ImmutableArray<Diagnostic> diagnostics = GeneratorTestUtilities.RunBaseCallAnalyzer(source);
+        string context = $"propertyBody={propertyBody}, expectedSeverity={expectedSeverity}";
+        Assert.That(diagnostics, Has.Length.EqualTo(1), context);
+        Diagnostic diagnostic = diagnostics.Single();
+        Assert.That(diagnostic.Id, Is.EqualTo("DXMSG006"), context);
+        Assert.That(diagnostic.Severity, Is.EqualTo(expectedSeverity), context);
+        MethodDeclarationSyntax method = diagnostic
+            .Location.SourceTree!.GetRoot()
+            .DescendantNodes()
+            .OfType<MethodDeclarationSyntax>()
+            .Single(declaration => declaration.Identifier.ValueText == "RegisterMessageHandlers");
+        Assert.That(diagnostic.Location.SourceSpan, Is.EqualTo(method.Identifier.Span), context);
+    }
+
     // -- B4 ----------------------------------------------------------------------------------
 
     [TestCase("default")]
@@ -2231,6 +2268,100 @@ namespace Sample
     }
 
     // -- DXMSG010 (transitive broken base-call chain) ----------------------------------------
+
+    [TestCase(false, false)]
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    [TestCase(true, true)]
+    public void CompiledParentStopsSourceChainDiagnosisButPreservesChildChecks(
+        bool parentCallsBase,
+        bool childCallsBase
+    )
+    {
+        string parentSource = $$"""
+namespace Sample
+{
+    public class Parent : DxMessaging.Unity.MessageAwareComponent
+    {
+        protected override void Awake() { {{(parentCallsBase ? "base.Awake();" : "")}} }
+    }
+}
+""";
+        string childSource = $$"""
+namespace Sample
+{
+    public sealed class Child : Parent
+    {
+        protected override void Awake() { {{(childCallsBase ? "base.Awake();" : "")}} }
+    }
+}
+""";
+        string context = $"parentCallsBase={parentCallsBase}, childCallsBase={childCallsBase}";
+        PortableExecutableReference parentReference =
+            GeneratorTestUtilities.CompileBaseCallAnalyzerParent(parentSource);
+        CSharpCompilation metadataInspection = CSharpCompilation.Create(
+            "MetadataInspection",
+            references: GeneratorTestUtilities.CompilationReferences.Add(parentReference)
+        );
+        INamedTypeSymbol? parent = metadataInspection.GetTypeByMetadataName("Sample.Parent");
+        Assert.That(parent, Is.Not.Null, context);
+        IMethodSymbol parentMethod = parent!.GetMembers("Awake").OfType<IMethodSymbol>().Single();
+        Assert.That(parentMethod.DeclaringSyntaxReferences, Is.Empty, context);
+        Assert.That(
+            parentMethod.ContainingAssembly.Name,
+            Is.EqualTo("AnalyzerReferencedParentTests"),
+            context
+        );
+
+        ImmutableArray<Diagnostic> metadataDiagnostics =
+            GeneratorTestUtilities.RunBaseCallAnalyzerWithCompiledParent(
+                childSource,
+                parentReference
+            );
+        ImmutableArray<Diagnostic> sourceDiagnostics = GeneratorTestUtilities.RunBaseCallAnalyzer(
+            parentSource + childSource
+        );
+        List<string> expectedSource = new();
+        if (!parentCallsBase)
+        {
+            expectedSource.Add("DXMSG006:Warning:Parent");
+        }
+        if (!childCallsBase)
+        {
+            expectedSource.Add("DXMSG006:Warning:Child");
+        }
+        else if (!parentCallsBase)
+        {
+            expectedSource.Add("DXMSG010:Warning:Child");
+        }
+
+        string[] expectedMetadata = childCallsBase
+            ? Array.Empty<string>()
+            : new[] { "DXMSG006:Warning:Child" };
+        foreach (
+            (ImmutableArray<Diagnostic> actual, IEnumerable<string> expected, string scope) in new[]
+            {
+                (sourceDiagnostics, (IEnumerable<string>)expectedSource, "source parent"),
+                (metadataDiagnostics, (IEnumerable<string>)expectedMetadata, "compiled parent"),
+            }
+        )
+        {
+            string[] observed = actual
+                .Select(diagnostic =>
+                    diagnostic.Id
+                    + ":"
+                    + diagnostic.Severity
+                    + ":"
+                    + diagnostic
+                        .Location.SourceTree!.GetRoot()
+                        .FindNode(diagnostic.Location.SourceSpan)
+                        .FirstAncestorOrSelf<ClassDeclarationSyntax>()!
+                        .Identifier.ValueText
+                )
+                .ToArray();
+            Assert.That(observed, Is.EquivalentTo(expected), context + ", " + scope);
+        }
+    }
 
     [Test]
     public void BrokenIntermediateAncestorEmitsDxmsg010OnDescendant()

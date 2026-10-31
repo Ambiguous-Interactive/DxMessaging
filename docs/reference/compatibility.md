@@ -17,6 +17,16 @@ Notes
 - Minimum version is governed by the package manifest (`unity`: 2021.3). Newer LTS versions are expected to work.
 - Unity 6 migrates object identity to `EntityId` and deprecates `Object.GetInstanceID()` (it becomes a compile error in Unity 6.5). DxMessaging handles this internally: on Unity 6.4+ the dispatch key reads the non-deprecated `EntityId.ToULong(...)` accessor (keeping the same 32-bit value), and older Unity keeps `GetInstanceID()`. The package keeps building across the supported range, including Unity 6.5+ where the old API is removed.
 
+## Generated Record Declarations
+
+**Fixed in v4.0.0:** Message and auto-constructor generators use C# 9 syntax for reference-record
+declarations, including generic records and nested record containers. Declare each generated type
+and its containing types `partial`.
+
+Record structs require a compiler that supports C# 10. Follow
+[Unity's record support requirements](https://docs.unity3d.com/2021.3/Documentation/Manual/CSharpCompiler.html)
+for init-only properties and serialization; the generator does not add those capabilities.
+
 ## Architecture Pattern Compatibility
 
 ### Scriptable Object Architecture (SOA)
@@ -64,7 +74,7 @@ IL2CPP.
 ## Plain .NET runtime
 
 The source checkout also builds the core runtime for .NET Standard 2.1, with C# 9 and
-an explicit `System.Runtime.CompilerServices.Unsafe` 6.0.0 dependency. Build it with:
+an explicit `System.Runtime.CompilerServices.Unsafe` 6.1.2 dependency. Build it with:
 
 ```bash
 dotnet build .net/DxMessaging.csproj --configuration Release

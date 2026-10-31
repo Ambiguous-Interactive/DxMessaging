@@ -599,6 +599,237 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        public enum MetadataResetAction
+        {
+            Observe,
+            Bump,
+            Reset,
+        }
+
+        private static System.Collections.Generic.IEnumerable<TestCaseData> MetadataResetCases()
+        {
+            foreach (bool warm in new[] { false, true })
+            {
+                foreach (int slot in new[] { 0, 1 })
+                {
+                    foreach (
+                        MetadataResetAction action in new[]
+                        {
+                            MetadataResetAction.Observe,
+                            MetadataResetAction.Bump,
+                            MetadataResetAction.Reset,
+                        }
+                    )
+                    {
+                        yield return new TestCaseData(warm, slot, action).SetName(
+                            $"ReflexiveMetadataReset_warm{warm}_slot{slot}_{action}"
+                        );
+                    }
+                }
+            }
+        }
+
+        /// <remarks>
+        /// 2026-10-28: investigate the real reflection binder boundary separately from Type
+        /// equality operators. A valid custom metadata getter may execute caller code while
+        /// resolving a cold two-argument method. Cancellation must precede receiver delivery.
+        /// </remarks>
+        [TestCaseSource(nameof(MetadataResetCases))]
+        public void MetadataResetCancelsColdReflexiveResolution(
+            bool warmCache,
+            int metadataSlot,
+            MetadataResetAction action
+        )
+        {
+            WithReflexiveRetentionLimit(
+                4,
+                (bus, _) =>
+                {
+                    try
+                    {
+                        for (int cycle = 0; cycle < 10; ++cycle)
+                        {
+                            string context =
+                                $"warmCache={warmCache}, metadataSlot={metadataSlot}, action={action}, cycle={cycle}";
+                            bus.ResetState();
+                            GameObject host = new(
+                                "ReflexiveMetadata" + cycle,
+                                typeof(ReflexiveMetadataReceiver)
+                            );
+                            _spawned.Add(host);
+                            ReflexiveMetadataReceiver receiver =
+                                host.GetComponent<ReflexiveMetadataReceiver>();
+                            MonoBehaviour[] components = host.GetComponents<MonoBehaviour>();
+                            Assert.That(components, Has.Length.EqualTo(1), context);
+                            Assert.That(components[0], Is.SameAs(receiver), context);
+                            int deliveries = 0;
+                            receiver.OnMessage = (first, second) =>
+                            {
+                                Assert.That(first, Is.EqualTo(1), context);
+                                Assert.That(second, Is.EqualTo(2), context);
+                                ++deliveries;
+                            };
+                            bool armed = false;
+                            int callbacks = 0;
+                            MetadataCallbackType metadata = new(
+                                typeof(int),
+                                () =>
+                                {
+                                    if (!armed)
+                                    {
+                                        return;
+                                    }
+                                    armed = false;
+                                    ++callbacks;
+                                    if (action == MetadataResetAction.Bump)
+                                    {
+                                        bus.BumpResetGeneration();
+                                    }
+                                    else if (action == MetadataResetAction.Reset)
+                                    {
+                                        bus.ResetState();
+                                    }
+                                }
+                            );
+                            System.Type[] types = { typeof(int), typeof(int) };
+                            types[metadataSlot] = metadata;
+                            ReflexiveMessage message = new(
+                                nameof(ReflexiveMetadataReceiver.Receive),
+                                ReflexiveSendMode.Flat,
+                                new object[] { 1, 2 },
+                                types
+                            );
+                            InstanceId target = host;
+                            Assert.That(
+                                metadata.Reads,
+                                Is.Zero,
+                                context + " Construction must not consult custom metadata."
+                            );
+                            Assert.That(callbacks, Is.Zero, context);
+                            if (warmCache)
+                            {
+                                message.EmitTargeted(target, bus);
+                                Assert.That(
+                                    deliveries,
+                                    Is.EqualTo(1),
+                                    context + " Ordinary overload selection control."
+                                );
+                                Assert.That(
+                                    metadata.Reads,
+                                    Is.GreaterThan(0),
+                                    context
+                                        + " The cold warmup must exercise the real metadata getter."
+                                );
+                                Assert.That(
+                                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                                    Is.EqualTo(1),
+                                    context + " Prove a warm production cache."
+                                );
+                            }
+                            else
+                            {
+                                Assert.That(
+                                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                                    Is.Zero,
+                                    context + " Prove a cold production cache."
+                                );
+                            }
+                            deliveries = 0;
+                            int readsBefore = metadata.Reads;
+                            long generationBefore = MessageBus.GetResetGeneration(bus);
+                            armed = true;
+                            message.EmitTargeted(target, bus);
+                            long generationAfter = MessageBus.GetResetGeneration(bus);
+                            int firstDeliveries = deliveries;
+                            int callbackDeliveries = callbacks;
+                            int readsAfter = metadata.Reads - readsBefore;
+                            int firstCacheCount = MessageBusInspection.ReflexiveMethodCacheCount(
+                                bus
+                            );
+                            armed = false;
+                            deliveries = 0;
+                            message.EmitTargeted(target, bus);
+                            int nextDeliveries = deliveries;
+                            TestContext.Out.WriteLine(
+                                $"DXM_REFLEXIVE_METADATA {context}; metadataReads={readsAfter}; callbacks={callbackDeliveries}; firstDeliveries={firstDeliveries}; nextDeliveries={nextDeliveries}; firstCacheCount={firstCacheCount}; generationBefore={generationBefore}; generationAfter={generationAfter}"
+                            );
+                            Assert.That(
+                                callbackDeliveries,
+                                Is.EqualTo(warmCache ? 0 : 1),
+                                context
+                                    + " Cold setup requires an actual one-shot metadata callback; a missing callback is not an attributed defect."
+                            );
+                            Assert.That(
+                                readsAfter,
+                                warmCache ? Is.Zero : Is.GreaterThan(0),
+                                context
+                            );
+                            Assert.That(
+                                generationAfter == generationBefore,
+                                Is.EqualTo(warmCache || action == MetadataResetAction.Observe),
+                                context
+                                    + " Confirm the actual entering generation changed only in a cold mutation row."
+                            );
+                            Assert.That(
+                                firstDeliveries,
+                                Is.EqualTo(
+                                    !warmCache && action != MetadataResetAction.Observe ? 0 : 1
+                                ),
+                                context
+                                    + " A generation change during method resolution must cancel the invalidated receiver delivery."
+                            );
+                            Assert.That(
+                                firstCacheCount,
+                                Is.EqualTo(
+                                    !warmCache && action != MetadataResetAction.Observe ? 0 : 1
+                                ),
+                                context
+                                    + " A canceled resolution must not repopulate the method cache."
+                            );
+                            Assert.That(
+                                nextDeliveries,
+                                Is.EqualTo(1),
+                                context + " Preserve a subsequent fresh emission."
+                            );
+                        }
+                    }
+                    finally
+                    {
+                        bus.ResetState();
+                    }
+                }
+            );
+        }
+
+        private sealed class MetadataCallbackType : System.Reflection.TypeDelegator
+        {
+            private readonly System.Type _represented;
+            private readonly System.Action _observe;
+            internal int Reads { get; private set; }
+
+            internal MetadataCallbackType(System.Type represented, System.Action observe)
+                : base(represented)
+            {
+                _represented = represented;
+                _observe = observe;
+            }
+
+            public override System.Type UnderlyingSystemType
+            {
+                get
+                {
+                    ++Reads;
+                    _observe();
+                    return _represented.UnderlyingSystemType;
+                }
+            }
+
+            public override int GetHashCode()
+            {
+                return _represented.GetHashCode();
+            }
+        }
+
         private GameObject CreateReflexiveHost(string suffix)
         {
             GameObject host = new(

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
@@ -31,6 +32,44 @@ internal static class GeneratorTestUtilities
     /// Gets the framework references used by warning-fatal in-memory contract compilations.
     /// </summary>
     internal static ImmutableArray<MetadataReference> CompilationReferences => CoreReferences;
+
+    internal static CSharpCompilation CreateAutoConstructorCompilationFromShippedAttributes(
+        string source
+    )
+    {
+        DirectoryInfo? root = new(AppContext.BaseDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
+        {
+            root = root.Parent;
+        }
+        if (root == null)
+        {
+            throw new DirectoryNotFoundException(
+                "Find the repository containing the test assembly."
+            );
+        }
+        string attributes = Path.Combine(root.FullName, "Runtime", "Core", "Attributes");
+        CSharpParseOptions parseOptions = new(LanguageVersion.CSharp9);
+        List<SyntaxTree> trees = new();
+        foreach (
+            string file in new[]
+            {
+                "DxAutoConstructorAttribute.cs",
+                "DxOptionalParameterAttribute.cs",
+            }
+        )
+        {
+            string path = Path.Combine(attributes, file);
+            trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(path), parseOptions, path));
+        }
+        trees.Add(CSharpSyntaxTree.ParseText(source, parseOptions, "UserSource.cs"));
+        return CSharpCompilation.Create(
+            "OptionalParameterConsumer",
+            trees,
+            CoreReferences,
+            WarningFatalCompilationOptions
+        );
+    }
 
     internal static GeneratorDriverRunResult RunDxAutoConstructor(string userSource)
     {
@@ -89,6 +128,19 @@ internal static class GeneratorTestUtilities
     )
     {
         return CompileGeneratedOutput(userSource, result, ParseOptions);
+    }
+
+    internal static ImmutableArray<Diagnostic> CompileGeneratedOutput(
+        string userSource,
+        GeneratorDriverRunResult result,
+        LanguageVersion languageVersion
+    )
+    {
+        return CompileGeneratedOutput(
+            userSource,
+            result,
+            ParseOptions.WithLanguageVersion(languageVersion)
+        );
     }
 
     private static ImmutableArray<Diagnostic> CompileGeneratedOutput(
@@ -246,12 +298,55 @@ internal static class GeneratorTestUtilities
         );
     }
 
+    internal static PortableExecutableReference CompileBaseCallAnalyzerParent(string parentSource)
+    {
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            assemblyName: "AnalyzerReferencedParentTests",
+            syntaxTrees: new[]
+            {
+                CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions),
+                CSharpSyntaxTree.ParseText(parentSource, ParseOptions),
+            },
+            references: CoreReferences,
+            options: WarningFatalCompilationOptions
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult result = compilation.Emit(image);
+        if (!result.Success)
+        {
+            throw new InvalidOperationException(
+                "Referenced parent did not compile cleanly:\n"
+                    + string.Join(
+                        "\n",
+                        result.Diagnostics.Select(diagnostic => diagnostic.ToString())
+                    )
+            );
+        }
+
+        return MetadataReference.CreateFromImage(image.ToArray());
+    }
+
+    internal static ImmutableArray<Diagnostic> RunBaseCallAnalyzerWithCompiledParent(
+        string userSource,
+        PortableExecutableReference compiledParent
+    )
+    {
+        return RunBaseCallAnalyzerCore(
+            userSource,
+            compilationOptions: null,
+            Array.Empty<string>(),
+            Array.Empty<(string path, string contents)>(),
+            compiledParent: compiledParent
+        );
+    }
+
     private static ImmutableArray<Diagnostic> RunBaseCallAnalyzerCore(
         string userSource,
         CSharpCompilationOptions? compilationOptions,
         string[] allowedWarningIds,
         (string path, string contents)[] additionalFiles,
-        params string[] extraStubSources
+        string[]? extraStubSources = null,
+        PortableExecutableReference? compiledParent = null
     )
     {
         SyntaxTree stubs = CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions);
@@ -260,7 +355,12 @@ internal static class GeneratorTestUtilities
         CSharpCompilationOptions effectiveOptions =
             compilationOptions ?? new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
 
-        List<SyntaxTree> syntaxTrees = new(extraStubSources?.Length + 2 ?? 2) { stubs, userTree };
+        List<SyntaxTree> syntaxTrees = new(extraStubSources?.Length + 2 ?? 2);
+        if (compiledParent is null)
+        {
+            syntaxTrees.Add(stubs);
+        }
+        syntaxTrees.Add(userTree);
         if (extraStubSources is { Length: > 0 })
         {
             for (int i = 0; i < extraStubSources.Length; i++)
@@ -275,7 +375,9 @@ internal static class GeneratorTestUtilities
         CSharpCompilation compilation = CSharpCompilation.Create(
             assemblyName: "AnalyzerTests",
             syntaxTrees: syntaxTrees,
-            references: CoreReferences,
+            references: compiledParent is null
+                ? CoreReferences
+                : CoreReferences.Add(compiledParent),
             options: effectiveOptions
         );
 
