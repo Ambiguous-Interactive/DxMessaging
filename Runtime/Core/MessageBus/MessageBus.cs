@@ -8456,12 +8456,33 @@ namespace DxMessaging.Core.MessageBus
                     }
                     if (method != null && 0 < _handlerCacheRetentionLimit)
                     {
-                        TrimReflexiveMethodCache(_handlerCacheRetentionLimit - 1);
-                        LinkedListNode<ReflexiveMethodEntry> entry = new(
-                            new ReflexiveMethodEntry(lookupKey, method)
+                        /*
+                         * Metadata resolution can emit recursively and publish this key.
+                         * Reuse its node so dictionary and LRU ownership stay aligned.
+                         */
+                        bool publishedDuringResolution = _methodCache.TryGetValue(
+                            lookupKey,
+                            out cached
                         );
-                        _methodCache.Add(lookupKey, entry);
-                        _methodCacheLru.AddFirst(entry);
+                        if (resetGeneration != _resetGeneration)
+                        {
+                            return null;
+                        }
+                        if (publishedDuringResolution)
+                        {
+                            method = cached.Value.method;
+                            _methodCacheLru.Remove(cached);
+                            _methodCacheLru.AddFirst(cached);
+                        }
+                        else
+                        {
+                            TrimReflexiveMethodCache(_handlerCacheRetentionLimit - 1);
+                            LinkedListNode<ReflexiveMethodEntry> entry = new(
+                                new ReflexiveMethodEntry(lookupKey, method)
+                            );
+                            _methodCache.Add(lookupKey, entry);
+                            _methodCacheLru.AddFirst(entry);
+                        }
                     }
                 }
             }

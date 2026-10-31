@@ -56,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve both reflexive deliveries when a metadata getter emits the same message during
+  receiver lookup, and keep its method cache within the configured retention bound
+  ([#699](https://github.com/Ambiguous-Interactive/DxMessaging/issues/699)).
+
 - Prevent registration-handle hashing from throwing in builds with integer overflow checks
   ([#691](https://github.com/Ambiguous-Interactive/DxMessaging/issues/691)).
 
