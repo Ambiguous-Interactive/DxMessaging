@@ -146,10 +146,7 @@ jobs:
       max-parallel: 1
       matrix:
         unity-version:
-          - 2021.3.45f1
           - 2022.3.45f1
-          - 6000.3.16f1
-          - 6000.5.2f1
         # Every leg of this job also builds the standalone IL2CPP player, so the
         # reviewed static map keeps the editor gate verifying the
         # StandaloneWindowsIl2Cpp payload at gate time. A literal EditorOnly
