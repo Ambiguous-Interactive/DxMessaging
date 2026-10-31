@@ -2,7 +2,6 @@
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
-    using System.Collections;
     using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Configuration;
@@ -35,6 +34,7 @@ namespace DxMessaging.Tests.Runtime.Core
         /// <remarks>
         /// 2026-10-31: nested metadata lookup published the same key before the outer
         /// Dictionary.Add. Reusing its node must also preserve eviction and reclamation.
+        /// Read nodes directly after Unity 2022 IL2CPP could not reflect their List property.
         /// </remarks>
         [TestCaseSource(nameof(Cases))]
         public void ReentrantPublicationPreservesCacheOwnership(
@@ -195,25 +195,40 @@ namespace DxMessaging.Tests.Runtime.Core
 
         private static void AssertOwnership(MessageBus bus, int expectedCount)
         {
-            IDictionary cache = (IDictionary)MessageBusInspection.ReadField(bus, "_methodCache");
-            ICollection lru = (ICollection)MessageBusInspection.ReadField(bus, "_methodCacheLru");
+            Dictionary<
+                (Type, MethodSignatureKey),
+                LinkedListNode<MessageBus.ReflexiveMethodEntry>
+            > cache =
+                (Dictionary<
+                    (Type, MethodSignatureKey),
+                    LinkedListNode<MessageBus.ReflexiveMethodEntry>
+                >)
+                    MessageBusInspection.ReadField(bus, "_methodCache");
+            LinkedList<MessageBus.ReflexiveMethodEntry> lru =
+                (LinkedList<MessageBus.ReflexiveMethodEntry>)
+                    MessageBusInspection.ReadField(bus, "_methodCacheLru");
             Assert.That(cache.Count, Is.EqualTo(expectedCount), "Dictionary must obey capacity.");
             Assert.That(lru.Count, Is.EqualTo(expectedCount), "LRU must have one node per key.");
-            HashSet<object> nodes = new();
-            foreach (DictionaryEntry entry in cache)
+            HashSet<LinkedListNode<MessageBus.ReflexiveMethodEntry>> nodes = new();
+            foreach (
+                KeyValuePair<
+                    (Type, MethodSignatureKey),
+                    LinkedListNode<MessageBus.ReflexiveMethodEntry>
+                > entry in cache
+            )
             {
                 Assert.That(nodes.Add(entry.Value), Is.True, "Every key must own a distinct node.");
                 Assert.That(
-                    MessageBusInspection.ReadProperty(entry.Value, "List"),
+                    entry.Value.List,
                     Is.SameAs(lru),
                     "Every dictionary node must belong to this LRU."
                 );
             }
             int visited = 0;
             for (
-                object node = MessageBusInspection.ReadProperty(lru, "First");
+                LinkedListNode<MessageBus.ReflexiveMethodEntry> node = lru.First;
                 node != null;
-                node = MessageBusInspection.ReadProperty(node, "Next")
+                node = node.Next
             )
             {
                 Assert.That(nodes.Remove(node), Is.True, "LRU must contain only dictionary nodes.");

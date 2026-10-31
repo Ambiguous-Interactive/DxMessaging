@@ -825,7 +825,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <summary>Pairs a successful method lookup with its global LRU key.</summary>
-        private readonly struct ReflexiveMethodEntry
+        internal readonly struct ReflexiveMethodEntry
         {
             public readonly (Type componentType, MethodSignatureKey signature) key;
             public readonly Action<MonoBehaviour, object[]> method;
