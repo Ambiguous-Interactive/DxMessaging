@@ -155,6 +155,10 @@ public sealed class StringDemoReceiver : MessageAwareComponent
 
 ## ReflexiveMessage (bridging legacy SendMessage)
 
+Reflected receiver lookup skips methods with unassigned generic type arguments and keeps callable
+concrete overloads, including compatible `object` and interface parameters. It does not infer generic
+type arguments. The native Unity single-argument path follows Unity's receiver rules.
+
 ```csharp
 using DxMessaging.Core;
 using DxMessaging.Core.Messages;

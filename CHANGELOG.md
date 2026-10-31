@@ -56,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Skip unbound generic receiver methods during reflexive lookup and preserve callable concrete
+  overloads, including compatible object and interface parameters
+  ([#700](https://github.com/Ambiguous-Interactive/DxMessaging/issues/700)).
+
 - Preserve both reflexive deliveries when a metadata getter emits the same message during
   receiver lookup, and keep its method cache within the configured retention bound
   ([#699](https://github.com/Ambiguous-Interactive/DxMessaging/issues/699)).

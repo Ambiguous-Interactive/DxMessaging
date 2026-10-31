@@ -8396,6 +8396,7 @@ namespace DxMessaging.Core.MessageBus
                 {
                     methodInfo = componentType.GetMethod(
                         message.method,
+                        0,
                         ReflexiveMethodBindingFlags,
                         null,
                         message.signatureKey.CapturedParameterTypes,
@@ -8425,6 +8426,7 @@ namespace DxMessaging.Core.MessageBus
                                 message.method,
                                 StringComparison.Ordinal
                             )
+                            || matchingMethod.ContainsGenericParameters
                             || !ParameterTypesMatch(
                                 matchingMethod.GetParameters(),
                                 message.signatureKey.CapturedParameterTypes
@@ -8447,7 +8449,7 @@ namespace DxMessaging.Core.MessageBus
                 {
                     return null;
                 }
-                if (methodInfo != null)
+                if (methodInfo != null && !methodInfo.ContainsGenericParameters)
                 {
                     method = CompileMethodAction(methodInfo);
                     if (resetGeneration != _resetGeneration)
