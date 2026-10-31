@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
     using System.Collections.Generic;
+    using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Configuration;
     using DxMessaging.Core.Extensions;
@@ -59,6 +60,7 @@ namespace DxMessaging.Tests.Runtime.Core
                     bool expectsDelivery =
                         shape != ReceiverShape.GenericOnly
                         && shape != ReceiverShape.GenericParameterUsed;
+                    AssertReceiverMetadata(method, isPublic, shape);
                     for (int cycle = 0; cycle < 10; ++cycle)
                     {
                         bus.ResetState();
@@ -144,6 +146,60 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 Object.DestroyImmediate(settings);
             }
+        }
+
+        private static void AssertReceiverMetadata(
+            string method,
+            bool isPublic,
+            ReceiverShape shape
+        )
+        {
+            BindingFlags flags = BindingFlags.Instance | BindingFlags.DeclaredOnly;
+            flags |= isPublic ? BindingFlags.Public : BindingFlags.NonPublic;
+            int definitions = 0;
+            int genericDefinitions = 0;
+            int concreteDefinitions = 0;
+            foreach (MethodInfo candidate in typeof(ReflexiveOpenGenericReceiver).GetMethods(flags))
+            {
+                if (candidate.Name != method)
+                {
+                    continue;
+                }
+                ++definitions;
+                ParameterInfo[] parameters = candidate.GetParameters();
+                Assert.That(parameters, Has.Length.EqualTo(2));
+                Assert.That(parameters[1].ParameterType, Is.EqualTo(typeof(int)));
+                if (candidate.IsGenericMethodDefinition)
+                {
+                    ++genericDefinitions;
+                    Assert.That(candidate.ContainsGenericParameters, Is.True);
+                    Assert.That(candidate.GetGenericArguments(), Has.Length.EqualTo(1));
+                    Assert.That(
+                        parameters[0].ParameterType.IsGenericParameter,
+                        Is.EqualTo(shape == ReceiverShape.GenericParameterUsed)
+                    );
+                    if (shape != ReceiverShape.GenericParameterUsed)
+                    {
+                        Assert.That(parameters[0].ParameterType, Is.EqualTo(typeof(int)));
+                    }
+                }
+                else
+                {
+                    ++concreteDefinitions;
+                    Assert.That(candidate.ContainsGenericParameters, Is.False);
+                    Assert.That(parameters[0].ParameterType, Is.EqualTo(typeof(int)));
+                }
+            }
+            bool mixed =
+                shape == ReceiverShape.GenericFirst || shape == ReceiverShape.ConcreteFirst;
+            int expectedGeneric = shape == ReceiverShape.ConcreteOnly ? 0 : 1;
+            int expectedConcrete = mixed || shape == ReceiverShape.ConcreteOnly ? 1 : 0;
+            Assert.That(definitions, Is.EqualTo(mixed ? 2 : 1));
+            Assert.That(genericDefinitions, Is.EqualTo(expectedGeneric));
+            Assert.That(concreteDefinitions, Is.EqualTo(expectedConcrete));
+            TestContext.Out.WriteLine(
+                $"DXM_REFLEXIVE_OPEN_GENERIC_METADATA public={isPublic}; shape={shape}; definitions={definitions}; genericDefinitions={genericDefinitions}; concreteDefinitions={concreteDefinitions}"
+            );
         }
 
         private static Exception EmitAndCapture(
