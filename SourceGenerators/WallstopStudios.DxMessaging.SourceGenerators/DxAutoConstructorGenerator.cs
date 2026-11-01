@@ -316,7 +316,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 bool containerIsRecord = IsRecordDeclaration(container);
                 string containerKind = container.TypeKind switch
                 {
-                    TypeKind.Class => containerIsRecord ? "record class" : "class",
+                    TypeKind.Class => containerIsRecord ? "record" : "class",
                     TypeKind.Struct => containerIsRecord ? "record struct" : "struct",
                     _ => "class",
                 };
@@ -339,7 +339,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             bool typeIsRecord = IsRecordDeclaration(typeSymbol);
             string typeKind = typeSymbol.TypeKind switch
             {
-                TypeKind.Class => typeIsRecord ? "record class" : "class",
+                TypeKind.Class => typeIsRecord ? "record" : "class",
                 TypeKind.Struct => typeIsRecord ? "record struct" : "struct",
                 _ => throw new InvalidOperationException(
                     "Unsupported type kind for constructor generation"
@@ -366,15 +366,23 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             SymbolDisplayFormat fieldTypeFormat =
                 SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
                     SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers
+                        | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
                 );
 
             List<(
                 string Type,
                 string Name,
                 bool IsOptional,
-                string? DefaultExpr
+                string? DefaultExpr,
+                bool AnnotationsEnabled
             )> parameterDetails =
-                new List<(string Type, string Name, bool IsOptional, string? DefaultExpr)>();
+                new List<(
+                    string Type,
+                    string Name,
+                    bool IsOptional,
+                    string? DefaultExpr,
+                    bool AnnotationsEnabled
+                )>();
 
             // For validating expressions, use the semantic model for this type's tree
             SemanticModel semanticModel = compilation.GetSemanticModel(
@@ -421,7 +429,6 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                                 // Validate expression compatibility with field type
                                 if (
                                     !IsValidDefaultExpression(
-                                        compilation,
                                         semanticModel,
                                         anchorPosition,
                                         field,
@@ -476,30 +483,32 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                         {
                             object? val = arg.Value;
                             defaultExpr = FormatLiteral(val);
-                            // Validate primitive conversion to field type
-                            ITypeSymbol? sourceType = arg.Type;
-                            if (sourceType != null)
+                            // Preserve the original constant type when rendering loses its suffix or cast.
+                            string expressionForValidation = arg.Type is { } constantType
+                                ? $"({constantType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({defaultExpr})"
+                                : defaultExpr;
+                            if (
+                                !IsValidDefaultExpression(
+                                    semanticModel,
+                                    anchorPosition,
+                                    field,
+                                    expressionForValidation
+                                )
+                            )
                             {
-                                Conversion conv = compilation.ClassifyConversion(
-                                    sourceType,
-                                    field.Type
+                                Location reportLoc =
+                                    attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+                                    ?? field.Locations.FirstOrDefault()
+                                    ?? Location.None;
+                                spc.ReportDiagnostic(
+                                    Diagnostic.Create(
+                                        InvalidOptionalDefaultDiagnostic,
+                                        reportLoc,
+                                        fieldName,
+                                        defaultExpr,
+                                        fieldType
+                                    )
                                 );
-                                if (!conv.IsImplicit)
-                                {
-                                    Location reportLoc =
-                                        attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
-                                        ?? field.Locations.FirstOrDefault()
-                                        ?? Location.None;
-                                    spc.ReportDiagnostic(
-                                        Diagnostic.Create(
-                                            InvalidOptionalDefaultDiagnostic,
-                                            reportLoc,
-                                            fieldName,
-                                            defaultExpr,
-                                            fieldType
-                                        )
-                                    );
-                                }
                             }
                         }
                     }
@@ -507,16 +516,54 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     break; // only one DxOptionalParameterAttribute expected
                 }
 
-                parameterDetails.Add((fieldType, parameterName, isOptional, defaultExpr));
+                SyntaxReference? fieldDeclaration =
+                    field.DeclaringSyntaxReferences.FirstOrDefault();
+                SemanticModel fieldModel =
+                    fieldDeclaration == null
+                    || ReferenceEquals(fieldDeclaration.SyntaxTree, semanticModel.SyntaxTree)
+                        ? semanticModel
+                        : compilation.GetSemanticModel(fieldDeclaration.SyntaxTree);
+                bool annotationsEnabled =
+                    (
+                        fieldModel.GetNullableContext(
+                            fieldDeclaration?.Span.Start ?? anchorPosition
+                        ) & NullableContext.AnnotationsEnabled
+                    ) != 0;
+                parameterDetails.Add(
+                    (fieldType, parameterName, isOptional, defaultExpr, annotationsEnabled)
+                );
                 constructorBody.AppendLine(
                     $"{Indent}{Indent}    this.{parameterName} = {parameterName};"
                 );
             }
 
+            bool initialAnnotationsEnabled = parameterDetails[0].AnnotationsEnabled;
+            bool currentAnnotationsEnabled = initialAnnotationsEnabled;
+            string initialNullableDirective = initialAnnotationsEnabled
+                ? "#nullable enable annotations"
+                : "#nullable disable annotations";
+
             for (int i = 0; i < parameterDetails.Count; i++)
             {
-                (string Type, string Name, bool IsOptional, string? DefaultExpr) p =
-                    parameterDetails[i];
+                (
+                    string Type,
+                    string Name,
+                    bool IsOptional,
+                    string? DefaultExpr,
+                    bool AnnotationsEnabled
+                ) p = parameterDetails[i];
+                if (currentAnnotationsEnabled != p.AnnotationsEnabled)
+                {
+                    // Retain each field's annotation context in its generated parameter.
+                    constructorParams
+                        .AppendLine()
+                        .AppendLine(
+                            p.AnnotationsEnabled
+                                ? "#nullable enable annotations"
+                                : "#nullable disable annotations"
+                        );
+                    currentAnnotationsEnabled = p.AnnotationsEnabled;
+                }
                 constructorParams.Append($"{p.Type} {p.Name}");
                 if (p.IsOptional)
                 {
@@ -536,6 +583,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 }
             }
 
+            if (currentAnnotationsEnabled != initialAnnotationsEnabled)
+            {
+                constructorParams.AppendLine().AppendLine(initialNullableDirective);
+            }
+
             // Close containers
             for (int i = 0; i < containers.Count; i++)
             {
@@ -551,7 +603,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 new[]
                 {
                     "// <auto-generated by DxAutoGenConstructorGenerator/>",
-                    "#nullable enable annotations",
+                    initialNullableDirective,
                     string.Empty,
                     namespaceBlockOpen,
                     $"{containersOpen}{innerIndent}{typeAccessibility} partial {typeKind} {typeName}",
@@ -604,9 +656,43 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 case ulong ui64:
                     return ui64.ToString(CultureInfo.InvariantCulture) + "UL";
                 case float f:
+                    // Older Mono formatters drop the sign of negative zero.
+                    if (f == 0.0f)
+                    {
+                        return float.IsNegativeInfinity(1.0f / f) ? "-0.0f" : "0.0f";
+                    }
+                    if (float.IsNaN(f))
+                    {
+                        return "global::System.Single.NaN";
+                    }
+                    if (float.IsPositiveInfinity(f))
+                    {
+                        return "global::System.Single.PositiveInfinity";
+                    }
+                    if (float.IsNegativeInfinity(f))
+                    {
+                        return "global::System.Single.NegativeInfinity";
+                    }
                     return f.ToString("R", CultureInfo.InvariantCulture) + "f";
                 case double d:
-                    return d.ToString("R", CultureInfo.InvariantCulture);
+                    // Older Mono formatters drop the sign of negative zero.
+                    if (d == 0.0d)
+                    {
+                        return double.IsNegativeInfinity(1.0d / d) ? "-0.0d" : "0.0d";
+                    }
+                    if (double.IsNaN(d))
+                    {
+                        return "global::System.Double.NaN";
+                    }
+                    if (double.IsPositiveInfinity(d))
+                    {
+                        return "global::System.Double.PositiveInfinity";
+                    }
+                    if (double.IsNegativeInfinity(d))
+                    {
+                        return "global::System.Double.NegativeInfinity";
+                    }
+                    return d.ToString("R", CultureInfo.InvariantCulture) + "d";
             }
 
             // Fallback: use ToString(), but this should not occur for attribute constants
@@ -632,7 +718,6 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         }
 
         private static bool IsValidDefaultExpression(
-            Compilation compilation,
             SemanticModel semanticModel,
             int anchorPosition,
             IFieldSymbol field,
@@ -653,22 +738,13 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
             try
             {
-                var exprSyntax = SyntaxFactory.ParseExpression(trimmed);
-                var typeInfo = semanticModel.GetSpeculativeTypeInfo(
+                ExpressionSyntax exprSyntax = SyntaxFactory.ParseExpression(trimmed);
+                Conversion conversion = semanticModel.ClassifyConversion(
                     anchorPosition,
                     exprSyntax,
-                    SpeculativeBindingOption.BindAsExpression
+                    field.Type
                 );
-
-                ITypeSymbol? sourceType = typeInfo.Type;
-                if (sourceType == null)
-                {
-                    // Could not bind; let the compiler decide but report as invalid here
-                    return false;
-                }
-
-                Conversion conv = compilation.ClassifyConversion(sourceType, field.Type);
-                return conv.IsImplicit;
+                return conversion.IsImplicit;
             }
             catch (ArgumentException)
             {

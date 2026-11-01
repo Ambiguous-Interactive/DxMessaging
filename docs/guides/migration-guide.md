@@ -26,6 +26,16 @@ public `parameterTypes` array after construction does not select a different ove
 a new message with the intended types instead. The `parameters` array still supplies the argument
 values and must remain compatible with the captured signature.
 
+### Read serialization metadata from the numeric field
+
+`InstanceId` now places `DataMember(Name = "id")` on its private numeric field instead of
+the getter-only `Id` property. The public getter and numeric wire member name remain unchanged.
+Code that inspects serialization attributes through reflection must no longer expect
+`DataMemberAttribute` on the `Id` property.
+
+XML and JSON data contract deserialization restore the numeric identity. They do not find or
+restore a Unity object reference. Retain or resolve that reference separately when it is needed.
+
 ### Remove the test-only runtime settings override
 
 DxMessaging 4.0 removes `DxMessagingRuntimeSettingsProvider.Override`. Configure

@@ -80,7 +80,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
 
       - name: Setup .NET
         # validate:all runs check:analyzers, which builds the source
@@ -238,7 +238,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
 
       - name: Install artifact tooling dependencies
         id: install_dependencies
@@ -477,7 +477,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
 
       - name: Create the .unitypackage
         id: create_unitypackage
@@ -560,7 +560,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
           registry-url: "https://registry.npmjs.org"
 
       - name: Download release package

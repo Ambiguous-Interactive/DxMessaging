@@ -56,6 +56,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Skip unbound generic receiver methods during reflexive lookup and preserve callable concrete
+  overloads, including compatible object and interface parameters
+  ([#700](https://github.com/Ambiguous-Interactive/DxMessaging/issues/700)).
+
+- Preserve both reflexive deliveries when a metadata getter emits the same message during
+  receiver lookup, and keep its method cache within the configured retention bound
+  ([#699](https://github.com/Ambiguous-Interactive/DxMessaging/issues/699)).
+
 - Prevent registration-handle hashing from throwing in builds with integer overflow checks
   ([#691](https://github.com/Ambiguous-Interactive/DxMessaging/issues/691)).
 
@@ -75,8 +83,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The owning replay completes without restarting its registration queue, including during retargeting
   ([#671](https://github.com/Ambiguous-Interactive/DxMessaging/issues/671)).
 
-- Stop reflexive dispatch when a diagnostic receiver resets the bus; newly registered handlers
-  wait for the next emission ([#670](https://github.com/Ambiguous-Interactive/DxMessaging/issues/670)).
+- Stop reflexive dispatch when diagnostic or reflection metadata callbacks reset the bus; canceled
+  lookups do not retain a resolved method, and new handlers wait for the next emission
+  ([#670](https://github.com/Ambiguous-Interactive/DxMessaging/issues/670),
+  [#694](https://github.com/Ambiguous-Interactive/DxMessaging/issues/694)).
 
 - Preserve retryable cleanup across diagnostic callbacks and keep a logger's successful `Disable()`
   effective during retarget recovery ([#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663),
@@ -146,6 +156,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#624](https://github.com/Ambiguous-Interactive/DxMessaging/issues/624)).
 - Fix generated message declarations and constructors failing for escaped C# identifiers
   ([#623](https://github.com/Ambiguous-Interactive/DxMessaging/issues/623)).
+- Preserve field nullability and C# constant conversions in generated constructors. Keep nullable
+  opt-outs and optional NaN, infinity, and signed-zero defaults on older compiler hosts
+  ([#696](https://github.com/Ambiguous-Interactive/DxMessaging/issues/696),
+  [#697](https://github.com/Ambiguous-Interactive/DxMessaging/issues/697),
+  [#698](https://github.com/Ambiguous-Interactive/DxMessaging/issues/698)).
+- Fix generated message and constructor declarations failing for C# 9 reference records,
+  including nested record containers ([#695](https://github.com/Ambiguous-Interactive/DxMessaging/issues/695)).
 - Stop repeated console-harvester settings searches and scans when the console bridge is disabled
   ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
 - Fix provider fallback selection in registration builders, components, dependency-injection

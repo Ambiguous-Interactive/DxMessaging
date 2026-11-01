@@ -30,6 +30,7 @@ Each reducer accepts only its registered artifact class:
 
 | Artifact class                     | Reducer                               |
 | ---------------------------------- | ------------------------------------- |
+| `editor-settings-cache`            | `editor-settings-cache-v1`            |
 | `shipping-fidelity-matrix`         | `shipping-fidelity-matrix-v1`         |
 | `paired-throughput-screen`         | `paired-throughput-screen-v1`         |
 | `allocation-subunsub-observations` | `allocation-subunsub-observations-v1` |

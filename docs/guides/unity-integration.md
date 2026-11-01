@@ -155,6 +155,10 @@ public sealed class StringDemoReceiver : MessageAwareComponent
 
 ## ReflexiveMessage (bridging legacy SendMessage)
 
+Reflected receiver lookup skips methods with unassigned generic type arguments and keeps callable
+concrete overloads, including compatible `object` and interface parameters. It does not infer generic
+type arguments. The native Unity single-argument path follows Unity's receiver rules.
+
 ```csharp
 using DxMessaging.Core;
 using DxMessaging.Core.Messages;
@@ -162,6 +166,13 @@ using DxMessaging.Core.Messages;
 var msg = new ReflexiveMessage("OnHit", ReflexiveSendMode.Upwards, 10);
 msg.EmitGameObjectTargeted(gameObject);
 ```
+
+Callbacks that reset the bus cancel the current reflexive emission, including callbacks in custom
+reflection metadata. Eligible zero- or one-argument sends use Unity's `GameObject.SendMessage` on
+an active GameObject. If a receiver resets the bus during that call, Unity may still deliver to
+other receivers on the same GameObject. DxMessaging checks for the reset after Unity finishes
+that delivery and does not continue the canceled emission. Emit a new message after the reset
+to deliver it.
 
 Related
 
