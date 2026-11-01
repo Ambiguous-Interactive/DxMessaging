@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve generated constructors and message identities for types nested in partial interfaces
+  ([#702](https://github.com/Ambiguous-Interactive/DxMessaging/issues/702)).
+
 - Skip unbound generic receiver methods during reflexive lookup and preserve callable concrete
   overloads, including compatible object and interface parameters
   ([#700](https://github.com/Ambiguous-Interactive/DxMessaging/issues/700)).

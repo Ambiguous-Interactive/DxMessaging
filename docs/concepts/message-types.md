@@ -156,6 +156,29 @@ var damage = new CombatEvents.TookDamage(5);  // Uses DamageType.Physical
 damage.EmitGameObjectBroadcast(gameObject);
 ```
 
+Containing classes, structs, and interfaces must all be `partial`.
+
+> **Fixed in v4.0.0**
+>
+> Constructor and message-identity generation also preserve partial interface containers.
+
+```csharp
+using DxMessaging.Core.Attributes;
+
+public partial interface ICombatContract
+{
+    [DxTargetedMessage]
+    [DxAutoConstructor]
+    public readonly partial struct DamageRequested
+    {
+        public readonly int Amount;
+    }
+}
+```
+
+Generic interface containers can use invariant type parameters. C# does not permit nested
+classes or structs inside interfaces with `in` or `out` type parameters.
+
 ### Benefits
 
 - Reduces namespace pollution

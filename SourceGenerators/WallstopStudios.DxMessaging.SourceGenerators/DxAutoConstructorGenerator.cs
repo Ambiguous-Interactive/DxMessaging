@@ -318,6 +318,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 {
                     TypeKind.Class => containerIsRecord ? "record" : "class",
                     TypeKind.Struct => containerIsRecord ? "record struct" : "struct",
+                    TypeKind.Interface => "interface",
                     _ => "class",
                 };
 
