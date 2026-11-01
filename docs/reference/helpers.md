@@ -158,6 +158,12 @@ var settings3 = new SettingsChanged(0.8f, 2, fullscreen: true);  // brightness=1
 var settings4 = new SettingsChanged(0.8f, 2, brightness: 50);    // fullscreen=false
 ```
 
+For a struct without an explicit parameterless constructor, `new Message()` and
+`default(Message)` initialize fields to zero, `false`, or `null`. They do not apply
+defaults from a generated constructor with optional parameters. Pass at least one
+argument, including a named argument, to select that constructor. A required field
+also makes this choice explicit at the call site.
+
 #### Supported Default Value Types
 
 The attribute provides constructor overloads for all common primitive types:
@@ -354,6 +360,9 @@ var critHeal = new Heal(50, true);         // isCritical = true
 #### Example 2: Multiple Optional Parameters
 
 ```csharp
+using DxMessaging.Core.Attributes;
+using UnityEngine;
+
 [DxBroadcastMessage]
 [DxAutoConstructor]
 public readonly partial struct SpawnEffect
@@ -372,7 +381,7 @@ public readonly partial struct SpawnEffect
 }
 
 // Usage:
-_ = new SpawnEffect();                                         // All defaults
+var defaultEffect = new SpawnEffect(scale: 1.0f);              // Annotated defaults
 var largeEffect = new SpawnEffect(2.5f);                        // Custom scale
 var redEffect = new SpawnEffect(1.0f, Color.red);               // Custom color
 var customEffect = new SpawnEffect(1.5f, Color.blue, 10f, true); // All custom
@@ -407,6 +416,9 @@ var fullEvent = new GameEvent("Achievement", 1, 500, "first_blood");
 #### Example 4: Game Settings Message
 
 ```csharp
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+
 [DxUntargetedMessage]
 [DxAutoConstructor]
 public readonly partial struct AudioSettingsChanged
@@ -425,6 +437,7 @@ public readonly partial struct AudioSettingsChanged
 }
 
 // Apply all defaults
+var audioSettings = new AudioSettingsChanged(masterVolume: 1.0f);
 audioSettings.Emit();
 
 // Only change music volume

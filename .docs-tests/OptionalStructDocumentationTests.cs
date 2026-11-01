@@ -114,9 +114,20 @@ internal sealed class OptionalStructDocumentationTests
         {
             result = "return EmissionFixture.Values.ToArray();";
         }
+        string[] imports =
+        {
+            "using DxMessaging.Core.Attributes;",
+            "using DxMessaging.Core.Extensions;",
+            "using UnityEngine;",
+        };
         string source =
-            "using DxMessaging.Core.Attributes; using DxMessaging.Core.Extensions; using UnityEngine;\n"
-            + string.Join("\n", root.Usings)
+            string.Join(
+                "\n",
+                imports
+                    .Concat(root.Usings.Select(directive => directive.ToString()))
+                    .Distinct(StringComparer.Ordinal)
+            )
+            + "\n"
             + declarations
             + "\npublic static class DocProbe { public static object[] Read() {\n"
             + statements
