@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prevent valid `nameof(...)` optional defaults from aborting constructor generation
+  ([#703](https://github.com/Ambiguous-Interactive/DxMessaging/issues/703)).
+
 - Preserve generated constructors and message identities for types nested in partial interfaces
   ([#702](https://github.com/Ambiguous-Interactive/DxMessaging/issues/702)).
 

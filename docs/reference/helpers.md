@@ -100,7 +100,7 @@ public VideoSettingsChanged(int width, int height)
 - Only includes `public` fields
 - Ignores `static` fields
 - Works with `readonly` structs (recommended!)
-- Supports nested types (types defined inside other classes/structs)
+- Supports nested types inside partial classes, structs, and invariant interfaces
 - Supports internal types (types with `internal` visibility)
 
 ### 3. `[DxOptionalParameter]` - Optional Constructor Parameters
@@ -276,7 +276,12 @@ Parameters from enabled contexts keep their nullable or nonnullable checks.
 
 Use the `Expression` property for compile-time constants that cannot be passed directly to an attribute constructor, such as enum values or named constants. The expression is inserted verbatim into an optional constructor parameter, so ordinary C# optional-parameter rules still apply. Use `[DxOptionalParameter]` without an expression when a struct should use its default value.
 
+> **Fixed in v4.0.0:** Valid `nameof(...)` defaults no longer abort constructor generation on Roslyn 5.9. Composed expressions keep their C# constant values and conversion rules.
+
 ```csharp
+using DxMessaging.Core.Attributes;
+using UnityEngine;
+
 public enum DamageType
 {
     Physical,
@@ -312,6 +317,10 @@ public readonly partial struct AdvancedDefaults
     // Named constants from your code
     [DxOptionalParameter(Expression = "GameConstants.DefaultHealth")]
     public readonly int health;
+
+    // Symbol names
+    [DxOptionalParameter(Expression = "nameof(AdvancedDefaults)")]
+    public readonly string source;
 }
 ```
 

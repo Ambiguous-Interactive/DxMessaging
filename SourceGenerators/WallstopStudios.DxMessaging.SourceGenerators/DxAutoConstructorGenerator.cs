@@ -740,6 +740,56 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             try
             {
                 ExpressionSyntax exprSyntax = SyntaxFactory.ParseExpression(trimmed);
+                foreach (SyntaxNode node in exprSyntax.DescendantNodesAndSelf())
+                {
+                    if (
+                        node
+                            is not InvocationExpressionSyntax
+                            {
+                                Expression: IdentifierNameSyntax name,
+                            }
+                        || !string.Equals(
+                            name.Identifier.ValueText,
+                            "nameof",
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    /*
+                        Roslyn 5.9 throws when positional conversion binds detached nameof syntax.
+                        A speculative attribute model owns the complete expression, including constants.
+                    */
+                    AttributeSyntax binding = SyntaxFactory.Attribute(
+                        SyntaxFactory.ParseName("global::" + OptionalParameterAttrFullName),
+                        SyntaxFactory.AttributeArgumentList(
+                            SyntaxFactory.SingletonSeparatedList(
+                                SyntaxFactory.AttributeArgument(exprSyntax)
+                            )
+                        )
+                    );
+                    if (
+                        !semanticModel.TryGetSpeculativeSemanticModel(
+                            anchorPosition,
+                            binding,
+                            out SemanticModel? expressionModel
+                        )
+                        || expressionModel == null
+                    )
+                    {
+                        return false;
+                    }
+
+                    return expressionModel
+                        .ClassifyConversion(
+                            binding.ArgumentList!.Arguments[0].Expression,
+                            field.Type
+                        )
+                        .IsImplicit;
+                }
+
                 Conversion conversion = semanticModel.ClassifyConversion(
                     anchorPosition,
                     exprSyntax,
