@@ -695,6 +695,7 @@ try {
         private readonly Dictionary<string, object> _pending = new();
         private readonly EditorDelayCallScope _sidecarCallbacks;
         private readonly EditorDelayCallScope _responseCallbacks;
+        private readonly bool _backupsComplete;
         private bool _assetEditing;
 
         internal EditorCompilerInputScope()
@@ -785,6 +786,7 @@ try {
                         }
                     }
                 }
+                _backupsComplete = true;
             }
             catch (Exception failure)
             {
@@ -806,8 +808,20 @@ try {
             foreach (KeyValuePair<string, string> saved in _saved)
             {
                 string operation = "inspect";
+                string diagnosticPath = saved.Key;
                 try
                 {
+                    if (!_backupsComplete)
+                    {
+                        // Construction never returned ownership of the original inputs.
+                        if (saved.Value != null && File.Exists(saved.Value))
+                        {
+                            operation = "delete backup";
+                            diagnosticPath = saved.Value;
+                            File.Delete(saved.Value);
+                        }
+                        continue;
+                    }
                     if (saved.Value == null)
                     {
                         if (File.Exists(saved.Key))
@@ -830,7 +844,7 @@ try {
                 catch (Exception exception)
                 {
                     string diagnostics = EditorCompilerInputFailureDiagnostics.Describe(
-                        saved.Key,
+                        diagnosticPath,
                         exception,
                         operation
                     );
