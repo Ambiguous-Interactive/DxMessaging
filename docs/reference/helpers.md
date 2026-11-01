@@ -33,8 +33,8 @@ public readonly partial struct GamePaused { }
 
 ##### What it generates
 
-- Implements `IUntargetedMessage<GamePaused>`
-- Adds required plumbing for the message system
+- Implements `IUntargetedMessage`
+- Adds a `MessageType` property for the concrete message type
 - Makes it work with `.Emit()` extension methods
 
 #### `[DxTargetedMessage]` - Messages to Specific Targets
@@ -48,8 +48,8 @@ public readonly partial struct Heal {
 
 ##### What it generates
 
-- Implements `ITargetedMessage<Heal>`
-- Adds required plumbing for targeted emissions
+- Implements `ITargetedMessage`
+- Adds a `MessageType` property for the concrete message type
 - Makes it work with `.EmitGameObjectTargeted()` / `.EmitComponentTargeted()`
 
 #### `[DxBroadcastMessage]` - Messages from a Source
@@ -63,8 +63,8 @@ public readonly partial struct TookDamage {
 
 ##### What it generates
 
-- Implements `IBroadcastMessage<TookDamage>`
-- Adds required plumbing for broadcast emissions
+- Implements `IBroadcastMessage`
+- Adds a `MessageType` property for the concrete message type
 - Makes it work with `.EmitGameObjectBroadcast()` / `.EmitComponentBroadcast()`
 
 ### 2. `[DxAutoConstructor]` - Automatic Constructors
