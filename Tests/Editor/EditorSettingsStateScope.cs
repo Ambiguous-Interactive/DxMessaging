@@ -698,6 +698,9 @@ try {
         private bool _assetEditing;
 
         internal EditorCompilerInputScope()
+            : this(File.Copy) { }
+
+        internal EditorCompilerInputScope(Action<string, string> copyFile)
         {
             _pending.Add(
                 "sidecar",
@@ -762,7 +765,7 @@ try {
                         string operation = "copy";
                         try
                         {
-                            File.Copy(saved.Key, saved.Value);
+                            copyFile(saved.Key, saved.Value);
                         }
                         catch (IOException failure)
                         {
