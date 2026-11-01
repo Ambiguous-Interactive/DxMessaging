@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve pointer constructor signatures and accept valid `null` pointer defaults
+  ([#705](https://github.com/Ambiguous-Interactive/DxMessaging/issues/705)).
+
 - Prevent valid `nameof(...)` optional defaults from aborting constructor generation
   ([#703](https://github.com/Ambiguous-Interactive/DxMessaging/issues/703)).
 

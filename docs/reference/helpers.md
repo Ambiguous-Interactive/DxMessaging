@@ -103,6 +103,12 @@ public VideoSettingsChanged(int width, int height)
 - Supports nested types inside partial classes, structs, and invariant interfaces
 - Supports internal types (types with `internal` visibility)
 
+> **Fixed in v4.0.0:** Generated constructors retain the required unsafe context
+> for pointer parameters, preserve `void*` syntax, and accept valid `null` pointer
+> defaults. The consumer assembly must enable unsafe compilation. Function-pointer
+> signatures also need support from your Unity version and scripting backend; the
+> generator does not add that support.
+
 ### 3. `[DxOptionalParameter]` - Optional Constructor Parameters
 
 The `DxOptionalParameterAttribute` marks a field as optional when used with `[DxAutoConstructor]`. The source generator emits a constructor parameter with a default value for annotated fields, making it easy to create messages with sensible defaults.

@@ -391,9 +391,27 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             );
             int anchorPosition = typeInfo.DeclarationSyntax.SpanStart;
 
+            bool requiresUnsafeContext = false;
             foreach (IFieldSymbol field in fieldsToInject)
             {
-                string fieldType = field.Type.ToDisplayString(fieldTypeFormat);
+                bool fieldRequiresUnsafeContext = RequiresUnsafeContext(field.Type);
+                requiresUnsafeContext |= fieldRequiresUnsafeContext;
+                SymbolDisplayFormat parameterTypeFormat = fieldRequiresUnsafeContext
+                    ? fieldTypeFormat
+                        .WithMiscellaneousOptions(
+                            fieldTypeFormat.MiscellaneousOptions
+                                | SymbolDisplayMiscellaneousOptions.UseSpecialTypes
+                        )
+                        .WithParameterOptions(
+                            fieldTypeFormat.ParameterOptions
+                                | SymbolDisplayParameterOptions.IncludeType
+                                | SymbolDisplayParameterOptions.IncludeParamsRefOut
+                        )
+                        .WithMemberOptions(
+                            fieldTypeFormat.MemberOptions | SymbolDisplayMemberOptions.IncludeRef
+                        )
+                    : fieldTypeFormat;
+                string fieldType = field.Type.ToDisplayString(parameterTypeFormat);
                 string fieldName = field.Name;
                 string parameterName = field.ToDisplayString(IdentifierNameFormat);
                 string? defaultExpr = null;
@@ -462,8 +480,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                         TypedConstant arg = attr.ConstructorArguments[0];
                         if (arg.IsNull)
                         {
-                            defaultExpr = "null"; // only valid for reference or nullable types; compiler will enforce
-                            if (!IsReferenceOrNullable(field.Type))
+                            defaultExpr = "null";
+                            if (!CanUseNullDefault(field.Type))
                             {
                                 Location reportLoc =
                                     attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
@@ -599,6 +617,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 containersClose.Append(currentIndent).AppendLine("}");
             }
 
+            string unsafeModifier = requiresUnsafeContext ? "unsafe " : string.Empty;
             return string.Join(
                 "\r\n",
                 new[]
@@ -612,7 +631,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     $"{Indent}    /// <summary>",
                     $"{Indent}    /// Auto-generated constructor by DxAutoGenConstructorGenerator.",
                     $"{Indent}    /// </summary>",
-                    $"{innerIndent}    {constructorAccessibility} {typeSymbol.ToDisplayString(IdentifierNameFormat)}({constructorParams})",
+                    $"{innerIndent}    {constructorAccessibility} {unsafeModifier}{typeSymbol.ToDisplayString(IdentifierNameFormat)}({constructorParams})",
                     $"{innerIndent}    {{",
                     $"{constructorBody}",
                     $"{innerIndent}    }}",
@@ -700,9 +719,19 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             return value.ToString() ?? "default";
         }
 
-        private static bool IsReferenceOrNullable(ITypeSymbol type)
+        private static bool RequiresUnsafeContext(ITypeSymbol type)
         {
-            if (type.IsReferenceType)
+            while (type is IArrayTypeSymbol array)
+            {
+                type = array.ElementType;
+            }
+
+            return type.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer;
+        }
+
+        private static bool CanUseNullDefault(ITypeSymbol type)
+        {
+            if (type.IsReferenceType || RequiresUnsafeContext(type))
             {
                 return true;
             }
@@ -734,7 +763,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
             if (string.Equals(trimmed, "null", StringComparison.Ordinal))
             {
-                return IsReferenceOrNullable(field.Type);
+                return CanUseNullDefault(field.Type);
             }
 
             try
