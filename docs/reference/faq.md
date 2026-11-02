@@ -10,7 +10,13 @@
 
 ## Do I need an assembly definition for the source generator to work?
 
-- No. The source generator and analyzers run for code in Unity's default `Assembly-CSharp` and in your own assembly definitions alike, so you do not need to add an `.asmdef` just to get generation. Mark the message type `partial` and apply a `[DxUntargetedMessage]` / `[DxTargetedMessage]` / `[DxBroadcastMessage]` attribute (or implement the matching `I*Message` interface). If generated members are missing, see [Troubleshooting](troubleshooting.md#source-generator-did-not-generate-emit-or-handler-methods).
+No. The package's generators reach Unity's default `Assembly-CSharp` and
+assemblies that reference DxMessaging. Apply a route attribute and mark the
+message and its containing declarations `partial` when you want generated
+members. A handwritten route-interface implementation without generator
+attributes does not require `partial`. See
+[Troubleshooting](troubleshooting.md#source-generator-did-not-generate-emit-or-handler-methods)
+for missing interfaces, constructors or emission helpers.
 
 ## Which message type should I use?
 

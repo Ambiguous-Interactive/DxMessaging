@@ -965,13 +965,14 @@ public readonly partial struct MyMessage : IMessage, IUntargetedMessage
 
 ### "Can I see the generated code?"
 
-**Yes!** In Visual Studio/Rider:
+Use your IDE's generated-source view when available. Visual Studio exposes
+generator output under the project's analyzer dependencies. Navigation to a
+generated member can also open its generated declaration.
 
-1. Right-click on the message type
-1. Select "Go to Implementation" or "Go to Definition"
-1. You'll see the auto-generated file
-
-**Or** check your `obj/` folder for `.g.cs` files.
+A missing `.g.cs` file on disk does not prove that generation failed. In .NET SDK
+projects, writing those files requires
+[`EmitCompilerGeneratedFiles`](https://learn.microsoft.com/en-us/dotnet/core/project-sdk/msbuild-props#emitcompilergeneratedfiles).
+For Unity compilation failures, start with the Console diagnostics below.
 
 ### "What if I want custom constructor logic?"
 
@@ -1015,54 +1016,50 @@ public readonly partial struct MessageA
 
 ## Troubleshooting Source Generators
 
-> **Warning: Attributes not working / code not generated**
->
-> ### Checklist
->
-> 1. Is type marked `partial`?
-> 1. Did you rebuild the project?
-> 1. Is Unity 2021.3+ (Roslyn source generator support)?
-> 1. Check `obj/` folder for `.g.cs` files
->
-> #### Fix
->
-> ```csharp
-> //  Missing partial, will not compile
-> [DxAutoConstructor]
-> public readonly struct MyMsg { }
->
-> ```
->
-> ```csharp
-> //  Correct
-> [DxAutoConstructor]
-> public readonly partial struct MyMsg { }
-> ```
->
-> **Warning: Constructor not generated**
->
-> **Cause:** No public fields to generate from
->
-> ```csharp
-> //  No public fields
-> [DxAutoConstructor]
-> public readonly partial struct Empty { }
->
-> //  Has public field
-> [DxAutoConstructor]
-> public readonly partial struct WithData {
->     public readonly int value;
-> }
-> ```
->
-> **Warning: Unity can't find generated code**
->
-> ##### Solution
->
-> 1. Close Unity
-> 1. Delete `Library/` folder
-> 1. Reopen Unity
-> 1. Let it reimport everything
+Start with the first compiler error in Unity's Console. Confirm the installed
+DxMessaging version and use a [supported Unity version](compatibility.md).
+
+### Missing interfaces or MessageType
+
+Apply the matching route attribute and mark the message declaration `partial`.
+Every containing declaration must also be `partial` for a nested message.
+`DXMSG003` identifies a non-partial containing type. A handwritten implementation
+without generator attributes does not need `partial` unless you split its
+declaration across files.
+
+### Missing constructor
+
+`[DxAutoConstructor]` uses public instance fields in declaration order. Static
+fields and properties do not become constructor parameters. A type with no
+public instance fields gets no generated field constructor.
+
+```csharp
+using DxMessaging.Core.Attributes;
+
+[DxAutoConstructor]
+public readonly partial struct WithData
+{
+    public readonly int value;
+}
+
+```
+
+`new WithData(42)` calls the generated constructor and sets `value` to `42`.
+
+### Missing Emit or handler methods
+
+`Emit` helpers are extension methods in `DxMessaging.Core.Extensions`; import
+that namespace and implement the matching route contract. The generators do not
+create emission or handler methods. See the
+[emission troubleshooting steps](troubleshooting.md#source-generator-did-not-generate-emit-or-handler-methods).
+
+### Reporting a compiler failure
+
+After fixing the first diagnostic, let Unity finish recompiling. If generation
+still fails, keep the compiler output and prepare a minimal message declaration,
+including any containing types. Include the Unity version, DxMessaging version,
+first diagnostic and declaration in a
+[bug report](https://github.com/Ambiguous-Interactive/DxMessaging/issues/new?template=bug_report.yml).
 
 ## Related Documentation
 
