@@ -250,11 +250,11 @@ RUN set -eux; \
     sd --version
 
 # ------------------------------------------------------------------------------
-# Install dust 1.2.6
+# Install dust 1.2.7
 # https://github.com/bootandy/dust
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    DUST_VERSION="1.2.6"; \
+    DUST_VERSION="1.2.7"; \
     case "${TARGETARCH}" in \
         amd64) DUST_ARCH="x86_64-unknown-linux-gnu" ;; \
         arm64) DUST_ARCH="aarch64-unknown-linux-gnu" ;; \

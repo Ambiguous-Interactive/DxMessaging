@@ -79,7 +79,7 @@ paginate==0.5.7
     # via mkdocs-material
 pathspec==1.1.1
     # via mkdocs
-platformdirs==4.14.2
+platformdirs==4.14.3
     # via mkdocs-get-deps
 pygments==2.21.0
     # via
@@ -91,7 +91,7 @@ pymdown-extensions==12.3
     #   mkdocs-material
 pyparsing==3.3.3
     # via mike
-python-dateutil==3.0.0
+python-dateutil==4.0.0
     # via ghp-import
 pyyaml==6.0.3
     # via
@@ -106,8 +106,6 @@ pyyaml-env-tag==1.1
     #   mkdocs
 requests==2.34.2
     # via mkdocs-material
-six==1.17.0
-    # via python-dateutil
 smmap==5.0.3
     # via gitdb
 tzdata==2026.6
