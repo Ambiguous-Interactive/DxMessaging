@@ -223,22 +223,21 @@ var dealDamage = new DealDamage(50f);
 dealDamage.EmitTargeted(enemyId);
 ```
 
-### Message Analytics and Metrics
+### Message Counts
 
-Track message frequency and performance across your entire game:
+Count observed messages by type on the supplied bus. For dispatch throughput and
+allocation measurements, see [Performance](../architecture/performance.md):
 
 ```csharp
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using DxMessaging.Core;
 using DxMessaging.Core.Messages;
 using DxMessaging.Core.MessageBus;
 
 public sealed class MessageAnalytics : IDisposable
 {
-    private readonly Dictionary<Type, (int count, long totalMs)> _stats = new();
-    private readonly Stopwatch _stopwatch = new();
+    private readonly Dictionary<Type, int> _counts = new();
     private readonly MessageHandler _handler;
     private readonly MessageRegistrationToken _token;
 
@@ -267,23 +266,15 @@ public sealed class MessageAnalytics : IDisposable
 
     private void TrackMessage(Type messageType)
     {
-        _stopwatch.Restart();
-        // Message processing happens here
-        _stopwatch.Stop();
-
-        if (!_stats.TryGetValue(messageType, out var stat))
-        {
-            stat = (0, 0);
-        }
-        _stats[messageType] = (stat.count + 1, stat.totalMs + _stopwatch.ElapsedMilliseconds);
+        _counts.TryGetValue(messageType, out int count);
+        _counts[messageType] = count + 1;
     }
 
     public void PrintStats()
     {
-        foreach (var kvp in _stats)
+        foreach (KeyValuePair<Type, int> entry in _counts)
         {
-            var avg = kvp.Value.totalMs / (double)kvp.Value.count;
-            UnityEngine.Debug.Log($"{kvp.Key.Name}: {kvp.Value.count} messages, avg {avg:F2}ms");
+            UnityEngine.Debug.Log($"{entry.Key.Name}: {entry.Value} messages");
         }
     }
 
