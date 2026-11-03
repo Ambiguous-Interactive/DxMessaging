@@ -11,6 +11,33 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocsSnippetCompilationTests
 {
+    /// <summary>Keep the targeted README example valid as one Unity class file.</summary>
+    /// <remarks>2026-11-03: The example put emission statements after its type declarations.</remarks>
+    [Test]
+    public void ReadmeTargetedExampleHasCompleteClassSyntax()
+    {
+        string path = Path.Combine(ResolveRepoRoot(), "README.md");
+        string[] examples = ExtractCodeBlocks(path, "csharp")
+            .Where(source =>
+                source.Contains("partial struct Heal", StringComparison.Ordinal)
+                && source.Contains("OnHeal", StringComparison.Ordinal)
+            )
+            .ToArray();
+        Assert.That(examples, Has.Length.EqualTo(1), path + ": targeted healing example");
+        Diagnostic[] errors = CSharpSyntaxTree
+            .ParseText(examples[0], new CSharpParseOptions(LanguageVersion.CSharp9))
+            .GetDiagnostics()
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        Assert.That(
+            errors,
+            Is.Empty,
+            path
+                + ": copy into Player.cs without top-level statements\n"
+                + string.Join("\n", errors.AsEnumerable())
+        );
+    }
+
     private static IEnumerable<TestCaseData> BusFirstModifierCases()
     {
         foreach (string kind in new[] { "Untargeted", "Targeted", "Broadcast" })

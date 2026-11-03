@@ -12,7 +12,7 @@
 
 [![Unity](https://img.shields.io/badge/Unity-2021.3+-black.svg)](https://unity.com/releases/editor/archive)<br/>
 [![License: MIT](https://img.shields.io/badge/License-MIT-f4a836.svg)](LICENSE.md)<br/>
-[![openupm](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging?label=openupm&registry_uri=https://package.openupm.com)](https://openupm.com/packages/com.wallstop-studios.dxmessaging/)<br/>
+[![OpenUPM](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging?label=OpenUPM&registry_uri=https://package.openupm.com)](https://openupm.com/packages/com.wallstop-studios.dxmessaging/)<br/>
 [![Version](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging.svg)](https://www.npmjs.com/package/com.wallstop-studios.dxmessaging)<br/>
 [![Performance: Standalone (IL2CPP)](<https://img.shields.io/badge/Performance-Standalone%20(IL2CPP)-f4a836.svg>)](docs/architecture/performance.md)<br/>
 [![Markdown Link Validity](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml/badge.svg)](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml)
@@ -498,39 +498,62 @@ counters.
 
 ### How It Transforms Your Code
 
+Save this example as `Player.cs` and attach `Player` to the target GameObject. Pass that component
+to `Healing.HealPlayer` from gameplay code. The listener and sender use the global bus in this
+example; configure and emit through the same bus when using a custom bus.
+
 ```csharp
-// 1. Define messages (typed, discoverable)
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Unity;
+using UnityEngine;
+
+// Define a targeted message.
 [DxTargetedMessage]
 [DxAutoConstructor]
-public readonly partial struct Heal { public readonly int amount; }
+public readonly partial struct Heal
+{
+    public readonly int amount;
+}
 
-// 2. Listen (automatic lifecycle - prevents leaks)
-public class Player : MessageAwareComponent {
-    protected override void RegisterMessageHandlers() {
+// Listen while this component is enabled.
+public sealed class Player : MessageAwareComponent
+{
+    public int Health { get; private set; }
+
+    protected override void RegisterMessageHandlers()
+    {
         base.RegisterMessageHandlers();
         _ = Token.RegisterComponentTargeted<Heal>(this, OnHeal);
     }
 
-    void OnHeal(in Heal m) {
-        health += m.amount;
-        Debug.Log($"Healed {m.amount}!");
+    private void OnHeal(in Heal message)
+    {
+        Health += message.amount;
+        Debug.Log($"Healed {message.amount}!");
     }
 }
 
-// 3. Send (from anywhere - zero coupling)
-var heal = new Heal(50);
-heal.EmitComponentTargeted(playerComponent);
+// Emit to the supplied Player component.
+public static class Healing
+{
+    public static void HealPlayer(Player player)
+    {
+        Heal message = new(50);
+        message.EmitComponentTargeted(player);
+    }
+}
 ```
 
 #### What you get
 
-- [x] **Automatic cleanup** - tokens clean up when components are destroyed
-- [x] **Zero coupling** - no SerializeFields, no GetComponent, no direct references
-- [x] **Full visibility** - inspect emission history, call sites, and loaded-scene component routes
-- [x] **Predictable order** - priority-based execution (no more mystery race conditions)
-- [x] **Type-safe** - compile-time guarantees, refactor with confidence
-- [x] **Intercept & validate** - enforce rules before handlers run (clamp damage, block invalid input)
-- [x] **Extension points everywhere** - interceptors, handlers, post-processors with priorities
+- [x] **Owned subscriptions** - `MessageAwareComponent` manages its token across enable, disable and destroy callbacks
+- [x] **Typed routing** - targeted messages use component identity; broadcast listeners can observe sources without references to emitters
+- [x] **Diagnostics** - inspect recorded emission history, call sites and loaded-scene component routes when diagnostics are enabled
+- [x] **Priority order** - handlers run by their configured priorities
+- [x] **Typed messages** - generated message contracts and typed handlers
+- [x] **Interception** - validate or modify messages before handlers run
+- [x] **Routing hooks** - interceptors, handlers and post-processors have priorities
 
 ## Key Features
 
