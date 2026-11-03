@@ -23,6 +23,59 @@ internal sealed class DocumentationImportTests
         )
     );
 
+    [TestCase(0, false)]
+    [TestCase(0, true)]
+    [TestCase(1, false)]
+    [TestCase(1, true)]
+    [TestCase(2, false)]
+    [TestCase(2, true)]
+    public void VContainerExamplesRegisterBuilderWithoutConsumerSymbol(
+        int exampleIndex,
+        bool explicitConsumerSymbol
+    )
+    {
+        DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
+        {
+            root = root.Parent;
+        }
+        Assert.That(root, Is.Not.Null, "Locate the VContainer integration guide.");
+        string path = Path.Combine(root!.FullName, "docs", "integrations", "vcontainer.md");
+        string[] examples = Regex
+            .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
+            .Select(match => match.Groups["code"].Value)
+            .Where(code =>
+                code.Contains("RegisterMessageRegistrationBuilder", StringComparison.Ordinal)
+            )
+            .ToArray();
+        Assert.That(
+            examples,
+            Has.Length.EqualTo(3),
+            path + ": complete builder-registration surface"
+        );
+        CSharpParseOptions options = ProviderOptions;
+        if (explicitConsumerSymbol)
+        {
+            options = options.WithPreprocessorSymbols(
+                "UNITY_2021_3_OR_NEWER",
+                "VCONTAINER_PRESENT"
+            );
+        }
+        SyntaxNode tree = CSharpSyntaxTree.ParseText(examples[exampleIndex], options).GetRoot();
+        InvocationExpressionSyntax[] calls = tree.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Where(call =>
+                call.Expression is MemberAccessExpressionSyntax member
+                && member.Name.Identifier.ValueText == "RegisterMessageRegistrationBuilder"
+            )
+            .ToArray();
+        Assert.That(
+            calls,
+            Has.Length.EqualTo(1),
+            $"{path} example {exampleIndex}; consumer symbol={explicitConsumerSymbol}: installed framework must retain builder registration"
+        );
+    }
+
     [TestCase("ScoreReporter", false)]
     [TestCase("ScoreReporter", true)]
     [TestCase("DiagnosticLogger", false)]

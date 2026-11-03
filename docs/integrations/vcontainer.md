@@ -24,6 +24,15 @@
 - DxMessaging installed via UPM
 - VContainer installed (Git URL or OpenUPM)
 
+These examples require VContainer. DxMessaging's integration assembly uses
+`VCONTAINER_PRESENT` as an assembly-local Version Define. Call the helpers directly
+from these framework-specific examples. If your application needs conditional code,
+configure [Version Defines on its own assembly](https://docs.unity3d.com/2021.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#define-symbols).
+
+For a custom application asmdef, reference `WallstopStudios.DxMessaging`,
+`WallstopStudios.DxMessaging.VContainer`, `VContainer`, and `VContainer.Unity` for
+these examples.
+
 ### 1. Create a LifetimeScope with DxMessaging
 
 ```csharp
@@ -40,11 +49,8 @@ public sealed class MessagingLifetimeScope : LifetimeScope
         // Register MessageBus as both concrete and interface through the safe helper.
         builder.RegisterDxMessagingBus();
 
-        // Optional: Enable automatic IMessageRegistrationBuilder binding
-        // Requires VCONTAINER_PRESENT define (auto-added by DxMessaging when VContainer detected)
-        #if VCONTAINER_PRESENT
+        // Register the builder for services that request it.
         builder.RegisterMessageRegistrationBuilder();
-        #endif
     }
 }
 ```
@@ -128,9 +134,7 @@ using DxMessaging.Unity.Integrations.VContainer; // Required for extension metho
 protected override void Configure(IContainerBuilder builder)
 {
     builder.RegisterDxMessagingBus();
-    #if VCONTAINER_PRESENT
     builder.RegisterMessageRegistrationBuilder();
-    #endif
 
     // Register your service
     builder.RegisterEntryPoint<PlayerService>();
@@ -230,6 +234,10 @@ public sealed class GameInitializer : IStartable
 
 VContainer's scoped lifetimes support per-scene message buses. This is useful for additive scenes or isolated gameplay features:
 
+Pass the prefab's `LifetimeScope` component to `LoadLevel`. Retain the returned child
+scope and dispose it when the level unloads. See VContainer's
+[child scope creation](https://vcontainer.hadashikick.jp/scoping/generate-child-with-code-first).
+
 ```csharp
 using DxMessaging.Core.MessageBus;
 using DxMessaging.Unity.Integrations.VContainer; // Required for extension method
@@ -245,15 +253,13 @@ public sealed class LevelLoader
         _parentScope = parentScope;
     }
 
-    public LifetimeScope LoadLevel(GameObject lifetimeScopePrefab)
+    public LifetimeScope LoadLevel(LifetimeScope lifetimeScopePrefab)
     {
         // Create a child scope with its own MessageBus
         return _parentScope.CreateChildFromPrefab(lifetimeScopePrefab, builder =>
         {
             builder.RegisterDxMessagingBus();
-            #if VCONTAINER_PRESENT
             builder.RegisterMessageRegistrationBuilder();
-            #endif
         });
     }
 }
@@ -339,12 +345,12 @@ public IEnumerator PlayMode_MessageBusIsolation()
 - [ ] Create `MessagingLifetimeScope` with `builder.RegisterDxMessagingBus()`
 - [ ] Add scope to your scene as a GameObject component
 - [ ] Import `DxMessaging.Unity.Integrations.VContainer` namespace for extension methods
-- [ ] Add `#if VCONTAINER_PRESENT` check and call `builder.RegisterMessageRegistrationBuilder()`
+- [ ] Call `builder.RegisterMessageRegistrationBuilder()` inside the scope's `Configure` method
 
 ### Integration
 
 - [ ] Use `IMessageRegistrationBuilder` in plain classes with `IStartable`/`IDisposable`
-- [ ] Add `MessagingComponentConfigurator` to prefabs with `MessagingComponent`
+- [ ] Register each `MessagingComponentConfigurator` with its scope to inject and configure its `MessagingComponent`
 - [ ] Replace `MessageHandler.MessageBus` references with injected `IMessageBus`
 - [ ] Consider using scoped buses for scene isolation
 
