@@ -109,7 +109,7 @@ var heal = new Heal(50);
 heal.EmitGameObjectTargeted(playerObject);
 
 // Only the player listens
-_ = token.RegisterComponentTargeted<Heal>(this, OnHeal);
+_ = token.RegisterGameObjectTargeted<Heal>(playerObject, OnHeal);
 ```
 
 #### Real-world uses
@@ -542,9 +542,15 @@ msg.EmitGameObjectBroadcast(gameObject);  // Now anyone can observe this source
 
 ### "What if I forget to unsubscribe?"
 
-#### The system handles cleanup automatically
+#### Cleanup follows the owner
 
-When your component is destroyed, DxMessaging cleans up registrations for you. No `OnDestroy()` needed. This reduces the likelihood of common memory leak patterns.
+`MessageAwareComponent` disposes its token when Unity destroys the component. If you override
+`OnDestroy()`, call `base.OnDestroy()` so that cleanup still runs.
+
+For direct tokens or builder leases, keep the token or lease and dispose it when its owner ends.
+A newly created token also needs `Enable()` after staging its handlers. See the
+[plain C# observer](../concepts/listening-patterns.md#development-debug-dump) and the
+[builder lifecycle examples](../advanced/registration-builders.md#code-examples).
 
 #### Old way (easy to forget)
 
@@ -553,14 +559,14 @@ void OnEnable() { GameManager.OnScoreChanged += Update; }
 void OnDisable() { GameManager.OnScoreChanged -= Update; }  // Forgot this? LEAK!
 ```
 
-##### DxMessaging way (automatic management)
+##### MessageAwareComponent registration
 
 ```csharp
 protected override void RegisterMessageHandlers() {
     base.RegisterMessageHandlers();
     _ = Token.RegisterUntargeted<ScoreChanged>(Update);
 }
-// Automatic cleanup when component is destroyed.
+// MessageAwareComponent disposes this token when the component is destroyed.
 ```
 
 ### "Is it slower than regular events?"

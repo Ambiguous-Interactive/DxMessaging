@@ -150,15 +150,15 @@ Is an entity announcing something happened? (Enemy died, Chest opened)
 ```csharp
 // Untargeted: "Everyone, the game paused!"
 [DxUntargetedMessage]
-public struct GamePaused { }
+public partial struct GamePaused { }
 
 // Targeted: "Player, heal yourself by 50!"
 [DxTargetedMessage]
-public struct Heal { public int amount; }
+public partial struct Heal { public int amount; }
 
 // Broadcast: "I (Enemy #3) just died!"
 [DxBroadcastMessage]
-public struct EnemyDied { public string enemyName; }
+public partial struct EnemyDied { public string enemyName; }
 ```
 
 **Need more detail?** See the [Visual Guide](visual-guide.md) for additional explanations, or [Message Types](../concepts/message-types.md) for technical details.

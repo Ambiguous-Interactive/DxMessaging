@@ -319,6 +319,7 @@ public sealed class BasicBuilderExample : MonoBehaviour
 ### DI Integration Pattern
 
 ```csharp
+using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;
 using UnityEngine;
 

@@ -25,9 +25,11 @@ internal sealed class RuntimeHashCompilationTests
         .ToArray();
 
     private static readonly Lazy<Assembly> UncheckedRuntime = new(() =>
-        CompilePortableRuntime(false)
+        Assembly.Load(CompilePortableRuntimeImage(false))
     );
-    private static readonly Lazy<Assembly> CheckedRuntime = new(() => CompilePortableRuntime(true));
+    private static readonly Lazy<Assembly> CheckedRuntime = new(() =>
+        Assembly.Load(CompilePortableRuntimeImage(true))
+    );
 
     private static IEnumerable<TestCaseData> RegistrationCases()
     {
@@ -182,7 +184,7 @@ internal sealed class RuntimeHashCompilationTests
     private static Assembly GetPortableRuntime(bool checkOverflow) =>
         (checkOverflow ? CheckedRuntime : UncheckedRuntime).Value;
 
-    private static Assembly CompilePortableRuntime(bool checkOverflow)
+    internal static byte[] CompilePortableRuntimeImage(bool checkOverflow)
     {
         DirectoryInfo? directory = new(TestContext.CurrentContext.TestDirectory);
         while (directory != null && !File.Exists(Path.Combine(directory.FullName, "package.json")))
@@ -215,7 +217,7 @@ internal sealed class RuntimeHashCompilationTests
         using MemoryStream stream = new();
         Microsoft.CodeAnalysis.Emit.EmitResult result = compilation.Emit(stream);
         Assert.That(result.Success, Is.True, string.Join(Environment.NewLine, result.Diagnostics));
-        return Assembly.Load(stream.ToArray());
+        return stream.ToArray();
     }
 
     private sealed class IdentityOnlyState
