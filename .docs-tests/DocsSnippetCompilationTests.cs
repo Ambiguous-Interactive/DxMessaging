@@ -11,30 +11,34 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocsSnippetCompilationTests
 {
-    /// <summary>Keep the targeted README example valid as one Unity class file.</summary>
-    /// <remarks>2026-11-03: The example put emission statements after its type declarations.</remarks>
-    [Test]
-    public void ReadmeTargetedExampleHasCompleteClassSyntax()
+    /// <summary>Keep receiver and sender examples valid as Unity class files.</summary>
+    /// <remarks>2026-11-03: Usage statements followed type declarations in three complete examples.</remarks>
+    [TestCase("README.md", "partial struct Heal")]
+    [TestCase("docs/guides/migration-guide.md", "partial struct TestMessage")]
+    [TestCase("docs/guides/patterns.md", "partial struct GameExit")]
+    public void ReceiverExamplesHaveCompleteClassSyntax(string relativePath, string marker)
     {
-        string path = Path.Combine(ResolveRepoRoot(), "README.md");
+        string path = Path.Combine(ResolveRepoRoot(), relativePath);
         string[] examples = ExtractCodeBlocks(path, "csharp")
-            .Where(source =>
-                source.Contains("partial struct Heal", StringComparison.Ordinal)
-                && source.Contains("OnHeal", StringComparison.Ordinal)
-            )
+            .Where(source => source.Contains(marker, StringComparison.Ordinal))
             .ToArray();
-        Assert.That(examples, Has.Length.EqualTo(1), path + ": targeted healing example");
-        Diagnostic[] errors = CSharpSyntaxTree
-            .ParseText(examples[0], new CSharpParseOptions(LanguageVersion.CSharp9))
-            .GetDiagnostics()
+        Assert.That(examples, Has.Length.EqualTo(1), path + ": " + marker);
+        SyntaxTree tree = CSharpSyntaxTree.ParseText(
+            examples[0],
+            new CSharpParseOptions(LanguageVersion.CSharp9)
+        );
+        Diagnostic[] errors = tree.GetDiagnostics()
             .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .ToArray();
         Assert.That(
             errors,
             Is.Empty,
-            path
-                + ": copy into Player.cs without top-level statements\n"
-                + string.Join("\n", errors.AsEnumerable())
+            path + ": complete class-file syntax\n" + string.Join("\n", errors.AsEnumerable())
+        );
+        Assert.That(
+            tree.GetRoot().DescendantNodes().OfType<GlobalStatementSyntax>(),
+            Is.Empty,
+            path + ": Unity class files cannot contain executable top-level statements"
         );
     }
 

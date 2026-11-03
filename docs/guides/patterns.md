@@ -502,55 +502,76 @@ public class PlayerStats : MonoBehaviour {
 
 ### Pattern: Priority-Ordered Execution for Complex Systems
 
-**Challenge:** Ensure SaveSystem runs before SceneLoader, AudioSystem fades before UI transitions.
+**Challenge:** Invoke save, audio and UI handlers in a chosen order.
+
+Save each component class in a matching `.cs` file with the shown imports. Attach and enable the
+three listeners before calling `ExitController.RequestExit`. This example logs handler invocation;
+replace each log with the corresponding application work. All components use the global bus here.
 
 ```csharp
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Unity;
+using UnityEngine;
+
 [DxUntargetedMessage]
 [DxAutoConstructor]
 public readonly partial struct GameExit { }
 
-public class SaveSystem : MessageAwareComponent {
-    protected override void RegisterMessageHandlers() {
+public sealed class SaveSystem : MessageAwareComponent
+{
+    protected override void RegisterMessageHandlers()
+    {
         base.RegisterMessageHandlers();
-        // Priority 0 = runs FIRST
         _ = Token.RegisterUntargeted<GameExit>(OnExit, priority: 0);
     }
 
-    void OnExit(in GameExit msg) {
-        SaveGame(); // Must complete before audio fades
+    private void OnExit(in GameExit message)
+    {
+        Debug.Log("Save handler: priority 0");
     }
 }
 
-public class AudioSystem : MessageAwareComponent {
-    protected override void RegisterMessageHandlers() {
+public sealed class AudioSystem : MessageAwareComponent
+{
+    protected override void RegisterMessageHandlers()
+    {
         base.RegisterMessageHandlers();
-        // Priority 5 = runs AFTER SaveSystem
         _ = Token.RegisterUntargeted<GameExit>(OnExit, priority: 5);
     }
 
-    void OnExit(in GameExit msg) {
-        FadeOutMusic(); // Runs after save
+    private void OnExit(in GameExit message)
+    {
+        Debug.Log("Audio handler: priority 5");
     }
 }
 
-public class UISystem : MessageAwareComponent {
-    protected override void RegisterMessageHandlers() {
+public sealed class UISystem : MessageAwareComponent
+{
+    protected override void RegisterMessageHandlers()
+    {
         base.RegisterMessageHandlers();
-        // Priority 10 = runs LAST
         _ = Token.RegisterUntargeted<GameExit>(OnExit, priority: 10);
     }
 
-    void OnExit(in GameExit msg) {
-        ShowExitAnimation(); // Runs after audio fade starts
+    private void OnExit(in GameExit message)
+    {
+        Debug.Log("UI handler: priority 10");
     }
 }
 
-// Emit once, all systems execute in priority order
-var msg = new GameExit();
-msg.Emit();
+public sealed class ExitController : MonoBehaviour
+{
+    public void RequestExit()
+    {
+        GameExit message = new();
+        message.Emit();
+    }
+}
 ```
 
-**Key insight:** Lower priority numbers run first. Use priority to eliminate race conditions and ensure deterministic ordering.
+**Key insight:** Lower priority numbers run first. Priority orders these synchronous callback
+invocations; asynchronous or deferred work needs its own completion coordination.
 
 #### Recommended priority ranges
 

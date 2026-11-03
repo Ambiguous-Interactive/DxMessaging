@@ -146,24 +146,45 @@ does not make the referenced object's fields immutable.
 1. **Install DxMessaging** via Package Manager
 1. **Read the [Visual Guide](../getting-started/visual-guide.md)** (5 minutes)
 1. **Import the Mini Combat sample** from Package Manager
-1. **Create a throwaway test scene** and try:
+1. **Create a throwaway test scene**. Save the component classes as `TestListener.cs` and
+   `TestEmitter.cs`, each with the shown imports, and attach both to active scene GameObjects.
+   Enter Play Mode to emit from `TestEmitter.Start` after the listener registers:
 
    ```csharp
+   using DxMessaging.Core.Attributes;
+   using DxMessaging.Core.Extensions;
+   using DxMessaging.Unity;
+   using UnityEngine;
+
    [DxUntargetedMessage]
    [DxAutoConstructor]
-   public readonly partial struct TestMessage { public readonly int value; }
+   public readonly partial struct TestMessage
+   {
+       public readonly int value;
+   }
 
-   public class TestListener : MessageAwareComponent {
-       protected override void RegisterMessageHandlers() {
+   public sealed class TestListener : MessageAwareComponent
+   {
+       protected override void RegisterMessageHandlers()
+       {
            base.RegisterMessageHandlers();
            _ = Token.RegisterUntargeted<TestMessage>(OnTest);
        }
-       void OnTest(in TestMessage m) => Debug.Log($"Got {m.value}");
+
+       private void OnTest(in TestMessage message)
+       {
+           Debug.Log($"Got {message.value}");
+       }
    }
 
-   // In another script:
-   var msg = new TestMessage(42);
-   msg.Emit();
+   public sealed class TestEmitter : MonoBehaviour
+   {
+       private void Start()
+       {
+           TestMessage message = new(42);
+           message.Emit();
+       }
+   }
    ```
 
 **Success criteria:** You understand the basic flow and have no build errors.
