@@ -213,6 +213,8 @@ internal sealed class DocumentationImportTests
         );
     }
 
+    [TestCase("VContainerInitializer", false)]
+    [TestCase("VContainerInitializer", true)]
     [TestCase("ScoreReporter", false)]
     [TestCase("ScoreReporter", true)]
     [TestCase("DiagnosticLogger", false)]
@@ -227,9 +229,19 @@ internal sealed class DocumentationImportTests
             root = root.Parent;
         }
         Assert.That(root, Is.Not.Null, "Locate the repository containing the provider guide.");
-        bool busFirst = exampleName == "ScoreReporter";
-        string page = busFirst ? "emit-shorthands.md" : "message-bus-providers.md";
-        string path = Path.Combine(root!.FullName, "docs", "advanced", page);
+        bool vcontainer = exampleName == "VContainerInitializer";
+        string className = vcontainer ? "GameInitializer" : exampleName;
+        bool busFirst = vcontainer || exampleName == "ScoreReporter";
+        string page =
+            vcontainer ? "vcontainer.md"
+            : busFirst ? "emit-shorthands.md"
+            : "message-bus-providers.md";
+        string path = Path.Combine(
+            root!.FullName,
+            "docs",
+            vcontainer ? "integrations" : "advanced",
+            page
+        );
         CSharpParseOptions options = ProviderOptions;
         CompilationUnitSyntax[] examples = Regex
             .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
@@ -241,7 +253,7 @@ internal sealed class DocumentationImportTests
             .Where(unit =>
                 unit.DescendantNodes()
                     .OfType<ClassDeclarationSyntax>()
-                    .Any(type => type.Identifier.ValueText == exampleName)
+                    .Any(type => type.Identifier.ValueText == className)
             )
             .ToArray();
         Assert.That(examples, Has.Length.EqualTo(1), path + ": " + exampleName);
@@ -249,6 +261,7 @@ internal sealed class DocumentationImportTests
         bool fieldProbe = busFirst || exampleName == "DiagnosticLogger";
         string expectedType = exampleName switch
         {
+            "VContainerInitializer" => "DxMessaging.Core.MessageBus.IMessageBus",
             "ScoreReporter" => "DxMessaging.Core.MessageBus.IMessageBus",
             "DiagnosticLogger" => "DxMessaging.Unity.InitialGlobalMessageBusProvider",
             "PlayerController" => "DxMessaging.Core.MessageBus.MessageBusRebindMode",
@@ -257,7 +270,10 @@ internal sealed class DocumentationImportTests
         string expression;
         if (fieldProbe)
         {
-            string fieldName = busFirst ? "messageBus" : "initialProvider";
+            string fieldName =
+                vcontainer ? "_messageBus"
+                : busFirst ? "messageBus"
+                : "initialProvider";
             FieldDeclarationSyntax field = published
                 .DescendantNodes()
                 .OfType<FieldDeclarationSyntax>()

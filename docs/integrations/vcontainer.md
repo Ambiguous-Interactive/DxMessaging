@@ -211,6 +211,14 @@ and [scene component registration](https://vcontainer.hadashikick.jp/registering
 For simple emission without listening, inject `IMessageBus` directly:
 
 ```csharp
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Core.MessageBus;
+using VContainer.Unity;
+
+[DxUntargetedMessage]
+public readonly partial struct GameStarted { }
+
 public sealed class GameInitializer : IStartable
 {
     private readonly IMessageBus _messageBus;
@@ -222,7 +230,7 @@ public sealed class GameInitializer : IStartable
 
     public void Start()
     {
-        var message = new GameStarted();
+        GameStarted message = new();
         _messageBus.EmitUntargeted(ref message);
     }
 }
@@ -277,61 +285,96 @@ public sealed class LevelLoader
 
 ### Unit Tests
 
+With `GameStarted` and `GameInitializer` from Pattern 3 in scope, register the concrete class to
+check constructor injection and a direct `Start()` call. This test does not install VContainer's
+player-loop dispatcher or verify automatic entry-point startup. Use `RegisterEntryPoint` in the
+application's lifetime scope when you want that startup lifecycle.
+
 ```csharp
+using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;
-using VContainer;
-using VContainer.Unity;
 using NUnit.Framework;
+using VContainer;
 
 [TestFixture]
-public class GameInitializerTests
+public sealed class GameInitializerTests
 {
     [Test]
-    public void Initialize_EmitsGameStarted()
+    public void StartEmitsGameStarted()
     {
-        // Arrange
-        var builder = new ContainerBuilder();
-        var bus = new MessageBus();
+        ContainerBuilder builder = new();
+        MessageBus bus = new();
         builder.RegisterInstance<IMessageBus>(bus);
-        builder.RegisterEntryPoint<GameInitializer>();
-        var container = builder.Build();
+        builder.Register<GameInitializer>(Lifetime.Singleton);
+        using IObjectResolver container = builder.Build();
 
         bool messageReceived = false;
-        var handler = new MessageHandler(new InstanceId(1), bus) { active = true };
+        MessageHandler handler = new(new InstanceId(1), bus) { active = true };
         using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
         _ = token.RegisterUntargeted<GameStarted>(
-            (in GameStarted msg) => messageReceived = true
+            (in GameStarted message) => messageReceived = true
         );
         token.Enable();
 
-        // Act
         container.Resolve<GameInitializer>().Start();
 
-        // Assert
-        Assert.IsTrue(messageReceived);
+        Assert.That(messageReceived, Is.True);
     }
 }
 ```
 
 ### Play-Mode Tests
 
-For play-mode tests, create a temporary `LifetimeScope`:
+Put the following fixture in a PlayMode test assembly with the Unity Test Framework, VContainer,
+and DxMessaging integration references. It uses `GameStarted` from Pattern 3. Each scope owns its
+container and native GameObject; disposing the listener token before the scopes removes its
+subscription. The test checks bus separation directly and needs no frame delay:
 
 ```csharp
-[UnityTest]
-public IEnumerator PlayMode_MessageBusIsolation()
+using System.Collections;
+using DxMessaging.Core;
+using DxMessaging.Core.MessageBus;
+using DxMessaging.Unity.Integrations.VContainer;
+using NUnit.Framework;
+using UnityEngine.TestTools;
+using VContainer;
+using VContainer.Unity;
+
+[TestFixture]
+public sealed class MessageBusPlayModeTests
 {
-    // Create isolated scope for this test
-    var scope = LifetimeScope.Create(builder =>
+    [UnityTest]
+    public IEnumerator ScopesKeepMessageBusesSeparate()
     {
-        builder.RegisterDxMessagingBus();
-    });
+        using LifetimeScope first = LifetimeScope.Create(
+            builder => builder.RegisterDxMessagingBus()
+        );
+        using LifetimeScope second = LifetimeScope.Create(
+            builder => builder.RegisterDxMessagingBus()
+        );
+        IMessageBus firstBus = first.Container.Resolve<IMessageBus>();
+        IMessageBus secondBus = second.Container.Resolve<IMessageBus>();
+        Assert.That(firstBus, Is.Not.SameAs(secondBus));
 
-    var bus = scope.Container.Resolve<IMessageBus>();
-    // ... test logic ...
+        int received = 0;
+        MessageHandler handler = new(new InstanceId(1), firstBus) { active = true };
+        using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, firstBus);
+        _ = token.RegisterUntargeted<GameStarted>(
+            (in GameStarted message) => ++received
+        );
+        token.Enable();
 
-    scope.Dispose();  // Clean up
-    yield return null;
+        GameStarted message = new();
+        secondBus.UntargetedBroadcast(ref message);
+        Assert.That(received, Is.Zero);
+        firstBus.UntargetedBroadcast(ref message);
+        Assert.That(received, Is.EqualTo(1));
+
+        token.Dispose();
+        firstBus.UntargetedBroadcast(ref message);
+        Assert.That(received, Is.EqualTo(1));
+        yield break;
+    }
 }
 ```
 
