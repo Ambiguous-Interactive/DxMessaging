@@ -23,6 +23,62 @@ internal sealed class DocumentationImportTests
         )
     );
 
+    /// <summary>Check the inherited bus configuration call against the production declaration.</summary>
+    /// <remarks>2026-11-03: ZenjectAwareComponent called Configure instead of its inherited API.</remarks>
+    [Test]
+    public void ZenjectAwareExampleUsesTheActualInheritedConfigurationMethod()
+    {
+        DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
+        {
+            root = root.Parent;
+        }
+        Assert.That(root, Is.Not.Null, "Locate the integration guide and production component.");
+        string page = Path.Combine(root!.FullName, "docs", "integrations", "zenject.md");
+        CompilationUnitSyntax example = Regex
+            .Matches(File.ReadAllText(page), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
+            .Select(match =>
+                CSharpSyntaxTree.ParseText(match.Groups["code"].Value).GetCompilationUnitRoot()
+            )
+            .Single(unit =>
+                unit.DescendantNodes()
+                    .OfType<ClassDeclarationSyntax>()
+                    .Any(type => type.Identifier.ValueText == "ZenjectAwareComponent")
+            );
+        InvocationExpressionSyntax call = example
+            .DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Single(invocation =>
+                invocation.ArgumentList.Arguments.Any(argument =>
+                    argument.Expression.ToString() == "MessageBusRebindMode.RebindActive"
+                )
+            );
+        IdentifierNameSyntax? calledMethod = call.Expression as IdentifierNameSyntax;
+        Assert.That(calledMethod, Is.Not.Null, page + ": inherited method call");
+        SyntaxNode production = CSharpSyntaxTree
+            .ParseText(
+                File.ReadAllText(
+                    Path.Combine(root.FullName, "Runtime", "Unity", "MessageAwareComponent.cs")
+                ),
+                ProviderOptions
+            )
+            .GetRoot();
+        MethodDeclarationSyntax declaration = production
+            .DescendantNodes()
+            .OfType<MethodDeclarationSyntax>()
+            .Single(method =>
+                method.Modifiers.Any(SyntaxKind.PublicKeyword)
+                && method.ParameterList.Parameters.Count == 2
+                && method.ParameterList.Parameters[0].Type?.ToString() == "IMessageBus"
+                && method.ParameterList.Parameters[1].Type?.ToString() == "MessageBusRebindMode"
+            );
+        Assert.That(
+            calledMethod!.Identifier.ValueText,
+            Is.EqualTo(declaration.Identifier.ValueText),
+            page + ": use the actual inherited IMessageBus configuration API"
+        );
+    }
+
     /// <summary>Resolve bridge message attributes through the imports printed with the example.</summary>
     /// <remarks>2026-11-03: The complete Zenject bridge omitted the message attribute namespace.</remarks>
     [TestCase("DxUntargetedMessage", false)]

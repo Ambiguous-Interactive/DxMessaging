@@ -159,34 +159,41 @@ using Zenject;
 public sealed class MessagingComponentConfigurator : MonoBehaviour
 {
     [Inject]
-    private IMessageBus _messageBus;
-
-    private void Awake()
+    public void Construct(IMessageBus messageBus)
     {
         MessagingComponent component = GetComponent<MessagingComponent>();
-        component.Configure(_messageBus, MessageBusRebindMode.RebindActive);
+        component.Configure(messageBus, MessageBusRebindMode.RebindActive);
     }
 }
 ```
 
 #### Usage
 
-1. Add `MessagingComponentConfigurator` alongside any `MessagingComponent` in your prefabs
-1. Zenject will inject the bus before `RegisterMessageHandlers` is called
-1. Your message handlers now use the container-managed bus
+1. Add `MessagingComponentConfigurator` beside each `MessagingComponent` that should use the bus.
+1. Add a configured `SceneContext` to the scene; its injection pass calls `Construct` before
+   ordinary scene `Awake` methods. Create runtime prefabs through Zenject's prefab factories so they
+   receive injection too.
+1. Keep component-specific bus/provider settings consistent with the container bus.
 
-**Alternative approach:** Extend `MessageAwareComponent` and override `Awake`:
+`MessageAwareComponent.Awake` stages registrations and `OnEnable` activates them. Configuring in a
+separate component's `Awake` would depend on their relative execution order. `RebindActive` can move
+existing registrations, but it does not replay messages emitted before configuration. Parameterless
+emission shorthands still select the global bus; pass the container bus explicitly when emitting.
+See [Extenject's context order](https://github.com/Mathijs-Bakker/Extenject#zenject-order-of-operations).
+
+Alternatively, derive from `MessageAwareComponent` and configure its bus during injection:
 
 ```csharp
-public class ZenjectAwareComponent : MessageAwareComponent
+using DxMessaging.Core.MessageBus;
+using DxMessaging.Unity;
+using Zenject;
+
+public sealed class ZenjectAwareComponent : MessageAwareComponent
 {
     [Inject]
-    private IMessageBus _messageBus;
-
-    protected override void Awake()
+    public void Construct(IMessageBus messageBus)
     {
-        Configure(_messageBus, MessageBusRebindMode.RebindActive);
-        base.Awake();
+        ConfigureMessageBus(messageBus, MessageBusRebindMode.RebindActive);
     }
 }
 ```
@@ -198,6 +205,14 @@ public class ZenjectAwareComponent : MessageAwareComponent
 For simple cases, inject `IMessageBus` and emit messages directly:
 
 ```csharp
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Core.MessageBus;
+using Zenject;
+
+[DxUntargetedMessage]
+public readonly partial struct GameStarted { }
+
 public sealed class GameInitializer : IInitializable
 {
     private readonly IMessageBus _messageBus;
@@ -209,10 +224,16 @@ public sealed class GameInitializer : IInitializable
 
     public void Initialize()
     {
-        var message = new GameStarted();
+        GameStarted message = new();
         _messageBus.EmitUntargeted(ref message);
     }
 }
+```
+
+To run it through the context's startup lifecycle, add this binding to an installer on that context:
+
+```csharp
+Container.BindInterfacesAndSelfTo<GameInitializer>().AsSingle();
 ```
 
 ---
@@ -297,36 +318,34 @@ public override void InstallBindings()
 
 ### Unit Tests
 
+With `GameStarted` and `GameInitializer` from Pattern 3 in scope, test their emission with a fresh
+bus. This plain NUnit test calls `Initialize()` directly; it does not test Zenject context startup
+or Unity injection order.
+
 ```csharp
+using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;
-using Zenject;
 using NUnit.Framework;
 
 [TestFixture]
-public class GameInitializerTests : ZenjectUnitTestFixture
+public sealed class GameInitializerTests
 {
     [Test]
-    public void Initialize_EmitsGameStarted()
+    public void InitializeEmitsGameStarted()
     {
-        // Arrange
-        var bus = new MessageBus();
-        Container.Bind<IMessageBus>().FromInstance(bus).AsSingle();
-        Container.BindInterfacesAndSelfTo<GameInitializer>().AsSingle();
-
+        MessageBus bus = new();
         bool messageReceived = false;
-        var handler = new MessageHandler(new InstanceId(1), bus) { active = true };
+        MessageHandler handler = new(new InstanceId(1), bus) { active = true };
         using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
         _ = token.RegisterUntargeted<GameStarted>(
-            (in GameStarted msg) => messageReceived = true
+            (in GameStarted message) => messageReceived = true
         );
         token.Enable();
 
-        // Act
-        var initializer = Container.Resolve<GameInitializer>();
+        GameInitializer initializer = new(bus);
         initializer.Initialize();
 
-        // Assert
-        Assert.IsTrue(messageReceived);
+        Assert.That(messageReceived, Is.True);
     }
 }
 ```
