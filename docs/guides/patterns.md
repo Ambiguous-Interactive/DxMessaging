@@ -41,7 +41,7 @@
 | Migrate from C# events                       | [Pattern 9: Bridging Legacy](#9-bridging-legacy-unity-messaging)                                             |
 | Handle persistent systems across scene loads | [Pattern: Cross-Scene Persistent](#pattern-cross-scene-persistent-systems)                                   |
 | See what's happening (debug message flow)    | [Pattern 11: Diagnostics](#11-diagnostics-and-tuning)                                                        |
-| Build a battle royale / large multiplayer    | [Pattern: Battle Royale Example](#real-world-production-example-battle-royale-game)                          |
+| Build a battle royale / large multiplayer    | [Pattern: Battle Royale Example](#example-battle-royale-ui)                                                  |
 | Use with Scriptable Object Architecture      | [Pattern 14: SOA Compatibility](#14-compatibility-with-scriptable-object-architecture-soa)                   |
 
 ---
@@ -76,7 +76,7 @@
 - [Efficient Interception at Scale](#pattern-efficient-interception-at-scale)
 - [Post-Processing for Analytics at Scale](#pattern-post-processing-for-analytics-at-scale)
 - [Performance Optimization Patterns](#performance-optimization-patterns-at-scale)
-- [Production Example: Battle Royale Game](#real-world-production-example-battle-royale-game)
+- [Production Example: Battle Royale Game](#example-battle-royale-ui)
 
 ---
 
@@ -725,21 +725,29 @@ void LateUpdate() {
 }
 ```
 
-**Impact:** Reduces message traffic by 10-100x in high-frequency scenarios.
+This example coalesces changes made before `LateUpdate` into one emission from that callback.
+Intermediate health values are omitted. The reduction depends on how many changes occur between
+flushes; this example does not measure throughput.
 
 ### Scaling Guidelines
 
-| Entity Count | Message Rate | Recommendations                                   |
-| ------------ | ------------ | ------------------------------------------------- |
-| 1-10         | Any          | Default settings fine                             |
-| 10-50        | <1000/sec    | Disable diagnostics in builds                     |
-| 50-100       | <5000/sec    | Batch emissions, avoid GlobalAcceptAll            |
-| 100-500      | <10k/sec     | Use local buses for subsystems, profile carefully |
-| 500+         | <20k/sec     | Consider ECS or native code for hot paths         |
+Measure representative workloads on the target hardware, Unity backend and build configuration.
+Record subscriber fan-out and callback work alongside the message rate:
 
-**Rule of thumb:** If you're emitting >20,000 messages/second, you're likely using DxMessaging for something better suited to ECS or direct method calls.
+| Workload                  | Measurements to collect                                          |
+| ------------------------- | ---------------------------------------------------------------- |
+| Many active entities      | Registrations per entity, subscriber fan-out and retained memory |
+| Frequent emissions        | Delivery rate, callback time, latency and frame budget           |
+| Spawn, despawn or pooling | Registration work, cleanup work and managed allocations          |
+| Diagnostics enabled       | Capture mode, recording cost and retained history                |
 
-### Real-World Production Example: Battle Royale Game
+Compare results within the scope recorded by the
+[performance benchmarks](../architecture/performance.md). Use the
+[measurement methodology](../runbooks/perf-benchmark-methodology.md) when collecting new results.
+
+<a id="real-world-production-example-battle-royale-game"></a>
+
+### Example: Battle Royale UI
 
 **Scenario:** 100 players, each with health/armor/weapons. UI needs to show:
 
