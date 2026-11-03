@@ -117,7 +117,7 @@ public sealed class DamageSystem : IStartable, IDisposable
 }
 ```
 
-Tip: Define `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, or `REFLEX_PRESENT` to enable the optional shims under [Runtime/Unity/Integrations](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Runtime/Unity/Integrations) that bind the builder automatically for those containers.
+Tip: Use your container's [installer or registration extensions](../integrations/index.md) to bind the bus and builder. The optional shims compile when `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, or `REFLEX_PRESENT` is enabled; follow the corresponding framework setup.
 
 ## Interceptors and post-processors
 

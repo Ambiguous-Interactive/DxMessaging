@@ -689,8 +689,8 @@ and disposes singleton/scoped entry points with their scope. See
 [VContainer's entry point lifecycle](https://vcontainer.hadashikick.jp/integrations/entrypoint).
 Use your container's own startup and disposal bindings for other frameworks.
 
-- **Unity scene code:** Call `MessagingComponent.CreateRegistrationBuilder()` during dependency injection and share the lease across helper services or pooled objects.
-- **Container shims:** Define `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, or `REFLEX_PRESENT` to enable the built-in installers/extensions that register the builder automatically when those frameworks are present.
+- **Unity scene code:** Call `MessagingComponent.CreateRegistrationBuilder()` to use the component's configured bus/provider. Give each independent service or pooled owner its own lease and dispose it when that owner finishes. The component does not track these leases.
+- **Container shims:** Register the bus and builder through your container's [installer or registration extensions](../integrations/index.md). The `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, and `REFLEX_PRESENT` symbols enable the optional shims; follow the framework setup to bind their services.
 - **Tests:** Prefer the builder to create isolated tokens tied to the test fixture lifecycle.
 
 ### "Should we migrate tests?"

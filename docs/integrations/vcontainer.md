@@ -141,38 +141,64 @@ protected override void Configure(IContainerBuilder builder)
 
 ### Pattern 2: Configure MessagingComponents (For Existing MonoBehaviours)
 
+Configure the messaging component from an injected method. The container must register
+and inject the configurator; the scope below registers one from its scene hierarchy.
+Save each component class in a `.cs` file with the same name.
+
 ```csharp
 using DxMessaging.Core.MessageBus;
 using DxMessaging.Unity;
 using UnityEngine;
 using VContainer;
-using VContainer.Unity;
 
 [RequireComponent(typeof(MessagingComponent))]
-public sealed class MessagingComponentConfigurator : MonoBehaviour, IStartable
+public sealed class MessagingComponentConfigurator : MonoBehaviour
 {
     [Inject]
-    private readonly IMessageBus _messageBus;
-
-    private MessagingComponent _messagingComponent;
-
-    private void Awake()
+    public void Construct(IMessageBus messageBus)
     {
-        _messagingComponent = GetComponent<MessagingComponent>();
+        GetComponent<MessagingComponent>().Configure(
+            messageBus,
+            MessageBusRebindMode.RebindActive
+        );
     }
+}
+```
 
-    public void Start()
+Use this scope for the example, or add its component registration to your existing
+scope after registering the bus:
+
+```csharp
+using DxMessaging.Unity.Integrations.VContainer;
+using VContainer;
+using VContainer.Unity;
+
+public sealed class ConfiguredMessagingScope : LifetimeScope
+{
+    protected override void Configure(IContainerBuilder builder)
     {
-        _messagingComponent.Configure(_messageBus, MessageBusRebindMode.RebindActive);
+        builder.RegisterDxMessagingBus();
+        builder.RegisterComponentInHierarchy<MessagingComponentConfigurator>();
     }
 }
 ```
 
 #### Usage
 
-1. Add `MessagingComponentConfigurator` alongside any `MessagingComponent` in your prefabs
-1. VContainer will inject the bus via `IStartable.Start()` before handlers are registered
-1. Your message handlers now use the container-managed bus
+1. Add `ConfiguredMessagingScope` to the scene and place one `MessagingComponentConfigurator`
+   alongside the `MessagingComponent` to configure.
+1. Building the scope injects the bus and calls `Construct`. For multiple components,
+   register each explicit component reference with `builder.RegisterComponent(configurator)`.
+1. Emit through the same injected `IMessageBus` to reach listeners on that bus.
+
+`MessageAwareComponent` stages handlers in `Awake()` and normally enables them in
+`OnEnable()`. Injection can happen after those callbacks. `RebindActive` moves existing
+active registrations to the injected bus and selects it for future registrations.
+Messages emitted before configuration are not replayed. Configuring a receiving
+component does not change the global bus used by parameterless emission helpers.
+
+See VContainer's [method injection](https://vcontainer.hadashikick.jp/resolving/method-injection)
+and [scene component registration](https://vcontainer.hadashikick.jp/registering/register-monobehaviour).
 
 ---
 
