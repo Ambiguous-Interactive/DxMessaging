@@ -68,6 +68,7 @@ public sealed class MessagingLifetimeScope : LifetimeScope
 Use `IMessageRegistrationBuilder` to create message handlers in non-MonoBehaviour classes:
 
 ```csharp
+using System;
 using DxMessaging.Core.MessageBus;
 using DxMessaging.Core.Attributes;
 using DxMessaging.Core;

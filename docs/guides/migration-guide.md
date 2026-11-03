@@ -637,11 +637,19 @@ Phase them out gradually:
 
 Once the bus/provider abstractions are in place, wire listeners through the registration builder instead of hand-rolling handler lifecycles. Benefits:
 
-- Container-managed lifetimes (`IDisposable`, `IInitializable`, `IStartable`, etc.) automatically enable/disable registrations.
+- Activate and dispose each service's lease from its container startup and disposal callbacks.
 - Centralises diagnostics toggles and message bus selection.
 - Keeps MonoBehaviours and pure C# services on the same path.
 
+This example uses VContainer's `IStartable` interface and assumes your application already
+defines the untargeted `InventoryChanged` message. `Start()` activates the lease;
+`Dispose()` releases its registrations.
+
 ```csharp
+using System;
+using DxMessaging.Core.MessageBus;
+using VContainer.Unity;
+
 public sealed class InventoryService : IStartable, IDisposable
 {
     private readonly MessageRegistrationLease lease;
@@ -673,6 +681,13 @@ public sealed class InventoryService : IStartable, IDisposable
     }
 }
 ```
+
+In the [VContainer scope setup](../integrations/vcontainer.md#register-the-service-in-your-scope),
+register this service with `builder.RegisterEntryPoint<InventoryService>()` after registering
+the bus and registration builder. VContainer calls `Start()` near `MonoBehaviour.Start()`
+and disposes singleton/scoped entry points with their scope. See
+[VContainer's entry point lifecycle](https://vcontainer.hadashikick.jp/integrations/entrypoint).
+Use your container's own startup and disposal bindings for other frameworks.
 
 - **Unity scene code:** Call `MessagingComponent.CreateRegistrationBuilder()` during dependency injection and share the lease across helper services or pooled objects.
 - **Container shims:** Define `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, or `REFLEX_PRESENT` to enable the built-in installers/extensions that register the builder automatically when those frameworks are present.

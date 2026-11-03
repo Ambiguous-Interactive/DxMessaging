@@ -84,7 +84,14 @@ void OnAnyDamage(in InstanceId src, in TookDamage m) { /* ... */ }
 
 ## Register (DI / services)
 
+This service uses VContainer's `IStartable` and your application's untargeted
+`CombatStarted` message. Register it with `builder.RegisterEntryPoint<DamageSystem>()`
+after the bus and registration builder in your [VContainer scope](../integrations/vcontainer.md#register-the-service-in-your-scope).
+`Start()` activates the lease; scope disposal calls `Dispose()` to release it.
+
 ```csharp
+using System;
+using VContainer.Unity;
 using DxMessaging.Core.MessageBus;
 
 public sealed class DamageSystem : IStartable, IDisposable
