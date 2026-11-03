@@ -413,7 +413,8 @@ container.RegisterInstance<IMessageBus>(new MessageBus());
 var provider = new ContainerMessageBusProvider(container);
 MessageHandler.SetGlobalMessageBus(provider.Resolve());
 
-// Now all components use the container bus
+// Default registration and emission paths now resolve this global bus.
+// Explicit component bus/provider settings remain in effect.
 ```
 
 ### Pattern 3: Scene-Scoped Buses
