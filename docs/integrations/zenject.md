@@ -24,34 +24,46 @@
 - DxMessaging installed via UPM
 - Zenject/Extenject installed (source or UPM)
 
+These examples require Zenject/Extenject. DxMessaging's `ZENJECT_PRESENT` Version
+Define applies to its integration assembly. Add your own assembly's Version Define
+if your application conditionally compiles framework-specific code; see
+[Unity's assembly definition rules](https://docs.unity3d.com/2021.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#define-symbols).
+
 ### 1. Create an Installer
 
 Create a `DxMessagingInstaller` to bind the message bus to your Zenject container:
 
 ```csharp
 using DxMessaging.Core.MessageBus;
+using DxMessaging.Unity.Integrations.Zenject;
 using Zenject;
+using ZenjectBusProvider = DxMessaging.Unity.Integrations.Zenject.DxMessagingRegistrationInstaller.ContainerMessageBusProvider;
 
 public sealed class DxMessagingInstaller : MonoInstaller
 {
     public override void InstallBindings()
     {
-        // Bind MessageBus as a singleton and expose IMessageBus interface
-        Container.BindInterfacesAndSelfTo<MessageBus>().AsSingle();
-
-        // Optional: Enable automatic IMessageRegistrationBuilder binding
-        // Requires ZENJECT_PRESENT define (auto-added by DxMessaging when Zenject detected)
-        #if ZENJECT_PRESENT
-        Container.RegisterMessageRegistrationBuilder();
-        #endif
+        Container.BindDxMessagingBus();
+        Container.Bind<IMessageRegistrationBuilder>()
+            .FromMethod(context => new MessageRegistrationBuilder(
+                new ZenjectBusProvider(
+                    context.Container,
+                    context.Container.Resolve<IMessageBus>()
+                )
+            ))
+            .AsTransient();
     }
 }
 ```
 
+The factory creates a builder backed by this container's resolved `IMessageBus`.
+`ZenjectBusProvider` is an alias for the existing provider type supplied by DxMessaging.
+Save the installer as `DxMessagingInstaller.cs`.
+
 #### Add to your ProjectContext
 
 1. Select (or create) your `ProjectContext` prefab
-1. Add `DxMessagingInstaller` as a MonoInstaller
+1. Add the `DxMessagingInstaller` component and add its reference to the context's installer list
 1. Save the prefab
 
 ---
@@ -63,6 +75,7 @@ public sealed class DxMessagingInstaller : MonoInstaller
 Use `IMessageRegistrationBuilder` to create message handlers in non-MonoBehaviour classes:
 
 ```csharp
+using System;
 using DxMessaging.Core.MessageBus;
 using DxMessaging.Core.Attributes;
 using DxMessaging.Core;
@@ -115,6 +128,8 @@ public sealed class PlayerController : IInitializable, IDisposable
 #### Register the service in your installer
 
 ```csharp
+using Zenject;
+
 public sealed class GameInstaller : MonoInstaller
 {
     public override void InstallBindings()
@@ -123,6 +138,10 @@ public sealed class GameInstaller : MonoInstaller
     }
 }
 ```
+
+Add `GameInstaller` to the same context's installer list. Its `IInitializable` and
+`IDisposable` bindings connect the service's lease activation and cleanup to that
+context's lifetime. See [Extenject's installer setup](https://github.com/Mathijs-Bakker/Extenject#hello-world-example).
 
 ---
 
@@ -311,9 +330,9 @@ public class GameInitializerTests : ZenjectUnitTestFixture
 ### Initial Setup
 
 - [ ] Install DxMessaging and Zenject/Extenject
-- [ ] Create `DxMessagingInstaller` with `Container.BindInterfacesAndSelfTo<MessageBus>()`
-- [ ] Add installer to your `ProjectContext`
-- [ ] Add `#if ZENJECT_PRESENT` check and call `Container.RegisterMessageRegistrationBuilder()`
+- [ ] Create `DxMessagingInstaller` with `Container.BindDxMessagingBus()` and the builder factory above
+- [ ] Add the installer component to your `ProjectContext` and its installer list
+- [ ] Import `DxMessaging.Unity.Integrations.Zenject` and bind `IMessageRegistrationBuilder`
 
 ### Integration
 
