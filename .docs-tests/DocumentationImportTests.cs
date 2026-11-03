@@ -23,6 +23,87 @@ internal sealed class DocumentationImportTests
         )
     );
 
+    /// <summary>Resolve bridge message attributes through the imports printed with the example.</summary>
+    /// <remarks>2026-11-03: The complete Zenject bridge omitted the message attribute namespace.</remarks>
+    [TestCase("DxUntargetedMessage", false)]
+    [TestCase("DxUntargetedMessage", true)]
+    [TestCase("DxAutoConstructor", false)]
+    [TestCase("DxAutoConstructor", true)]
+    public void ZenjectBridgeAttributesResolveFromDocumentedImports(
+        string attributeName,
+        bool qualifyName
+    )
+    {
+        DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
+        {
+            root = root.Parent;
+        }
+        Assert.That(root, Is.Not.Null, "Locate the Zenject integration guide.");
+        string path = Path.Combine(root!.FullName, "docs", "integrations", "zenject.md");
+        string[] examples = Regex
+            .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
+            .Select(match => match.Groups["code"].Value)
+            .Where(code =>
+                code.Contains("public sealed class DxToSignalBridge", StringComparison.Ordinal)
+            )
+            .ToArray();
+        Assert.That(examples, Has.Length.EqualTo(1), path + ": complete bridge example");
+        CompilationUnitSyntax published = CSharpSyntaxTree
+            .ParseText(examples[0], ProviderOptions)
+            .GetCompilationUnitRoot();
+        AttributeSyntax printed = published
+            .DescendantNodes()
+            .OfType<AttributeSyntax>()
+            .Single(attribute => attribute.Name.ToString() == attributeName);
+        string expectedType = "DxMessaging.Core.Attributes." + attributeName + "Attribute";
+        string imports = string.Join(
+            "\n",
+            published
+                .Usings.Where(import =>
+                    import.Name?.ToString().StartsWith("DxMessaging.", StringComparison.Ordinal)
+                    == true
+                )
+                .Select(import => import.ToFullString())
+        );
+        string name = qualifyName ? "global::" + expectedType : printed.Name.ToString();
+        SyntaxTree tree = CSharpSyntaxTree.ParseText(
+            imports + "\n[" + name + "] public readonly partial struct DocumentedMessage { }",
+            ProviderOptions,
+            "DocumentedBridgeMessage.cs"
+        );
+        string references =
+            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "BridgeAttributeImports",
+            new[] { tree },
+            references
+                .Split(Path.PathSeparator)
+                .Select(file => MetadataReference.CreateFromFile(file))
+                .Append(PortableRuntime.Value),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
+        Assert.That(
+            emitted.Success,
+            Is.True,
+            $"{attributeName}; qualified control={qualifyName}: \n"
+                + string.Join("\n", emitted.Diagnostics)
+        );
+        AttributeSyntax compiled = tree.GetRoot()
+            .DescendantNodes()
+            .OfType<AttributeSyntax>()
+            .Single();
+        IMethodSymbol? constructor =
+            compilation.GetSemanticModel(tree).GetSymbolInfo(compiled).Symbol as IMethodSymbol;
+        Assert.That(constructor?.ContainingType.ToDisplayString(), Is.EqualTo(expectedType), path);
+    }
+
     [TestCase(0, false)]
     [TestCase(0, true)]
     [TestCase(1, false)]

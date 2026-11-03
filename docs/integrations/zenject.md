@@ -222,9 +222,9 @@ public sealed class GameInitializer : IInitializable
 If you're gradually migrating from Zenject Signals to DxMessaging, you can create a bridge:
 
 ```csharp
-using DxMessaging.Core;
-using DxMessaging.Core.MessageBus;
 using System;
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.MessageBus;
 using Zenject;
 
 [DxUntargetedMessage]
@@ -236,48 +236,56 @@ public readonly partial struct SceneTransition
 
 public sealed class DxToSignalBridge : IInitializable, IDisposable
 {
-    private readonly IMessageBus _messageBus;
     private readonly SignalBus _signalBus;
-    private MessageRegistrationToken _token;
+    private readonly MessageRegistrationLease _lease;
 
-    public DxToSignalBridge(IMessageBus messageBus, SignalBus signalBus)
+    public DxToSignalBridge(
+        IMessageRegistrationBuilder registrationBuilder,
+        SignalBus signalBus
+    )
     {
-        _messageBus = messageBus;
         _signalBus = signalBus;
+        _lease = registrationBuilder.Build(new MessageRegistrationBuildOptions
+        {
+            Configure = token =>
+            {
+                _ = token.RegisterUntargeted<SceneTransition>(OnSceneTransition);
+            },
+        });
     }
 
     public void Initialize()
     {
-        // Create a handler to listen to DxMessaging events
-        var handler = new MessageHandler(new InstanceId(0), _messageBus)
-        {
-            active = true
-        };
-        _token = MessageRegistrationToken.Create(handler, _messageBus);
-
-        // Bridge DxMessaging -> Zenject Signals
-        _ = _token.RegisterUntargeted<SceneTransition>(OnSceneTransition);
-        _token.Enable();
+        _lease.Activate();
     }
 
     public void Dispose()
     {
-        _token?.Disable();
+        _lease.Dispose();
     }
 
     private void OnSceneTransition(in SceneTransition message)
     {
-        // Forward to SignalBus for legacy consumers
         _signalBus.Fire(message);
     }
 }
 ```
 
+The builder stages one subscription in the constructor. `Initialize()` activates the lease;
+repeated initialization keeps that same registration. `Dispose()` removes it, and initialization
+after disposal throws `ObjectDisposedException`. The bridge uses the builder's configured bus.
+
 ### Register the bridge in your installer
+
+Add these bindings to an installer on the same context as `DxMessagingInstaller`.
+Install Zenject's signal support once per context before declaring the signal. If another
+installer already installs `SignalBusInstaller`, keep that installation and add only the
+bridge binding and signal declaration below:
 
 ```csharp
 public override void InstallBindings()
 {
+    SignalBusInstaller.Install(Container);
     Container.BindInterfacesAndSelfTo<DxToSignalBridge>().AsSingle();
     Container.DeclareSignal<SceneTransition>();
 }
