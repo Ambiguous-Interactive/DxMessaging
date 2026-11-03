@@ -418,31 +418,66 @@ MessageHandler.SetGlobalMessageBus(provider.Resolve());
 
 ### Pattern 3: Scene-Scoped Buses
 
-Create a provider that returns a scene-specific bus:
+Configure the existing `MessagingComponent` instances in the manager's scene, then emit
+on the same bus:
 
 ```csharp
+using System;
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Core.MessageBus;
+using DxMessaging.Unity;
+using UnityEngine;
+
+[DxUntargetedMessage]
+[DxAutoConstructor]
+public readonly partial struct SceneReady
+{
+    public readonly string sceneName;
+}
+
 public class SceneMessageBusManager : MonoBehaviour
 {
     private IMessageBus _sceneBus;
 
+    public IMessageBus Bus => _sceneBus
+        ?? throw new InvalidOperationException("Scene bus is not initialized.");
+
     private void Awake()
     {
-        // Create scene-local bus
         _sceneBus = new MessageBus();
+        RuntimeMessageBusProvider provider = new RuntimeMessageBusProvider(_sceneBus);
 
-        // Configure all components in this scene
-        var components = GetComponentsInChildren<MessagingComponent>();
-        var provider = new RuntimeMessageBusProvider(_sceneBus);
-
-        foreach (var component in components)
+        foreach (GameObject root in gameObject.scene.GetRootGameObjects())
         {
-            component.Configure(provider, MessageBusRebindMode.RebindActive);
+            foreach (MessagingComponent component in root.GetComponentsInChildren<MessagingComponent>(true))
+            {
+                if (component != null)
+                {
+                    component.Configure(provider, MessageBusRebindMode.RebindActive);
+                }
+            }
         }
+    }
+
+    private void Start()
+    {
+        SceneReady message = new SceneReady(gameObject.scene.name);
+        message.Emit(Bus);
     }
 }
 ```
 
-Messages sent in this scene stay in this scene.
+This uses `RuntimeMessageBusProvider` from the runtime override example above.
+The setup visits every root in the manager's scene and includes inactive descendants.
+Configure components created later with the same provider during their setup. Keep the
+manager in that scene.
+
+Other producers must pass `manager.Bus` after initialization, or a provider that resolves
+that bus. Helpers select an explicit bus first, then a non-null provider result, then the
+global bus. A provider exception propagates. The target or source identity selects recipients
+within the chosen bus; it does not select that bus from a GameObject's scene. Configuring a
+receiver does not change emitter defaults.
 
 ### Pattern 4: Runtime Provider Override
 
