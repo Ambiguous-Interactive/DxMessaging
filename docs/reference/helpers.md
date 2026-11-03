@@ -109,6 +109,32 @@ public VideoSettingsChanged(int width, int height)
 > signatures also need support from your Unity version and scripting backend; the
 > generator does not add that support.
 
+**Fixed in v4.0.0:** Generated struct constructors also initialize excluded
+instance fields and auto-property backing storage to their type defaults. Existing
+field, auto-property, and field-like event initializers retain their values and
+execute once. User parameterless constructors are not invoked.
+
+For example, this constructor takes only `amount`; `PreviousAmount` starts at zero:
+
+```csharp
+using DxMessaging.Core.Attributes;
+
+[DxAutoConstructor]
+public readonly partial struct DamageState
+{
+    public readonly int amount;
+    public int PreviousAmount { get; }
+}
+```
+
+When compiling as C# 10, a struct that mixes initialized and uninitialized explicit-interface
+auto-properties with a user parameterless constructor needs an explicit choice.
+Add an initializer to every explicit-interface auto-property, use named backing
+fields, or remove `[DxAutoConstructor]` and write the constructor yourself.
+[`DXMSG011`](analyzers.md#dxmsg011-cannot-preserve-explicit-interface-struct-initializers)
+identifies this combination. This restriction does not affect classes or C# 11
+or later language versions. It does not change the supported Unity floor.
+
 ### 3. `[DxOptionalParameter]` - Optional Constructor Parameters
 
 The `DxOptionalParameterAttribute` marks a field as optional when used with `[DxAutoConstructor]`. The source generator emits a constructor parameter with a default value for annotated fields, making it easy to create messages with sensible defaults.

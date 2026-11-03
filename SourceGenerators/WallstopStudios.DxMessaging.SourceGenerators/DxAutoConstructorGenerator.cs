@@ -34,6 +34,16 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             isEnabledByDefault: true
         );
 
+        private static readonly DiagnosticDescriptor UnsupportedStructInitializationDiagnostic =
+            new(
+                id: "DXMSG011",
+                title: "Cannot preserve explicit-interface struct initializers",
+                messageFormat: "Type '{0}' combines initialized and uninitialized explicit-interface auto-properties with a user parameterless constructor. Add an initializer to each explicit-interface auto-property, use named backing fields, or remove DxAutoConstructor and write the constructor explicitly.",
+                category: "DxMessaging",
+                defaultSeverity: DiagnosticSeverity.Error,
+                isEnabledByDefault: true
+            );
+
         private const string AutoGenConstructorAttrFullName =
             "DxMessaging.Core.Attributes.DxAutoConstructorAttribute";
 
@@ -253,11 +263,15 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 }
 
                 // Generate the partial class/struct with the constructor
-                string generatedSource = GenerateConstructorSource(
+                string? generatedSource = GenerateConstructorSource(
                     context.Compilation,
                     typeInfo,
                     context
                 );
+                if (generatedSource == null)
+                {
+                    continue;
+                }
                 string hintName =
                     $"{typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.AutoGenConstructor.g.cs"
                         .Replace("global::", "")
@@ -270,7 +284,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             }
         }
 
-        private static string GenerateConstructorSource(
+        private static string? GenerateConstructorSource(
             Compilation compilation,
             TypeToGenerateInfo typeInfo,
             GeneratorExecutionContext spc
@@ -391,7 +405,22 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             );
             int anchorPosition = typeInfo.DeclarationSyntax.SpanStart;
 
-            bool requiresUnsafeContext = false;
+            (
+                bool requiresUnsafeContext,
+                bool useDefaultInitializer,
+                bool unsupportedInitialization
+            ) = AppendStructInitialization(compilation, typeSymbol, constructorBody);
+            if (unsupportedInitialization)
+            {
+                spc.ReportDiagnostic(
+                    Diagnostic.Create(
+                        UnsupportedStructInitializationDiagnostic,
+                        typeInfo.DeclarationSyntax.Identifier.GetLocation(),
+                        typeSymbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+                    )
+                );
+                return null;
+            }
             foreach (IFieldSymbol field in fieldsToInject)
             {
                 bool fieldRequiresUnsafeContext = RequiresUnsafeContext(field.Type);
@@ -618,6 +647,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             }
 
             string unsafeModifier = requiresUnsafeContext ? "unsafe " : string.Empty;
+            string constructorInitializer = useDefaultInitializer ? " : this()" : string.Empty;
             return string.Join(
                 "\r\n",
                 new[]
@@ -631,7 +661,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     $"{Indent}    /// <summary>",
                     $"{Indent}    /// Auto-generated constructor by DxAutoGenConstructorGenerator.",
                     $"{Indent}    /// </summary>",
-                    $"{innerIndent}    {constructorAccessibility} {unsafeModifier}{typeSymbol.ToDisplayString(IdentifierNameFormat)}({constructorParams})",
+                    $"{innerIndent}    {constructorAccessibility} {unsafeModifier}{typeSymbol.ToDisplayString(IdentifierNameFormat)}({constructorParams}){constructorInitializer}",
                     $"{innerIndent}    {{",
                     $"{constructorBody}",
                     $"{innerIndent}    }}",
@@ -641,6 +671,144 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     string.Empty,
                 }
             );
+        }
+
+        private static (
+            bool RequiresUnsafeContext,
+            bool UseDefaultInitializer,
+            bool Unsupported
+        ) AppendStructInitialization(
+            Compilation compilation,
+            INamedTypeSymbol typeSymbol,
+            StringBuilder body
+        )
+        {
+            // C# 11 supplies auto-defaulting; retain the existing constructor on that path.
+            if (
+                typeSymbol.TypeKind != TypeKind.Struct
+                || compilation is not CSharpCompilation csharp
+                || 1100 <= (int)csharp.LanguageVersion
+            )
+            {
+                return (false, false, false);
+            }
+
+            List<(ISymbol Member, ITypeSymbol Type, bool Initialized)> storage = new();
+            bool hasOpaqueDefault = false;
+            bool hasOpaqueInitializer = false;
+            foreach (ISymbol member in typeSymbol.GetMembers())
+            {
+                if (member.IsStatic)
+                {
+                    continue;
+                }
+                ISymbol state;
+                ITypeSymbol stateType;
+                switch (member)
+                {
+                    case IFieldSymbol field:
+                        /* Public fields are assigned from parameters; fixed buffers do not
+                         * participate in constructor definite assignment. */
+                        if (
+                            field.IsFixedSizeBuffer
+                            || field.DeclaredAccessibility == Accessibility.Public
+                        )
+                        {
+                            continue;
+                        }
+                        state = field.AssociatedSymbol ?? field;
+                        stateType = field.Type;
+                        break;
+                    case IEventSymbol eventSymbol
+                        when eventSymbol.DeclaringSyntaxReferences.Any(reference =>
+                            reference.GetSyntax() is VariableDeclaratorSyntax
+                        ):
+                        // Roslyn does not expose field-like event backing fields as members.
+                        state = eventSymbol;
+                        stateType = eventSymbol.Type;
+                        break;
+                    default:
+                        continue;
+                }
+
+                bool initialized = state.DeclaringSyntaxReferences.Any(reference =>
+                    reference.GetSyntax()
+                        is VariableDeclaratorSyntax { Initializer: not null }
+                            or PropertyDeclarationSyntax { Initializer: not null }
+                );
+                storage.Add((state, stateType, initialized));
+                if (!state.CanBeReferencedByName)
+                {
+                    hasOpaqueDefault |= !initialized;
+                    hasOpaqueInitializer |= initialized;
+                }
+            }
+
+            /* The implicit default constructor clears backing storage before running
+             * initializers. An explicit parameterless constructor would run user code. */
+            if (hasOpaqueDefault && hasOpaqueInitializer)
+            {
+                bool hasUserDefaultConstructor = typeSymbol.InstanceConstructors.Any(constructor =>
+                    constructor.Parameters.Length == 0 && !constructor.IsImplicitlyDeclared
+                );
+                return (false, !hasUserDefaultConstructor, hasUserDefaultConstructor);
+            }
+
+            const string AssignmentIndent = "            ";
+            bool requiresUnsafeContext = false;
+            if (!hasOpaqueDefault)
+            {
+                foreach ((ISymbol member, ITypeSymbol type, bool initialized) in storage)
+                {
+                    if (initialized)
+                    {
+                        continue;
+                    }
+                    requiresUnsafeContext |= RequiresUnsafeContext(type);
+                    body.AppendLine(
+                        $"{AssignmentIndent}this.{member.ToDisplayString(IdentifierNameFormat)} = default;"
+                    );
+                }
+                return (requiresUnsafeContext, false, false);
+            }
+
+            /* An explicit-interface auto-property cannot be assigned by name. Preserve
+             * initialized named storage before clearing the remaining backing fields. */
+            HashSet<string> localNames = new(StringComparer.Ordinal);
+            foreach (ISymbol member in typeSymbol.GetMembers())
+            {
+                localNames.Add(member.Name);
+            }
+            for (INamedTypeSymbol? scope = typeSymbol; scope != null; scope = scope.ContainingType)
+            {
+                foreach (ITypeParameterSymbol parameter in scope.TypeParameters)
+                {
+                    localNames.Add(parameter.Name);
+                }
+            }
+            List<(string Member, string Local)> preserved = new();
+            foreach ((ISymbol member, ITypeSymbol type, bool initialized) in storage)
+            {
+                if (!initialized)
+                {
+                    continue;
+                }
+                requiresUnsafeContext |= RequiresUnsafeContext(type);
+                string memberName = member.ToDisplayString(IdentifierNameFormat);
+                string local = "__dxMessagingInitialized";
+                while (!localNames.Add(local))
+                {
+                    local += "_";
+                }
+                body.AppendLine($"{AssignmentIndent}var {local} = this.{memberName};");
+                preserved.Add((memberName, local));
+            }
+            body.AppendLine($"{AssignmentIndent}this = default;");
+            foreach ((string member, string local) in preserved)
+            {
+                body.AppendLine($"{AssignmentIndent}this.{member} = {local};");
+            }
+            return (requiresUnsafeContext, false, false);
         }
 
         private static string FormatLiteral(object? value)

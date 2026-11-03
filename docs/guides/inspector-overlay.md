@@ -15,18 +15,20 @@ exact detection policy, suppression precedence, and Unity 2021 setup
 notes -- see [Roslyn Analyzers & Diagnostics](../reference/analyzers.md).
 
 The current diagnostic catalog starts at `DXMSG002`; no `DXMSG001` is assigned.
-`DXMSG002` through `DXMSG005` are compiler and source-generator diagnostics, so
+`DXMSG002` through `DXMSG005`, and `DXMSG011`, are compiler and source-generator diagnostics, so
 they appear in Unity's Console or the IDE rather than in this Inspector overlay.
 The overlay covers `DXMSG006` through `DXMSG010`.
 
 ## Compiler Diagnostics Before the Overlay
 
-| ID         | Severity | Trigger                                                        |
-| ---------- | -------- | -------------------------------------------------------------- |
-| `DXMSG001` | -        | Unassigned. The package does not emit this diagnostic.         |
-| `DXMSG002` | Error    | One type has more than one Dx message-shape attribute.         |
-| `DXMSG003` | Warning  | A generated nested type has a non-`partial` containing type.   |
-| `DXMSG004` | Info     | Companion suggestion to add `partial` to that containing type. |
+| ID                                                                                                      | Severity | Trigger                                                             |
+| ------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------- |
+| `DXMSG001`                                                                                              | -        | Unassigned. The package does not emit this diagnostic.              |
+| `DXMSG002`                                                                                              | Error    | One type has more than one Dx message-shape attribute.              |
+| `DXMSG003`                                                                                              | Warning  | A generated nested type has a non-`partial` containing type.        |
+| `DXMSG004`                                                                                              | Info     | Companion suggestion to add `partial` to that containing type.      |
+| `DXMSG005`                                                                                              | Error    | An optional constructor parameter has an invalid default.           |
+| [`DXMSG011`](../reference/analyzers.md#dxmsg011-cannot-preserve-explicit-interface-struct-initializers) | Error    | A struct initializer cannot be preserved without calling user code. |
 
 The following deterministic specimens pair the exact compiler output with the
 C# declaration that triggers it. They use the package capture theme so the text

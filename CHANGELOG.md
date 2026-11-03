@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Initialize excluded struct fields and auto-properties in generated constructors while preserving
+  initializers and avoiding unintended constructor calls ([#706](https://github.com/Ambiguous-Interactive/DxMessaging/issues/706)).
+
 - Preserve pointer constructor signatures and accept valid `null` pointer defaults
   ([#705](https://github.com/Ambiguous-Interactive/DxMessaging/issues/705)).
 
