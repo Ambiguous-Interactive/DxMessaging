@@ -487,13 +487,13 @@ public class PlayerStats : MonoBehaviour {
 
 ```csharp
 //  DON'T: Separate message per UI element (too granular)
-[DxBroadcastMessage] public struct HealthChanged { public int health; }
-[DxBroadcastMessage] public struct ManaChanged { public int mana; }
-[DxBroadcastMessage] public struct GoldChanged { public int gold; }
+[DxBroadcastMessage] public partial struct HealthChanged { public int health; }
+[DxBroadcastMessage] public partial struct ManaChanged { public int mana; }
+[DxBroadcastMessage] public partial struct GoldChanged { public int gold; }
 // This creates 3x message traffic and registration overhead
 
 //  DO: Batch related updates into one message
-[DxBroadcastMessage] public struct PlayerStatsChanged {
+[DxBroadcastMessage] public partial struct PlayerStatsChanged {
     public int health;
     public int mana;
     public int gold;

@@ -97,39 +97,73 @@ internal sealed class GeneratedMessageDocumentationTests
     }
 
     [TestCase(
-        "getting-started.md",
+        "getting-started/getting-started.md",
         "## Message Types",
         "## Common Patterns",
         "GamePaused",
         "IUntargetedMessage"
     )]
     [TestCase(
-        "getting-started.md",
+        "getting-started/getting-started.md",
         "## Message Types",
         "## Common Patterns",
         "Heal",
         "ITargetedMessage"
     )]
     [TestCase(
-        "getting-started.md",
+        "getting-started/getting-started.md",
         "## Message Types",
         "## Common Patterns",
         "EnemyDied",
         "IBroadcastMessage"
     )]
     [TestCase(
-        "visual-guide.md",
+        "getting-started/visual-guide.md",
         "### 1. Untargeted",
         "### 2. Targeted",
         "GamePaused",
         "IUntargetedMessage"
     )]
-    [TestCase("visual-guide.md", "### 2. Targeted", "### 3. Broadcast", "Heal", "ITargetedMessage")]
     [TestCase(
-        "visual-guide.md",
+        "getting-started/visual-guide.md",
+        "### 2. Targeted",
+        "### 3. Broadcast",
+        "Heal",
+        "ITargetedMessage"
+    )]
+    [TestCase(
+        "getting-started/visual-guide.md",
         "### 3. Broadcast",
         "## The Message Journey",
         "TookDamage",
+        "IBroadcastMessage"
+    )]
+    [TestCase(
+        "guides/patterns.md",
+        "##### Anti-pattern to avoid",
+        "### Pattern: Priority-Ordered Execution",
+        "HealthChanged",
+        "IBroadcastMessage"
+    )]
+    [TestCase(
+        "guides/patterns.md",
+        "##### Anti-pattern to avoid",
+        "### Pattern: Priority-Ordered Execution",
+        "ManaChanged",
+        "IBroadcastMessage"
+    )]
+    [TestCase(
+        "guides/patterns.md",
+        "##### Anti-pattern to avoid",
+        "### Pattern: Priority-Ordered Execution",
+        "GoldChanged",
+        "IBroadcastMessage"
+    )]
+    [TestCase(
+        "guides/patterns.md",
+        "##### Anti-pattern to avoid",
+        "### Pattern: Priority-Ordered Execution",
+        "PlayerStatsChanged",
         "IBroadcastMessage"
     )]
     public void IntroductoryMessageDeclarationsCompileAgainstShippedContracts(
@@ -141,7 +175,7 @@ internal sealed class GeneratedMessageDocumentationTests
     )
     {
         string root = ResolveRoot();
-        string path = Path.Combine(root, "docs", "getting-started", page);
+        string path = Path.Combine(root, "docs", page);
         CSharpParseOptions options = new(LanguageVersion.CSharp9);
         CompilationUnitSyntax[] snippets = ReadSnippets(path, sectionStart, sectionEnd, options);
         TypeDeclarationSyntax[] declarations = snippets
