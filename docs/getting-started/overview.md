@@ -6,7 +6,7 @@
 
 DxMessaging is a type-safe messaging system for Unity that **addresses three common pain points** of traditional event systems:
 
-1. **Memory leaks** from forgotten unsubscribes -> Automatic lifecycle management
+1. **Forgotten unsubscribes** -> Component-owned subscription lifecycles
 1. **Tight coupling** creating refactoring nightmares -> Full decoupling with no direct references
 1. **Debugging black holes** ("what fired when?") -> Message Monitor, Flow Graph, and Inspector diagnostics
 
@@ -54,7 +54,15 @@ void OnEnable() { GameManager.OnScoreChanged += UpdateUI; }
 void OnDisable() { /* Missing this results in a memory leak: */ }
 ```
 
-DxMessaging manages subscription lifecycle automatically, eliminating the need for manual unsubscribe - cleanup occurs when components are destroyed.
+By default, `MessageAwareComponent` enables and disables its token with the component
+and releases its registrations on destruction. Preserve the base calls when
+overriding its lifecycle methods.
+
+Direct `MessageRegistrationToken` and `MessageRegistrationLease` owners manage
+cleanup themselves. A newly created direct token stages subscriptions until you
+call `Enable()`; call `Dispose()` when its owner finishes. See the
+[plain C# observer](../concepts/listening-patterns.md#development-debug-dump)
+and [builder lifecycle examples](../advanced/registration-builders.md#code-examples).
 
 ### For Advanced Devs: "I need observability and control"
 
@@ -65,13 +73,13 @@ DxMessaging manages subscription lifecycle automatically, eliminating the need f
 - Priority-based execution (deterministic ordering)
 - Interceptors (validate/normalize before handlers)
 - Global observers (track ALL instances of a message type)
-- Local bus islands (isolated testing, zero global state)
+- Local bus islands (separate subscriptions for each bus)
 
 ## What It Solves (Technical)
 
 - **Decoupling without references** - producers/consumers never know about each other
-- **Predictable lifecycle** - explicit tokens tied to Unity component lifecycles
-- **Performance** - struct messages passed by readonly reference to minimize allocations and boxing
+- **Subscription ownership** - component-managed tokens or explicit token and lease lifecycles
+- **Typed callbacks** - `Action<T>` receives a value parameter; `FastHandler<T>` receives a readonly reference
 - **Observability** - interceptors, post-processors, diagnostics, registration logs
 - **Scalable taxonomy** - three message types (Untargeted/Targeted/Broadcast) cover most common messaging patterns
 
@@ -90,7 +98,7 @@ DxMessaging manages subscription lifecycle automatically, eliminating the need f
 - Game jam prototype (<1 week)
 - Tiny project (<1000 lines)
 - Single-system communication (call the method directly)
-- You need synchronous return values (DxMessaging is fire-and-forget)
+- You need a direct return value from a receiver. Emission invokes handlers synchronously and returns `void`.
 
 Core ideas
 
@@ -100,7 +108,7 @@ Core ideas
   - Broadcast: Emitted from a source; anyone can observe (e.g., TookDamage from Enemy).
 - Ordering: Lower priority runs earlier; same priority uses registration order.
 - Pipeline: Interceptors -> Handlers -> Post-Processors, with diagnostics optionally enabled.
-- Unity integration: `MessagingComponent` and `MessageAwareComponent` manage subscription lifecycles automatically.
+- Unity integration: `MessageAwareComponent` manages its component-owned token. Direct token and lease owners control activation and cleanup.
 
 ## Key Features
 
@@ -133,8 +141,8 @@ _ = Token.RegisterBroadcastWithoutSource<TookDamage>(
 
 - **Priority-based ordering** - control execution flow explicitly
 - **Interceptor pipeline** - validate/normalize messages BEFORE handlers run (one validation, all handlers protected)
-- **Local bus islands** - isolated testing with zero global state contamination
-- **Low-allocation design** - struct messages passed by readonly reference, minimizes boxing and GC pressure
+- **Local bus islands** - register and emit on an explicit bus to keep its subscriptions separate from the default bus
+- **Readonly-reference callbacks** - use `FastHandler<T>` when a handler should receive its message through an `in T` parameter
 - **Auto-constructor generation** - `[DxAutoConstructor]` eliminates boilerplate while keeping type safety
 - **Unity-first helpers** - `EmitGameObjectTargeted()`, `EmitComponentBroadcast()` feel natural
 - **Editor diagnostics** - inspect emissions in Message Monitor, routes in Flow

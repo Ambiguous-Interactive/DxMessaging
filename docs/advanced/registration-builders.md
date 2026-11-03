@@ -308,7 +308,7 @@ public sealed class BasicBuilderExample : MonoBehaviour
         Debug.Log($"Received: {message}");
     }
 
-    // Alternative: FastHandler<T> signature for better performance (avoids boxing)
+    // Alternative: FastHandler<T> receives the message by readonly reference.
     // private void OnGameEvent(in GameEvent message)
     // {
     //     Debug.Log($"Received: {message}");
