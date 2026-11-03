@@ -22,6 +22,8 @@ internal static class DocsSnippetCompiler
     private static readonly ImmutableArray<MetadataReference> CoreReferences =
         BuildCoreReferences();
 
+    private static readonly Lazy<SyntaxTree> BusFirstApi = new(BuildBusFirstApi);
+
     private static readonly string[] DefaultDocNamespaces =
     {
         "System",
@@ -51,7 +53,7 @@ internal static class DocsSnippetCompiler
 
         CSharpCompilation compilation = CSharpCompilation.Create(
             assemblyName: "DocsSnippetCompilation",
-            syntaxTrees: new[] { stubs, userTree },
+            syntaxTrees: new[] { stubs, BusFirstApi.Value, userTree },
             references: CoreReferences,
             options: CompilationOptions
         );
@@ -83,6 +85,96 @@ internal static class DocsSnippetCompiler
         return compilerDiagnostics
             .AddRange(strictGeneratorDiagnostics)
             .AddRange(documentationDiagnostics);
+    }
+
+    private static SyntaxTree BuildBusFirstApi()
+    {
+        DirectoryInfo? root = new(AppContext.BaseDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
+        {
+            root = root.Parent;
+        }
+        if (root == null)
+        {
+            throw new DirectoryNotFoundException("Locate the production bus-first declarations.");
+        }
+
+        string path = Path.Combine(
+            root.FullName,
+            "Runtime",
+            "Core",
+            "Extensions",
+            "MessageBusExtensions.cs"
+        );
+        CompilationUnitSyntax source = CSharpSyntaxTree
+            .ParseText(
+                File.ReadAllText(path),
+                ParseOptions.WithPreprocessorSymbols("UNITY_2021_3_OR_NEWER")
+            )
+            .GetCompilationUnitRoot();
+        ClassDeclarationSyntax extensions = source
+            .DescendantNodes()
+            .OfType<ClassDeclarationSyntax>()
+            .Single(type => type.Identifier.ValueText == "MessageBusExtensions");
+        MethodDeclarationSyntax[] methods = extensions
+            .Members.OfType<MethodDeclarationSyntax>()
+            .Where(method =>
+                method.Modifiers.Any(SyntaxKind.PublicKeyword)
+                && method.Modifiers.Any(SyntaxKind.StaticKeyword)
+            )
+            .Select(method =>
+                method
+                    .WithBody(SyntaxFactory.Block())
+                    .WithExpressionBody(null)
+                    .WithSemicolonToken(default)
+                    .WithConstraintClauses(
+                        SyntaxFactory.List(
+                            method.ConstraintClauses.Select(clause =>
+                                clause.WithConstraints(
+                                    SyntaxFactory.SeparatedList(
+                                        clause.Constraints.Where(constraint =>
+                                            constraint is not TypeConstraintSyntax type
+                                            || type.Type.ToString()
+                                                is not (
+                                                    "IUntargetedMessage"
+                                                    or "ITargetedMessage"
+                                                    or "IBroadcastMessage"
+                                                )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+            )
+            .ToArray();
+        if (methods.Length == 0)
+        {
+            throw new InvalidOperationException("Production bus-first declarations are missing.");
+        }
+
+        /*
+         * Import API declarations without implementation bodies or maintained signature copies.
+         * As in MessageExtensions stubs, route-interface constraints are absent because this
+         * fixture does not run DxMessageIdGenerator. Class/struct/ref contracts remain intact.
+         */
+        ClassDeclarationSyntax api = extensions.WithMembers(
+            SyntaxFactory.List<MemberDeclarationSyntax>(methods)
+        );
+        NamespaceDeclarationSyntax scope = source
+            .DescendantNodes()
+            .OfType<NamespaceDeclarationSyntax>()
+            .Single();
+        CompilationUnitSyntax declarations = SyntaxFactory
+            .CompilationUnit()
+            .AddMembers(
+                scope.WithMembers(SyntaxFactory.SingletonList<MemberDeclarationSyntax>(api))
+            );
+        return CSharpSyntaxTree.ParseText(
+            declarations.NormalizeWhitespace().ToFullString(),
+            ParseOptions,
+            "ProductionBusFirstApi.cs"
+        );
     }
 
     private static Diagnostic PromoteToError(Diagnostic diagnostic)

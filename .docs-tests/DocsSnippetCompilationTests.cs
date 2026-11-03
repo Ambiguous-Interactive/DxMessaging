@@ -11,6 +11,59 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocsSnippetCompilationTests
 {
+    private static IEnumerable<TestCaseData> BusFirstModifierCases()
+    {
+        foreach (string kind in new[] { "Untargeted", "Targeted", "Broadcast" })
+        {
+            foreach (bool valueType in new[] { false, true })
+            {
+                foreach (bool wrongModifier in new[] { false, true })
+                {
+                    yield return new TestCaseData(kind, valueType, wrongModifier).SetName(
+                        $"BusFirst_{kind}_struct{valueType}_wrongModifier{wrongModifier}"
+                    );
+                }
+            }
+        }
+    }
+
+    [TestCaseSource(nameof(BusFirstModifierCases))]
+    public void SnippetCompilerPreservesProductionBusFirstModifiers(
+        string kind,
+        bool valueType,
+        bool wrongModifier
+    )
+    {
+        string context = kind == "Untargeted" ? "" : "new InstanceId(7), ";
+        string modifier = valueType != wrongModifier ? "ref " : "";
+        string declaration = valueType ? "struct" : "class";
+        string source =
+            "using DxMessaging.Core; using DxMessaging.Core.MessageBus; "
+            + "using DxMessaging.Core.Extensions; public "
+            + declaration
+            + " Payload { } "
+            + "public class Sender { public void Send(IMessageBus bus) { "
+            + "Payload message = new Payload(); bus.Emit"
+            + kind
+            + "("
+            + context
+            + modifier
+            + "message); } }";
+        Diagnostic[] errors = DocsSnippetCompiler
+            .CompileSnippet(source)
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        if (wrongModifier)
+        {
+            Assert.That(errors, Has.Length.EqualTo(1), string.Join("\n", errors.AsEnumerable()));
+            Assert.That(errors[0].Id, Is.EqualTo(valueType ? "CS0452" : "CS0453"));
+        }
+        else
+        {
+            Assert.That(errors, Is.Empty, string.Join("\n", errors.AsEnumerable()));
+        }
+    }
+
     private static readonly CSharpParseOptions UnityReferenceParseOptions = new(
         LanguageVersion.CSharp9,
         preprocessorSymbols: new[] { "UNITY_2021_3_OR_NEWER" }

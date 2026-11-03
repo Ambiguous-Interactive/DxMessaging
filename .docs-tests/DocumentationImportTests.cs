@@ -23,11 +23,13 @@ internal sealed class DocumentationImportTests
         )
     );
 
+    [TestCase("ScoreReporter", false)]
+    [TestCase("ScoreReporter", true)]
     [TestCase("DiagnosticLogger", false)]
     [TestCase("DiagnosticLogger", true)]
     [TestCase("PlayerController", false)]
     [TestCase("PlayerController", true)]
-    public void ProviderExamplesResolveFromDocumentedImports(string exampleName, bool qualifyName)
+    public void MessagingExamplesResolveFromDocumentedImports(string exampleName, bool qualifyName)
     {
         DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
         while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
@@ -35,7 +37,9 @@ internal sealed class DocumentationImportTests
             root = root.Parent;
         }
         Assert.That(root, Is.Not.Null, "Locate the repository containing the provider guide.");
-        string path = Path.Combine(root!.FullName, "docs", "advanced", "message-bus-providers.md");
+        bool busFirst = exampleName == "ScoreReporter";
+        string page = busFirst ? "emit-shorthands.md" : "message-bus-providers.md";
+        string path = Path.Combine(root!.FullName, "docs", "advanced", page);
         CSharpParseOptions options = ProviderOptions;
         CompilationUnitSyntax[] examples = Regex
             .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
@@ -52,19 +56,24 @@ internal sealed class DocumentationImportTests
             .ToArray();
         Assert.That(examples, Has.Length.EqualTo(1), path + ": " + exampleName);
         CompilationUnitSyntax published = examples[0];
-        bool scriptable = exampleName == "DiagnosticLogger";
-        string expectedType = scriptable
-            ? "DxMessaging.Unity.InitialGlobalMessageBusProvider"
-            : "DxMessaging.Core.MessageBus.MessageBusRebindMode";
-        string expression;
-        if (scriptable)
+        bool fieldProbe = busFirst || exampleName == "DiagnosticLogger";
+        string expectedType = exampleName switch
         {
+            "ScoreReporter" => "DxMessaging.Core.MessageBus.IMessageBus",
+            "DiagnosticLogger" => "DxMessaging.Unity.InitialGlobalMessageBusProvider",
+            "PlayerController" => "DxMessaging.Core.MessageBus.MessageBusRebindMode",
+            _ => throw new ArgumentOutOfRangeException(nameof(exampleName)),
+        };
+        string expression;
+        if (fieldProbe)
+        {
+            string fieldName = busFirst ? "messageBus" : "initialProvider";
             FieldDeclarationSyntax field = published
                 .DescendantNodes()
                 .OfType<FieldDeclarationSyntax>()
                 .Single(candidate =>
                     candidate.Declaration.Variables.Any(variable =>
-                        variable.Identifier.ValueText == "initialProvider"
+                        variable.Identifier.ValueText == fieldName
                     )
                 );
             expression = qualifyName
@@ -90,7 +99,7 @@ internal sealed class DocumentationImportTests
                 )
                 .Select(import => import.ToFullString())
         );
-        string member = scriptable
+        string member = fieldProbe
             ? "public void Use(" + expression + " provider) { }"
             : "public object Use() => " + expression + ";";
         SyntaxTree probe = CSharpSyntaxTree.ParseText(
@@ -150,7 +159,7 @@ internal sealed class DocumentationImportTests
                 + string.Join("\n", emitted.Diagnostics)
         );
         ITypeSymbol? resolved;
-        if (scriptable)
+        if (fieldProbe)
         {
             TypeSyntax type = probe
                 .GetRoot()
