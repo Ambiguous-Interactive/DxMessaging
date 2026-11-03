@@ -188,7 +188,17 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             public readonly int Value;
             public event Action Callbacks;
-            public int State => Callbacks == null ? 0 : 1;
+            private static int _calls;
+
+            public int State
+            {
+                get
+                {
+                    int before = _calls;
+                    Callbacks?.Invoke();
+                    return _calls - before;
+                }
+            }
 
             public EventState(bool seeded)
             {
@@ -196,7 +206,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 Callbacks = Callback;
             }
 
-            private static void Callback() { }
+            private static void Callback()
+            {
+                ++_calls;
+            }
         }
 
         [DxAutoConstructor]
