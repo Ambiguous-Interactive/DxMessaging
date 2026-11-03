@@ -331,20 +331,18 @@ container and native GameObject; disposing the listener token before the scopes 
 subscription. The test checks bus separation directly and needs no frame delay:
 
 ```csharp
-using System.Collections;
 using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;
 using DxMessaging.Unity.Integrations.VContainer;
 using NUnit.Framework;
-using UnityEngine.TestTools;
 using VContainer;
 using VContainer.Unity;
 
 [TestFixture]
 public sealed class MessageBusPlayModeTests
 {
-    [UnityTest]
-    public IEnumerator ScopesKeepMessageBusesSeparate()
+    [Test]
+    public void ScopesKeepMessageBusesSeparate()
     {
         using LifetimeScope first = LifetimeScope.Create(
             builder => builder.RegisterDxMessagingBus()
@@ -373,7 +371,6 @@ public sealed class MessageBusPlayModeTests
         token.Dispose();
         firstBus.UntargetedBroadcast(ref message);
         Assert.That(received, Is.EqualTo(1));
-        yield break;
     }
 }
 ```
