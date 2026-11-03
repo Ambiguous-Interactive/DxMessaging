@@ -122,6 +122,7 @@ Create > Wallstop Studios > DxMessaging > Message Bus Providers > Initial Global
 ```csharp
 using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;
+using DxMessaging.Unity;
 using UnityEngine;
 
 public class DiagnosticLogger : MonoBehaviour
@@ -189,6 +190,7 @@ When you call `TryGetProvider()` or `ResolveBus()`, it checks:
 ### Example: Design Time Configuration
 
 ```csharp
+using DxMessaging.Core.MessageBus;
 using DxMessaging.Unity;
 using UnityEngine;
 
