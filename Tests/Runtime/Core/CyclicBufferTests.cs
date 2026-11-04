@@ -1,4 +1,3 @@
-#if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
@@ -6,6 +5,9 @@ namespace DxMessaging.Tests.Runtime.Core
     using System.Linq;
     using DxMessaging.Core.DataStructure;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
     public sealed class CyclicBufferTests
     {
@@ -431,4 +433,3 @@ namespace DxMessaging.Tests.Runtime.Core
         }
     }
 }
-#endif

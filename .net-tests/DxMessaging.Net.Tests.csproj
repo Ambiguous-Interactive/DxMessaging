@@ -44,6 +44,10 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageReference Include="NUnit" Version="5.0.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.1" />
+    <PackageReference Include="coverlet.collector" Version="10.1.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <Compile Include="../Tests/Runtime/TestUtilities/MessageKind.cs" Link="MessageKind.cs" />
     <Compile
       Include="../Tests/Runtime/TestUtilities/MessageScenario.cs"
@@ -152,6 +156,7 @@
       Link="GlobalNestedSnapshotReclamationTests.cs"
     />
     <Compile Include="../Tests/Runtime/Core/IntKeyMapTests.cs" Link="IntKeyMapTests.cs" />
+    <Compile Include="../Tests/Runtime/Core/CyclicBufferTests.cs" Link="CyclicBufferTests.cs" />
     <Compile
       Include="../Tests/Runtime/Core/BusIdentityResetTests.cs"
       Link="BusIdentityResetTests.cs"
