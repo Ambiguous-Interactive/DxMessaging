@@ -170,17 +170,41 @@ namespace DxMessaging.Core.Diagnostics
             return true;
         }
 
+        /// <summary>Identifies package frames from their declaring owner.</summary>
+        /// <remarks>
+        /// 2026-11-04: Consumer source paths can contain package namespaces; those are not owners.
+        /// </remarks>
         private static bool IsInternalFrame(string text, int start, int length)
         {
-            if (text.IndexOf("DxMessaging.", start, length, StringComparison.Ordinal) < 0)
+            int ownerStart = text.IndexOf("DxMessaging.", start, length, StringComparison.Ordinal);
+            if (
+                ownerStart < 0
+                || (ownerStart != start && !char.IsWhiteSpace(text[ownerStart - 1]))
+                || 0 <= text.IndexOf('(', start, ownerStart - start)
+            )
             {
                 return false;
             }
 
-            return 0 <= text.IndexOf("DxMessaging.Core.", start, length, StringComparison.Ordinal)
-                || 0 <= text.IndexOf("DxMessaging.Unity.", start, length, StringComparison.Ordinal)
-                || 0
-                    <= text.IndexOf("DxMessaging.Editor.", start, length, StringComparison.Ordinal);
+            int ownerLength = start + length - ownerStart;
+            return text.IndexOf(
+                    "DxMessaging.Core.",
+                    ownerStart,
+                    ownerLength,
+                    StringComparison.Ordinal
+                ) == ownerStart
+                || text.IndexOf(
+                    "DxMessaging.Unity.",
+                    ownerStart,
+                    ownerLength,
+                    StringComparison.Ordinal
+                ) == ownerStart
+                || text.IndexOf(
+                    "DxMessaging.Editor.",
+                    ownerStart,
+                    ownerLength,
+                    StringComparison.Ordinal
+                ) == ownerStart;
         }
     }
 }

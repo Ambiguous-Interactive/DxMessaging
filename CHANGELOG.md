@@ -56,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve consumer caller frames in diagnostic stack traces when source paths contain
+  DxMessaging namespace text ([#707](https://github.com/Ambiguous-Interactive/DxMessaging/issues/707)).
 - Initialize excluded struct fields and auto-properties in generated constructors while preserving
   initializers and avoiding unintended constructor calls ([#706](https://github.com/Ambiguous-Interactive/DxMessaging/issues/706)).
 

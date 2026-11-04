@@ -179,6 +179,10 @@
     <Compile Include="../Tests/Runtime/Core/IntKeyMapTests.cs" Link="IntKeyMapTests.cs" />
     <Compile Include="../Tests/Runtime/Core/CyclicBufferTests.cs" Link="CyclicBufferTests.cs" />
     <Compile
+      Include="../Tests/Runtime/Core/MessageEmissionDataTests.cs"
+      Link="MessageEmissionDataTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/BusIdentityResetTests.cs"
       Link="BusIdentityResetTests.cs"
     />
