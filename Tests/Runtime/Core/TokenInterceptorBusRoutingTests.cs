@@ -1,4 +1,3 @@
-#if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
@@ -9,6 +8,9 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
     using BusType = DxMessaging.Core.MessageBus.MessageBus;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
     /// <summary>
     /// Pins bus routing for interceptors registered through a
@@ -384,4 +386,3 @@ namespace DxMessaging.Tests.Runtime.Core
         }
     }
 }
-#endif

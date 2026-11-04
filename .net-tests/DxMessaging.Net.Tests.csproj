@@ -277,5 +277,37 @@
       Include="../Tests/Runtime/Core/InstanceIdDataContractTests.cs"
       Link="InstanceIdDataContractTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/MessageRegistrationLeaseTests.cs"
+      Link="MessageRegistrationLeaseTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenDisposeReuseTests.cs"
+      Link="TokenDisposeReuseTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenInterceptorBusRoutingTests.cs"
+      Link="TokenInterceptorBusRoutingTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenPostProcessorBusRoutingTests.cs"
+      Link="TokenPostProcessorBusRoutingTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/RegistrationLeakAccountingTests.cs"
+      Link="RegistrationLeakAccountingTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/NullAndInvalidInputTests.cs"
+      Link="NullAndInvalidInputTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/ScenarioCallbacks.cs"
+      Link="ScenarioCallbacks.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Scripts/Messages/ClassUntargetedMessage.cs"
+      Link="ClassUntargetedMessage.cs"
+    />
   </ItemGroup>
 </Project>
