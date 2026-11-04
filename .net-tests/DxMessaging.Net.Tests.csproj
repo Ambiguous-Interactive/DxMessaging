@@ -183,6 +183,22 @@
     <Compile Include="../Tests/Runtime/Core/IntKeyMapTests.cs" Link="IntKeyMapTests.cs" />
     <Compile Include="../Tests/Runtime/Core/CyclicBufferTests.cs" Link="CyclicBufferTests.cs" />
     <Compile
+      Include="../Tests/Runtime/Core/RegistrationLogTests.cs"
+      Link="RegistrationLogTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Scripts/Messages/SimpleUntargetedMessage.cs"
+      Link="SimpleUntargetedMessage.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Scripts/Messages/SimpleTargetedMessage.cs"
+      Link="SimpleTargetedMessage.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Scripts/Messages/SimpleBroadcastMessage.cs"
+      Link="SimpleBroadcastMessage.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/MessageEmissionDataTests.cs"
       Link="MessageEmissionDataTests.cs"
     />

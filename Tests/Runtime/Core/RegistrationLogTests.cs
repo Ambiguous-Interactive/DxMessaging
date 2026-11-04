@@ -1,4 +1,3 @@
-#if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System.Collections.Generic;
@@ -7,6 +6,9 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
     /// <summary>
     /// Behavioral pins for <see cref="RegistrationLog"/>: the Enabled toggle gates
@@ -153,6 +155,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+#if UNITY_2021_3_OR_NEWER
         [Test]
         public void RegistrationMetadataKeepsIdentityWithoutRetainingUnityObject()
         {
@@ -235,6 +238,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 UnityEngine.Object.DestroyImmediate(settings);
             }
         }
+#endif
 
         [Test]
         public void LogIsDisabledByDefaultAndIgnoresEntries()
@@ -437,4 +441,3 @@ namespace DxMessaging.Tests.Runtime.Core
         }
     }
 }
-#endif
