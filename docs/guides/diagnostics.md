@@ -450,6 +450,12 @@ Debug.Log(formatted);
 
 Removes registrations from the log. Pass `null` to clear all, or provide a predicate to selectively remove entries.
 
+In 4.0, a predicate can read the same log or use another log. If it records, clears, or otherwise
+changes the same retained history, the outer clear throws `InvalidOperationException` after the
+predicate returns. The callback's completed changes remain; the outer removal is not applied.
+A recursive filtered clear throws before running its own predicate. A predicate's own exception
+propagates unchanged. Keep predicates read-only when filtering the same log.
+
 ```csharp
 using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;

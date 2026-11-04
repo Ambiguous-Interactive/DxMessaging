@@ -170,6 +170,15 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         /// <param name="shouldRemove">Null if all MessagingRegistrations should be removed, or a custom function that returns true for any MessagingRegistration that should be removed.</param>
         /// <returns>Number of MessagingRegistrations removed.</returns>
+        /// <remarks>
+        /// Since 4.0, predicates may read this log, but recursive filtered clearing throws before
+        /// running the nested predicate. A predicate that changes retained history causes the outer
+        /// clear to throw after the predicate returns. Completed callback changes remain applied;
+        /// no outer removals are published. Exceptions thrown by the predicate propagate unchanged.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">
+        /// A filtered clear recursively enters this log, or the predicate changes its retained history.
+        /// </exception>
         public int Clear(Predicate<MessagingRegistration> shouldRemove = null)
         {
             CyclicBuffer<MessagingRegistration> finalizedRegistrations = _finalizedRegistrations;

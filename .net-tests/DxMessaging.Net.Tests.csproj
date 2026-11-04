@@ -61,6 +61,10 @@
       Link="SourceGeneratorNestedTests.cs"
     />
     <ProjectReference Include="../.net/DxMessaging.csproj" />
+    <Compile
+      Include="../Tests/Runtime/Core/CyclicBufferReentrantRemovalTests.cs"
+      Link="CyclicBufferReentrantRemovalTests.cs"
+    />
     <Analyzer Include="../Runtime/Analyzers/*.dll" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageReference Include="NUnit" Version="5.0.0" />
