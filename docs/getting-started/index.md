@@ -211,7 +211,8 @@ From [Comparisons](../architecture/comparisons.md):
 | Lifecycle Safety | Auto        | Manual    | Unity       | Manual     |
 | Execution Order  | Priority    | Random    | Random      | Random     |
 | Observability    | Built-in    | No        | No          | No         |
-| Performance      | Zero-alloc  | Good      | Boxing      | Good       |
+
+See the [DxMessaging allocation contract and exceptions](../reference/faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc) before choosing a dispatch path.
 
 ## Search by Topic
 
