@@ -69,8 +69,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.AreEqual(
                 string.Empty,
                 data.stackTrace,
-                "Emission-site capture must stay off unless explicitly enabled; it costs hundreds "
-                    + "of microseconds and tens of allocations per record."
+                "Stack traces must remain empty while emission-site capture is disabled."
             );
         }
 

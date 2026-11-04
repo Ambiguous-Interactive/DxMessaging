@@ -578,7 +578,10 @@ using DxMessaging.Core.MessageBus;
 IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Editor;
 ```
 
-This is the recommended default for most projects. You get full visibility during development without any performance cost in production builds. Leave emission-site capture off unless you are actively tracing a call site; see [Emission-Site Capture](#emission-site-capture).
+This sets Editor-only recording defaults for newly created buses and tokens. Use
+`MessageBus.DiagnosticsMode` or `MessageRegistrationToken.DiagnosticMode` to configure an existing
+instance. Keep emission-site capture off until you need source links; see
+[Emission-Site Capture](#emission-site-capture).
 
 ### Runtime Diagnostics for QA Builds
 
@@ -631,27 +634,32 @@ Diagnostics add overhead. Consider these factors when enabling them:
 
 ### CPU Impact
 
-- Registration logging adds overhead to every `Register` and `Deregister` call.
-- Emission recording adds overhead to every message broadcast.
-- Post-processor chains for diagnostics run after each message dispatch.
+- Registration logging records subscription changes when enabled.
+- Bus diagnostics record message emissions when enabled.
+- Token diagnostics record deliveries and maintain per-registration call counts when enabled.
 
 ### Emission-Site Capture
 
 `MessageEmissionData.stackTrace` holds the call site an emission came from, and it is what the
-Message Monitor and Flow Graph **Open** buttons resolve into source links. Capturing it means
-walking and formatting the managed stack on every diagnostic record, which is expensive enough to
-dominate a frame:
+Message Monitor and Flow Graph **Open** buttons resolve into source links. Capturing it walks
+and formats the managed stack for each diagnostic record.
 
-| Measurement (Unity 6000.4.6f1, Editor PlayMode Mono x64 Release) | Value                |
-| ---------------------------------------------------------------- | -------------------- |
-| Cost of one captured record                                      | ~236 microseconds    |
-| Allocation calls per captured record                             | ~67                  |
-| Records written per single-subscriber emission                   | 2 (bus plus token)   |
-| `Comparison_DxMessaging_GlobalToOne` with capture on             | ~1,100 emissions/sec |
-| Same row with a plain C# event, same session                     | ~340,000,000/sec     |
+The historical report in [#433](https://github.com/Ambiguous-Interactive/DxMessaging/issues/433)
+lists Unity 6000.4.6f1 Editor PlayMode, Mono x64 Release, with bus and token recording enabled.
+These observations preceded the capture opt-in and single-pass trimmer added by
+[PR #434](https://github.com/Ambiguous-Interactive/DxMessaging/pull/434) on August 21, 2026:
 
-Capture cost scales with stack depth, so deeper gameplay call stacks pay more. Because of that,
-capture is off by default.
+| Historical observation                               | Value                |
+| ---------------------------------------------------- | -------------------- |
+| Cost of one captured record                          | ~236 microseconds    |
+| Allocation calls per captured record                 | ~67                  |
+| Records written per single-subscriber emission       | 2 (bus plus token)   |
+| `Comparison_DxMessaging_GlobalToOne` with capture on | ~1,100 emissions/sec |
+| Same row with a plain C# event, same session         | ~340,000,000/sec     |
+
+Profile capture with your workload's stack depth and recording configuration. Bus records and
+token delivery records each add capture work when their diagnostics are enabled. Capture is off
+by default.
 
 The editor tells you when that is why a call site is missing, and offers the switch on the spot:
 the Message Monitor's **Stack trace** disclosure reads `Stack trace (capture off)`, opens itself,

@@ -16,8 +16,8 @@ namespace DxMessaging.Core.Diagnostics
     /// When diagnostics are enabled (see <see cref="global::DxMessaging.Core.MessageBus.IMessageBus.GlobalDiagnosticsTargets"/>),
     /// the bus and tokens record recent emissions in ring buffers. Each record also carries a trimmed
     /// stack trace that excludes DxMessaging internals, but ONLY when
-    /// <see cref="global::DxMessaging.Core.MessageBus.IMessageBus.GlobalDiagnosticsStackTraces"/> is enabled; capturing a trace
-    /// costs hundreds of microseconds and tens of allocations per record, so <see cref="stackTrace"/> is
+    /// <see cref="global::DxMessaging.Core.MessageBus.IMessageBus.GlobalDiagnosticsStackTraces"/> is enabled.
+    /// Walking and formatting a stack adds work to each captured record; <see cref="stackTrace"/> is
     /// <see cref="string.Empty"/> by default.
     ///
     /// The <see cref="context"/> contains the relevant <see cref="InstanceId"/> for targeted/broadcast messages
