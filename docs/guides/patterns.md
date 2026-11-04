@@ -830,87 +830,92 @@ public class MatchStats : MessageAwareComponent {
 }
 ```
 
-#### Key insights
+#### Example traffic assumptions
 
-- Self health UI: 1 registration, receives ~10 messages/sec
-- Team health UI: 4 registrations, receives ~40 messages/sec
-- Kill feed UI: 1 registration, receives ALL kills (~5 messages/sec)
-- Match stats: Post-processor records processed payloads without owning gameplay state
+Assume each of the 100 players emits 10 damage messages per second and the match emits 5 kill
+messages per second:
 
-**Total:** ~100 players x 10 damage/sec = 1000 messages/sec. DxMessaging handles this with negligible overhead (~0.06ms/frame).
+- Self health UI: 1 source-filtered registration observes 10 damage messages/sec.
+- Team health UI: 4 source-filtered registrations observe 40 damage messages/sec in total.
+- Kill feed UI: 1 registration observes all 5 kill messages/sec.
+- Match stats: 1 post-processor observes all 1000 damage messages/sec and counts processed payloads.
+
+These assumed rates describe message volume and filtering. They do not measure dispatch cost, UI
+updates, dictionary growth, allocations or frame time. Measure the complete workload on the target
+hardware and backend; the [published benchmarks](../architecture/performance.md) cover their named
+dispatch scenarios with minimal handler work.
 
 ---
 
-**Summary:** DxMessaging scales from small prototypes to large production games. Use targeted observation for specific entities, global observation for analytics, and post-processors for metrics. Disable diagnostics in production and batch emissions for optimal performance.
+Use source-filtered observation for specific entities, global observation for analytics, and
+post-processors for metrics. Batch emissions only when omitting intermediate values is acceptable,
+and measure diagnostics overhead in the configuration you plan to ship.
 
 ---
 
 ## 14) Compatibility with Scriptable Object Architecture (SOA)
 
-**Note:** Scriptable Object Architecture (SOA) is a debated pattern in the Unity community. It has both proponents who value its designer-friendly workflow and critics who raise concerns about scalability and maintainability. See [Anti-ScriptableObject Architecture](https://github.com/cathei/AntiScriptableObjectArchitecture) for one perspective on the criticisms. Teams should evaluate SOA based on their specific needs. Alternatives include dependency injection (Zenject, VContainer), reactive systems (UniRx), or messaging systems (DxMessaging, MessagePipe).
+Scriptable Object Architecture uses shared assets for data, variables, event channels or runtime
+sets. DxMessaging can carry notifications between systems that use those assets.
 
-If your project uses or requires SOA, DxMessaging can work alongside it.
+[Unity's architecture guide](https://unity.com/how-to/architect-game-code-scriptable-objects)
+demonstrates both mutable runtime variables and asset-based events. ScriptableObjects are not
+restricted to immutable configuration. The
+[Unity 2021.3 manual](https://docs.unity3d.com/2021.3/Documentation/Manual/class-ScriptableObject.html)
+distinguishes shared data loaded from assets from saving asset changes: a deployed player needs its
+own save system for persistent runtime changes.
 
 ### What is Scriptable Object Architecture?
 
-**SOA Background:** Popularized by Ryan Hipple's [Unite Austin 2017 talk](https://www.youtube.com/watch?v=raQ3iHhE_Kk), SOA uses ScriptableObject assets as:
+Ryan Hipple's [Unite Austin 2017 talk](https://www.youtube.com/watch?v=raQ3iHhE_Kk) describes assets
+used as shared variables, event channels and runtime collections. Serialized references let multiple
+components access the same asset. The asset's implementation defines its payload, mutation and
+listener behavior.
 
-1. **Shared Variables** - `FloatVariable`, `IntVariable`, etc. (ScriptableObject assets that hold runtime state)
-1. **Event Channels** - `GameEvent` + `GameEventListener` pattern (designer-created events)
-1. **Runtime Sets** - Collections of active game objects (e.g., all enemies)
+<a id="why-soa-is-controversial"></a>
 
-**Core idea:** Systems communicate through serialized SO assets instead of direct references.
+### Choose Ownership and Reset Rules
 
-#### Key resources
+Decide these responsibilities before connecting an asset to the bus:
 
-- [Unite 2017 Talk by Ryan Hipple](https://www.youtube.com/watch?v=raQ3iHhE_Kk)
-- [Official Unity Guide](https://unity.com/how-to/architect-game-code-scriptable-objects)
-- [Reference Implementation](https://github.com/roboryantron/Unite2017)
-- [Community Package](https://github.com/DanielEverland/ScriptableObject-Architecture)
+- **State owner:** Identify which asset or service owns health, scores or collection membership.
+  A notification reports a change; it does not replace that state or answer a current-state query.
+- **Initial state:** Give new listeners a current snapshot when they need one. A listener that
+  subscribes after a change cannot reconstruct it from future notifications alone.
+- **Reset:** Define what resets at a new game, scene boundary and play session. Test the domain
+  reload configuration used by the project.
+- **Subscription lifetime:** Pair asset listeners and bus registrations with their actual owners.
+  A bridge owns subscriptions on both sides.
+- **Persistence:** Separate authored defaults, runtime values and saved-game data. Decide which
+  changes should survive a session and which storage writes them.
+- **Testing:** Restore shared asset state and dispose subscriptions between tests. Local buses
+  isolate message routing; they do not isolate a shared asset's data.
 
-### Why SOA is Controversial
-
-From [Anti-ScriptableObject Architecture](https://github.com/cathei/AntiScriptableObjectArchitecture), key criticisms include:
-
-1. **Wrong Purpose** - ScriptableObjects are designed for immutable design data, not runtime mutable state
-1. **Redundant Complexity** - Standard C# objects achieve the same goals without SO restrictions
-1. **Inspector Dependency** - Binds architecture to Unity's GUI, complicating debugging and maintenance
-1. **Limited Scalability** - Runtime-created variables undermine the pattern; managing hundreds of `*Variable` and `GameEvent` assets across scenes becomes unwieldy
-1. **Domain Reload Issues** - Disabled domain reloading causes ScriptableObjects to retain values unpredictably
-1. **Testability Concerns** - SO assets persist between tests, requiring manual cleanup
-
-#### Recommended alternatives
-
-- **Dependency Injection** - Zenject, VContainer, Reflex (see [DxMessaging DI Integrations](../integrations/index.md))
-- **Reactive Systems** - UniRx, UniTask
-- **Messaging** - DxMessaging (this framework), MessagePipe
-- **Configuration Data** - Spreadsheet-based solutions (e.g., BakingSheet)
-
-Use ScriptableObjects for their intended purpose: **immutable design-time data** (configs, balance tables, prefab references).
+[Anti-ScriptableObject Architecture](https://github.com/cathei/AntiScriptableObjectArchitecture)
+is a critique of these patterns. Evaluate its arguments alongside Unity's examples and the needs of
+your project; it does not establish that every runtime asset use is invalid.
 
 ### Can DxMessaging Work with SOA?
 
-**Yes, but with caveats.** DxMessaging and SOA solve similar problems (decoupling, communication) with different philosophies:
+Use an asset or service to own state and DxMessaging to report changes. Choose event assets when
+serialized asset references suit the authoring workflow. Choose typed bus registrations when code
+needs DxMessaging routing, interception, priorities or diagnostics. A bridge can connect the two.
 
-| Aspect               | SOA                                                                              | DxMessaging                               |
-| -------------------- | -------------------------------------------------------------------------------- | ----------------------------------------- |
-| **Paradigm**         | Asset-based, persistent state                                                    | Runtime message passing, transient        |
-| **Designer-Centric** | High (create events in Inspector)                                                | Low (code-driven)                         |
-| **Type Safety**      | Mixed (SO refs typed, but UnityEvent inspector wiring loses compile-time safety) | Strong (compile-time validation)          |
-| **Lifecycle**        | Manual (SO assets persist)                                                       | Automatic (tokens clean up)               |
-| **Debugging**        | Inspector-dependent                                                              | Built-in diagnostics                      |
-| **Performance**      | List iteration, UnityAction overhead                                             | Zero-allocation structs                   |
-| **Use Case**         | Shared state, designer-driven configs                                            | Event-driven communication, runtime logic |
-| **Testability**      | Requires SO asset cleanup                                                        | Isolated buses per test                   |
-
-**Summary:** For new projects, evaluate DxMessaging, DI frameworks, or other messaging approaches based on your needs. If you have existing SOA code, the patterns below show coexistence strategies.
+| Responsibility   | ScriptableObject-based design                                      | DxMessaging                                                                  |
+| ---------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| State            | An asset can hold shared configuration or mutable runtime values   | Messages report changes; the application owns state                          |
+| Authoring        | Serialized asset references and project-specific Inspector tooling | Message types, registrations and optional component setup                    |
+| Payload contract | Defined by the event or variable implementation                    | Typed message interfaces and handler signatures                              |
+| Lifetime         | The application manages asset state and listeners                  | Tokens, leases and components manage registrations when disposed or released |
+| Diagnostics      | Asset Inspector and project tooling                                | Bus and token diagnostics                                                    |
+| Cost             | Depends on the asset implementation and listener work              | Depends on routes, handlers and diagnostics; measure the complete workload   |
 
 ### Pattern Overview
 
-| Pattern | What it shows                                          | When to use                                           | SOA involvement           |
-| ------- | ------------------------------------------------------ | ----------------------------------------------------- | ------------------------- |
-| **A**   | SOA Events (GameEvent) forwarding to DxMessaging       | Designer-created event assets, modern code downstream | Yes - SOA Event pattern   |
-| **B**   | ScriptableObjects for configs + DxMessaging for events | New projects / best practice                          | No - proper SO usage only |
+| Pattern | What it shows                                          | When to use                                           | SOA involvement         |
+| ------- | ------------------------------------------------------ | ----------------------------------------------------- | ----------------------- |
+| **A**   | SOA Events (GameEvent) forwarding to DxMessaging       | Designer-created event assets, modern code downstream | Yes - SOA Event pattern |
+| **B**   | ScriptableObjects for configs + DxMessaging for events | Shared authored config, typed runtime notifications   | No event-asset bridge   |
 
 ### Pattern A: SOA -> DxMessaging (Event Forwarding)
 
@@ -1000,15 +1005,15 @@ public class AudioSystem : MessageAwareComponent
 - Bridge boilerplate for each SOA event
 - Double registration (SOA listener + DxMessaging handler)
 
-### Pattern B: Proper ScriptableObject Usage (Recommended)
+<a id="pattern-b-proper-scriptableobject-usage-recommended"></a>
+
+### Pattern B: Configuration Assets and Runtime Messages
 
 **Use case:** ScriptableObjects for immutable config data, DxMessaging for runtime events.
 
-**Strategy:** Use each tool for its intended purpose; avoid bridging.
-
-> **Important:** This pattern uses ScriptableObjects CORRECTLY (immutable design data),
-> NOT as SOA (mutable runtime state). This is standard Unity best practice, not SOA.
-> If you're only using SOs for config data like this, you don't need SOA patterns at all.
+**Strategy:** Read shared configuration from assets and emit runtime notifications through the bus.
+No event-asset bridge is needed for this arrangement. This example leaves the configuration unchanged
+during play; that is an application choice, not a ScriptableObject restriction.
 
 #### Example: Combat with Designer-Tunable Data
 
@@ -1019,7 +1024,7 @@ using DxMessaging.Unity;
 using UnityEngine;
 
 // ScriptableObject: Designer-tunable balance data (immutable at runtime)
-// This is CORRECT SO usage, NOT SOA
+// This example reads configuration without changing it during play.
 [CreateAssetMenu(menuName = "Config/Weapon Stats")]
 public class WeaponStats : ScriptableObject
 {
@@ -1039,7 +1044,7 @@ public readonly partial struct DamageDealt
 // Combat system: Reads immutable SO data, emits DxMessaging events
 public class Weapon : MessageAwareComponent
 {
-    [SerializeField] private WeaponStats stats; // Immutable config (correct SO usage)
+    [SerializeField] private WeaponStats stats; // Shared configuration read by this component
 
     public void Fire()
     {
@@ -1067,65 +1072,57 @@ public class CombatAnalytics : MessageAwareComponent
 }
 ```
 
-##### Benefits
+##### Responsibilities
 
-- [x] **Best of both worlds** - ScriptableObjects for static configs, DxMessaging for runtime events
-- [x] No bridging overhead
-- [x] Uses each system correctly: SOs for their intended purpose (immutable design data), messaging for runtime communication
-- [x] This is NOT SOA - it's proper Unity architecture
-
-###### This pattern separates concerns clearly
+- Keep authored weapon settings separate from per-player mutable state.
+- Register analytics with the bus used by the sender and release registrations with their owner.
+- Measure any configuration lookup, message dispatch and listener work in the target application.
 
 ### When to Use Each Pattern
 
-| Pattern                     | Use When                                                | Complexity | Performance |
-| --------------------------- | ------------------------------------------------------- | ---------- | ----------- |
-| **A: SOA -> DxMessaging**   | Designers create SOA events, modern code uses messaging | Medium     | Medium      |
-| **B: Proper SO Usage**      | Immutable configs only, messaging for events            | Low        | Good        |
-| **None (Pure DxMessaging)** | Greenfield project or full SOA migration                | Lowest     | Best        |
+| Pattern                   | Use when                                               | Ownership to define                                     |
+| ------------------------- | ------------------------------------------------------ | ------------------------------------------------------- |
+| **A: SOA -> DxMessaging** | Existing event assets must notify bus listeners        | Asset listeners, bridge lifetime and bus registrations  |
+| **B: Configs + messages** | Shared authored settings feed code that emits messages | Configuration, runtime state and bus registrations      |
+| **No bridge**             | The application already uses one event system          | State, listener lifetime and reset rules in that system |
+
+These examples do not measure or rank the alternatives' performance.
 
 ### Migration Path: SOA -> DxMessaging
 
-If you're moving away from SOA:
+Migrate a notification channel separately from the state it describes:
 
-1. **Phase 1:** Identify SOA event usage (GameEvent/GameEventListener patterns)
-1. **Phase 2:** Create equivalent DxMessaging messages (Untargeted/Broadcast)
-1. **Phase 3:** Add bridges (Pattern A or B) to maintain compatibility
-1. **Phase 4:** Migrate listeners to DxMessaging incrementally
-1. **Phase 5:** Remove bridges and SOA assets once all references gone
+1. Identify event producers, listeners, payloads and lifetime boundaries.
+1. Define equivalent typed messages and choose the bus each participant uses.
+1. Add a bridge for the event channels that must coexist during migration.
+1. Move listeners incrementally, checking that a transition does not produce duplicate delivery.
+1. Remove a bridge or asset only after every remaining reference and owner has been accounted for.
 
-For SOA variables:
+For shared variables, keep an explicit state owner. An asset or service can hold the current value
+while messages report changes. Preserve initialization, reset and save behavior if you move that
+state to another owner.
 
-1. Convert read-only SO configs -> Keep as-is (correct SO usage) or move to JSON/ScriptableObjects for data
-1. Convert mutable SO variables -> DxMessaging messages or DI-injected services
-1. Convert RuntimeSets -> DxMessaging global observers (`RegisterBroadcastWithoutSource`)
+For runtime sets, retain a membership collection or service with queries for current members.
+Messages can announce additions and removals, but a new observer still needs an initial snapshot
+and a defined ordering between that snapshot and subsequent changes. A
+`RegisterBroadcastWithoutSource` subscription alone is not a replacement for a runtime set.
 
 ### Final Recommendations
 
-#### If you're using SOA
+- Keep existing asset workflows that meet the project's authoring and ownership needs.
+- Use Pattern A when existing event assets need to reach DxMessaging listeners.
+- Use Pattern B when shared configuration and runtime messages are sufficient for the application.
+- Test reset, subscription cleanup, initial-state delivery and persistence for the chosen design.
+- Compare measured workload costs before choosing an architecture for performance reasons.
 
-- [x] **Do:** Use Pattern B (Proper SO Usage) - SOs for immutable configs ONLY, DxMessaging for runtime events
-- [x] **Do:** Use Pattern A to bridge existing SOA GameEvent assets to DxMessaging during migration
-- [x] **Do:** Read [Anti-ScriptableObject Architecture](https://github.com/cathei/AntiScriptableObjectArchitecture) to understand risks
-- [x] **Do:** Consider gradual migration to DxMessaging or DI frameworks
-- [ ] **Don't:** Use SOs for mutable runtime state (health, scores, etc.)
-- [ ] **Don't:** Create new SOA event assets -- use DxMessaging messages instead
-
-##### If you're starting fresh
-
-- [x] **Do:** Use DxMessaging for all messaging/events
-- [x] **Do:** Use ScriptableObjects ONLY for immutable design data (weapon stats, level configs)
-- [x] **Do:** Consider DI frameworks (Zenject/VContainer) for service dependencies
-- [ ] **Don't:** Adopt SOA's GameEvent/Variable patterns -- they're superseded by better tools
-
-###### Resources
+#### Resources
 
 - [Anti-ScriptableObject Architecture](https://github.com/cathei/AntiScriptableObjectArchitecture) - Detailed critique
 - [Ryan Hipple Unite 2017 Talk](https://www.youtube.com/watch?v=raQ3iHhE_Kk) - Original SOA presentation
 - [Unity Official Guide](https://unity.com/how-to/architect-game-code-scriptable-objects) - Unity's perspective
-- [DxMessaging DI Integrations](../integrations/index.md) - Better alternatives for dependency management
-- [Zenject](https://github.com/modesttree/Zenject) - Recommended DI framework
-- [VContainer](https://github.com/hadashiA/VContainer) - Lightweight DI alternative
+- [DxMessaging DI Integrations](../integrations/index.md) - Options for service ownership
+- [Zenject](https://github.com/modesttree/Zenject) - DI framework
+- [VContainer](https://github.com/hadashiA/VContainer) - DI framework
 
 ---
 

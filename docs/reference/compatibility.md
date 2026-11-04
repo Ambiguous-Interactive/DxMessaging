@@ -31,14 +31,19 @@ for init-only properties and serialization; the generator does not add those cap
 
 ### Scriptable Object Architecture (SOA)
 
-DxMessaging can work alongside Scriptable Object Architecture patterns, though SOA has documented limitations. See [Pattern 14: SOA Compatibility](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa) for detailed integration strategies, code examples, and migration paths.
+DxMessaging can bridge existing event assets or report changes to state owned by an asset or
+service. [Unity's architecture guide](https://unity.com/how-to/architect-game-code-scriptable-objects)
+includes mutable runtime variables and event assets; ScriptableObjects are not limited to immutable
+configuration.
 
 #### Quick summary
 
-- [x] **Compatible** - DxMessaging can bridge with SOA systems
-- **Not recommended** - SOA has scalability and maintainability concerns ([detailed critique](https://github.com/cathei/AntiScriptableObjectArchitecture))
-- [x] **Best practice** - Use ScriptableObjects for immutable design data, DxMessaging for runtime events
-- to See [SOA Integration Patterns](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa) for three coexistence strategies with code examples
+- Bridge event assets when their notifications must reach bus listeners.
+- Keep an explicit owner for current state, runtime-set membership, reset and saved-game storage.
+- Pair asset listeners and bus registrations with their actual lifetimes.
+- Use shared configuration with runtime messages when that design meets the application needs.
+- See the [SOA integration patterns](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa)
+  for two examples and migration responsibilities.
 
 ### Dependency Injection (DI) Frameworks
 

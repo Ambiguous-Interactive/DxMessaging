@@ -583,38 +583,45 @@ public class AchievementSystem
 
 **Core Philosophy:** Designer-driven, asset-based communication where systems communicate through serialized SO assets instead of direct references.
 
-**Contested Pattern:** SOA has both proponents and critics. Supporters value its designer-friendly workflow and Inspector-based event wiring. Critics raise concerns about scalability and maintainability at scale. See [Anti-ScriptableObject Architecture](https://github.com/cathei/AntiScriptableObjectArchitecture) for one perspective on the criticisms. Unity recommends ScriptableObjects for **immutable design data**, not mutable runtime state.
+[Unity's architecture guide](https://unity.com/how-to/architect-game-code-scriptable-objects)
+shows both runtime variables and event assets. ScriptableObjects can hold mutable state as well as
+shared authored configuration. The
+[Unity 2021.3 manual](https://docs.unity3d.com/2021.3/Documentation/Manual/class-ScriptableObject.html)
+explains the distinction between using asset data in a player and saving asset changes. Define
+runtime state ownership, reset and saved-game storage explicitly.
 
 ### Quick Comparison
 
-| Aspect               | SOA (GameEvent/Variables)                                              | DxMessaging                      |
-| -------------------- | ---------------------------------------------------------------------- | -------------------------------- |
-| **Designer Control** | High (create events in Inspector)                                      | Low (code-driven)                |
-| **Type Safety**      | Mixed (SO refs typed, but UnityEvent wiring loses compile-time safety) | Strong (compile-time validation) |
-| **Lifecycle**        | Manual (assets persist)                                                | Automatic (tokens clean up)      |
-| **Performance**      | List iteration, UnityAction overhead                                   | Zero-allocation structs          |
-| **Testability**      | Requires SO asset cleanup                                              | Isolated buses per test          |
+| Aspect           | SOA (GameEvent/Variables)                              | DxMessaging                                                       |
+| ---------------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| Authoring        | Asset references and project-specific Inspector wiring | Typed messages and registrations in code                          |
+| State            | Assets can hold shared configuration or runtime values | The application owns state; messages report changes               |
+| Payload contract | Defined by the event or variable implementation        | Typed message interfaces and handler signatures                   |
+| Lifecycle        | The application owns asset state and listener cleanup  | Tokens, leases and components manage registrations when released  |
+| Performance      | Measure the actual asset/listener implementation       | Measure the actual route, handlers and diagnostics                |
+| Testing          | Reset shared state and remove listeners between tests  | Local buses isolate routing; shared asset state still needs reset |
 
 ### When to Use Each
 
 #### Choose SOA when
 
-- Designers need to create and wire events in the Inspector without code
-- Your team is already deeply invested in SOA with existing assets
-- Designer empowerment is more important than code maintainability
+- Serialized asset references fit the team's authoring workflow.
+- Existing event assets or shared runtime variables already have suitable ownership and reset rules.
 
 ##### Choose DxMessaging when
 
-- You need type-safe, code-driven messaging
-- Performance and zero-allocation are priorities
-- You want automatic lifecycle management
-- You need interceptors, priorities, or global observers
+- Code needs typed messages with targeting, source filtering, interceptors or priorities.
+- Bus and token diagnostics help inspect delivery.
+- Tokens, leases or components fit the application's registration ownership.
 
 ###### Use Both when
 
-- ScriptableObjects for **immutable config data** (weapon stats, level configs)
-- DxMessaging for **runtime events and communication**
-- This is the recommended approach - use each tool correctly
+- Existing event assets need to notify code through a bridge.
+- Shared configuration supplies code that emits runtime messages.
+- An asset or service owns current state while messages report changes.
+
+The examples do not establish a performance ranking. Preserve state queries and initial snapshots
+when migrating variables or runtime sets; subscriptions alone do not supply either.
 
 ### Full Comparison Guide
 
@@ -625,7 +632,7 @@ For detailed migration patterns, interoperability strategies, and code examples,
 Includes:
 
 - Pattern A: Bridging SOA GameEvents to DxMessaging
-- Pattern B: Proper ScriptableObject usage (configs + messaging)
+- Pattern B: Configuration assets with runtime messages
 - Migration path from SOA to DxMessaging
 - When to keep using ScriptableObjects
 
@@ -1484,26 +1491,28 @@ assertion fails. Separate buses isolate routing; runtime settings and pools rema
 | Aspect               | C# Events                                                            | UnityEvents                                                          | SOA (GameEvent)                                                      | Static Bus                                                           | DxMessaging                                                          |
 | -------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | **Setup Complexity** | Minimal                                                              | Simple                                                               | Asset creation                                                       | Moderate                                                             | Moderate                                                             |
-| **Boilerplate**      | Low                                                                  | Low                                                                  | High                                                                 | Medium                                                               | Medium                                                               |
+| **Boilerplate**      | Low                                                                  | Low                                                                  | Asset and listener classes                                           | Medium                                                               | Medium                                                               |
 | **Performance**      | [Current CI results](./performance.md#latest-ci-performance-results) | [Current CI results](./performance.md#latest-ci-performance-results) | [Current CI results](./performance.md#latest-ci-performance-results) | [Current CI results](./performance.md#latest-ci-performance-results) | [Current CI results](./performance.md#latest-ci-performance-results) |
-| **Decoupling**       | Tight                                                                | Hidden                                                               | Good                                                                 | Good                                                                 | Excellent                                                            |
+| **Decoupling**       | Tight                                                                | Hidden                                                               | Shared asset references                                              | Good                                                                 | Excellent                                                            |
 | **Designer Control** | None                                                                 | High                                                                 | High                                                                 | None                                                                 | None                                                                 |
-| **Lifecycle Safety** | Manual                                                               | Unity-managed                                                        | Manual persist                                                       | Manual                                                               | Automatic                                                            |
-| **Observability**    | None                                                                 | None                                                                 | Inspector only                                                       | None                                                                 | Built-in                                                             |
-| **Execution Order**  | Undefined                                                            | Undefined                                                            | Undefined                                                            | Undefined                                                            | Priority-based                                                       |
-| **Type Safety**      | Strong                                                               | Weak                                                                 | Mixed                                                                | Varies                                                               | Strong                                                               |
-| **Testability**      | Hard                                                                 | Hard                                                                 | Very Hard                                                            | Very Hard                                                            | Easy                                                                 |
-| **Learning Curve**   | Minimal                                                              | Minimal                                                              | Moderate                                                             | Low                                                                  | Moderate                                                             |
-| **Memory Safety**    | Leak-prone                                                           | Unity-managed                                                        | Asset persist                                                        | Leak-prone                                                           | Leak-free                                                            |
-| **Debugging**        | Hard at scale                                                        | Hard at scale                                                        | Inspector-only                                                       | Very Hard                                                            | Excellent                                                            |
+| **Lifecycle Safety** | Manual                                                               | Unity-managed                                                        | Application-owned state and listeners                                | Manual                                                               | Automatic                                                            |
+| **Observability**    | None                                                                 | None                                                                 | Asset Inspector and project tooling                                  | None                                                                 | Built-in                                                             |
+| **Execution Order**  | Undefined                                                            | Undefined                                                            | Defined by channel implementation                                    | Undefined                                                            | Priority-based                                                       |
+| **Type Safety**      | Strong                                                               | Weak                                                                 | Defined by payload/listener signatures                               | Varies                                                               | Strong                                                               |
+| **Testability**      | Hard                                                                 | Hard                                                                 | Reset asset state and listeners                                      | Very Hard                                                            | Easy                                                                 |
+| **Learning Curve**   | Minimal                                                              | Minimal                                                              | Asset and listener workflow                                          | Low                                                                  | Moderate                                                             |
+| **Memory Safety**    | Leak-prone                                                           | Unity-managed                                                        | Shared asset and listener ownership                                  | Leak-prone                                                           | Leak-free                                                            |
+| **Debugging**        | Hard at scale                                                        | Hard at scale                                                        | Asset Inspector and project tooling                                  | Very Hard                                                            | Excellent                                                            |
 
-### Overall Verdict by Use Case
+<a id="overall-verdict-by-use-case"></a>
+
+### Choices by Use Case
 
 - **Small prototype/jam:** C# Events or UnityEvents win (simplicity > all)
 - **Mid-size game (5-20k lines):** DxMessaging starts paying off (decoupling, debugging)
 - **Large game (20k+ lines):** DxMessaging essential for maintainability
 - **Designer-driven workflow:** SOA has value (Inspector wiring) but consider maintenance costs
-- **Legacy SOA project:** Use Pattern B (keep SOs for configs, migrate events to DxMessaging)
+- **Legacy SOA project:** Preserve state ownership and existing asset workflows; bridge event channels only where bus listeners are needed.
 - **Performance-critical (millions of messages/frame):** Compare the exact
   topology in the [current CI results](./performance.md#latest-ci-performance-results);
   different libraries lead different scenarios
@@ -1581,9 +1590,9 @@ assertion fails. Separate buses isolate routing; runtime settings and pools rema
 
 - [x] Designers must create and wire events without touching code
 - [x] Team is already heavily invested in SOA with many existing assets
-- [x] Designer empowerment is the absolute top priority
-- **BUT:** Consider migration costs and maintainability issues (see [Anti-SOA critique](https://github.com/cathei/AntiScriptableObjectArchitecture))
-- **Alternative:** Use ScriptableObjects for configs only + DxMessaging for events (Pattern B in [SOA Guide](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa))
+- [x] Shared assets have explicit state ownership, reset and subscription cleanup.
+- Consider migration and ongoing maintenance costs alongside the existing authoring workflow.
+- **Alternative:** Keep configuration or runtime state in an asset/service and use messages for notifications ([SOA integration choices](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa)).
 
 ### Static Event Bus Wins When
 
