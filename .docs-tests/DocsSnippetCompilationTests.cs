@@ -158,6 +158,175 @@ internal sealed class DocsSnippetCompilationTests
         }
     }
 
+    /// <summary>Release the subscribed event even when the serialized asset reference changes.</summary>
+    /// <remarks>2026-11-04: Reading the edited field during teardown left the original listener live.</remarks>
+    [TestCase("unchanged")]
+    [TestCase("replaced")]
+    [TestCase("cleared")]
+    public void SoaBridgeReleasesItsSubscribedAsset(string referenceChange)
+    {
+        string path = Path.Combine(ResolveRepoRoot(), "docs/guides/patterns.md");
+        string[] samples = ExtractCodeBlocks(path, "csharp")
+            .Where(code =>
+                code.Contains("class GameEvent :", StringComparison.Ordinal)
+                && code.Contains("EventBridge : MonoBehaviour", StringComparison.Ordinal)
+            )
+            .ToArray();
+        Assert.That(samples, Has.Length.EqualTo(1), path);
+        ClassDeclarationSyntax[] classes = CSharpSyntaxTree
+            .ParseText(samples[0])
+            .GetRoot()
+            .DescendantNodes()
+            .OfType<ClassDeclarationSyntax>()
+            .Where(type =>
+                type.Identifier.ValueText == "GameEvent"
+                || type.Identifier.ValueText.EndsWith("EventBridge", StringComparison.Ordinal)
+            )
+            .ToArray();
+        Assert.That(classes, Has.Length.EqualTo(2), "Execute both actual documented classes.");
+        ClassDeclarationSyntax bridgeDeclaration = classes.Single(type =>
+            type.Identifier.ValueText.EndsWith("EventBridge", StringComparison.Ordinal)
+        );
+        Assert.That(bridgeDeclaration.Members.OfType<ConstructorDeclarationSyntax>(), Is.Empty);
+        // Give the standalone compiler an observable serialized-field assignment. The
+        // extracted fields and lifecycle methods stay unchanged; only this fixture constructor is added.
+        classes[Array.IndexOf(classes, bridgeDeclaration)] = bridgeDeclaration.AddMembers(
+            SyntaxFactory.ParseMemberDeclaration(
+                "public "
+                    + bridgeDeclaration.Identifier.ValueText
+                    + "(GameEvent initialEvent) { onSceneTransitionSO = initialEvent; }"
+            )!
+        );
+        // Only class-body subscription ownership is qualified here. The fixtures do not
+        // model Unity fake-null, asset destruction, native lifecycle scheduling or bus delivery.
+        string source =
+            "using System.Collections.Generic; using UnityEngine; using UnityEngine.Events;\n"
+            + string.Join("\n", classes.Select(type => type.ToFullString()))
+            + """
+                namespace UnityEngine
+                {
+                    public class ScriptableObject { }
+                    public class MonoBehaviour { }
+                    public sealed class SerializeField : System.Attribute { }
+                    public sealed class CreateAssetMenuAttribute : System.Attribute
+                    { public string menuName; }
+                }
+                namespace UnityEngine.Events { public delegate void UnityAction(); }
+                public struct SceneTransitionRequested { }
+                public static class EmissionFixture
+                {
+                    public static int Count;
+                    public static void Emit(this ref SceneTransitionRequested message) { Count++; }
+                }
+                """;
+        string[] references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(
+            Path.PathSeparator
+        );
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "SoaBridge_" + Guid.NewGuid().ToString("N"),
+            new[]
+            {
+                CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp9)),
+            },
+            references.Select(reference => MetadataReference.CreateFromFile(reference)),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
+        Assert.That(emitted.Success, Is.True, string.Join("\n", emitted.Diagnostics));
+        System.Runtime.Loader.AssemblyLoadContext load = new("SoaBridge", isCollectible: true);
+        try
+        {
+            image.Position = 0;
+            System.Reflection.Assembly assembly = load.LoadFromStream(image);
+            Type bridgeType = assembly.GetType(
+                bridgeDeclaration.Identifier.ValueText,
+                throwOnError: true
+            )!;
+            Type eventType = assembly.GetType("GameEvent", throwOnError: true)!;
+            object original = Activator.CreateInstance(eventType)!;
+            object replacement = Activator.CreateInstance(eventType)!;
+            object bridge = Activator.CreateInstance(bridgeType, new[] { original })!;
+            object otherBridge = Activator.CreateInstance(bridgeType, new[] { original })!;
+            const System.Reflection.BindingFlags members =
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic;
+            System.Reflection.FieldInfo asset = bridgeType.GetField(
+                "onSceneTransitionSO",
+                members
+            )!;
+            System.Reflection.FieldInfo listeners = eventType.GetField("listeners", members)!;
+            System.Reflection.FieldInfo emissions = assembly
+                .GetType("EmissionFixture")!
+                .GetField("Count")!;
+            System.Reflection.MethodInfo enable = bridgeType.GetMethod("OnEnable", members)!;
+            System.Reflection.MethodInfo disable = bridgeType.GetMethod("OnDisable", members)!;
+            System.Reflection.MethodInfo raise = eventType.GetMethod("Raise")!;
+            int Count(object publisher) =>
+                ((System.Collections.ICollection)listeners.GetValue(publisher)!).Count;
+            void AssertCounts(int originalCount, int replacementCount, int emittedCount)
+            {
+                Assert.Multiple(() =>
+                {
+                    Assert.That(
+                        Count(original),
+                        Is.EqualTo(originalCount),
+                        referenceChange + ": original listeners"
+                    );
+                    Assert.That(
+                        Count(replacement),
+                        Is.EqualTo(replacementCount),
+                        referenceChange + ": replacement listeners"
+                    );
+                    Assert.That(
+                        emissions.GetValue(null),
+                        Is.EqualTo(emittedCount),
+                        referenceChange + ": emissions"
+                    );
+                });
+            }
+            asset.SetValue(bridge, original);
+            asset.SetValue(otherBridge, original);
+            enable.Invoke(bridge, null);
+            enable.Invoke(otherBridge, null);
+            raise.Invoke(original, null);
+            AssertCounts(2, 0, 2);
+            asset.SetValue(
+                bridge,
+                referenceChange == "replaced" ? replacement
+                    : referenceChange == "cleared" ? null
+                    : original
+            );
+            disable.Invoke(bridge, null);
+            AssertCounts(1, 0, 2);
+            raise.Invoke(original, null);
+            raise.Invoke(replacement, null);
+            AssertCounts(1, 0, 3);
+            asset.SetValue(bridge, replacement);
+            enable.Invoke(bridge, null);
+            raise.Invoke(original, null);
+            raise.Invoke(replacement, null);
+            AssertCounts(1, 1, 5);
+            disable.Invoke(bridge, null);
+            disable.Invoke(bridge, null);
+            raise.Invoke(original, null);
+            raise.Invoke(replacement, null);
+            AssertCounts(1, 0, 6);
+            disable.Invoke(otherBridge, null);
+            raise.Invoke(original, null);
+            raise.Invoke(replacement, null);
+            AssertCounts(0, 0, 6);
+        }
+        finally
+        {
+            load.Unload();
+        }
+    }
+
     private static IEnumerable<TestCaseData> BusFirstModifierCases()
     {
         foreach (string kind in new[] { "Untargeted", "Targeted", "Broadcast" })

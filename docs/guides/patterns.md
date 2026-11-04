@@ -930,7 +930,9 @@ needs DxMessaging routing, interception, priorities or diagnostics. A bridge can
 #### Example: Scene Transitions
 
 ```csharp
+using System.Collections.Generic;
 using DxMessaging.Core.Messages;
+using DxMessaging.Unity;
 using DxMessaging.Core.Attributes;
 using DxMessaging.Core.Extensions;
 using UnityEngine;
@@ -957,21 +959,33 @@ public class GameEvent : ScriptableObject
 public readonly partial struct SceneTransitionRequested { }
 
 // Bridge: SOA Event -> DxMessaging
-public class SOAEventBridge : MonoBehaviour
+public class SoaEventBridge : MonoBehaviour
 {
     [SerializeField] private GameEvent onSceneTransitionSO; // Designer-created asset
+    private GameEvent subscribedEvent;
 
     void OnEnable()
     {
-        onSceneTransitionSO.RegisterListener(OnSOAEvent);
+        if (onSceneTransitionSO == null)
+        {
+            return;
+        }
+
+        subscribedEvent = onSceneTransitionSO;
+        subscribedEvent.RegisterListener(OnSoaEvent);
     }
 
     void OnDisable()
     {
-        onSceneTransitionSO.UnregisterListener(OnSOAEvent);
+        GameEvent publisher = subscribedEvent;
+        subscribedEvent = null;
+        if (!ReferenceEquals(publisher, null))
+        {
+            publisher.UnregisterListener(OnSoaEvent);
+        }
     }
 
-    void OnSOAEvent()
+    void OnSoaEvent()
     {
         // Forward to DxMessaging
         var message = new SceneTransitionRequested();
@@ -990,10 +1004,15 @@ public class AudioSystem : MessageAwareComponent
 
     void OnTransition(in SceneTransitionRequested msg)
     {
-        FadeOutMusic(); // Type-safe, debuggable via DxMessaging Inspector
+        Debug.Log("Scene transition requested; start the application audio fade here.");
     }
 }
 ```
+
+Assign the event asset before enabling the bridge. The bridge keeps the subscribed asset for
+teardown, so editing or clearing the Inspector field while active does not leave its old listener
+registered. A later enable uses the current field value. The audio listener logs the notification;
+replace that log with the application's fade operation.
 
 ##### Benefits
 
@@ -1018,6 +1037,8 @@ during play; that is an application choice, not a ScriptableObject restriction.
 #### Example: Combat with Designer-Tunable Data
 
 ```csharp
+using DxMessaging.Core;
+using DxMessaging.Core.Extensions;
 using DxMessaging.Core.Messages;
 using DxMessaging.Core.Attributes;
 using DxMessaging.Unity;
