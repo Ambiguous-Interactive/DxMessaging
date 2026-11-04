@@ -946,8 +946,11 @@ public class GameEvent : ScriptableObject
 
     public void Raise()
     {
-        for (int i = listeners.Count - 1; i >= 0; i--)
-            listeners[i]?.Invoke();
+        UnityAction[] snapshot = listeners.ToArray();
+        for (int i = snapshot.Length - 1; 0 <= i; i--)
+        {
+            snapshot[i]?.Invoke();
+        }
     }
 
     public void RegisterListener(UnityAction listener) => listeners.Add(listener);
@@ -962,26 +965,50 @@ public readonly partial struct SceneTransitionRequested { }
 public class SoaEventBridge : MonoBehaviour
 {
     [SerializeField] private GameEvent onSceneTransitionSO; // Designer-created asset
-    private GameEvent subscribedEvent;
+    private EventSubscription subscription;
+
+    private sealed class EventSubscription
+    {
+        private readonly SoaEventBridge owner;
+        public GameEvent Publisher { get; }
+        public UnityAction Callback { get; }
+
+        public EventSubscription(SoaEventBridge owner, GameEvent publisher)
+        {
+            this.owner = owner;
+            Publisher = publisher;
+            Callback = Forward;
+        }
+
+        private void Forward()
+        {
+            if (ReferenceEquals(owner.subscription, this))
+            {
+                owner.OnSoaEvent();
+            }
+        }
+    }
 
     void OnEnable()
     {
+        OnDisable();
         if (onSceneTransitionSO == null)
         {
             return;
         }
 
-        subscribedEvent = onSceneTransitionSO;
-        subscribedEvent.RegisterListener(OnSoaEvent);
+        EventSubscription binding = new(this, onSceneTransitionSO);
+        subscription = binding;
+        binding.Publisher.RegisterListener(binding.Callback);
     }
 
     void OnDisable()
     {
-        GameEvent publisher = subscribedEvent;
-        subscribedEvent = null;
-        if (!ReferenceEquals(publisher, null))
+        EventSubscription binding = subscription;
+        subscription = null;
+        if (binding != null)
         {
-            publisher.UnregisterListener(OnSoaEvent);
+            binding.Publisher.UnregisterListener(binding.Callback);
         }
     }
 
@@ -1009,10 +1036,17 @@ public class AudioSystem : MessageAwareComponent
 }
 ```
 
-Assign the event asset before enabling the bridge. The bridge keeps the subscribed asset for
-teardown, so editing or clearing the Inspector field while active does not leave its old listener
-registered. A later enable uses the current field value. The audio listener logs the notification;
-replace that log with the application's fade operation.
+Each `Raise()` uses a snapshot in reverse registration order. Listener edits affect later raises;
+a nested raise uses the updated list. Null callbacks are skipped, and an exception stops the current
+raise. `RegisterListener` permits duplicates; `UnregisterListener` removes the first matching entry.
+A nonempty listener list creates an array for each raise. Include that allocation when profiling
+this custom channel.
+
+Assign the event asset before enabling the bridge. Each enable replaces the previous binding and
+creates a callback for that binding. Teardown invalidates it before unregistering from the cached
+asset, so a callback captured by an earlier raise cannot forward after that binding ends. Editing
+or clearing the Inspector field affects the next enable; cleanup still uses the subscribed asset.
+The audio listener logs the notification; replace that log with the application's fade operation.
 
 ##### Benefits
 

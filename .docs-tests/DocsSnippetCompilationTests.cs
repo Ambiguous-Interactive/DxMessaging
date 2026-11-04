@@ -2054,7 +2054,7 @@ internal sealed class DocsSnippetCompilationTests
         return System.Net.WebUtility.HtmlDecode(s);
     }
 
-    private static string ResolveRepoRoot()
+    internal static string ResolveRepoRoot()
     {
         string current = TestContext.CurrentContext.TestDirectory;
         while (!string.IsNullOrEmpty(current))
@@ -2189,7 +2189,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         Assert.That(violations.Length > 0, Is.EqualTo(expectedViolation));
     }
 
-    private static IEnumerable<string> ExtractCodeBlocks(string markdownPath, string infoString)
+    internal static IEnumerable<string> ExtractCodeBlocks(string markdownPath, string infoString)
     {
         return ExtractCodeBlocksFromLines(File.ReadLines(markdownPath), infoString);
     }
