@@ -42,6 +42,122 @@ internal sealed class DocsSnippetCompilationTests
         );
     }
 
+    /// <summary>Keep changes made by synchronous listeners pending for the next batch.</summary>
+    /// <remarks>2026-11-04: Clearing the dirty flag after dispatch lost listener mutations.</remarks>
+    [TestCase("idle", new int[0])]
+    [TestCase("single", new[] { 90 })]
+    [TestCase("coalesced", new[] { 70 })]
+    [TestCase("between", new[] { 90, 85 })]
+    [TestCase("observer", new[] { 90 })]
+    [TestCase("reentrant", new[] { 90, 85 })]
+    [TestCase("repeated", new[] { 90, 85, 80, 75 })]
+    public void BatchedHealthExamplePreservesListenerChanges(string scenario, int[] expected)
+    {
+        string path = Path.Combine(ResolveRepoRoot(), "docs/guides/patterns.md");
+        string[] samples = ExtractCodeBlocks(path, "csharp")
+            .Where(source => source.Contains("private bool healthDirty", StringComparison.Ordinal))
+            .ToArray();
+        Assert.That(samples, Has.Length.EqualTo(1), path);
+        // Execute the actual methods unchanged. Only the synchronous callback and message
+        // dependencies are fixtures; this does not qualify Unity dispatch or frame scheduling.
+        string source =
+            """
+                public sealed class BatchExample
+                {
+                    private int health = 100;
+                    private BatchExample gameObject => this;
+                    public readonly System.Collections.Generic.List<int> Values = new();
+                    public System.Action<int> Listener;
+                    public void Damage(int amount) => TakeDamage(amount);
+                    public void Flush() => LateUpdate();
+                    public void Record(int value) { Values.Add(value); Listener?.Invoke(value); }
+                """
+            + "\n"
+            + samples[0]
+            + "\n}"
+            + """
+                public struct HealthChanged
+                {
+                    public int Value;
+                    public HealthChanged(int value) { Value = value; }
+                }
+                public static class EmissionFixture
+                {
+                    public static void EmitGameObjectBroadcast(this ref HealthChanged message, BatchExample owner)
+                        => owner.Record(message.Value);
+                }
+                """;
+        string[] references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(
+            Path.PathSeparator
+        );
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "BatchExample_" + Guid.NewGuid().ToString("N"),
+            new[]
+            {
+                CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp9)),
+            },
+            references.Select(reference => MetadataReference.CreateFromFile(reference)),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
+        Assert.That(emitted.Success, Is.True, string.Join("\n", emitted.Diagnostics));
+        System.Runtime.Loader.AssemblyLoadContext load = new("BatchExample", isCollectible: true);
+        try
+        {
+            image.Position = 0;
+            Type type = load.LoadFromStream(image).GetType("BatchExample", throwOnError: true)!;
+            object example = Activator.CreateInstance(type)!;
+            System.Reflection.MethodInfo damage = type.GetMethod("Damage")!;
+            System.Reflection.MethodInfo flush = type.GetMethod("Flush")!;
+            List<int> values = (List<int>)type.GetField("Values")!.GetValue(example)!;
+            int callbacks = 0;
+            Action<int> listener = _ =>
+            {
+                callbacks++;
+                if (
+                    scenario == "reentrant" && callbacks == 1
+                    || scenario == "repeated" && callbacks <= 3
+                )
+                {
+                    damage.Invoke(example, new object[] { 5 });
+                }
+            };
+            type.GetField("Listener")!.SetValue(example, listener);
+            if (scenario != "idle")
+            {
+                damage.Invoke(example, new object[] { 10 });
+            }
+            if (scenario == "coalesced")
+            {
+                damage.Invoke(example, new object[] { 20 });
+            }
+            flush.Invoke(example, null);
+            Assert.That(values, Is.EqualTo(expected.Take(1)), scenario + ": first flush");
+            if (scenario == "between")
+            {
+                damage.Invoke(example, new object[] { 5 });
+            }
+            for (int frame = 1; frame <= 4; frame++)
+            {
+                flush.Invoke(example, null);
+                Assert.That(
+                    values,
+                    Is.EqualTo(expected.Take(frame + 1)),
+                    scenario + ": flush " + (frame + 1)
+                );
+            }
+            Assert.That(callbacks, Is.EqualTo(expected.Length), scenario + ": callback count");
+        }
+        finally
+        {
+            load.Unload();
+        }
+    }
+
     private static IEnumerable<TestCaseData> BusFirstModifierCases()
     {
         foreach (string kind in new[] { "Untargeted", "Targeted", "Broadcast" })

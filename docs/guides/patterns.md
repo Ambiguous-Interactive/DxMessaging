@@ -718,16 +718,18 @@ void TakeDamage(int amount) {
 
 void LateUpdate() {
     if (healthDirty) {
-        var msg = new HealthChanged(health);
-        msg.EmitGameObjectBroadcast(gameObject); // Emits once per frame max
         healthDirty = false;
+        var msg = new HealthChanged(health);
+        msg.EmitGameObjectBroadcast(gameObject);
     }
 }
 ```
 
 This example coalesces changes made before `LateUpdate` into one emission from that callback.
-Intermediate health values are omitted. The reduction depends on how many changes occur between
-flushes; this example does not measure throughput.
+Clear the dirty flag before emitting: dispatch is synchronous, so a listener can call `TakeDamage`
+and mark the next batch dirty. Those changes are emitted on the next `LateUpdate` instead of being
+lost when the current emission returns. Intermediate health values are omitted. The reduction
+depends on how many changes occur between flushes; this example does not measure throughput.
 
 ### Scaling Guidelines
 
