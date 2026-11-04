@@ -391,24 +391,26 @@ durable bus-identity guarantee.
 
 ## RegistrationLog API
 
-The `RegistrationLog` class tracks all messaging registrations and deregistrations for a message bus. This is invaluable for debugging subscription issues and understanding message flow.
+`RegistrationLog` retains a bounded history of registration and deregistration events. Standalone logs keep the newest 1,024 entries; bus-owned logs use the **Registration Log Capacity** runtime setting. Recording starts disabled. Old entries are overwritten at capacity, and zero capacity disables storage.
 
 ### Properties
 
 | Property        | Type                                   | Description                                                             |
 | --------------- | -------------------------------------- | ----------------------------------------------------------------------- |
 | `Enabled`       | `bool`                                 | Get/set whether logging is active. Disabled by default for performance. |
-| `Registrations` | `IReadOnlyList<MessagingRegistration>` | Read-only access to all logged registrations.                           |
+| `Registrations` | `IReadOnlyList<MessagingRegistration>` | Live read-only view of retained events, oldest first.                   |
 
 ### Methods
 
 #### `Log(MessagingRegistration registration)`
 
-Records a registration event. Called automatically by the message bus when `Enabled` is true.
+Records an event when `Enabled` is true and capacity is positive. The bus records its registration changes through this method after you enable the log.
 
 #### `GetRegistrations(InstanceId instanceId)`
 
-Returns all registrations for a specific instance. Useful for inspecting what a particular component has registered for.
+Enumerates retained events for the specified instance in chronological order. Check each entry's `registrationType` to distinguish registration from deregistration.
+
+Use this fragment inside a `MonoBehaviour` method, with `using UnityEngine;` at file scope.
 
 ```csharp
 using DxMessaging.Core;
@@ -421,13 +423,13 @@ bus.Log.Enabled = true;
 InstanceId myComponent = GetComponent<MonoBehaviour>();
 foreach (MessagingRegistration reg in bus.Log.GetRegistrations(myComponent))
 {
-    Debug.Log($"Registered for {reg.type.Name} via {reg.registrationMethod}");
+    Debug.Log($"[{reg.registrationType}] {reg.type.Name} via {reg.registrationMethod}");
 }
 ```
 
 #### `ToString()` and `ToString(Func<MessagingRegistration, string> serializer)`
 
-Returns a string representation of all logged registrations. You can provide a custom serializer for formatted output.
+Formats the retained history in chronological order. Pass a custom serializer to choose the output format.
 
 ```csharp
 using DxMessaging.Core;
