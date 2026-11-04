@@ -101,7 +101,7 @@ namespace DxMessaging.Core.Diagnostics
         /// Drops blank lines and DxMessaging-internal frames in a single pass over
         /// <paramref name="fullStackTrace"/>. The previous split + LINQ filter + join allocated a
         /// line array, an iterator, a filtered array, and a join buffer on top of the trace itself;
-        /// this keeps the identical output with one builder.
+        /// this uses one builder for the retained frames.
         /// </summary>
         private static string TrimInternalFrames(string fullStackTrace)
         {
