@@ -5,6 +5,9 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
     // Types used for testing nested and internal support
     public partial class ContainerForNestedTypes
