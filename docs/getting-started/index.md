@@ -6,10 +6,10 @@ This is the documentation for DxMessaging, a type-safe messaging system for Unit
 
 ```mermaid
 flowchart TD
-    Start[START HERE<br/>Visual Guide<br/>5 minutes]
-    Start --> Quick[Quick Start<br/>5 min]
-    Start --> Getting[Getting Started<br/>10 min]
-    Start --> Overview[Overview<br/>5 min]
+    Start[START HERE<br/>Visual Guide]
+    Start --> Quick[Quick Start]
+    Start --> Getting[Getting Started]
+    Start --> Overview[Overview]
     Quick --> Patterns[Patterns & Samples<br/>Hands-on!]
     Getting --> Patterns
     Overview --> Patterns
@@ -38,22 +38,22 @@ flowchart TD
 
 **Never used a messaging system before?** Start here:
 
-1. **[Mental Model](../concepts/mental-model.md)** - How to think about DxMessaging (10 min)
-1. **[Visual Guide](visual-guide.md)** - Beginner-friendly visual introduction (5 min)
-1. **[Getting Started Guide](getting-started.md)** - Walkthrough with code examples (10 min)
-1. **[Quick Start](quick-start.md)** - Your first working message (5 min)
-1. **[Overview](overview.md)** - What DxMessaging is and why it exists (5 min)
+1. **[Mental Model](../concepts/mental-model.md)** - How to think about DxMessaging
+1. **[Visual Guide](visual-guide.md)** - Beginner-friendly visual introduction
+1. **[Getting Started Guide](getting-started.md)** - Walkthrough with code examples
+1. **[Quick Start](quick-start.md)** - Your first working message
+1. **[Overview](overview.md)** - What DxMessaging is and why it exists
 
 ## Learning Path
 
 ### For Absolute Beginners (Never Used Messaging Before)
 
-1. Read [Mental Model](../concepts/mental-model.md) (10 min) - Philosophy first!
-1. Read [Visual Guide](visual-guide.md) (5 min) - Pictures and analogies!
-1. Read [Getting Started](getting-started.md) (10 min) - Complete introduction
-1. Try [Quick Start](quick-start.md) (5 min) - Hands-on tutorial
-1. Understand [Message Types](../concepts/message-types.md) (10 min) - When to use what
-1. Study [Common Patterns](../guides/patterns.md) (15 min) - Real examples
+1. Read [Mental Model](../concepts/mental-model.md) - Philosophy first!
+1. Read [Visual Guide](visual-guide.md) - Pictures and analogies!
+1. Read [Getting Started](getting-started.md) - Complete introduction
+1. Try [Quick Start](quick-start.md) - Hands-on tutorial
+1. Understand [Message Types](../concepts/message-types.md) - When to use what
+1. Study [Common Patterns](../guides/patterns.md) - Real examples
 
 ### For Advanced Users
 
@@ -69,7 +69,7 @@ flowchart TD
 - **[Visual Guide](visual-guide.md)** - Beginner-friendly visual introduction with pictures and analogies
 - **[Getting Started](getting-started.md)** - Complete beginner's guide with mental models
 - **[Overview](overview.md)** - What and why
-- **[Quick Start](quick-start.md)** - First message in 5 minutes
+- **[Quick Start](quick-start.md)** - Define, register, and emit your first message
 - **[Message Types](../concepts/message-types.md)** - When to use Untargeted/Targeted/Broadcast
 - **[Comparisons](../architecture/comparisons.md)** - DxMessaging vs C# Events, UnityEvents, SendMessage
 
@@ -186,11 +186,11 @@ flowchart LR
 
 ### Must-Read Docs (In Order)
 
-1. **[Getting Started](getting-started.md)** - Start here! (10 min)
-1. **[Message Types](../concepts/message-types.md)** - Choose the right type (10 min)
-1. **[Patterns](../guides/patterns.md)** - See real examples (15 min)
-1. **[Diagnostics](../guides/diagnostics.md)** - Debug like a pro (10 min)
-1. **[Design & Architecture](../architecture/design-and-architecture.md)** - Understand the internals (30 min)
+1. **[Getting Started](getting-started.md)** - Start here!
+1. **[Message Types](../concepts/message-types.md)** - Choose the right type
+1. **[Patterns](../guides/patterns.md)** - See real examples
+1. **[Diagnostics](../guides/diagnostics.md)** - Debug like a pro
+1. **[Design & Architecture](../architecture/design-and-architecture.md)** - Understand the internals
 
 ### Feature-Specific
 
@@ -298,19 +298,19 @@ From [Comparisons](../architecture/comparisons.md):
 
 ## Quick Start Path
 
-**Absolute Beginner?** Follow this 40-minute path:
+**New to messaging?** Follow these steps:
 
-1. 10 min: [Mental Model](../concepts/mental-model.md) - Understand the philosophy first!
-1. 5 min: [Visual Guide](visual-guide.md) - Pictures & analogies
-1. 10 min: [Getting Started](getting-started.md) - Deep dive
-1. 5 min: [Quick Start](quick-start.md) - Hands-on code
-1. 10 min: Try a [Sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) - See it in action
+1. [Mental Model](../concepts/mental-model.md) - Understand the philosophy first!
+1. [Visual Guide](visual-guide.md) - Pictures & analogies
+1. [Getting Started](getting-started.md) - Deep dive
+1. [Quick Start](quick-start.md) - Hands-on code
+1. Try a [Sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) - See it in action
 
 **Want to go deep?** Continue with:
 
-1. 15 min: [Patterns](../guides/patterns.md)
-1. 20 min: [Interceptors & Ordering](../concepts/interceptors-and-ordering.md)
-1. 30 min: [Design & Architecture](../architecture/design-and-architecture.md)
+1. [Patterns](../guides/patterns.md)
+1. [Interceptors & Ordering](../concepts/interceptors-and-ordering.md)
+1. [Design & Architecture](../architecture/design-and-architecture.md)
 
 ---
 

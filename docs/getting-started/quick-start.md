@@ -1,16 +1,20 @@
-# Quick Start - Your First Message in 5 Minutes
+# Quick Start - Your First Message
+
+<a id="quick-start-your-first-message-in-5-minutes"></a>
 
 [Back to Index](index.md) | [Getting Started](getting-started.md) | [Visual Guide](visual-guide.md) | [Samples](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Samples~)
 
 ---
 
-**Goal:** Get a working message system in 5 minutes. Copy the scripts, add two components, and run.
+**Goal:** Build a working message system. Copy the scripts, add two components, and run.
 
 **Stuck?** -> [Troubleshooting](../reference/troubleshooting.md) | [FAQ](../reference/faq.md)
 
 ---
 
-## Step 0: Install (30 seconds)
+## Step 0: Install
+
+<a id="step-0-install-30-seconds"></a>
 
 Unity Package Manager -> Add package from git URL:
 
@@ -138,16 +142,16 @@ to learn when a global announcement or source-bound event fits better than this 
 ## Next Steps
 
 - **Understand What You Did**
-  - -> [Mental Model](../concepts/mental-model.md) (10 min) - Philosophy and first principles
-  - -> [Getting Started Guide](getting-started.md) (10 min) - Full explanation with examples
-  - -> [Visual Guide](visual-guide.md) (5 min) - Pictures and analogies
+  - -> [Mental Model](../concepts/mental-model.md) - Philosophy and first principles
+  - -> [Getting Started Guide](getting-started.md) - Full explanation with examples
+  - -> [Visual Guide](visual-guide.md) - Pictures and analogies
 - **Try Real Examples**
   - -> [Mini Combat sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md) - Working combat example
   - -> [UI Buttons + Inspector sample](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/UI%20Buttons%20%2B%20Inspector/README.md) - See diagnostics in action
 - **Go Deeper**
-  - -> [Message Types](../concepts/message-types.md) (10 min) - When to use which type
-  - -> [Common Patterns](../guides/patterns.md) (15 min) - Real-world solutions
-  - -> [Interceptors & Ordering](../concepts/interceptors-and-ordering.md) (10 min) - Advanced control
+  - -> [Message Types](../concepts/message-types.md) - When to use which type
+  - -> [Common Patterns](../guides/patterns.md) - Real-world solutions
+  - -> [Interceptors & Ordering](../concepts/interceptors-and-ordering.md) - Advanced control
 - **Reference**
   - -> [Quick Reference](../reference/quick-reference.md) - Cheat sheet
   - -> [API Reference](../reference/reference.md) - Complete API

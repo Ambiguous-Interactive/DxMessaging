@@ -43,7 +43,7 @@ See the [Install Guide](docs/getting-started/install.md) for Git URL, scoped reg
 
 - [30-Second Elevator Pitch](#30-second-elevator-pitch)
 - [Mental Model: How to Think About DxMessaging](#mental-model-how-to-think-about-dxmessaging)
-- [Quick Start (5 Minutes)](#quick-start-5-minutes)
+- [Quick Start](#quick-start)
 - [Dependency Injection (DI) Compatible](#dependency-injection-di-compatible)
 - [Is DxMessaging Right for You?](#is-dxmessaging-right-for-you)
 - [Why DxMessaging](#why-dxmessaging)
@@ -183,13 +183,15 @@ flowchart TD
 
 **Want more depth?** See the full [Mental Model documentation](docs/concepts/mental-model.md) for detailed examples, lifecycle patterns, and edge cases.
 
-**Ready to code?** Jump to [Quick Start](#quick-start-5-minutes) to send your first message!
+**Ready to code?** Jump to [Quick Start](#quick-start) to send your first message!
 
 ---
 
-## Quick Start (5 Minutes)
+## Quick Start
 
-**New to messaging?** Start with the [Visual Guide](docs/getting-started/visual-guide.md) (5 min) for a beginner-friendly introduction!
+<a id="quick-start-5-minutes"></a>
+
+**New to messaging?** Start with the [Visual Guide](docs/getting-started/visual-guide.md) for a beginner-friendly introduction!
 
 ### 1. Install
 
@@ -794,14 +796,14 @@ Unity messaging tests on the main thread and avoid concurrent access to that sha
 
 ### Learn
 
-- **New here?** Start with [Getting Started Guide](docs/getting-started/getting-started.md) (10 min read)
+- **New here?** Start with [Getting Started Guide](docs/getting-started/getting-started.md)
 - **Want patterns?** See [Common Patterns](docs/guides/patterns.md)
 - **Deep dive?** Read [Design & Architecture](docs/architecture/design-and-architecture.md)
 
 ### Core Concepts
 
 - [Overview](docs/getting-started/overview.md) -- What and why
-- [Quick Start](docs/getting-started/quick-start.md) -- First message in 5 minutes
+- [Quick Start](docs/getting-started/quick-start.md) -- Define, register, and emit your first message
 - [Message Types](docs/concepts/message-types.md) -- When to use Untargeted/Targeted/Broadcast
 - [Interceptors & Ordering](docs/concepts/interceptors-and-ordering.md) -- Control execution flow
 - [Listening Patterns](docs/concepts/listening-patterns.md) -- All the ways to receive messages
