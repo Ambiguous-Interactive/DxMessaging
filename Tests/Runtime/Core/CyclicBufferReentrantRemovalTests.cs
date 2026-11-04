@@ -171,7 +171,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 $"{mutation}: the callback's capacity change must survive."
             );
             Assert.That(
-                buffer.ScratchCacheCount,
+                ((List<int>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
                 Is.Zero,
                 "Every removal exit must scrub scratch references."
             );
@@ -184,7 +184,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Removal ownership must be released for later reuse."
             );
             Assert.That(buffer.Count, Is.Zero, "Later reuse must leave an empty buffer.");
-            Assert.That(buffer.ScratchCacheCount, Is.Zero, "Later reuse must also scrub scratch.");
+            Assert.That(
+                ((List<int>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
+                Is.Zero,
+                "Later reuse must also scrub scratch."
+            );
         }
 
         [TestCase(false)]
@@ -236,7 +240,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "Only the outer matched entry may be removed."
             );
             Assert.That(
-                buffer.ScratchCacheCount,
+                ((List<int>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
                 Is.Zero,
                 "Caught recursive rejection must not leak scratch references."
             );
@@ -288,7 +292,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 "No partially compacted outer result may publish after a throw."
             );
             Assert.That(
-                buffer.ScratchCacheCount,
+                ((List<int>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
                 Is.Zero,
                 "Throwing callbacks must scrub scratch."
             );

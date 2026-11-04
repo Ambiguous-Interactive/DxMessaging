@@ -228,7 +228,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.AreEqual(
                 0,
-                buffer.ScratchCacheCount,
+                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
                 "Failed Remove must clear the scratch cache."
             );
 
@@ -239,7 +239,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.AreEqual(
                 0,
-                buffer.ScratchCacheCount,
+                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
                 "No-op RemoveAll must clear the scratch cache."
             );
 
@@ -249,7 +249,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.AreEqual(
                 0,
-                buffer.ScratchCacheCount,
+                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
                 "Throwing Remove comparer must clear the scratch cache."
             );
 
@@ -262,21 +262,25 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             Assert.AreEqual(
                 0,
-                buffer.ScratchCacheCount,
+                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
                 "Throwing RemoveAll predicate must clear the scratch cache."
             );
 
             Assert.IsTrue(buffer.Remove(first), "Control failed: existing item should remove.");
             Assert.AreEqual(
                 0,
-                buffer.ScratchCacheCount,
+                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
                 "Successful Remove must clear the scratch cache after rebuilding."
             );
 
             buffer.Add(first);
             buffer.Clear();
             Assert.AreEqual(0, buffer.Count, "Control failed: Clear must empty the buffer.");
-            Assert.AreEqual(0, buffer.ScratchCacheCount, "Clear must clear the scratch cache.");
+            Assert.AreEqual(
+                0,
+                ((List<object>)MessageBusInspection.ReadField(buffer, "_cache")).Count,
+                "Clear must clear the scratch cache."
+            );
         }
 
         [Test]

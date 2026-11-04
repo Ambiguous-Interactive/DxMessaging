@@ -81,8 +81,6 @@ namespace DxMessaging.Core.DataStructure
         private int _version;
         private bool _removalActive;
 
-        internal int ScratchCacheCount => _cache.Count;
-
         /// <summary>
         /// Accesses the element at the specified chronological index (0 = oldest).
         /// </summary>
