@@ -431,6 +431,12 @@ foreach (MessagingRegistration reg in bus.Log.GetRegistrations(myComponent))
 
 Formats the retained history in chronological order. Pass a custom serializer to choose the output format.
 
+Since 4.0, formatting a nonempty log allocates a snapshot of the entries retained when the call begins.
+If the serializer records, clears, or resizes history, those changes remain in the live log; the
+current output still visits each original entry once. Nested formatting captures its own current
+history. Serializer exceptions propagate unchanged. Formatting also allocates its output text;
+keep it outside allocation-sensitive dispatch paths.
+
 ```csharp
 using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;

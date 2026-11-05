@@ -367,6 +367,262 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <remarks>
+        /// 2026-11-05: A formatter can record or clear history through the same log.
+        /// Its output must visit each entry retained at invocation once, in order.
+        /// </remarks>
+        [TestCase("Append", false)]
+        [TestCase("Append", true)]
+        [TestCase("Clear", false)]
+        [TestCase("Clear", true)]
+        [TestCase("Shrink", false)]
+        [TestCase("Shrink", true)]
+        [TestCase("GrowAndAppend", false)]
+        [TestCase("GrowAndAppend", true)]
+        [TestCase("FilteredClear", false)]
+        [TestCase("FilteredClear", true)]
+        public void ToStringRetainsEntrySnapshotAcrossSerializerMutation(string mutation, bool wrap)
+        {
+            RegistrationLog log = new RegistrationLog(true, 3);
+            int start = wrap ? 1 : 0;
+            for (int index = 0; index < (wrap ? 4 : 3); index++)
+            {
+                log.Log(CreateRegistration(new InstanceId(index), typeof(SimpleUntargetedMessage)));
+            }
+
+            List<int> visited = new List<int>();
+            string formatted = log.ToString(registration =>
+            {
+                visited.Add(registration.id.Id);
+                if (visited.Count == 1)
+                {
+                    switch (mutation)
+                    {
+                        case "Append":
+                            log.Log(
+                                CreateRegistration(new InstanceId(9), typeof(SimpleTargetedMessage))
+                            );
+                            break;
+                        case "Clear":
+                            log.Clear();
+                            break;
+                        case "Shrink":
+                            log.Resize(1);
+                            break;
+                        case "GrowAndAppend":
+                            log.Resize(4);
+                            log.Log(
+                                CreateRegistration(new InstanceId(9), typeof(SimpleTargetedMessage))
+                            );
+                            break;
+                        case "FilteredClear":
+                            log.Clear(entry => entry.id.Id == start + 1);
+                            break;
+                        default:
+                            Assert.Fail($"Unexpected mutation {mutation}.");
+                            break;
+                    }
+                }
+                return registration.id.Id.ToString();
+            });
+
+            int[] retained;
+            switch (mutation)
+            {
+                case "Append":
+                    retained = new[] { start + 1, start + 2, 9 };
+                    break;
+                case "Clear":
+                    retained = System.Array.Empty<int>();
+                    break;
+                case "Shrink":
+                    retained = new[] { start + 2 };
+                    break;
+                case "GrowAndAppend":
+                    retained = new[] { start, start + 1, start + 2, 9 };
+                    break;
+                case "FilteredClear":
+                    retained = new[] { start, start + 2 };
+                    break;
+                default:
+                    throw new System.ArgumentException(mutation);
+            }
+            CollectionAssert.AreEqual(
+                retained,
+                log.Registrations.Select(entry => entry.id.Id),
+                $"{mutation}, wrap={wrap}: formatting must preserve the callback's live history changes."
+            );
+
+            int[] original = { start, start + 1, start + 2 };
+            CollectionAssert.AreEqual(
+                original,
+                visited,
+                $"{mutation}, wrap={wrap}: every original entry must reach the serializer once."
+            );
+            Assert.AreEqual(
+                $"[{start}, {start + 1}, {start + 2}]",
+                formatted,
+                $"{mutation}, wrap={wrap}: callback writes must not replace the formatted history."
+            );
+        }
+
+        [TestCase(1)]
+        [TestCase(2)]
+        public void ToStringCapturesOnlyOccupiedEntriesBeforeCallbackClear(int count)
+        {
+            RegistrationLog log = new RegistrationLog(true, 8);
+            for (int index = 0; index < count; index++)
+            {
+                log.Log(CreateRegistration(new InstanceId(index), typeof(SimpleUntargetedMessage)));
+            }
+            List<int> visited = new List<int>();
+            string formatted = log.ToString(entry =>
+            {
+                visited.Add(entry.id.Id);
+                log.Clear();
+                return entry.id.Id.ToString();
+            });
+            CollectionAssert.AreEqual(
+                Enumerable.Range(0, count),
+                visited,
+                $"count={count}: a partially occupied ring must serialize only its original entries."
+            );
+            Assert.AreEqual(
+                count == 1 ? "[0]" : "[0, 1]",
+                formatted,
+                $"count={count}: formatting must not include unused ring capacity."
+            );
+            Assert.That(log.Registrations, Is.Empty, "Callback clearing must remain applied.");
+        }
+
+        [Test]
+        public void NestedToStringCapturesItsOwnCurrentHistory()
+        {
+            RegistrationLog log = new RegistrationLog(true, 3);
+            for (int index = 0; index < 3; index++)
+            {
+                log.Log(CreateRegistration(new InstanceId(index), typeof(SimpleUntargetedMessage)));
+            }
+            string nested = null;
+            int calls = 0;
+            string outer = log.ToString(entry =>
+            {
+                if (++calls == 1)
+                {
+                    log.Clear();
+                    log.Log(CreateRegistration(new InstanceId(9), typeof(SimpleTargetedMessage)));
+                    nested = log.ToString(inner =>
+                    {
+                        log.Clear();
+                        return inner.id.Id.ToString();
+                    });
+                }
+                return entry.id.Id.ToString();
+            });
+            Assert.AreEqual(
+                "[9]",
+                nested,
+                "Nested formatting must use history from its own invocation."
+            );
+            Assert.AreEqual(
+                "[0, 1, 2]",
+                outer,
+                "Nested clearing must not corrupt the outer snapshot."
+            );
+            Assert.AreEqual(3, calls, "Each original entry must be formatted exactly once.");
+            Assert.That(
+                log.Registrations,
+                Is.Empty,
+                "Nested callback clearing must remain applied."
+            );
+        }
+
+        [Test]
+        public void ToStringPreservesSerializerExceptionAndCompletedChanges()
+        {
+            RegistrationLog log = new RegistrationLog(true, 3);
+            log.Log(CreateRegistration(FirstOwner, typeof(SimpleUntargetedMessage)));
+            log.Log(CreateRegistration(SecondOwner, typeof(SimpleTargetedMessage)));
+            System.InvalidOperationException failure = new System.InvalidOperationException(
+                "serializer failed"
+            );
+            int calls = 0;
+            System.InvalidOperationException actual =
+                Assert.Throws<System.InvalidOperationException>(
+                    () =>
+                        log.ToString(entry =>
+                        {
+                            calls++;
+                            log.Clear();
+                            log.Log(
+                                CreateRegistration(UnknownOwner, typeof(SimpleBroadcastMessage))
+                            );
+                            throw failure;
+                        }),
+                    "The original serializer failure must propagate."
+                );
+            Assert.That(actual, Is.SameAs(failure), "Formatting must preserve exception identity.");
+            Assert.AreEqual(1, calls, "Formatting must stop at the throwing callback.");
+            Assert.That(
+                log.Registrations.Single().id,
+                Is.EqualTo(UnknownOwner),
+                "Completed callback changes must survive a serializer failure."
+            );
+            Assert.AreEqual(
+                "[303]",
+                log.ToString(entry => entry.id.Id.ToString()),
+                "A later formatting call must use current history without stale snapshot entries."
+            );
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void DefaultFormattingRetainsSnapshotWhenTypeFormattingChangesHistory(
+            bool explicitNull
+        )
+        {
+            RegistrationLog log = new RegistrationLog(true, 3);
+            ReentrantDiagnosticType type = new ReentrantDiagnosticType();
+            log.Log(CreateRegistration(FirstOwner, type));
+            log.Log(CreateRegistration(SecondOwner, typeof(SimpleTargetedMessage)));
+            string expected = log.ToString();
+            int calls = 0;
+            type.BeforeFormat = () =>
+            {
+                calls++;
+                log.Clear();
+                log.Log(CreateRegistration(UnknownOwner, typeof(SimpleBroadcastMessage)));
+            };
+
+            string actual = explicitNull ? log.ToString(null) : log.ToString();
+
+            Assert.AreEqual(
+                expected,
+                actual,
+                "Both default formatter entry points must preserve original history."
+            );
+            Assert.AreEqual(1, calls, "The original Type formatter must run once.");
+            Assert.That(
+                log.Registrations.Single().id,
+                Is.EqualTo(UnknownOwner),
+                "Default formatting must preserve completed Type formatter changes."
+            );
+        }
+
+        private sealed class ReentrantDiagnosticType : System.Reflection.TypeDelegator
+        {
+            internal System.Action BeforeFormat;
+
+            internal ReentrantDiagnosticType()
+                : base(typeof(SimpleUntargetedMessage)) { }
+
+            public override string ToString()
+            {
+                BeforeFormat?.Invoke();
+                return "ObservedMessage";
+            }
+        }
+
         [Test]
         public void ToStringWithNullSerializerMatchesDefaultToString()
         {

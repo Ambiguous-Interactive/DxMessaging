@@ -129,7 +129,12 @@ namespace DxMessaging.Core.MessageBus
         /// Pretty-print all of the logged Messaging registrations using the provided print function.
         /// </summary>
         /// <param name="serializer">Serialization function to use. If null, defaults to MessagingRegistration.ToString.</param>
-        /// <returns>The string representing all logged MessagingRegistrations.</returns>
+        /// <returns>The string representing the entries retained when formatting begins.</returns>
+        /// <remarks>
+        /// Since 4.0, nonempty formatting allocates a chronological entry snapshot before invoking
+        /// the serializer. Callback changes remain in the live log without altering this output.
+        /// Nested formatting uses its own snapshot. Serializer exceptions propagate unchanged.
+        /// </remarks>
         public string ToString(Func<MessagingRegistration, string> serializer)
         {
             CyclicBuffer<MessagingRegistration> finalizedRegistrations = _finalizedRegistrations;
@@ -138,17 +143,25 @@ namespace DxMessaging.Core.MessageBus
                 return "[]";
             }
 
+            MessagingRegistration[] snapshot = new MessagingRegistration[
+                finalizedRegistrations.Count
+            ];
+            for (int i = 0; i < snapshot.Length; ++i)
+            {
+                snapshot[i] = finalizedRegistrations[i];
+            }
+
             serializer ??= registration => registration.ToString();
 
             StringBuilder registrations = new();
             _ = registrations.Append('[');
-            for (int i = 0; i < finalizedRegistrations.Count; ++i)
+            for (int i = 0; i < snapshot.Length; ++i)
             {
                 if (0 < i)
                 {
                     _ = registrations.Append(", ");
                 }
-                MessagingRegistration finalizedRegistration = finalizedRegistrations[i];
+                MessagingRegistration finalizedRegistration = snapshot[i];
                 string prettyFinalizedRegistration = serializer(finalizedRegistration);
                 _ = registrations.Append(prettyFinalizedRegistration);
             }
