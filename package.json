@@ -95,6 +95,10 @@
   "overrides": {
     "katex": "0.19.1",
     "markdownlint-cli2": {
+      "js-yaml": "5.5.0",
+      "markdownlint": {
+        "re2js": "2.9.1"
+      },
       "smol-toml": "$smol-toml"
     }
   },
