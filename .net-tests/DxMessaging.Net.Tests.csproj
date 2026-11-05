@@ -60,6 +60,22 @@
       Include="../Tests/Runtime/Core/SourceGeneratorNestedTests.cs"
       Link="SourceGeneratorNestedTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/PostProcessorDiagnosticsTests.cs"
+      Link="PostProcessorDiagnosticsTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/MessageHandlerComparabilityTests.cs"
+      Link="MessageHandlerComparabilityTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/DxMessagingStaticStateTests.cs"
+      Link="DxMessagingStaticStateTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/MessageHandlerGlobalBusTests.cs"
+      Link="MessageHandlerGlobalBusTests.cs"
+    />
     <ProjectReference Include="../.net/DxMessaging.csproj" />
     <Compile
       Include="../Tests/Runtime/Core/CyclicBufferReentrantRemovalTests.cs"

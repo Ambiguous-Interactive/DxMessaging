@@ -5,11 +5,12 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Core;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
-    using NUnit.Framework;
-    using GlobalMessageBus = DxMessaging.Core.MessageBus.MessageBus;
-#if UNITY_2021_3_OR_NEWER
     using DxMessaging.Tests.Runtime;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
+    using NUnit.Framework;
+    using GlobalMessageBus = DxMessaging.Core.MessageBus.MessageBus;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
 #endif
 
     [TestFixture]
@@ -653,7 +654,6 @@ namespace DxMessaging.Tests.Runtime.Core
             return block.GetValue(offset);
         }
 
-#if UNITY_2021_3_OR_NEWER
         /// <summary>
         /// Pins <see cref="MessageHandler.SetGlobalMessageBus(IMessageBus)"/>
         /// invoked from INSIDE a handler during dispatch. The emission in
@@ -788,7 +788,6 @@ namespace DxMessaging.Tests.Runtime.Core
             oldBusHandler.active = false;
             newBusHandler.active = false;
         }
-#endif
 
         private sealed class CountingTrimMessageBus : DelegatingMessageBus
         {
