@@ -91,11 +91,11 @@ RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
 WORKDIR /tmp/tools
 
 # ------------------------------------------------------------------------------
-# Install fd (fd-find) 10.5.0
+# Install fd (fd-find) 10.5.1
 # https://github.com/sharkdp/fd
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    FD_VERSION="10.5.0"; \
+    FD_VERSION="10.5.1"; \
     case "${TARGETARCH}" in \
         amd64) FD_ARCH="x86_64-unknown-linux-gnu" ;; \
         arm64) FD_ARCH="aarch64-unknown-linux-gnu" ;; \
