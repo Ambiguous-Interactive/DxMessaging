@@ -271,6 +271,11 @@ retargeted, that nested call returns without restarting replay. The outer call d
 activation succeeds. A registration failure still reaches the outer caller, and later activation
 can retry after cleanup completes.
 
+When a custom bus registration calls back into a token during activation, a nested active retarget
+moves subscriptions that are already active. The registration currently being accepted keeps its
+original bus; later staged subscriptions use the updated bus override. If the nested retarget fails,
+its recovery restores the subscriptions it owned without replaying the rest of the outer activation.
+
 #### When to use this
 
 - When you have direct access to a token and want fine-grained control
@@ -453,7 +458,7 @@ older deregistration handles while retaining the bus's registrations for later e
 | `component.Configure(bus, mode)`               | Set component's bus                         | Component configuration         |
 | `token.RetargetMessageBus(bus, mode)`          | Retarget a token                            | Fine-grained control            |
 | `MessageBusRebindMode.PreserveRegistrations`   | Keep existing registrations on old bus      | Gradual migration               |
-| `MessageBusRebindMode.RebindActive`            | Move all registrations to new bus           | Atomic switching                |
+| `MessageBusRebindMode.RebindActive`            | Move active registrations to new bus        | Immediate rebinding             |
 
 ---
 

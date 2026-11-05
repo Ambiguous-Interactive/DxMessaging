@@ -50,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve token activation when a custom bus retargets it during registration. Nested retargeting
+  and failure recovery avoid activating pending registrations twice
+  ([#710](https://github.com/Ambiguous-Interactive/DxMessaging/issues/710)).
+
 - Preserve the original registration-history output when a custom serializer changes the log
   ([#709](https://github.com/Ambiguous-Interactive/DxMessaging/issues/709)).
 

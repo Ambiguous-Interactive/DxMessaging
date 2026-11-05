@@ -1507,6 +1507,9 @@ namespace DxMessaging.Core
         /// on another bus stays retryable; finish cleanup before enabling again. If diagnostic formatting
         /// or a log receiver successfully finishes pending rollback cleanup through <see cref="Disable"/>
         /// or <see cref="UnregisterAll"/>, recovery preserves that cleanup instead of replaying staging.
+        /// During registration replay, a nested active retarget moves only subscriptions already
+        /// active when requested. An in-flight registration keeps its original bus; later queued
+        /// registrations use the current override. Nested recovery preserves the owning replay.
         /// </remarks>
         /// <param name="messageBus">Bus override to apply. Pass <c>null</c> to resume using the handler default.</param>
         /// <param name="rebindMode">Determines whether existing registrations should move to the supplied bus immediately.</param>
@@ -1531,54 +1534,77 @@ namespace DxMessaging.Core
                 return;
             }
 
+            bool replayWasInProgress = _isReplayingRegistrations;
             IMessageBus previousMessageBus = _messageBus;
             List<MessageRegistrationHandle> activeRetargetHandles = null;
-            if (rebindActiveRegistrations)
+            try
             {
-                activeRetargetHandles = _activeRetargetHandles ??=
-                    new List<MessageRegistrationHandle>();
-                activeRetargetHandles.Clear();
-                QueueActiveHandles(activeRetargetHandles);
-            }
-            if (rebindActiveRegistrations)
-            {
-                Exception deregistrationException = InvokeDeregistrationQueue();
-                if (deregistrationException != null)
+                if (rebindActiveRegistrations)
                 {
-                    RestoreMissingRegistrationsAfterRetargetDeregistrationFailure(
-                        previousMessageBus,
-                        activeRetargetHandles
-                    );
-                    _enabled = 0 < _deregistrationCount;
-                    ExceptionDispatchInfo.Capture(deregistrationException).Throw();
+                    activeRetargetHandles =
+                        _activeRetargetHandles ?? new List<MessageRegistrationHandle>();
+                    // A nested retarget or arena clear must not alter this call's snapshot.
+                    _activeRetargetHandles = null;
+                    activeRetargetHandles.Clear();
+                    QueueActiveHandles(activeRetargetHandles);
+                }
+                if (rebindActiveRegistrations)
+                {
+                    Exception deregistrationException = InvokeDeregistrationQueue();
+                    if (deregistrationException != null)
+                    {
+                        RestoreMissingRegistrationsAfterRetargetDeregistrationFailure(
+                            previousMessageBus,
+                            activeRetargetHandles
+                        );
+                        _enabled = 0 < _deregistrationCount;
+                        ExceptionDispatchInfo.Capture(deregistrationException).Throw();
+                    }
+
+                    _enabled = false;
                 }
 
-                _enabled = false;
-            }
+                _messageBus = messageBus;
 
-            _messageBus = messageBus;
-
-            if (rebindActiveRegistrations && 0 < _registrationCount)
-            {
-                /*
-                    Mirror Enable(): rebind in original registration order so the
-                    equal-priority dispatch order survives a bus retarget.
-                */
-                QueueRegistrationsInOrder();
-                bool cleanupCompletedDuringLogging = false;
-                try
+                if (rebindActiveRegistrations && 0 < _registrationCount)
                 {
-                    InvokeRegistrationQueueWithRollback(out cleanupCompletedDuringLogging);
-                    _enabled = true;
+                    /*
+                        Mirror Enable(): rebind in original registration order so the
+                        equal-priority dispatch order survives a bus retarget.
+                    */
+                    if (replayWasInProgress)
+                    {
+                        // The owning activation still controls entries it has not accepted yet.
+                        QueueMissingRegistrationsInOrder(activeRetargetHandles);
+                    }
+                    else
+                    {
+                        QueueRegistrationsInOrder();
+                    }
+                    bool cleanupCompletedDuringLogging = false;
+                    try
+                    {
+                        InvokeRegistrationQueueWithRollback(out cleanupCompletedDuringLogging);
+                        _enabled = true;
+                    }
+                    catch (Exception exception)
+                    {
+                        RestoreRegistrationsAfterRetargetFailure(
+                            previousMessageBus,
+                            cleanupCompletedDuringLogging,
+                            replayWasInProgress ? activeRetargetHandles : null
+                        );
+                        ExceptionDispatchInfo.Capture(exception).Throw();
+                        throw;
+                    }
                 }
-                catch (Exception exception)
+            }
+            finally
+            {
+                if (activeRetargetHandles != null)
                 {
-                    RestoreRegistrationsAfterRetargetFailure(
-                        previousMessageBus,
-                        cleanupCompletedDuringLogging
-                    );
-                    ExceptionDispatchInfo.Capture(exception).Throw();
-                    throw;
+                    activeRetargetHandles.Clear();
+                    _activeRetargetHandles = activeRetargetHandles;
                 }
             }
         }
@@ -1863,7 +1889,8 @@ namespace DxMessaging.Core
 
         private void RestoreRegistrationsAfterRetargetFailure(
             IMessageBus previousMessageBus,
-            bool cleanupCompletedDuringLogging
+            bool cleanupCompletedDuringLogging,
+            List<MessageRegistrationHandle> activeRetargetHandles
         )
         {
             _messageBus = previousMessageBus;
@@ -1873,7 +1900,14 @@ namespace DxMessaging.Core
                 return;
             }
 
-            QueueRegistrationsWithoutRetryableDeregistrationsInOrder();
+            if (activeRetargetHandles != null)
+            {
+                QueueMissingRegistrationsInOrder(activeRetargetHandles);
+            }
+            else
+            {
+                QueueRegistrationsWithoutRetryableDeregistrationsInOrder();
+            }
             try
             {
                 InvokeRegistrationQueueWithRollback(out _);
@@ -1955,11 +1989,14 @@ namespace DxMessaging.Core
         /// <remarks>2026-10-17: Skip a later entry removed or replaced by an earlier registration callback.</remarks>
         private void InvokeRegistrationReplayQueue()
         {
+            List<StagedRegistration> queue = GetRegistrationReplayQueue();
+            // Nested replay borrows another queue while this invocation owns its entries.
+            _registrationReplayQueue = null;
             bool wasReplaying = _isReplayingRegistrations;
             _isReplayingRegistrations = true;
             try
             {
-                foreach (StagedRegistration staged in GetRegistrationReplayQueue())
+                foreach (StagedRegistration staged in queue)
                 {
                     Registration registration = staged.Registration;
                     if (registration == null || !TryGetSlot(staged.Slot, staged.Id, out _))
@@ -1974,7 +2011,8 @@ namespace DxMessaging.Core
             }
             finally
             {
-                _registrationReplayQueue?.Clear();
+                queue.Clear();
+                _registrationReplayQueue = queue;
                 _isReplayingRegistrations = wasReplaying;
             }
         }
