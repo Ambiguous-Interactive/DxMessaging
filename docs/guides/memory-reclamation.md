@@ -76,6 +76,9 @@ Reclamation targets these kinds of state:
   Reset also clears typed caches for handlers whose final registration was
   already removed, dropping frozen callback references before sweep tracking
   is cleared. Reusing a handler after reset starts with fresh callback state.
+  Distinct `MessageHandler` instances can have equal owners and separate callback
+  storage. Default-bus reset clears each known instance's storage while preserving
+  their public owner-based equality.
 - **Registration history (4.0).** Each bus keeps at most `RegistrationLogCapacity`
   entries (1,024 by default). New entries overwrite the oldest. Records retain
   numeric owner identity without retaining Unity objects. Reading history

@@ -333,5 +333,9 @@
       Include="../Tests/Runtime/MemoryReclaim/InterceptorResetRetentionTests.cs"
       Link="InterceptorResetRetentionTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/EqualOwnerHandlerResetTests.cs"
+      Link="EqualOwnerHandlerResetTests.cs"
+    />
   </ItemGroup>
 </Project>

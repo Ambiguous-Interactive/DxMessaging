@@ -1129,6 +1129,17 @@ namespace DxMessaging.Core.MessageBus
             set => _diagnosticsMode = value;
         }
 
+        /// <summary>Keeps separate handler state distinct while public equality remains owner-based.</summary>
+        private sealed class MessageHandlerReferenceComparer : IEqualityComparer<MessageHandler>
+        {
+            public bool Equals(MessageHandler first, MessageHandler second) =>
+                ReferenceEquals(first, second);
+
+            public int GetHashCode(MessageHandler handler) => RuntimeHelpers.GetHashCode(handler);
+        }
+
+        private static readonly MessageHandlerReferenceComparer HandlerReferenceComparer = new();
+
         private static readonly Type MessageBusType = typeof(MessageBus);
 
         private static readonly List<Expression> ArgumentExpressionsCache = new();
@@ -1660,8 +1671,10 @@ namespace DxMessaging.Core.MessageBus
         private readonly Dictionary<int, HashSet<InstanceId>> _dirtyTargetSets = new();
         private readonly Dictionary<ContextHandlerMap, int> _contextMapHighWaterCounts = new();
         private readonly List<MessageHandler> _dirtyHandlers = new();
-        private readonly HashSet<MessageHandler> _dirtyHandlerSet = new();
-        private readonly Dictionary<MessageHandler, long> _dirtyHandlerTicks = new();
+        private readonly HashSet<MessageHandler> _dirtyHandlerSet = new(HandlerReferenceComparer);
+        private readonly Dictionary<MessageHandler, long> _dirtyHandlerTicks = new(
+            HandlerReferenceComparer
+        );
         private bool _globalSlotSweepCandidate;
         private long _globalSlotSweepGeneration;
         private int _lastContextTypeSlotsEvicted;
@@ -3056,7 +3069,9 @@ namespace DxMessaging.Core.MessageBus
 
         private void ResetTypedSlotsForReferencedHandlers()
         {
-            HashSet<MessageHandler> handlers = new HashSet<MessageHandler>();
+            HashSet<MessageHandler> handlers = new HashSet<MessageHandler>(
+                HandlerReferenceComparer
+            );
             foreach (MessageHandler handler in _dirtyHandlers)
             {
                 handlers.Add(handler);
