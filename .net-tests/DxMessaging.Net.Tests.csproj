@@ -329,5 +329,9 @@
       Include="../Tests/Runtime/Scripts/Messages/ClassUntargetedMessage.cs"
       Link="ClassUntargetedMessage.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/InterceptorResetRetentionTests.cs"
+      Link="InterceptorResetRetentionTests.cs"
+    />
   </ItemGroup>
 </Project>

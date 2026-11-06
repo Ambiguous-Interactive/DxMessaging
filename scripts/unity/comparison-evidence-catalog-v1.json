@@ -38,7 +38,7 @@
     "dxBus": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/MessageBus.cs",
-      "sha256": "30b5ebeb3dd10cde6f5546776efab28bca1ed7e00883ebdd81dc309bacd19871"
+      "sha256": "540f37b21c751f502a3ce89f2f24e7ceb9dfe6ab140651755dbc5e3e7b5d36ee"
     },
     "dxInterface": {
       "origin": "repository",

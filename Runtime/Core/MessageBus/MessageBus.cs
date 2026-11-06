@@ -2958,6 +2958,21 @@ namespace DxMessaging.Core.MessageBus
             return count;
         }
 
+        /// <summary>
+        /// Releases interceptor targets held through stale registration handles before removing
+        /// their type slots. Clear replaces the flat array reference without changing a frozen
+        /// array still held by an active emission.
+        /// </summary>
+        private static void ClearInterceptorSink(MessageCache<InterceptorCache<object>> sink)
+        {
+            foreach (InterceptorCache<object> interceptors in sink)
+            {
+                interceptors.Clear();
+            }
+
+            sink.Clear();
+        }
+
         internal void ResetState()
         {
             ResetTypedSlotsForReferencedHandlers();
@@ -3003,9 +3018,9 @@ namespace DxMessaging.Core.MessageBus
             _targetedDispatchPlans.Clear();
             _broadcastDispatchPlans.Clear();
 
-            _untargetedInterceptsByType.Clear();
-            _targetedInterceptsByType.Clear();
-            _broadcastInterceptsByType.Clear();
+            ClearInterceptorSink(_untargetedInterceptsByType);
+            ClearInterceptorSink(_targetedInterceptsByType);
+            ClearInterceptorSink(_broadcastInterceptsByType);
             _uniqueInterceptorsAndPriorities.Clear();
             _untargetedBroadcastMethodsByType.Clear();
             _targetedBroadcastMethodsByType.Clear();

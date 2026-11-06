@@ -50,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Release unrelated interceptor targets when resetting the default bus while an old registration
+  handle is retained ([#712](https://github.com/Ambiguous-Interactive/DxMessaging/issues/712)).
+
 - Prevent duplicate delivery when a custom bus registers a callback during token retarget cleanup
   ([#711](https://github.com/Ambiguous-Interactive/DxMessaging/issues/711)).
 
