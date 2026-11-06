@@ -225,6 +225,14 @@ component.Configure(busB, MessageBusRebindMode.RebindActive);
 - In DI scenarios where the container provides a new bus instance
 - When all current listeners should migrate through one configuration request
 
+### Token registrations accepted during cleanup
+
+A custom `IMessageBus` can register another callback on a token during that token's
+`RetargetMessageBus(..., RebindActive)` cleanup. The accepted registration stays on its original
+bus until a later cleanup pass. Retargeting does not also activate it on the destination bus.
+Its returned handle still removes it. `Disable()` cleans both buses; the next `Enable()` activates
+surviving staged registrations on the current destination.
+
 ### Configuration from callbacks
 
 > **Fixed in v4.0.0.**

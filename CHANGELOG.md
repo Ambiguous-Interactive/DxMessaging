@@ -50,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prevent duplicate delivery when a custom bus registers a callback during token retarget cleanup
+  ([#711](https://github.com/Ambiguous-Interactive/DxMessaging/issues/711)).
+
 - Preserve token activation when a custom bus retargets it during registration. Nested retargeting
   and failure recovery avoid activating pending registrations twice
   ([#710](https://github.com/Ambiguous-Interactive/DxMessaging/issues/710)).

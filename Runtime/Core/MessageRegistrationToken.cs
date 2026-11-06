@@ -1510,6 +1510,8 @@ namespace DxMessaging.Core
         /// During registration replay, a nested active retarget moves only subscriptions already
         /// active when requested. An in-flight registration keeps its original bus; later queued
         /// registrations use the current override. Nested recovery preserves the owning replay.
+        /// A registration accepted during old-bus cleanup remains on its accepting bus until a
+        /// later cleanup pass. Retarget replay does not activate that still-live registration again.
         /// </remarks>
         /// <param name="messageBus">Bus override to apply. Pass <c>null</c> to resume using the handler default.</param>
         /// <param name="rebindMode">Determines whether existing registrations should move to the supplied bus immediately.</param>
@@ -1579,7 +1581,11 @@ namespace DxMessaging.Core
                     }
                     else
                     {
-                        QueueRegistrationsInOrder();
+                        /*
+                            Cleanup accepted during old-bus teardown belongs to a later pass.
+                            Replaying its staging here would duplicate that still-live subscription.
+                        */
+                        QueueRegistrationsWithoutRetryableDeregistrationsInOrder();
                     }
                     bool cleanupCompletedDuringLogging = false;
                     try
