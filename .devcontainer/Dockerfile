@@ -199,11 +199,11 @@ RUN set -eux; \
     zoxide --version
 
 # ------------------------------------------------------------------------------
-# Install yq 4.54.1
+# Install yq 4.54.2
 # https://github.com/mikefarah/yq
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    YQ_VERSION="4.54.1"; \
+    YQ_VERSION="4.54.2"; \
     case "${TARGETARCH}" in \
         amd64) YQ_ARCH="linux_amd64" ;; \
         arm64) YQ_ARCH="linux_arm64" ;; \
@@ -391,7 +391,7 @@ RUN npm install --global --prefix /usr/local \
         opencode-ai@latest \
         @nanocollective/nanocoder@latest \
         @z_ai/mcp-server@latest \
-        mcp-remote@0.16.0 \
+        mcp-remote@0.16.1 \
         --no-fund \
         --no-audit \
     && codex --version \

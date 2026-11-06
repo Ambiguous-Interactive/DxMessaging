@@ -37,7 +37,7 @@ jinja2==3.1.6
     #   mkdocs-material
 jsmin==3.0.1
     # via mkdocs-minify-plugin
-markdown==3.11.2
+markdown==3.11.3
     # via
     #   mkdocs
     #   mkdocs-material
@@ -116,5 +116,5 @@ urllib3==2.8.0
     # via requests
 verspec==0.2.1
     # via mike
-watchdog==7.0.0
+watchdog==7.1.0
     # via mkdocs
