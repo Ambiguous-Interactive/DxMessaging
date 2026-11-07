@@ -65,6 +65,14 @@
       Link="PostProcessorDiagnosticsTests.cs"
     />
     <Compile
+      Include="../Tests/Runtime/Core/UntargetedPrefreezeTests.cs"
+      Link="UntargetedPrefreezeTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/Extensions/MessageBusExtensionsTests.cs"
+      Link="MessageBusExtensionsTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/MessageHandlerComparabilityTests.cs"
       Link="MessageHandlerComparabilityTests.cs"
     />
