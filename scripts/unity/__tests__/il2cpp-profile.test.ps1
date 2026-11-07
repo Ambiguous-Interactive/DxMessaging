@@ -157,7 +157,7 @@ try {
     Assert-That 'native artifact scan succeeds' ($LASTEXITCODE -eq 0)
     $nativeManifest = Get-Content -LiteralPath (Join-Path $nativeArtifacts 'native-build-inputs/retained-manifest.json') -Raw | ConvertFrom-Json
     Assert-That 'native evidence retains one repeated graph pair and only observed response files' (
-        @($nativeManifest.files).Count -eq 3 -and $nativeManifest.responseFileScope -ceq 'build-log-references-only'
+        @($nativeManifest.files).Count -eq 3 -and $nativeManifest.responseFileScope -ceq 'player-build-log-references-only'
     )
     foreach ($record in $nativeManifest.files) {
         Assert-That 'retained native bytes agree with source and retained hashes when no redaction is needed' (
@@ -170,6 +170,20 @@ try {
         $nativeManifest.profileId -ceq $profile.profileId -and
         $nativeManifest.unredactedBuildLogSha256 -ceq (Get-FileHash -LiteralPath $nativeLog -Algorithm SHA256).Hash.ToLowerInvariant()
     )
+    # Unity removes editor TypeDB response files before the native player build completes.
+    $savedPlayerLog = [IO.File]::ReadAllText($nativeLog)
+    $editorBackend = 'Starting: C:\Editor\bee_backend.exe --dagfile="Library/Bee/1900b0aESkipCompile.dag" ScriptAssembliesAndTypeDB'
+    $editorResponse = '[2/4 0s] WriteResponseFile Library/Bee/artifacts/rsp/6097564273297756792.rsp'
+    [IO.File]::WriteAllText($nativeLog, "$editorBackend`n$editorResponse`n$savedPlayerLog$editorBackend`n$editorResponse`n")
+    Write-NativeBuildInputEvidence @nativeArguments
+    & node (Join-Path $repoRoot 'scripts/unity/redact-unity-artifacts.js') $nativeArtifacts
+    Assert-That 'mixed editor and native artifact scan succeeds' ($LASTEXITCODE -eq 0)
+    $mixedManifest = Get-Content -LiteralPath (Join-Path $nativeArtifacts 'native-build-inputs/retained-manifest.json') -Raw | ConvertFrom-Json
+    Assert-That 'editor phases before and after native work cannot change the retained player inputs' (
+        (@($mixedManifest.files | ForEach-Object { $_.sourcePath }) -join "`n") -ceq
+        (@($nativeManifest.files | ForEach-Object { $_.sourcePath }) -join "`n")
+    )
+    [IO.File]::WriteAllText($nativeLog, $savedPlayerLog)
     $responseText = [IO.File]::ReadAllText((Join-Path $nativeProject $nativeResponse))
     [IO.File]::WriteAllText((Join-Path $nativeProject $nativeResponse), $responseText + ' --access-token=fixture-secret-value')
     Write-NativeBuildInputEvidence @nativeArguments

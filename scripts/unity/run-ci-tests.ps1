@@ -5070,9 +5070,22 @@ function Write-NativeBuildInputEvidence {
         [void]$paths.Add($entry.Key)
         [void]$paths.Add($entry.Value)
     }
-    # These are observed log references, not a claim of complete graph/response
-    # closure. The full graph and input JSON stay available for that later audit.
-    foreach ($response in [regex]::Matches($logText, '(?<![A-Za-z0-9_./-])Library/Bee/artifacts/rsp/[0-9]+\.rsp\b')) {
+    # Editor TypeDB graphs can emit transient response files in the same log.
+    # Retain references only within the validated player frontend/backend phases.
+    $phaseStarts = @([regex]::Matches($logText, '(?m)^Starting: [^\r\n]*(?:/bee_backend\.exe |/[A-Za-z0-9]+BuildProgram\.exe")[^\r\n]*\r?$'))
+    $playerResponseLog = [System.Text.StringBuilder]::new()
+    for ($phaseIndex = 0; $phaseIndex -lt $phaseStarts.Count; ++$phaseIndex) {
+        $phase = $phaseStarts[$phaseIndex]
+        if (
+            $phase.Value.Contains('/WinPlayerBuildProgram.exe"') -or
+            [regex]::IsMatch($phase.Value, '--dagfile="Library/Bee/Player[0-9a-f]+\.dag"[^\r\n]* Player\r?$')
+        ) {
+            $phaseEnd = if ($phaseIndex + 1 -lt $phaseStarts.Count) { $phaseStarts[$phaseIndex + 1].Index } else { $logText.Length }
+            [void]$playerResponseLog.Append($logText.Substring($phase.Index, $phaseEnd - $phase.Index))
+        }
+    }
+    # Observed native references still do not claim complete graph/response closure.
+    foreach ($response in [regex]::Matches($playerResponseLog.ToString(), '(?<![A-Za-z0-9_./-])Library/Bee/artifacts/rsp/[0-9]+\.rsp\b')) {
         [void]$paths.Add($response.Value)
     }
     if ($paths.Count -gt 256) {
@@ -5119,7 +5132,7 @@ function Write-NativeBuildInputEvidence {
         graphSelection = $graphSelection
         backendDagPath = $backendDag
         backendDagSha256 = (Get-FileHash -LiteralPath $backendDagPath -Algorithm SHA256).Hash.ToLowerInvariant()
-        responseFileScope = 'build-log-references-only'
+        responseFileScope = 'player-build-log-references-only'
         unredactedBuildLogSha256 = (Get-FileHash -LiteralPath $LogPath -Algorithm SHA256).Hash.ToLowerInvariant()
         files = @($records.ToArray())
     })

@@ -346,7 +346,10 @@ metrics because the Release player strips the required profiler recorder (see
   The manifest records that distinction and the logged binary DAG's hash; it
   does not claim a cached JSON companion was regenerated or passed directly to
   the backend. The binary DAG itself is not uploaded.
-  The capture also retains numeric Bee response file paths observed in the log,
+  The capture also retains numeric Bee response file paths observed in the player
+  build program and backend log phases. Earlier and later editor TypeDB phases
+  belong to other graphs and can remove their temporary response files.
+  The capture excludes those unrelated references. Native response files are
   renamed with a `.txt` suffix for credential scanning. Missing or empty inputs,
   conflicting graphs, more than 256 retained files, or more than 64 MiB of total
   source input bytes stop capture. This reads existing inputs; it adds no build,
@@ -356,7 +359,7 @@ metrics because the Release player strips the required profiler recorder (see
   with hashes of the safely scanned bytes during its normal pass. Missing,
   duplicated, unsafe, or unscanned file references prevent finalization. Artifact
   upload still requires that entire redaction step to pass.
-  `responseFileScope: build-log-references-only` means this is not a complete response
+  `responseFileScope: player-build-log-references-only` means this is not a complete response
   dependency closure. Native executable hashes and versions, nested response inputs,
   and immutable remote restoration still need campaign evidence. The editor compiler
   version printed in `unity.log` does not identify the player compiler.
