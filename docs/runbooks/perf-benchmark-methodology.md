@@ -1140,6 +1140,11 @@ Jobs 0.50.0-preview.9. Dispatch
 Check the fresh serialized ELI budget before dispatch; the one eligible ELI job
 has a 600-minute ceiling. Bootstrap and pilot jobs do not run in this mode.
 
+The research assembly requires `DXM_NATIVE_SDK_RESEARCH` before compilation.
+The generated host defines it only when that assembly is explicitly selected.
+Ordinary comparison hosts clear the symbol, including when reusing an opt-in project.
+Installed comparison packages alone do not enable the research assembly.
+
 The lane runs all 745 CPU/Burst PlayMode cases, including allocation assays and
 positive controls. A namespace setup fixture captures actual package versions,
 sources, compiler-source hashes, manifest and lock before candidates execute.

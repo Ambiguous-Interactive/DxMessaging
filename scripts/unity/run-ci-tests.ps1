@@ -3989,6 +3989,7 @@ function Initialize-EphemeralProject {
         [Parameter(Mandatory = $true)][string]$Mode,
         [string]$Path,
         [switch]$IncludeComparisons,
+        [switch]$IncludeNativeCollectionsResearch,
         [string]$Backend = 'IL2CPP',
         [ValidateSet('Disabled', 'Minimal', 'Low', 'Medium', 'High')]
         [string]$ManagedStrippingLevel = 'Disabled',
@@ -4133,6 +4134,10 @@ EditorSettings:
   m_EnterPlayModeOptions: 3
 '@ | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'EditorSettings.asset')) -Encoding UTF8
     $cscOptions = @('-warnaserror', '-warn:9999')
+    # Shared comparison packages must not activate optional research assemblies.
+    if ($IncludeNativeCollectionsResearch) {
+        $cscOptions += '-define:DXM_NATIVE_SDK_RESEARCH'
+    }
     if ($isShippingFidelity) {
         $shippingDefine = if ($ShippingTopology -ceq 'semantic') {
             'DXM_SHIPPING_SEMANTIC_TOPOLOGY'
@@ -7964,6 +7969,7 @@ $ProjectPath = Initialize-EphemeralProject `
     -Mode $TestMode `
     -Path $ProjectPath `
     -IncludeComparisons:$IncludeComparisons `
+    -IncludeNativeCollectionsResearch:($AssemblyNames -ceq 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch') `
     -Backend $StandaloneScriptingBackend `
     -ManagedStrippingLevel $managedStrippingLevel `
     -DevelopmentBuild:(-not $UseReleasePlayerBuild) `

@@ -794,6 +794,12 @@ public static class DxmRuntimeSdkMetadataFixture {
     & $validatorPath -ProfilePath $profilePath -ProfileOnly -ExpectedSha256 $profileSha256
 
     $nativeProfilePath = Join-Path $repoRoot '.github/perf/native-sdk-il2cpp-qualification-profile.v1.json'
+    $nativeResearchSymbol = 'DXM_NATIVE_SDK_RESEARCH'
+    $nativeAsmdef = Get-Content -LiteralPath (Join-Path $repoRoot 'Tests/Runtime/NativeCollectionsResearch/WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch.asmdef') -Raw | ConvertFrom-Json
+    Assert-That 'package presence alone cannot compile the optional native research assembly' (
+        @($nativeAsmdef.defineConstraints) -ccontains $nativeResearchSymbol -and
+        @($nativeAsmdef.versionDefines | Where-Object { $_.define -ceq $nativeResearchSymbol }).Count -eq 0
+    )
     $nativeProfile = Copy-JsonValue -Value $profile
     $nativeProfile.profileId = 'native-sdk-il2cpp-qualification-player-v1'
     $nativeFixtureProfilePath = Join-Path $fixtureRoot 'native-profile.json'
@@ -822,6 +828,11 @@ public static class DxmRuntimeSdkMetadataFixture {
         $generationOutput = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $runnerPath @nativeArgs 2>&1
         if ($variant -ceq 'complete') {
             Assert-That "the actual complete native qualification project generates without Unity execution: $($generationOutput | Out-String)" ($LASTEXITCODE -eq 0)
+            $nativeResearchProject = $nativeArgs.ProjectPath
+            $nativeResponse = Get-Content -LiteralPath (Join-Path $nativeResearchProject 'Assets/csc.rsp') -Raw
+            Assert-That 'explicit native qualification enables assembly compilation before Unity starts' (
+                $nativeResponse.Contains("-define:$nativeResearchSymbol")
+            )
             $callback = Get-Content -LiteralPath (Join-Path $nativeArgs.ProjectPath 'Assets/DxmCiStandaloneTestCallback/DxmCiStandaloneTestCallback.cs') -Raw
             Assert-That 'the actual native callback embeds its distinct qualification identity' ($callback.Contains($nativeProfile.profileId))
         } else {
@@ -831,6 +842,22 @@ public static class DxmRuntimeSdkMetadataFixture {
         }
         ++$nativeVariantNumber
     }
+
+    # Reuse the actual opt-in project to prove normal comparison generation clears the symbol.
+    $comparisonArgs = @{
+        UnityVersion = '6000.5.2f1'; TestMode = 'playmode';
+        AssemblyNames = 'WallstopStudios.DxMessaging.Tests.00.Runtime.Comparisons';
+        ProjectPath = $nativeResearchProject;
+        ArtifactsPath = (Join-Path $fixtureRoot 'comparison-artifacts');
+        CachePath = (Join-Path $fixtureRoot 'comparison-cache');
+        IncludeComparisons = $true; GenerateOnly = $true
+    }
+    $comparisonOutput = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $runnerPath @comparisonArgs 2>&1
+    Assert-That "the actual normal comparison project generates: $($comparisonOutput | Out-String)" ($LASTEXITCODE -eq 0)
+    $comparisonResponse = Get-Content -LiteralPath (Join-Path $nativeResearchProject 'Assets/csc.rsp') -Raw
+    Assert-That 'ordinary comparisons clear a prior research opt-in even when sharing its packages' (
+        -not $comparisonResponse.Contains($nativeResearchSymbol)
+    )
 
     $badProfilePath = Join-Path $fixtureRoot 'bad-profile.json'
     foreach ($semanticMutation in @(
