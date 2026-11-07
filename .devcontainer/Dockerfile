@@ -91,11 +91,11 @@ RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
 WORKDIR /tmp/tools
 
 # ------------------------------------------------------------------------------
-# Install fd (fd-find) 10.5.1
+# Install fd (fd-find) 10.5.2
 # https://github.com/sharkdp/fd
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    FD_VERSION="10.5.1"; \
+    FD_VERSION="10.5.2"; \
     case "${TARGETARCH}" in \
         amd64) FD_ARCH="x86_64-unknown-linux-gnu" ;; \
         arm64) FD_ARCH="aarch64-unknown-linux-gnu" ;; \
@@ -127,11 +127,11 @@ RUN set -eux; \
     bat --version
 
 # ------------------------------------------------------------------------------
-# Install fzf 0.74.5
+# Install fzf 0.75.0
 # https://github.com/junegunn/fzf
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    FZF_VERSION="0.74.5"; \
+    FZF_VERSION="0.75.0"; \
     case "${TARGETARCH}" in \
         amd64) FZF_ARCH="linux_amd64" ;; \
         arm64) FZF_ARCH="linux_arm64" ;; \
