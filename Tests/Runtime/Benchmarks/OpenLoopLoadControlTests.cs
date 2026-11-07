@@ -28,7 +28,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             Assert.That(serviceTicks, Is.GreaterThan(0));
             Assert.That(spacingTicks, Is.GreaterThan(0));
 
-            using IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
             MessageBus bus = new() { DiagnosticsMode = false };
             MessageHandler handler = new(new InstanceId(0x5120_0003), bus) { active = true };
             long[] arrivals = new long[OfferCount];

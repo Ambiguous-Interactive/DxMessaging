@@ -12,7 +12,8 @@ $runnerPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'run-ci-tests.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/perf-numbers.yml'
 $testUnityVersion = '6000.3.16f1'
 $sourceProfilePath = Join-Path $repoRoot '.github/perf/canonical-il2cpp-profile.v1.json'
-$fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dxm-il2cpp-profile-{0}" -f [guid]::NewGuid().ToString('N'))
+# Keep the owned fixture short enough for the comparison-package path budget on Windows.
+$fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dxp-{0}" -f [guid]::NewGuid().ToString('N'))
 
 function Write-TestJson {
     param(
@@ -802,13 +803,14 @@ public static class DxmRuntimeSdkMetadataFixture {
     Assert-That 'the qualification profile retains every reviewed Release value' (
         ($committedNativeProfile | ConvertTo-Json -Depth 10 -Compress) -ceq ($nativeProfile | ConvertTo-Json -Depth 10 -Compress)
     )
+    $nativeVariantNumber = 0
     foreach ($variant in @('complete', 'assembly', 'category', 'version', 'repeat', 'packages')) {
         $nativeArgs = @{
             UnityVersion = '2021.3.45f1'; TestMode = 'standalone';
             AssemblyNames = 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch';
             TestCategory = 'NativeSdkCpu'; CanonicalProfilePath = $nativeProfilePath;
             ArtifactsPath = (Join-Path $fixtureRoot "native-$variant-artifacts");
-            ProjectPath = (Join-Path $fixtureRoot "native-$variant-project");
+            ProjectPath = (Join-Path $fixtureRoot "p$nativeVariantNumber");
             CachePath = (Join-Path $fixtureRoot "native-$variant-cache");
             IncludeComparisons = $true; StandalonePlayerRunCount = 1; GenerateOnly = $true
         }
@@ -819,7 +821,7 @@ public static class DxmRuntimeSdkMetadataFixture {
         if ($variant -ceq 'packages') { $nativeArgs.IncludeComparisons = $false }
         $generationOutput = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $runnerPath @nativeArgs 2>&1
         if ($variant -ceq 'complete') {
-            Assert-That 'the actual complete native qualification project generates without Unity execution' ($LASTEXITCODE -eq 0)
+            Assert-That "the actual complete native qualification project generates without Unity execution: $($generationOutput | Out-String)" ($LASTEXITCODE -eq 0)
             $callback = Get-Content -LiteralPath (Join-Path $nativeArgs.ProjectPath 'Assets/DxmCiStandaloneTestCallback/DxmCiStandaloneTestCallback.cs') -Raw
             Assert-That 'the actual native callback embeds its distinct qualification identity' ($callback.Contains($nativeProfile.profileId))
         } else {
@@ -827,6 +829,7 @@ public static class DxmRuntimeSdkMetadataFixture {
                 $LASTEXITCODE -ne 0 -and ($generationOutput | Out-String).Contains('complete old-floor scope')
             )
         }
+        ++$nativeVariantNumber
     }
 
     $badProfilePath = Join-Path $fixtureRoot 'bad-profile.json'

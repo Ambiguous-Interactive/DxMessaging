@@ -24,7 +24,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public void FixedArrivalBurstRetainsEveryFinalHandlerCompletion(int burstSize)
         {
             Assert.That(Stopwatch.Frequency, Is.GreaterThanOrEqualTo(60));
-            using IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
             MessageBus bus = new() { DiagnosticsMode = false };
             MessageHandler handler = new(new InstanceId(0x5120_0001), bus) { active = true };
             long[] arrivals = new long[burstSize];

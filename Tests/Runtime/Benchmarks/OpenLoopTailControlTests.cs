@@ -22,7 +22,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             long frequency = Stopwatch.Frequency;
             Assert.That(frequency, Is.GreaterThanOrEqualTo(1_000));
-            using IDisposable registry = MessageBus.IsolateIdleSweepRegistryForBenchmark();
+            using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
             MessageBus bus = new() { DiagnosticsMode = false };
             MessageHandler handler = new(new InstanceId(0x5120_0002), bus) { active = true };
             TailRun current = null;
@@ -47,7 +47,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 {
                     if (current.InjectStall && message.BurstIndex == StallBurst)
                     {
-                        Thread.Sleep(250);
+                        // Fixed-duration CPU work supplies the deliberate service-time tail.
+                        long workEnd = checked(Stopwatch.GetTimestamp() + frequency / 4);
+                        while (Stopwatch.GetTimestamp() < workEnd)
+                        {
+                            Thread.SpinWait(32);
+                        }
                         ++current.StallCount;
                     }
                     current.Completions[message.BurstIndex] = Stopwatch.GetTimestamp();

@@ -212,7 +212,10 @@ namespace DxMessaging.Tests.Runtime.Core
                         {
                             return;
                         }
-                        catch (InvalidOperationException) { }
+                        catch (InvalidOperationException)
+                        {
+                            // Reset rejects concurrent operations; the owning loop retries afterward.
+                        }
                     }
                 }
                 catch (Exception error)
@@ -238,7 +241,10 @@ namespace DxMessaging.Tests.Runtime.Core
                         {
                             return;
                         }
-                        catch (InvalidOperationException) { }
+                        catch (InvalidOperationException)
+                        {
+                            // Reset rejects concurrent operations; the owning loop retries afterward.
+                        }
                     }
                 }
                 catch (Exception error)
