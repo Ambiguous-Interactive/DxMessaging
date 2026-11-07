@@ -51,7 +51,7 @@
     "Runtime.meta"
   ],
   "scripts": {
-    "test": "node --test scripts/ && python3 scripts/__tests__/test_create_unitypackage.py",
+    "test": "node --test scripts/ && python3 -m unittest discover -s scripts/__tests__ -p 'test_*.py' && python3 -m unittest discover -s scripts/unity/__tests__ -p 'test_*.py'",
     "format": "prettier --write \"**/*.{md,markdown,json,asmdef,asmref,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{md,markdown,json,asmdef,asmref,yml,yaml}\"",
     "lint:markdown": "markdownlint-cli2 \"**/*.md\" \"**/*.markdown\"",
@@ -79,7 +79,8 @@
     "validate:js-loc-budget": "node scripts/validate-js-loc-budget.js",
     "validate:npm-meta": "node scripts/validate-npm-meta.js",
     "validate:docs:strict": "python3 -m venv .artifacts/docs-venv && .artifacts/docs-venv/bin/python -m pip install -r requirements-docs.txt && .artifacts/docs-venv/bin/mkdocs build --strict --site-dir _site",
-    "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:unity-pr-policy && npm run validate:js-loc-budget && npm run check:banner && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run llm:check && npm run check:issue-template-versions && npm run check:upm-changelog"
+    "validate:all": "npm run validate:asmdef-references && npm run validate:unity-versions && npm run validate:unity-pr-policy && npm run validate:js-loc-budget && npm run check:banner && npm run validate:npm-meta && npm run check:analyzers && npm run check:llms-txt && npm run llm:check && npm run check:issue-template-versions && npm run check:upm-changelog",
+    "unity:mcp:run": "node scripts/mcp/unity-mcp.mjs run"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

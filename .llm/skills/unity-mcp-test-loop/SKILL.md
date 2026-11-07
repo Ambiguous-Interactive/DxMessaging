@@ -29,10 +29,15 @@ Do not use it for source-generator or analyzer tests under `SourceGenerators/` (
 | Command                       | Runs on      | Purpose                                                     |
 | ----------------------------- | ------------ | ----------------------------------------------------------- |
 | `npm run unity:mcp:bridge`    | Host         | Serve Unity CLI or the legacy relay over authenticated HTTP |
+| `npm run unity:mcp:run`       | Host         | Alias for bridge                                            |
 | `npm run unity:mcp:probe`     | Devcontainer | Find an endpoint a live editor is answering behind          |
 | `npm run unity:mcp:configure` | Devcontainer | Discover, then write every MCP client config in the repo    |
 
 - Start the host bridge with `npm run unity:mcp:bridge -- --project /absolute/host/project`.
+  Startup in the devcontainer is rejected. The HTTP listener is verified through a live
+  editor status tool before `Unity MCP ready` is printed; failure closes the listener.
+  After readiness, the foreground process waits for clients. Keep its host terminal open,
+  or run it under the host service manager. Configure and probe run in another terminal.
   The host can run Windows, macOS, or Linux; use that host's absolute path, or set
   `UNITY_PROJECT_PATH` in `.env.local`. The default backend runs `unity mcp --project-path`.
   `--backend relay` retains Assistant compatibility and discovers the relay under `~/.unity/relay/`;
@@ -45,7 +50,11 @@ Do not use it for source-generator or analyzer tests under `SourceGenerators/` (
   Pipeline `editor_status` or legacy `Unity_ManageEditor` to check the editor. A legacy registry
   advertising only `Unity_RunCommand` gets a tools-level verdict, which does not prove editor readiness.
   An initialized connection or empty catalog alone is insufficient.
-- Discovery walks hosts in order - `host.docker.internal`, `127.0.0.1`, `nameserver` entries in
+- Host commands default to `127.0.0.1`; Docker/Podman containers default to `host.docker.internal`.
+  Shared configs must be generated in the client environment for local tool paths. Set
+  `UNITY_MCP_CLIENT_HOST=host.docker.internal` (or `--client-host`) to keep the Unity client
+  address stable independently of host discovery when host and container share those files.
+  Discovery tries that selected host first, then the other default, `nameserver` entries in
   `/etc/resolv.conf`, then default-route gateways - and ports `9020` then `9003`. An explicit
   `--host` or `--port` replaces the fallbacks on that axis. `--no-discover` uses only the configured
   host and port but still performs the protocol check.
@@ -57,6 +66,10 @@ Do not use it for source-generator or analyzer tests under `SourceGenerators/` (
 - A session-bearing probe always attempts bounded `DELETE` cleanup and releases its response. HTTP
   405 is allowed; other cleanup failures warn without changing the readiness result.
 - Configure writes seven private, gitignored client files transactionally, including Copilot CLI.
+  Online configuration refuses to write when a listener fails initialization; an entirely
+  unreachable candidate list still permits initial setup. Use `--offline` to write explicitly.
+  A stalled VS Code port forward can cause initialization timeouts. Remove the forward or choose
+  a free bridge port. Bridge startup checks interface-specific listeners before a wildcard bind.
   It manages Unity, GitHub, local Git/Fetch, and optional Z.AI entries while preserving unrelated
   settings. See the [MCP setup guide](../../../scripts/mcp/README.md#generated-client-configs).
 - The devcontainer runs offline configuration before initial attachment and on subsequent starts

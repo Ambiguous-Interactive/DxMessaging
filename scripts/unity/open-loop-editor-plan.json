@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "traces": [
+    {
+      "traceId": "editor-immediate-burst-1",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopBurstTraceTests.FixedArrivalBurstRetainsEveryFinalHandlerCompletion(1)",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "166666",
+      "arrivalCount": 1,
+      "arrivalStepTicks": "0"
+    },
+    {
+      "traceId": "editor-immediate-burst-4",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopBurstTraceTests.FixedArrivalBurstRetainsEveryFinalHandlerCompletion(4)",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "166666",
+      "arrivalCount": 4,
+      "arrivalStepTicks": "0"
+    },
+    {
+      "traceId": "editor-immediate-burst-16",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopBurstTraceTests.FixedArrivalBurstRetainsEveryFinalHandlerCompletion(16)",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "166666",
+      "arrivalCount": 16,
+      "arrivalStepTicks": "0"
+    },
+    {
+      "traceId": "editor-immediate-burst-64",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopBurstTraceTests.FixedArrivalBurstRetainsEveryFinalHandlerCompletion(64)",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "166666",
+      "arrivalCount": 64,
+      "arrivalStepTicks": "0"
+    },
+    {
+      "traceId": "editor-immediate-burst-128",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopBurstTraceTests.FixedArrivalBurstRetainsEveryFinalHandlerCompletion(128)",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "166666",
+      "arrivalCount": 128,
+      "arrivalStepTicks": "0"
+    },
+    {
+      "traceId": "editor-immediate-burst-256",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopBurstTraceTests.FixedArrivalBurstRetainsEveryFinalHandlerCompletion(256)",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "166666",
+      "arrivalCount": 256,
+      "arrivalStepTicks": "0"
+    },
+    {
+      "traceId": "editor-load-idle",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopLoadControlTests.FixedOfferedLoadKeepsLateCompletions(\"idle\",8)",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "8000000",
+      "arrivalCount": 100,
+      "arrivalStepTicks": "80000"
+    },
+    {
+      "traceId": "editor-load-moderate",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopLoadControlTests.FixedOfferedLoadKeepsLateCompletions(\"moderate\",4)",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "4000000",
+      "arrivalCount": 100,
+      "arrivalStepTicks": "40000"
+    },
+    {
+      "traceId": "editor-load-nominal-saturation",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopLoadControlTests.FixedOfferedLoadKeepsLateCompletions(\"nominal-saturation\",2)",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "2000000",
+      "arrivalCount": 100,
+      "arrivalStepTicks": "20000"
+    },
+    {
+      "traceId": "editor-load-overload",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopLoadControlTests.FixedOfferedLoadKeepsLateCompletions(\"overload\",1)",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "1000000",
+      "arrivalCount": 100,
+      "arrivalStepTicks": "10000"
+    },
+    {
+      "traceId": "editor-tail-baseline",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopTailControlTests.OneStalledFinalHandlerMovesStrictUpperP99",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "1000000",
+      "arrivalCount": 100,
+      "arrivalStepTicks": "10000"
+    },
+    {
+      "traceId": "editor-tail-stalled",
+      "fixture": "DxMessaging.Tests.Runtime.Benchmarks.OpenLoopTailControlTests.OneStalledFinalHandlerMovesStrictUpperP99",
+      "frequencyHz": "10000000",
+      "horizonSpanTicks": "1000000",
+      "arrivalCount": 100,
+      "arrivalStepTicks": "10000"
+    }
+  ]
+}

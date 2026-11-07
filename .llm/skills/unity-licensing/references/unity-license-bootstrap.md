@@ -2,7 +2,7 @@
 
 # Unity License Bootstrap
 
-> **One-line summary**: CI activates Unity with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) and guarantees a `-returnlicense` on every exit path. LOCAL Unity needs NO license: the host editor (driven via the [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)) supplies its own.
+> **One-line summary**: CI activates Unity with a classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) and attempts `-returnlicense` on every exit path. Confirm cleanup from positive evidence; an attempted return can leave portal state unresolved. LOCAL Unity needs NO license: the host editor (driven via the [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)) supplies its own.
 
 ## When to Use
 
@@ -86,13 +86,13 @@ mirrors that pass the serial via `unitySerial: ${{ secrets.UNITY_SERIAL }}`,
 
 ## Common Failures (CI)
 
-| Signature                                                       | Cause                                              | Remediation                                                                                 |
-| --------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `UNITY_SERIAL is required`                                      | One of the three serial secrets is unset in CI.    | Set `UNITY_SERIAL`, `UNITY_EMAIL`, and `UNITY_PASSWORD` repository secrets.                 |
-| `Retired Unity activation secret UNITY_LICENSING_SERVER is set` | The retired licensing-server secret remains in CI. | Remove `UNITY_LICENSING_SERVER` from the repository/workflows.                              |
-| `Failed to activate` / `No valid Unity Editor license found`    | Serial unset or invalid, or wrong credentials.     | Verify the three serial secrets against the Unity dashboard.                                |
-| `License client failed to start`                                | Activation hiccup or wrong credentials.            | Retry; then verify the serial and credentials.                                              |
-| `All serial seats consumed` / activation blocked                | A prior run leaked a seat, or both seats are held. | The next run's return-at-start reclaims a leaked seat; if persistent, raise the seat count. |
+| Signature                                                       | Cause                                              | Remediation                                                                 |
+| --------------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------- |
+| `UNITY_SERIAL is required`                                      | One of the three serial secrets is unset in CI.    | Set `UNITY_SERIAL`, `UNITY_EMAIL`, and `UNITY_PASSWORD` repository secrets. |
+| `Retired Unity activation secret UNITY_LICENSING_SERVER is set` | The retired licensing-server secret remains in CI. | Remove `UNITY_LICENSING_SERVER` from the repository/workflows.              |
+| `Failed to activate` / `No valid Unity Editor license found`    | Serial unset or invalid, or wrong credentials.     | Verify the three serial secrets against the Unity dashboard.                |
+| `License client failed to start`                                | Activation hiccup or wrong credentials.            | Retry; then verify the serial and credentials.                              |
+| `All serial seats consumed` / activation blocked                | A prior run leaked a seat, or both seats are held. | Attempt same-runner return; confirm cleanup or reconcile the portal.        |
 
 ## Renewal
 
@@ -116,9 +116,10 @@ the Unity dashboard and update the `UNITY_SERIAL` / `UNITY_EMAIL` /
 
 ## Changelog
 
-| Version | Date       | Changes                                                                                                                                                                                     |
-| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 5.0.0   | 2026-06-14 | Rewritten CI-only: the local Unity runners and the ULF/serial local fallback were removed; local Unity now uses the host editor via the MCP loop and needs no license.                      |
-| 4.0.0   | 2026-05-22 | Floating licensing server RETIRED; classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) is now the primary, only CI path with a guaranteed return; ULF is the local fallback. |
-| 3.0.0   | 2026-05-21 | Floating licensing server (`UNITY_LICENSING_SERVER`) was the primary CI path; legacy secrets removed from CI; ULF/serial local fallback (superseded by the serial cutover).                 |
-| 2.0.0   | 2026-05-05 | ULF and serial activation paths; email/password-only caveat.                                                                                                                                |
+| Version | Date       | Changes                                                                                                                                                                                           |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5.0.0   | 2026-06-14 | Rewritten CI-only: the local Unity runners and the ULF/serial local fallback were removed; local Unity now uses the host editor via the MCP loop and needs no license.                            |
+| 5.0.1   | 2026-09-17 | Clarified that return attempts and lock recovery do not prove a portal seat was freed.                                                                                                            |
+| 4.0.0   | 2026-05-22 | Floating licensing server RETIRED; classic serial (`UNITY_SERIAL` + `UNITY_EMAIL` + `UNITY_PASSWORD`) is now the primary, only CI path with redundant return attempts; ULF is the local fallback. |
+| 3.0.0   | 2026-05-21 | Floating licensing server (`UNITY_LICENSING_SERVER`) was the primary CI path; legacy secrets removed from CI; ULF/serial local fallback (superseded by the serial cutover).                       |
+| 2.0.0   | 2026-05-05 | ULF and serial activation paths; email/password-only caveat.                                                                                                                                      |

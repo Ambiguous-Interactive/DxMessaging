@@ -15,20 +15,18 @@ before(async () => {
   mcp = await import(MODULE_URL);
 });
 const PROTOCOL_VERSION = "2025-11-25";
-function temporaryDirectory() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "unity-mcp-test-"));
+function temporaryDirectory(t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "unity-mcp-test-"));
+  t?.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  return directory;
 }
-async function listeningPort(t) {
-  const server = net.createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  return server.address().port;
-}
-async function closedPort() {
+async function testPort(t) {
   const server = net.createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address();
-  await new Promise((resolve) => server.close(resolve));
+  const close = () => new Promise((resolve) => server.close(resolve));
+  if (t) t.after(close);
+  else await close();
   return port;
 }
 function captureConsole(t, method) {
@@ -233,6 +231,7 @@ test("endpointUrl brackets IPv6 literals", () => {
     "http://[::1]:9020/mcp"
   );
 });
+// prettier-ignore
 test("resolveOptions prefers args over env over .env.local over defaults", () => {
   const local = {
     UNITY_MCP_BRIDGE_HOST: "local.example",
@@ -249,16 +248,25 @@ test("resolveOptions prefers args over env over .env.local over defaults", () =>
   assert.equal(fromEnv.githubToken, "env-token");
   assert.equal(mcp.resolveOptions({}, {}, local, "/repo").githubToken, "local-token");
   const fromDefaults = mcp.resolveOptions({}, {}, {}, "/repo");
-  assert.equal(fromDefaults.host, mcp.DEFAULTS.host);
+  assert.equal(fromDefaults.host, mcp.defaultEndpointHost());
   assert.equal(fromDefaults.port, mcp.DEFAULTS.port);
   assert.equal(fromDefaults.explicitHost, undefined, "an unset host must not look explicit");
   assert.equal(fromDefaults.explicitPort, undefined);
+  assert.equal(mcp.resolveOptions( { "client-host": "127.0.0.1" }, { UNITY_MCP_CLIENT_HOST: "env.example" }, { UNITY_MCP_CLIENT_HOST: "local.example" } ).clientHost, "127.0.0.1");
+  assert.equal(mcp.resolveOptions({}, { UNITY_MCP_CLIENT_HOST: "env.example" }, {}).clientHost, "env.example");
+  assert.equal(mcp.resolveOptions({}, {}, { UNITY_MCP_CLIENT_HOST: "local.example" }).clientHost, "local.example");
 });
 test("resolveOptions does not require a Unity project path", () => {
   const options = mcp.resolveOptions({}, {}, {}, "/repo");
   assert.equal(options.projectPath, undefined);
   assert.throws(() => mcp.requireProjectPath(options), /Unity project path is required/);
 });
+for (const platform of ["darwin", "linux", "win32"]) {
+  test(`defaultEndpointHost selects host and container routing on ${platform}`, () => {
+    assert.equal(mcp.defaultEndpointHost(platform, false), "127.0.0.1");
+    assert.equal(mcp.defaultEndpointHost(platform, true), "host.docker.internal");
+  });
+}
 test("requireProjectPath rejects a path that is not a directory", () => {
   const directory = temporaryDirectory();
   const file = path.join(directory, "not-a-directory");
@@ -276,7 +284,8 @@ for (const [args, error] of [
   [{ "protocol-version": "2025-06-18" }, /2025-11-25/],
   [{ token: "short" }, /Bearer token must be/],
   [{ "max-sessions": "0" }, /Max sessions must be between/],
-  [{ backend: "invalid" }, /Backend must be cli or relay/]
+  [{ backend: "invalid" }, /Backend must be cli or relay/],
+  [{ "client-host": "bad/host" }, /Invalid host/]
 ]) {
   test(`resolveOptions rejects ${JSON.stringify(args)}`, () =>
     assert.throws(() => mcp.resolveOptions(args, {}, {}, "/repo"), error));
@@ -306,31 +315,28 @@ test("procNetRouteGateways decodes little-endian default routes", () => {
 });
 const RESOLV_CONF = (filePath) =>
   filePath === "/etc/resolv.conf" ? "nameserver 10.255.255.254\n" : "";
+// prettier-ignore
 for (const [label, options, expected] of [
   ["host and port", { explicitHost: "10.0.0.5", explicitPort: 9500 }, ["10.0.0.5:9500"]],
   ["host only", { explicitHost: "10.0.0.5" }, ["10.0.0.5:9020", "10.0.0.5:9003"]],
-  [
-    "port only",
-    { explicitPort: 9500 },
-    ["host.docker.internal:9500", "127.0.0.1:9500", "10.255.255.254:9500"]
-  ]
+  ["port only", { explicitPort: 9500 }, ["host.docker.internal:9500", "127.0.0.1:9500", "10.255.255.254:9500"]]
 ]) {
   test(`endpointCandidates probes only what was configured: ${label}`, () => {
     const candidates = mcp.endpointCandidates(
       { ...options, endpointPath: "/mcp" },
       { readFile: RESOLV_CONF }
     );
-    assert.deepEqual(
-      candidates.map((candidate) => `${candidate.host}:${candidate.port}`),
-      expected
-    );
+    assert.deepEqual(candidates.map((candidate) => `${candidate.host}:${candidate.port}`), expected);
     assert.ok(candidates.every((candidate) => candidate.endpointPath === "/mcp"));
   });
 }
 test("endpointCandidates without explicit settings still covers the fallbacks", () => {
-  const candidates = mcp.endpointCandidates({ endpointPath: "/mcp" }, { readFile: RESOLV_CONF });
+  const candidates = mcp.endpointCandidates(
+    { host: "127.0.0.1", endpointPath: "/mcp" },
+    { readFile: RESOLV_CONF }
+  );
   assert.deepEqual(candidates[0], {
-    host: "host.docker.internal",
+    host: "127.0.0.1",
     port: 9020,
     endpointPath: "/mcp"
   });
@@ -352,7 +358,7 @@ test("endpointCandidates without explicit settings still covers the fallbacks", 
 test("probeEndpoint reports an unreachable port without issuing a request", async () => {
   let called = false;
   const result = await mcp.probeEndpoint(
-    { host: "127.0.0.1", port: await closedPort(), endpointPath: "/mcp" },
+    { host: "127.0.0.1", port: await testPort(), endpointPath: "/mcp" },
     probeOptions(),
     () => {
       called = true;
@@ -370,24 +376,12 @@ for (const [label, fetchImpl, expected] of [
   ["a non-JSON body", async () => initializeResponse("<html>", { status: 200 }), "malformed"],
   ["an invalid media type", readyProbeFetch({ contentType: "text/plain" }), "malformed"],
   ["an invalid initialize status", readyProbeFetch({ initializeStatus: 201 }), "malformed"],
-  [
-    "an incomplete InitializeResult",
-    readyProbeFetch({ initialize: `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"${PROTOCOL_VERSION}","capabilities":{}}}` }),
-    "malformed"
-  ],
-  [
-    "a JSON-RPC error",
-    readyProbeFetch({ initialize: '{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"no"}}' }),
-    "jsonrpc-error"
-  ]
+  ["an incomplete InitializeResult", readyProbeFetch({ initialize: `{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"${PROTOCOL_VERSION}","capabilities":{}}}` }), "malformed"],
+  ["a JSON-RPC error", readyProbeFetch({ initialize: '{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"no"}}' }), "jsonrpc-error"]
 ]) {
   test(`probeEndpoint classifies ${label}`, async (t) => {
-    const port = await listeningPort(t);
-    const result = await mcp.probeEndpoint(
-      { host: "127.0.0.1", port, endpointPath: "/mcp" },
-      probeOptions(),
-      fetchImpl
-    );
+    const port = await testPort(t);
+    const result = await mcp.probeEndpoint({ host: "127.0.0.1", port, endpointPath: "/mcp" }, probeOptions(), fetchImpl);
     assert.equal(result.status, expected, result.detail);
     assert.equal(result.ok, expected === "ok");
     if (expected === "jsonrpc-error") assert.match(result.detail, /-32603.*no/);
@@ -396,24 +390,14 @@ for (const [label, fetchImpl, expected] of [
 // prettier-ignore
 test("probeEndpoint verifies editor tools over JSON and server-sent events", async (t) => {
   for (const contentType of ["application/json", "text/event-stream"]) {
-    const port = await listeningPort(t);
+    const port = await testPort(t);
     const requests = [];
     const pongs = [];
     const token = "t".repeat(32);
-    const result = await mcp.probeEndpoint(
-      { host: "127.0.0.1", port, endpointPath: "/mcp" },
-      probeOptions({ bearerToken: token }),
-      readyProbeFetch({ contentType, requests, pongs, resume: contentType === "text/event-stream" }),
-      true
-    );
+    const result = await mcp.probeEndpoint({ host: "127.0.0.1", port, endpointPath: "/mcp" }, probeOptions({ bearerToken: token }), readyProbeFetch({ contentType, requests, pongs, resume: contentType === "text/event-stream" }), true);
     assert.equal(result.ok, true, result.detail);
     assert.equal(result.toolCount, 2);
-    assert.deepEqual(
-      requests.filter((request) => request.method !== "GET").map((request) =>
-        request.method === "DELETE" ? "DELETE" : JSON.parse(request.body).method
-      ).filter(Boolean),
-      ["initialize", "notifications/initialized", "tools/list", "DELETE"]
-    );
+    assert.deepEqual(requests.filter((request) => request.method !== "GET").map((request) => request.method === "DELETE" ? "DELETE" : JSON.parse(request.body).method ).filter(Boolean), ["initialize", "notifications/initialized", "tools/list", "DELETE"]);
     const initialHeaders = new Headers(requests[0].headers);
     assert.equal(initialHeaders.get("Authorization"), `Bearer ${token}`);
     assert.equal(initialHeaders.get("MCP-Protocol-Version"), null);
@@ -432,7 +416,7 @@ test("probeEndpoint verifies editor tools over JSON and server-sent events", asy
 });
 test("probeEndpoint stops dispatch when the lifecycle deadline expires", async (t) => {
   const requests = [];
-  const candidate = { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" };
+  const candidate = { host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" };
   const result = await mcp.probeEndpoint(
     candidate,
     probeOptions({ timeout: 25 }),
@@ -444,11 +428,7 @@ test("probeEndpoint stops dispatch when the lifecycle deadline expires", async (
 });
 // prettier-ignore
 for (const [label, fetchOptions, expected] of [
-  [
-    "missing tools capability",
-    { initialize: OK_PAYLOAD.replace('{"tools":{}}', "{}") },
-    "not-ready"
-  ],
+  ["missing tools capability", { initialize: OK_PAYLOAD.replace('{"tools":{}}', "{}") }, "not-ready"],
   ["empty tool registry", { tools: TOOLS_PAYLOAD.replace(/\[.*\]/, "[]") }, "not-ready"],
   ["tools/list JSON-RPC error", { tools: '{"jsonrpc":"2.0","id":2,"error":{"code":-32603,"message":"failed"}}' }, "jsonrpc-error"],
   ["malformed tools/list result", { tools: '{"jsonrpc":"2.0","id":2,"result":{}}' }, "malformed"],
@@ -461,12 +441,7 @@ for (const [label, fetchOptions, expected] of [
 ]) {
   test(`probeEndpoint classifies ${label} and closes its session`, async (t) => {
     const requests = [];
-    const result = await mcp.probeEndpoint(
-      { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
-      probeOptions(),
-      readyProbeFetch({ ...fetchOptions, requests }),
-      true
-    );
+    const result = await mcp.probeEndpoint({ host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" }, probeOptions(), readyProbeFetch({ ...fetchOptions, requests }), true);
     assert.equal(result.status, expected);
     assert.equal(result.host, "127.0.0.1");
     assert.equal(result.port > 0, true);
@@ -484,7 +459,7 @@ test("probeEndpoint follows opaque tools/list cursors and rejects cursor cycles"
           : { tools: [], nextCursor: "page-2" }
     });
   const requests = [];
-  const candidate = { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" };
+  const candidate = { host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" };
   const result = await mcp.probeEndpoint(
     candidate,
     probeOptions(),
@@ -509,7 +484,7 @@ test("probeEndpoint follows opaque tools/list cursors and rejects cursor cycles"
 for (const editorTool of ["Unity_ManageEditor", "editor_status"]) {
   for (const disconnected of [false, true]) {
     test(`editor readiness checks paginated ${editorTool} when disconnected=${disconnected}`, async (t) => {
-      const candidate = { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" };
+      const candidate = { host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" };
       const requests = [];
       const tools = (request) =>
         JSON.stringify({
@@ -553,7 +528,7 @@ for (const [label, options, expectedWarning, deletes] of [
   test(`probeEndpoint bounds and reports cleanup for ${label}`, async (t) => {
     const requests = [];
     const result = await mcp.probeEndpoint(
-      { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
+      { host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" },
       probeOptions(),
       readyProbeFetch({ ...options, requests })
     );
@@ -568,21 +543,14 @@ for (const [label, options, expectedWarning, deletes] of [
 test("probeEndpoint rejects an unsupported negotiated protocol and closes its session", async (t) => {
   const requests = [];
   const initialize = OK_PAYLOAD.replace(PROTOCOL_VERSION, "2025-06-18");
-  const result = await mcp.probeEndpoint(
-    { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
-    probeOptions(),
-    readyProbeFetch({ initialize, requests })
-  );
+  const result = await mcp.probeEndpoint({ host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" }, probeOptions(), readyProbeFetch({ initialize, requests }));
   assert.equal(result.status, "malformed");
-  assert.deepEqual(
-    requests.filter((r) => r.method !== "GET").map((r) => (r.method === "DELETE" ? "DELETE" : JSON.parse(r.body).method)),
-    ["initialize", "notifications/initialized", "DELETE"]
-  );
+  assert.deepEqual(requests.filter((r) => r.method !== "GET").map((r) => (r.method === "DELETE" ? "DELETE" : JSON.parse(r.body).method)), ["initialize", "notifications/initialized", "DELETE"]);
 });
 test("probeEndpoint cleans a captured session when response body consumption fails", async (t) => {
   const requests = [];
   const result = await mcp.probeEndpoint(
-    { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
+    { host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" },
     probeOptions(),
     readyProbeFetch({ bodyError: new Error("body failed"), requests })
   );
@@ -592,17 +560,12 @@ test("probeEndpoint cleans a captured session when response body consumption fai
 // prettier-ignore
 test("probeEndpoint retries one session-bearing HTTP 404 within its lifecycle", async (t) => {
   const requests = [];
-  const result = await mcp.probeEndpoint(
-    { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
-    probeOptions(),
-    readyProbeFetch({ contentType: "text/event-stream", resume: true, resumeNotFoundCount: 1, requests }),
-    true
-  );
+  const result = await mcp.probeEndpoint({ host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" }, probeOptions(), readyProbeFetch({ contentType: "text/event-stream", resume: true, resumeNotFoundCount: 1, requests }), true);
   assert.equal(result.ok, true);
   assert.equal(requests.filter((r) => JSON.parse(r.body ?? "{}").method === "initialize").length, 2);
   assert.equal(requests.filter((r) => r.method === "DELETE").length, 2);
   requests.length = 0;
-  const failed = await mcp.probeEndpoint({ host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" }, probeOptions(), readyProbeFetch({ contentType: "text/event-stream", resume: true, resumeNotFoundCount: 2, requests }), true);
+  const failed = await mcp.probeEndpoint({ host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" }, probeOptions(), readyProbeFetch({ contentType: "text/event-stream", resume: true, resumeNotFoundCount: 2, requests }), true);
   assert.equal(failed.status, "http-error");
   assert.match(failed.detail, /tools\/list.*404/);
   assert.equal(requests.filter((r) => JSON.parse(r.body ?? "{}").method === "initialize").length, 2);
@@ -612,45 +575,21 @@ test("probeEndpoint retries one session-bearing HTTP 404 within its lifecycle", 
 // prettier-ignore
 for (const [label, options, expected, detail] of [
   ["a live editor answers", {}, "ok", undefined],
-  [
-    "the editor's discovery record has gone stale",
-    { call: editorCallPayload('{"success":false,"error":"Unity not detected (no fresh discovery files found)"}', true) },
-    "not-ready",
-    /Unity_ManageEditor: .*Unity not detected/
-  ],
-  [
-    "the call answers without editor state",
-    { call: editorCallPayload("{}") },
-    "not-ready",
-    /Unity_ManageEditor: \{\}/
-  ],
-  [
-    "the call answers with no content at all",
-    { call: '{"jsonrpc":"2.0","id":3,"result":{"content":[]}}' },
-    "not-ready",
-    /returned no editor state/
-  ]
+  ["the editor's discovery record has gone stale", { call: editorCallPayload('{"success":false,"error":"Unity not detected (no fresh discovery files found)"}', true) }, "not-ready", /Unity_ManageEditor: .*Unity not detected/],
+  ["the call answers without editor state", { call: editorCallPayload("{}") }, "not-ready", /Unity_ManageEditor: \{\}/],
+  ["the call answers with no content at all", { call: '{"jsonrpc":"2.0","id":3,"result":{"content":[]}}' }, "not-ready", /returned no editor state/]
 ]) {
   test(`probeEndpoint editor readiness reports ${label}`, async (t) => {
     const requests = [];
-    const result = await mcp.probeEndpoint(
-      { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" },
-      probeOptions(),
-      readyProbeFetch({ ...options, requests }),
-      "editor"
-    );
+    const result = await mcp.probeEndpoint({ host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" }, probeOptions(), readyProbeFetch({ ...options, requests }), "editor");
     assert.equal(result.status, expected, result.detail);
     if (detail) assert.match(result.detail, detail);
-    assert.equal(
-      requests.filter((r) => JSON.parse(r.body ?? "{}").method === "tools/call").length,
-      1,
-      "editor readiness asks the editor exactly once"
-    );
+    assert.equal(requests.filter((r) => JSON.parse(r.body ?? "{}").method === "tools/call").length, 1, "editor readiness asks the editor exactly once");
   });
 }
 // prettier-ignore
 test("probeEndpoint only calls a tool when editor readiness is asked for", async (t) => {
-  const candidate = { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" };
+  const candidate = { host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" };
   const requests = [];
   const toolsLevel = await mcp.probeEndpoint(candidate, probeOptions(), readyProbeFetch({ requests }), "tools");
   assert.equal(toolsLevel.ok, true);
@@ -670,8 +609,8 @@ test("probeEndpoint only calls a tool when editor readiness is asked for", async
   assert.equal(requests.filter((r) => JSON.parse(r.body ?? "{}").method === "tools/call").length, 0);
 });
 test("discoverEndpoint walks candidates in order and stops at the first success", async (t) => {
-  const livePort = await listeningPort(t);
-  const deadPort = await closedPort();
+  const livePort = await testPort(t);
+  const deadPort = await testPort();
   const candidates = [
     { host: "127.0.0.1", port: deadPort, endpointPath: "/mcp" },
     { host: "127.0.0.1", port: livePort, endpointPath: "/mcp" },
@@ -687,8 +626,8 @@ test("discoverEndpoint walks candidates in order and stops at the first success"
 });
 // prettier-ignore
 test("discoverEndpoint reports cleanup warnings before a later candidate succeeds", async (t) => {
-  const first = await listeningPort(t);
-  const second = await listeningPort(t);
+  const first = await testPort(t);
+  const second = await testPort(t);
   const warnings = captureConsole(t, "warn");
   const firstFetch = readyProbeFetch({ tools: TOOLS_PAYLOAD.replace(/\[.*\]/, "[]"), deleteStatus: 500 });
   const secondFetch = readyProbeFetch();
@@ -701,7 +640,7 @@ test("discoverEndpoint reports cleanup warnings before a later candidate succeed
   assert.match(warnings.join("\n"), /cleanup returned HTTP 500/);
 });
 test("discoverEndpoint reports every attempt when nothing responds", async () => {
-  const deadPort = await closedPort();
+  const deadPort = await testPort();
   const candidates = [
     { host: "127.0.0.1", port: deadPort, endpointPath: "/mcp" },
     { host: "127.0.0.1", port: deadPort, endpointPath: "/other" }
@@ -715,7 +654,7 @@ test("discoverEndpoint reports every attempt when nothing responds", async () =>
   assert.ok(attempts.every((attempt) => attempt.ok === false));
 });
 test("discoverEndpoint emits per-candidate detail only at log level debug", async (t) => {
-  const dead = await closedPort();
+  const dead = await testPort();
   const candidates = [{ host: "127.0.0.1", port: dead, endpointPath: "/mcp" }];
   const runtime = { candidates, fetchImpl: async () => initializeResponse(OK_PAYLOAD) };
   const quiet = captureConsole(t, "log");
@@ -760,19 +699,13 @@ test("prepareJsonServers creates, merges, and rejects malformed documents", () =
   fs.writeFileSync(filePath, "{ not json");
   assert.throws(() => mcp.prepareJsonServers(filePath, "mcpServers", server), /Invalid JSON/);
 });
+// prettier-ignore
 for (const [label, raw, expected] of [
   ["a line comment", '{\n  // hint\n  "a": 1\n}', { a: 1 }],
   ["a block comment", '{\n  /* hint\n     more */\n  "a": 1\n}', { a: 1 }],
   ["a trailing comma in an object", '{\n  "a": 1,\n}', { a: 1 }],
   ["a trailing comma in an array", '{\n  "a": [1, 2,],\n}', { a: [1, 2] }],
-  [
-    "comment markers inside strings",
-    '{ "a": "http://h:1//mcp", "b": "/* not */" }',
-    {
-      a: "http://h:1//mcp",
-      b: "/* not */"
-    }
-  ],
+  ["comment markers inside strings", '{ "a": "http://h:1//mcp", "b": "/* not */" }', { a: "http://h:1//mcp", b: "/* not */" }],
   ["a comma before a brace inside a string", '{ "a": "x,}" }', { a: "x,}" }],
   ["an escaped quote inside a string", '{ "a": "say \\" // no" }', { a: 'say " // no' }],
   ["plain JSON left untouched", '{"a":1,"b":[2,3]}', { a: 1, b: [2, 3] }]
@@ -1090,19 +1023,23 @@ test("buildRelayArgs passes the resolved project path", () => {
   ]);
 });
 test("assertPortAvailable rejects a port that is already bound", async (t) => {
-  const port = await listeningPort(t);
+  const port = await testPort(t);
   await assert.rejects(
     () => mcp.assertPortAvailable(port, "127.0.0.1"),
     /is unavailable on 127\.0\.0\.1/
   );
-  await mcp.assertPortAvailable(await closedPort(), "127.0.0.1");
+  await mcp.assertPortAvailable(await testPort(), "127.0.0.1");
+});
+test("assertPortAvailable rejects a loopback listener before a wildcard bind", async (t) => {
+  const port = await testPort(t);
+  await assert.rejects(() => mcp.assertPortAvailable(port, "0.0.0.0"), /is unavailable/);
 });
 const BRIDGE_TOKEN = "b".repeat(32);
 /**
  * A relay stand-in: it speaks the same newline-delimited JSON-RPC over stdio that the real Unity
  * relay does, so the bridge is exercised end to end without a Unity install or a network dependency.
  */
-function createFakeRelay(toolResult) {
+function createFakeRelay(toolResult, editorState = EDITOR_STATE_TEXT) {
   const child = new EventEmitter();
   child.exitCode = null;
   child.signalCode = null;
@@ -1122,16 +1059,12 @@ function createFakeRelay(toolResult) {
         if (message.id === undefined) {
           continue;
         }
-        const result =
-          message.method === "initialize"
-            ? {
-                protocolVersion: PROTOCOL_VERSION,
-                capabilities: {},
-                serverInfo: { name: "fake-relay", version: "1.0.0" }
-              }
-            : message.method === "tools/list" && toolResult
-              ? toolResult
-              : { echoed: message.method };
+        // prettier-ignore
+        const result = message.method === "initialize"
+          ? { protocolVersion: PROTOCOL_VERSION, capabilities: { tools: {} }, serverInfo: { name: "fake-relay", version: "1.0.0" } }
+          : message.method === "tools/list" && toolResult ? toolResult
+          : message.method === "tools/call" ? { content: [{ type: "text", text: editorState }] }
+          : { echoed: message.method };
         child.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result })}\n`);
       }
       callback();
@@ -1154,53 +1087,26 @@ async function startTestBridge(t, overrides = {}) {
   const relayPath = path.join(repoRoot, "relay");
   fs.writeFileSync(relayPath, "#!/bin/sh\n", { mode: 0o755 });
   const relays = [];
+  // prettier-ignore
   const running = await mcp.startBridge(
-    {
-      repoRoot,
-      projectPath,
-      relayPath,
-      backend: "relay",
-      bindHost: "127.0.0.1",
-      port: 0,
-      endpointPath: "/mcp",
-      bearerToken: BRIDGE_TOKEN,
-      sessionTimeout: 60_000,
-      requestTimeout: 300_000,
-      maxSessions: 8,
-      logLevel: "none",
-      ...overrides
-    },
-    {
-      spawnRelay: () => {
-        const relay = createFakeRelay(overrides.toolResult);
-        relays.push(relay);
-        return relay;
-      }
-    }
+    commandOptions(repoRoot, { projectPath, relayPath, backend: "relay", bindHost: "127.0.0.1", port: 0, bearerToken: BRIDGE_TOKEN, logLevel: "none", ...overrides }),
+    { inContainer: false, spawnRelay: () => {
+      const relay = createFakeRelay(overrides.toolResult);
+      relays.push(relay);
+      return relay;
+    } }
   );
   t.after(() => running.close());
   return { running, relays, repoRoot, port: running.httpServer.address().port };
 }
 /** `null` means "send no Authorization header at all", which is a distinct case from a bad token. */
 function mcpHeaders(token = BRIDGE_TOKEN, extra = {}) {
-  return {
-    Accept: "application/json, text/event-stream",
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...extra
-  };
+  // prettier-ignore
+  return { Accept: "application/json, text/event-stream", "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra };
 }
 function initializeBody(id = 1) {
-  return JSON.stringify({
-    jsonrpc: "2.0",
-    id,
-    method: "initialize",
-    params: {
-      protocolVersion: PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: "unity-mcp-test", version: "1.0.0" }
-    }
-  });
+  // prettier-ignore
+  return JSON.stringify({ jsonrpc: "2.0", id, method: "initialize", params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "unity-mcp-test", version: "1.0.0" } } });
 }
 /** A raw HTTP request, for the cases fetch cannot express (a stalled or over-large body). */
 function rawRequest(port, { method = "POST", requestPath = "/mcp", headers = {}, body, stall }) {
@@ -1231,10 +1137,10 @@ function rawRequest(port, { method = "POST", requestPath = "/mcp", headers = {},
     }
   });
 }
-async function openSession(port) {
+async function openSession(port, token = BRIDGE_TOKEN) {
   const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: "POST",
-    headers: mcpHeaders(),
+    headers: mcpHeaders(token),
     body: initializeBody()
   });
   return { response, sessionId: response.headers.get("mcp-session-id") };
@@ -1247,11 +1153,7 @@ for (const [label, token, expected] of [
 ]) {
   test(`startBridge answers an initialize with ${label} as ${expected}`, async (t) => {
     const { port } = await startTestBridge(t);
-    const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
-      method: "POST",
-      headers: mcpHeaders(token),
-      body: initializeBody()
-    });
+    const { response } = await openSession(port, token);
     assert.equal(response.status, expected);
     if (expected === 401) {
       assert.equal(response.headers.get("www-authenticate"), "Bearer");
@@ -1261,14 +1163,10 @@ for (const [label, token, expected] of [
     }
   });
 }
+// prettier-ignore
 for (const [label, toolResult, params, rejected] of [
   ["empty registry", { tools: [] }, {}, true],
-  [
-    "populated registry",
-    { tools: [{ name: "editor_status", inputSchema: { type: "object" } }] },
-    {},
-    false
-  ],
+  ["populated registry", { tools: [{ name: "editor_status", inputSchema: { type: "object" } }] }, {}, false],
   ["empty intermediate page", { tools: [], nextCursor: "next" }, {}, false],
   ["empty intermediate page with an empty cursor", { tools: [], nextCursor: "" }, {}, false],
   ["empty final page with an empty cursor", { tools: [] }, { cursor: "" }, false],
@@ -1425,17 +1323,15 @@ test("startBridge rejects unknown paths and methods", async (t) => {
 });
 function commandOptions(repoRoot, overrides = {}) {
   return {
+    ...mcp.DEFAULTS,
     repoRoot,
     discover: true,
-    host: mcp.DEFAULTS.host,
-    port: mcp.DEFAULTS.port,
-    endpointPath: "/mcp",
     ...probeOptions(),
     ...overrides
   };
 }
 test("runProbe reports what it actually proved about the endpoint", async (t) => {
-  const port = await listeningPort(t);
+  const port = await testPort(t);
   const logged = captureConsole(t, "log");
   const found = await mcp.runProbe(commandOptions(temporaryDirectory()), {
     candidates: [{ host: "127.0.0.1", port, endpointPath: "/mcp" }],
@@ -1461,13 +1357,13 @@ test("--no-discover probes the configured endpoint rather than skipping readines
   const runtime = { fetchImpl: readyProbeFetch() };
   captureConsole(t, "log");
   captureConsole(t, "warn");
-  const live = { discover: false, host: "127.0.0.1", port: await listeningPort(t) };
+  const live = { discover: false, host: "127.0.0.1", port: await testPort(t) };
   assert.equal(
     (await mcp.runProbe(commandOptions(temporaryDirectory(), live), runtime)).port,
     live.port
   );
   const repoRoot = temporaryDirectory();
-  const dead = { discover: false, host: "127.0.0.1", port: await closedPort() };
+  const dead = { discover: false, host: "127.0.0.1", port: await testPort() };
   await assert.rejects(
     () => mcp.runProbe(commandOptions(repoRoot, dead), runtime),
     (error) => {
@@ -1482,7 +1378,7 @@ test("--no-discover probes the configured endpoint rather than skipping readines
 });
 test("runConfigure refuses to write when a bridge rejects the token", async (t) => {
   const repoRoot = temporaryDirectory();
-  const port = await listeningPort(t);
+  const port = await testPort(t);
   await assert.rejects(
     () =>
       mcp.runConfigure(commandOptions(repoRoot), {
@@ -1512,8 +1408,8 @@ test("runConfigure refuses to write when a bridge rejects the token", async (t) 
 test("runConfigure still configures when a later candidate handshakes", async (t) => {
   const repoRoot = temporaryDirectory();
   captureConsole(t, "log");
-  const rejecting = await listeningPort(t);
-  const accepting = await listeningPort(t);
+  const rejecting = await testPort(t);
+  const accepting = await testPort(t);
   const requests = [];
   const acceptingFetch = readyProbeFetch({ requests });
   const url = await mcp.runConfigure(commandOptions(repoRoot, { logLevel: "none" }), {
@@ -1528,17 +1424,14 @@ test("runConfigure still configures when a later candidate handshakes", async (t
   });
   assert.equal(url, `http://127.0.0.1:${accepting}/mcp`);
   assert.ok(fs.existsSync(mcp.clientConfigPaths(repoRoot).claudeCode));
-  assert.deepEqual(
-    requests.filter((r) => r.method !== "GET").map((r) => (r.method === "DELETE" ? "DELETE" : JSON.parse(r.body).method)),
-    ["initialize", "notifications/initialized", "DELETE"]
-  );
+  assert.deepEqual(requests.filter((r) => r.method !== "GET").map((r) => (r.method === "DELETE" ? "DELETE" : JSON.parse(r.body).method)), ["initialize", "notifications/initialized", "DELETE"]);
 });
 test("runConfigure falls back to the configured endpoint when nothing is listening", async (t) => {
   const repoRoot = temporaryDirectory();
   const warnings = captureConsole(t, "warn");
   captureConsole(t, "log");
   const url = await mcp.runConfigure(commandOptions(repoRoot, { host: "10.0.0.5", port: 9020 }), {
-    candidates: [{ host: "127.0.0.1", port: await closedPort(), endpointPath: "/mcp" }],
+    candidates: [{ host: "127.0.0.1", port: await testPort(), endpointPath: "/mcp" }],
     fetchImpl: async () => initializeResponse(OK_PAYLOAD)
   });
   assert.equal(url, "http://10.0.0.5:9020/mcp");
@@ -1549,10 +1442,34 @@ test("runConfigure falls back to the configured endpoint when nothing is listeni
     "an unreachable endpoint is a fresh setup, so a token is generated"
   );
 });
+test("runConfigure preserves configs and credentials when a listener stalls initialization", async (t) => {
+  const repoRoot = temporaryDirectory(t);
+  const port = await testPort(t);
+  const options = commandOptions(repoRoot, { timeout: 50 });
+  mcp.configure(options, { host: "127.0.0.1", port: 9500, endpointPath: "/mcp" });
+  const files = [
+    path.join(repoRoot, ".env.local"),
+    ...Object.values(mcp.clientConfigPaths(repoRoot))
+  ];
+  const before = files.map((file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null));
+  await assert.rejects(
+    () =>
+      mcp.runConfigure(options, {
+        candidates: [{ host: "127.0.0.1", port, endpointPath: "/mcp" }],
+        fetchImpl: readyProbeFetch({ hang: "initialize" })
+      }),
+    /Nothing was written[\s\S]*transport-error/
+  );
+  assert.deepEqual(
+    files.map((file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null)),
+    before
+  );
+});
 for (const [label, argv, expected] of [
   ["no command", [], /Usage: node scripts\/mcp\/unity-mcp\.mjs/],
   ["--help", ["--help"], /Usage: node scripts\/mcp\/unity-mcp\.mjs/],
-  ["a per-command --help", ["probe", "--help"], /--max-sessions COUNT/]
+  ["a per-command --help", ["probe", "--help"], /--max-sessions COUNT/],
+  ["run alias --help", ["run", "--help"], /Alias for bridge/]
 ]) {
   test(`main prints usage for ${label}`, async (t) => {
     const logged = captureConsole(t, "log");
@@ -1572,8 +1489,7 @@ for (const [label, argv, expected] of [
 
 test("ZAI credentials and local tools reach every client without losing user settings", async (t) => {
   const { parse } = await import("smol-toml");
-  const repoRoot = temporaryDirectory();
-  t.after(() => fs.rmSync(repoRoot, { recursive: true, force: true }));
+  const repoRoot = temporaryDirectory(t);
   fs.writeFileSync(path.join(repoRoot, ".env.local"), "ZAI_API_KEY=file-key\n");
   const options = mcp.resolveOptions({}, { Z_AI_API_KEY: "environment-key" }, undefined, repoRoot);
   assert.equal(options.zaiToken, "environment-key");
@@ -1630,8 +1546,7 @@ test("ZAI credentials and local tools reach every client without losing user set
   assert.deepEqual(mcp.configure(options, endpoint).written, []);
 });
 test("invalid dotenv lines never print credential contents", (t) => {
-  const repoRoot = temporaryDirectory();
-  t.after(() => fs.rmSync(repoRoot, { recursive: true, force: true }));
+  const repoRoot = temporaryDirectory(t);
   fs.writeFileSync(path.join(repoRoot, ".env.local"), 'Z_AI_API_KEY="private-unclosed\n');
   const warnings = captureConsole(t, "warn");
   mcp.readLocalEnv(repoRoot);
@@ -1641,8 +1556,7 @@ test("invalid dotenv lines never print credential contents", (t) => {
 
 test("CLI backend pins every session to the requested host project", async (t) => {
   const seen = [];
-  const repoRoot = temporaryDirectory();
-  t.after(() => fs.rmSync(repoRoot, { recursive: true, force: true }));
+  const repoRoot = temporaryDirectory(t);
   const options = {
     ...mcp.resolveOptions({}, {}, {}, repoRoot),
     projectPath: repoRoot,
@@ -1652,6 +1566,7 @@ test("CLI backend pins every session to the requested host project", async (t) =
     cliPath: "host-unity"
   };
   const running = await mcp.startBridge(options, {
+    inContainer: false,
     spawnRelay: (command, args) => {
       seen.push({ command, args });
       return createFakeRelay();
@@ -1663,10 +1578,51 @@ test("CLI backend pins every session to the requested host project", async (t) =
   assert.equal(response.status, 200);
   assert.deepEqual(seen, [{ command: "host-unity", args: ["mcp", "--project-path", repoRoot] }]);
 });
+// prettier-ignore
+test("host configuration keeps the container client address separate from discovery", async (t) => {
+  const repoRoot = temporaryDirectory(t);
+  captureConsole(t, "log");
+  const options = commandOptions(repoRoot, { clientHost: "host.docker.internal" });
+  const candidate = { host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" };
+  assert.equal(await mcp.runConfigure(options, { candidates: [candidate], fetchImpl: readyProbeFetch() }), `http://host.docker.internal:${candidate.port}/mcp`);
+  assert.equal(JSON.parse(fs.readFileSync(mcp.clientConfigPaths(repoRoot).claudeCode)).mcpServers["unity-mcp"].url, `http://host.docker.internal:${candidate.port}/mcp`);
+  assert.equal(mcp.configure(options, candidate).written.length, 0);
+});
+// prettier-ignore
+test("bridge rejects container startup before creating credentials or binding", async (t) => {
+  const repoRoot = temporaryDirectory(t);
+  await assert.rejects(() => mcp.startBridge(commandOptions(repoRoot), { inContainer: true }), /Run unity:mcp:bridge on the host[\s\S]*unity:mcp:configure/);
+  assert.equal(fs.existsSync(path.join(repoRoot, ".env.local")), false);
+});
+// prettier-ignore
+for (const [label, tools, state] of [["no tools", [], EDITOR_STATE_TEXT], ["a disconnected editor", JSON.parse(TOOLS_PAYLOAD).result.tools, "{}"]]) {
+  test(`bridge startup closes the listener with ${label}`, async (t) => {
+    const repoRoot = temporaryDirectory(t);
+    captureConsole(t, "log");
+    const port = await testPort();
+    const options = commandOptions(repoRoot, { projectPath: repoRoot, bindHost: "127.0.0.1", port, backend: "cli", timeout: 500 });
+    const child = createFakeRelay({ tools }, state);
+    await assert.rejects(() => mcp.runBridge(options, { inContainer: false, spawnRelay: () => child }), /not ready/);
+    await mcp.assertPortAvailable(port, "127.0.0.1");
+    assert.deepEqual(child.signals, ["SIGTERM"]);
+  });
+}
+// prettier-ignore
+test("bridge reports readiness only after a live editor answers and closes on SIGTERM", async (t) => {
+  const repoRoot = temporaryDirectory(t);
+  const original = console.log, messages = [];
+  console.log = (message) => { messages.push(message); if (message.startsWith("Unity MCP ready:")) process.emit("SIGTERM"); };
+  t.after(() => { console.log = original; });
+  const port = await testPort();
+  const child = createFakeRelay(JSON.parse(TOOLS_PAYLOAD).result);
+  await mcp.runBridge(commandOptions(repoRoot, { projectPath: repoRoot, bindHost: "127.0.0.1", port, backend: "cli" }), { inContainer: false, spawnRelay: () => child });
+  assert.deepEqual(child.received.filter((message) => message.method).map((message) => message.method), ["initialize", "notifications/initialized", "tools/list", "tools/call"]);
+  assert.match(messages.join("\n"), /verifying Unity[\s\S]*Unity MCP ready:[\s\S]*Leave this host terminal running/);
+  await mcp.assertPortAvailable(port, "127.0.0.1");
+});
 
 test("offline configuration never attempts a host connection", async (t) => {
-  const repoRoot = temporaryDirectory();
-  t.after(() => fs.rmSync(repoRoot, { recursive: true, force: true }));
+  const repoRoot = temporaryDirectory(t);
   const options = mcp.resolveOptions({ offline: true }, {}, {}, repoRoot);
   captureConsole(t, "log");
   captureConsole(t, "warn");
@@ -1681,12 +1637,9 @@ for (const [label, call, expected] of [
   ["malformed CLI state", editorCallPayload("{}"), "not-ready"]
 ]) {
   test(`probe checks ${label} through editor_status`, async (t) => {
-    const candidate = { host: "127.0.0.1", port: await listeningPort(t), endpointPath: "/mcp" };
-    const tools = JSON.stringify({
-      jsonrpc: "2.0",
-      id: 2,
-      result: { tools: [{ name: "editor_status", inputSchema: { type: "object" } }] }
-    });
+    const candidate = { host: "127.0.0.1", port: await testPort(t), endpointPath: "/mcp" };
+    // prettier-ignore
+    const tools = JSON.stringify({ jsonrpc: "2.0", id: 2, result: { tools: [{ name: "editor_status", inputSchema: { type: "object" } }] } });
     const result = await mcp.probeEndpoint(
       candidate,
       probeOptions(),

@@ -15,6 +15,7 @@ const {
   reduceDifferentialReplayFailure,
   reduceEditorSettingsCache,
   reduceShippingFidelityMatrix,
+  reduceOpenLoopEditorCapture,
   reducePairedThroughputScreen,
   reduceSubUnsubObservations
 } = require("./perf-evidence-reducers.js");
@@ -25,28 +26,22 @@ const EXPERIMENT_ID_PATTERN = /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/;
 const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MAXIMUM_SCANNED_BYTES = 256 * 1024 * 1024;
-const REDUCERS = Object.freeze({
-  "editor-settings-cache-v1": {
-    artifactClass: "editor-settings-cache",
-    reduce: reduceEditorSettingsCache
-  },
-  "differential-replay-failure-v1": {
-    artifactClass: "differential-replay-failure",
-    reduce: reduceDifferentialReplayFailure
-  },
-  "allocation-subunsub-observations-v1": {
-    artifactClass: "allocation-subunsub-observations",
-    reduce: reduceSubUnsubObservations
-  },
-  "paired-throughput-screen-v1": {
-    artifactClass: "paired-throughput-screen",
-    reduce: reducePairedThroughputScreen
-  },
-  "shipping-fidelity-matrix-v1": {
-    artifactClass: "shipping-fidelity-matrix",
-    reduce: reduceShippingFidelityMatrix
-  }
-});
+const REDUCERS = Object.freeze(
+  Object.fromEntries(
+    [
+      ["editor-settings-cache", reduceEditorSettingsCache],
+      ["differential-replay-failure", reduceDifferentialReplayFailure],
+      ["allocation-subunsub-observations", reduceSubUnsubObservations],
+      ["paired-throughput-screen", reducePairedThroughputScreen],
+      ["shipping-fidelity-matrix", reduceShippingFidelityMatrix],
+      ["open-loop-editor-capture", reduceOpenLoopEditorCapture],
+      [
+        "editor-latency-clock-capture",
+        (contents, options) => reduceOpenLoopEditorCapture(contents, options, true)
+      ]
+    ].map(([artifactClass, reduce]) => [`${artifactClass}-v1`, { artifactClass, reduce }])
+  )
+);
 function fail(message) {
   throw new Error(message);
 }

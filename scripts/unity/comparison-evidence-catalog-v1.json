@@ -3,7 +3,7 @@
     "dxBridge": {
       "origin": "repository",
       "path": "Tests/Runtime/Comparisons/DxMessagingBridge.cs",
-      "sha256": "4d4b68daa6c1d8ae760cb0a4b3b106db40370f0bcb560a341ab09d07d80a0bb0"
+      "sha256": "12b014ec75de1dd5cc15dc2e26783679116db9512e26c2cdb11dd42128c85693"
     },
     "mpBridge": {
       "origin": "repository",
@@ -83,7 +83,7 @@
     "pins": {
       "origin": "repository",
       "path": ".github/comparison-packages.json",
-      "sha256": "81e545ca84d5a6c7e7a48aea5e005bb76436b8cf465a7844a4733dd7ea2c1dc4"
+      "sha256": "a64838f28d07aba685aa70ff69033cfb5a02cb01f7e17b6fe58bbc837a04fb18"
     },
     "untargetedPayload": {
       "origin": "repository",

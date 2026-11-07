@@ -263,6 +263,36 @@ requires an explanation, a fix, or an explicit reviewer-approved exception. A
 count of `Unmeasured` (rendered `n/a`) is neither a pass nor a fail -- it means no
 reliable probe was available on that backend, so the budget cannot be evaluated.
 
+### Experimental latency quantiles
+
+Issue [#512](https://github.com/Ambiguous-Interactive/DxMessaging/issues/512)
+keeps cold, burst, and queued latency separate from the warmed throughput rows
+above. The current exact reducer reports a strict-upper empirical percentile:
+for `n` sorted observations, p99 selects the zero-based rank `floor(99*n/100)`.
+For an exactly one-in-100 deterministic tail-control trace, that selects the
+delayed observation. This verifies the protocol's rank response, not a
+population p99 estimate.
+
+The reducer also reports exact equal-tail 95% binomial order-statistic rank
+bounds, conditional on independent, identically distributed units. A finite
+two-sided p99 interval first becomes possible at 368 such units. At 72 units,
+the ranks are 69 and no finite upper endpoint. Even 368 units do not guarantee
+a narrow interval or a sound claim when the clock, host, or workload is unstable.
+The [#512 unit and interval boundary](https://github.com/Ambiguous-Interactive/DxMessaging/issues/512#issuecomment-5717971411)
+records the pre-player stop rule and the remaining interval-width decision.
+
+Count a fresh clean build/player start once for process-cold work. Retain the
+type shape, order, build, and player identities for type-cold work; shapes in
+one player form a cluster. Burst and queue traces may contain many frames or
+messages, but one complete host-stable player session is one replication unit.
+Within-session quantiles remain descriptive. A percentile of session p99 values
+describes session p99 variation; it is not the percentile of pooled messages.
+Do not use the number of messages, frames, or repeated launches as the
+independent-unit count. Report the population interval and verdict as `N/A`
+when a bound is absent, while retaining the labeled descriptive observation.
+The exact reducer does not verify independence; source and session evidence
+must establish it before inference.
+
 ## Build and runtime configuration
 
 The published numbers are measured under **Standalone IL2CPP + .NET Standard
@@ -618,6 +648,19 @@ also requires each bridge's declared fan-out to equal the scenario's canonical f
 before its `ProgressMarker` assertion reconciles the full measurement. This catches
 current-row deduplication and fan-out mismatches. Teardown contracts separately verify
 synchronous cleanup where the pinned API exposes observable Unity objects or assets.
+
+### Pilot host-health diagnostics
+
+When a pilot requests player-time host telemetry, its validator continues reading
+timestamps after a cadence failure. The final sample determines player-end coverage;
+an earlier sample cannot establish an end gap. Malformed tail timestamps and samples
+after the recorded stop still reject the run. Correcting a secondary diagnosis does
+not clear an earlier health failure or authorize a pilot retry.
+
+Keep the original health verdict and inputs with their source commitments. Artifact
+redaction can change telemetry bytes while its envelope retains the unredacted
+checksum. An offline replay of those bytes must retain that checksum rejection and
+write separate outputs; it cannot establish a valid measurement session.
 
 ### In-process paired stability evidence
 
@@ -1086,3 +1129,277 @@ throughput drops materially versus the no-interceptor baseline), and reflexive
 (dynamic) messaging is slower than direct handler registration because of
 reflection overhead. Treat any pre-migration number as non-comparable to the
 current single-window results.
+
+## Verify the optional native SDK floor
+
+The Runner Audit workflow includes an opt-in research lane for
+Unity 2021.3.45f1, Burst 1.6.6, Collections 1.2.3, Mathematics 1.2.6 and
+Jobs 0.50.0-preview.9. Dispatch
+`runner-bootstrap.yml` on the source branch with `runner-label: ELI-MACHINE` and
+`native-sdk-floor: true`. Keep all other experiment inputs at their defaults.
+Check the fresh serialized ELI budget before dispatch; the one eligible ELI job
+has a 600-minute ceiling. Bootstrap and pilot jobs do not run in this mode.
+
+The lane runs all 745 CPU/Burst PlayMode cases, including allocation assays and
+positive controls. A namespace setup fixture captures actual package versions,
+sources, compiler-source hashes, manifest and lock before candidates execute.
+It rejects substituted packages and requires the batch interface to come from
+that actual Jobs package and its Unity.Jobs assembly. Collections 1.2.3 predates
+the Jobs merge into Collections 1.4.0, so this generated host pins the older Jobs
+provider. Current hosts using the merged Collections provider do not install it.
+The comparison manifest also supplies Physics and Physics2D modules required by
+the pinned UniRx source; the committed local-parity manifest retains these modules.
+The result gate requires the exact retained
+case identities, with no failed, skipped or inconclusive cases.
+
+The lane retains fixed direct-call metadata before and after the complete scope.
+Before capture reads method IL and generated member metadata without static field
+values or kernel invocation. After capture observes compiler flags and zero/nonzero
+pointer state on the three generated dispatch types already exercised by the cases.
+It records addresses only as zero/nonzero and retains observation errors. A matched
+wrapper tail-call signature identifies its target; unmatched IL stays in the record.
+These diagnostics do not replace the native execution markers or permit fallback.
+
+Editor test invocations first prepare package compiler inputs in a separate batch
+process through `DxmCiTestConfigurator.PrepareCompilerInputs`. A fresh completion
+marker admits the test process; preparation failures stop before tests. The phase
+uses the public package preparation API and does not apply player settings.
+The artifacts retain response-file and ignore-sidecar hashes, lengths and write
+timestamps before and after tests, including failing NUnit runs. Floor admission
+requires both inputs to remain unchanged. This avoids leaving deferred response-file
+imports for the test process; it does not override Burst compilation settings.
+
+Standalone configuration can also retain actual floor SDK admission before a
+player build. When `DXM_NATIVE_SDK_FLOOR_EVIDENCE` requests a fresh output,
+`DxmCiTestConfigurator.Apply` calls the optional fixture's public admission method
+after preparing compiler inputs and applying settings, before its completion
+marker. Missing or ambiguous fixtures, an incompatible method, stale evidence,
+admission failures and missing output stop configuration. Ordinary configuration
+does not inspect optional fixtures when no floor evidence was requested.
+This boundary supplies Editor package provenance; it does not prove player SDK
+identity, native execution or player allocation measurements. The 122 allocation
+cases require a functional `GC.Alloc` count recorder. Unity 2021.3 documents
+[Recorder samplers](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Profiling.Recorder.html)
+for Editor and Development players. An unavailable recorder cannot pass these
+assertions. The separate
+[ProfilerRecorder API](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Unity.Profiling.ProfilerRecorder.html)
+supports Release metrics; that does not establish that the count probe works.
+
+The fixed floor diagnostic also uses standard Burst debug level 1. After all cases,
+the namespace fixture snapshots only main/thread compiler logs from the actual
+process current directory, before framework teardown can overwrite them. Capture
+is bounded to 64 files, 4 MiB per file and 64 MiB total. Missing, changing, invalid
+or truncated data stays incomplete. Raw hashes describe captured source bytes
+before the existing artifact redaction. Runtime directory file hashes and any
+observable loaded assembly location are separate observations; an unobserved
+assembly is not proof that it was unloaded. Diagnostic logging supplies no timing
+claim and does not change synchronous/eager options or execution assertions.
+
+The pinned central actions own admission and automatic cleanup. Acquisition
+requires resource lifecycle protection; return, classification, release and
+confirmed cleanup run before artifact redaction and upload. The runner must
+already have the exact healthy editor installed. The lane performs no repair.
+
+This lane verifies the CPU/Burst SDK floor. GPU, macOS plugin and IL2CPP floor
+checks require separate native evidence. PlayMode results do not establish
+calibrated player throughput or architectural acceptance.
+
+For the separate player qualification, retain `native-sdk-floor: true` and select
+`native-sdk-scope: StandaloneRelease`. The default remains `PlayMode`. The same
+745 cases execute without allocation exclusions. The distinct
+`native-sdk-il2cpp-qualification-profile.v1.json` retains the reviewed Release
+test-player settings and is limited to the old-floor assembly/category and one
+process. Configuration, build and runtime profile evidence must match it.
+The lane retains full player file hashes before and after execution, including
+failed NUnit runs, and requires the actual executable, IL2CPP and Burst libraries.
+The callback records public SDK type/assembly metadata, platform, backend, pointer
+size and Burst enabled state after writing the test results. Use package-owned
+`NativeList<T>` for the Collections assembly; `NativeArray<T>`
+belongs to the engine core module and cannot admit that package. Runtime SDK schema
+2 retains all four assembly version components as integers through normal artifact
+redaction. The gate rejects missing, invalid or inconsistent version components.
+After the NUnit result is written, the same opt-in callback records public legacy
+`GC.Alloc` presence/validity and separate forced-allocation/empty-operation counts.
+Invalid or missing recorders retain `-1` counts. It also records `ProfilerRecorder`
+validity for three Memory metrics: `GC.Alloc`, `GC Allocation In Frame Count`, and
+`GC Allocated In Frame`. Recorders are released even when observation throws.
+These observations diagnose availability; validity alone does not prove allocation
+counting, and a zero forced-allocation count cannot qualify an instrument.
+Metadata observations and file hashes do not establish private compiler identity. The player-proof gate
+runs after failed work; the complete-case gate still requires all 745 cases to pass.
+Retain recorder failures as unavailable measurement evidence when that is their
+actual cause; any additional native contract failure requires investigation.
+
+Unity includes the raw research C plugin source in a Windows IL2CPP build even
+when its managed fixture is limited to the macOS Editor. Keep its four ABI/layout
+requirements as named compile-time assertions and use compiler-specific exports.
+The existing player-output guard requires nonempty IL2CPP code and metadata
+before accepting the executable/Data directory or narrating a benign shutdown.
+These file checks precede the separate profile, runtime and complete-case gates.
+Mono output is checked with its explicit backend and does not require IL2CPP files.
+
+## Collect Windows clock and sleep events
+
+Use the existing Runner Audit (Windows) workflow to collect event logs from a named runner.
+Set `runner-label` to `ELI-MACHINE`, leave other performance modes disabled, and set
+`perf-event-window-utc` to `2026-10-08T03:04:00Z,2026-10-08T03:06:00Z` for the retained
+cadence failure. The `runner-bootstrap-ELI-MACHINE-<run-id>-<attempt>` artifact contains
+`host-event-logs.json`, including raw event XML and per-query status. This mode reads the
+System log and skips the editor/prerequisite audit; it does not launch a performance player.
+Licensed workflow jobs retain the central organization acquire/work/cleanup/release sequence.
+
+Run the same collector directly on Windows:
+
+```powershell
+./scripts/unity/collect-perf-host-characterization.ps1 `
+  -EventLogsOnly `
+  -EventStartUtc '2026-10-08T03:04:00Z' `
+  -EventEndUtc '2026-10-08T03:06:00Z' `
+  -OutputPath '.artifacts/host-event-logs.json'
+```
+
+The window must use UTC timestamps ending in `Z`, increase, and span at most 24 hours.
+The collector queries Kernel-General event 1, Kernel-Power event 42 and
+Power-Troubleshooter event 1. Raw XML retains clock-change details without depending on
+localized messages. An empty query is recorded as `no-matches`; it does not prove that
+no clock change occurred or that older records remain available. Access failures and
+truncation are recorded in the JSON and cause a nonzero exit. Queries retain at most
+1000 events per provider; narrow the window if that limit is exceeded.
+
+The [Microsoft event-query documentation](https://learn.microsoft.com/en-us/powershell/scripting/samples/creating-get-winevent-queries-with-filterhashtable)
+describes the time filters. [Microsoft's clock-reset guidance](https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/client-clock-reverts-to-previous-time)
+identifies Kernel-General event 1 as clock-change evidence. Treat logs as diagnostic
+inputs; they do not replace the frozen telemetry health gate or justify accepting a failed run.
+
+### Distinguish elapsed time from UTC in new sensor records
+
+Each new sensor sample retains `monotonicClock`: the actual Stopwatch frequency and
+`isHighResolution` value, `readStartTicks`, and `utcBeforeTicks` / `utcAfterTicks`
+bracketing its UTC capture. Frequency and ticks are decimal strings so JSON readers
+can preserve integer precision. Convert their differences using the recorded frequency;
+do not treat ticks as UTC or mix counters from separate processes or hosts.
+
+For consecutive brackets `[b1, a1]` and `[b2, a2]`, the elapsed-time interval lies
+between `(b2 - a1) / frequency` and `(a2 - b1) / frequency`. Compare the UTC delta
+against those bounds. A wide bracket remains ambiguous. Compare each read start with
+its UTC bracket to separate sensor-read elapsed time from time outside that read.
+These fields retain diagnostics; they do not change the sampler schedule or the
+frozen health gates. Older records without brackets cannot establish this comparison.
+
+[Microsoft's Windows timing guidance](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps)
+describes Stopwatch/QPC as independent of UTC. Retain the actual runtime frequency
+and high-resolution flag before interpreting a capture. A measured disagreement
+reports a numerical clock-domain discrepancy within the captured bounds. UTC timestamp
+digits do not establish resolution or accuracy. Keep those properties unmeasured until
+calibrated; small residuals can reflect granularity, rounding or relative clock drift.
+They do not prove an adjustment or the external cause of an earlier gap.
+No historical rejected block becomes admissible
+through these added fields. Keep the stopped pilot and its rates unopened until its
+separate collection and budget gates are satisfied.
+
+## Collect retained Unity Package Manager diagnostics
+
+Dispatch Runner Audit (Windows) with `runner-label=ELI-MACHINE` and
+`native-sdk-log-source=<floor-run-id>,<attempt>`. Leave every other optional mode
+at its default. The collector reads the retained floor project and cache, plus
+`upm.log` and `upm.log.prev` from the documented user and SYSTEM account locations.
+It does not start Unity or alter the project or cache. Central runner registration
+preflight remains required; licensed jobs keep their automatic organization lock
+lifecycle.
+
+The workflow also reads the installed `RunUnityPackageManagerDiagnostics.bat`
+launcher and immediate directory metadata from the managed Unity 2021.3.45f1
+`Editor/Data/Resources/PackageManager/Diagnostics` directory. It captures the
+launcher as text; it does not execute it. A missing, invalid or incomplete requested
+launcher fails capture while retaining its record. Direct collection includes this
+inspection only when `-InstalledDiagnosticsPath '<diagnostics-directory>'` is supplied.
+Inspect the retained launcher and tool scope before selecting a separate diagnostic
+invocation from [Unity's documented procedure](https://docs.unity3d.com/2021.3/Documentation/Manual/upm-network.html).
+
+The existing `runner-bootstrap-ELI-MACHINE-<run-id>-<attempt>` artifact includes
+`package-manager-diagnostics.json`. Log text and project manifest/lock contents
+are captured with source metadata. Directory inventories contain metadata only
+and do not recurse. The existing artifact redactor must succeed before upload.
+Source text hashes describe capture before redaction, not the uploaded text.
+
+Missing sources are explicit. No complete service log, a read error, changed log,
+more than four million characters in a file, or more than 200 directory entries
+makes capture incomplete and fails the step while retaining diagnostics.
+These records do not prove which retained service-log session belongs to the
+failed run; compare timestamps, project paths and process/session markers.
+
+Run the collector directly on Windows with the retained paths:
+
+```powershell
+./scripts/unity/collect-perf-host-characterization.ps1 `
+  -PackageLogsOnly -ProjectPath '<retained-floor-project>' -CachePath '<floor-cache>' `
+  -OutputPath '.artifacts/package-manager-diagnostics.json'
+```
+
+[Unity's log file documentation](https://docs.unity3d.com/2021.3/Documentation/Manual/LogFiles.html)
+lists `%LOCALAPPDATA%/Unity/Editor/upm.log` for a user account and
+`%ALLUSERSPROFILE%/Unity/Editor/upm.log` for SYSTEM. Keep missing or incomplete
+records; diagnose the first failed attempt before dispatching another floor run.
+
+## Run the installed UPM network diagnostic
+
+Set Runner Audit's `native-sdk-upm-network-probe=true` with `runner-label=ELI-MACHINE`.
+Leave all other optional modes at their defaults. The collector verifies regular installed
+diagnostic and UPM server files under the managed Unity 2021.3.45f1 directory, retains
+their hashes, and invokes the diagnostic executable once with the actual launcher's
+`-o` report-file and `-p` server arguments. The `-o` operand names the new
+`upm-network-report/upm-diagnostic-report.txt` file.
+It does not run the batch wrapper's interactive keyboard pause.
+The work step has a fixed five-minute limit within the existing ten-minute job.
+
+The collector records invocation evidence before launch and refuses an existing report
+directory. It reads the executing account's fixed `%LOCALAPPDATA%/Unity/Editor/upm-diag.log`
+before and after the call through the existing bounded strict text reader. The prior
+log is retained as `upm-diag-before.log`; the current log is copied to the scoped report
+directory. It does not write to or relocate the source log. An unchanged prior log cannot
+supply current execution evidence. Missing, invalid or oversized current logs fail completeness.
+The redacted artifact includes `upm-network-diagnostics.json`, console output,
+`upm-network-report/upm-diagnostic-report.txt` and `upm-network-report/upm-diag.log`.
+Required reports must be nonempty and no larger than 4 MiB each. Nonzero exits, missing
+reports and partial executions remain failed records with their available output.
+The existing artifact redactor must succeed before upload.
+
+The [Unity staff diagnostic guidance](https://discussions.unity.com/t/cant-run-rununitypackagemanagerdiagnostics-error-eisdir/825952/2)
+describes direct invocation. Preserve a report-creation failure and verify the installed
+version's output contract before inferring any network failure.
+
+A completed invocation does not assert that every network test passed. Inspect the report
+outcomes separately. This supported diagnostic starts no Unity Editor or licensed build;
+it does not change SDK project/cache policy or security settings. Its current result does
+not explain an earlier UPM abort or admit installed SDK versions, runtime correctness,
+player compatibility or calibrated performance.
+
+## Diagnose the exact Burst registry archive download
+
+Set Runner Audit's `native-sdk-registry-probe=true` with `runner-label=ELI-MACHINE`.
+Leave every other optional mode at its default, including the retained-log source.
+The existing package diagnostic job makes one HTTPS request for the fixed canonical
+CDN Burst 1.6.6 archive and compares its complete body with the SHA1 from Unity's
+registry metadata. It records SHA256, byte count, declared length, timestamps,
+route, HTTP status and errors in `registry-download.json` in the redacted bootstrap artifact.
+
+The two fixed collector routes are `Gateway` and `Cdn`; arbitrary URLs are not accepted.
+The workflow explicitly selects `Cdn` at `cdn.packages.unity.com`. The direct collector
+defaults to `Gateway` at `download.packages.unity.com`, preserving the original
+no-redirect case. Select the canonical object directly with `-RegistryArchiveRoute Cdn`.
+Record each route as a distinct diagnostic case; retain a gateway redirect failure.
+
+The probe uses the platform's normal HTTPS client, a 120-second cancellation
+bound covering headers and body, and a 512 MiB body cap. It performs no retries,
+redirects, archive execution or package-cache writes. It does not start Unity.
+The unlicensed job retains central registration preflight and a ten-minute cap;
+licensed jobs retain their existing central automatic lifecycle and pilot gates.
+
+A complete matching download verifies current reachability and archive bytes
+under this client. It does not explain an earlier UPM abort or establish SDK
+installation, compatibility, runtime correctness or calibrated throughput.
+HTTP errors, partial reads, cap violations and integrity failures remain failed
+observations with retained evidence. Do not rerun the SDK floor solely to get green.
+
+[Microsoft's completion-option documentation](https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpcompletionoption)
+explains why the cancellation bound also covers streamed content reads.

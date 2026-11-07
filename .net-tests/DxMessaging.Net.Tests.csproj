@@ -365,5 +365,37 @@
       Include="../Tests/Runtime/MemoryReclaim/InFlightIdleSweepTests.cs"
       Link="InFlightIdleSweepTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/ExactSequentialBatchControl.cs"
+      Link="ExactSequentialBatchControl.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/PreparedDynamicEmitterControl.cs"
+      Link="PreparedDynamicEmitterControl.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/LockedFixedRingControl.cs"
+      Link="LockedFixedRingControl.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/ReferenceCommandQueueControl.cs"
+      Link="ReferenceCommandQueueControl.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/SpscFixedRingControl.cs"
+      Link="SpscFixedRingControl.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/LockedFixedRingControlTests.cs"
+      Link="LockedFixedRingControlTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/ReferenceCommandQueueControlTests.cs"
+      Link="ReferenceCommandQueueControlTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/SpscFixedRingControlTests.cs"
+      Link="SpscFixedRingControlTests.cs"
+    />
   </ItemGroup>
 </Project>

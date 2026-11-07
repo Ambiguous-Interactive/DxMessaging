@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""Validate and extract one #510 pilot launch from raw NUnit results.xml."""
+
+import argparse
+import json
+import math
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+SCENARIOS = frozenset(
+    (
+        "GlobalToOne",
+        "GlobalToMany",
+        "KeyedToOne",
+        "StructNoBox",
+        "Filtered",
+        "PostProcess",
+        "FilteredPostProcess",
+    )
+)
+TARGETS = frozenset(SCENARIOS - {"GlobalToMany", "KeyedToOne"})
+TARGET_ORDER = ("GlobalToOne", "StructNoBox", "Filtered", "PostProcess", "FilteredPostProcess")
+PROTOCOLS = {
+    "ABBABAAB": "interleaved-abba-baab-v1",
+    "BAABABBA": "interleaved-baab-abba-pilot-v1",
+}
+MARKER = re.compile(r"DXM_PAIRED_COMPARISON\s+(\{[^\r\n<]+\})")
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def exact_integer(value, label):
+    require(type(value) is int, f"{label} must be an integer")
+    return value
+
+
+def positive_number(value, label):
+    require(type(value) in (int, float), f"{label} must be numeric")
+    require(math.isfinite(value) and value > 0, f"{label} must be positive and finite")
+    return value
+
+
+def close(actual, expected, label, tolerance=1e-12):
+    require(abs(actual - expected) <= tolerance * expected, f"{label} does not match raw cycles")
+
+
+def scheduled_work(work):
+    if type(work) is int:
+        require(0 <= work <= 1_000_000, "invalid scheduled CPU work")
+        return {scenario: work for scenario in TARGET_ORDER}
+    require(type(work) is dict and set(work) == set(TARGET_ORDER), "invalid scheduled CPU work vector")
+    require(all(type(value) is int and 0 <= value <= 1_000_000 for value in work.values()), "invalid scheduled CPU work vector")
+    return work
+
+
+def extract_xml(xml_bytes, order, work):
+    require(order in PROTOCOLS, "unknown scheduled batch order")
+    target_work = scheduled_work(work)
+    root = ET.fromstring(xml_bytes)
+    require(root.tag == "test-run", "expected NUnit test-run XML")
+    require(root.get("failed") == "0", "NUnit launch has failed tests")
+    rows = {}
+    commit = platform = None
+    for case in root.iter("test-case"):
+        output = case.findtext("output") or ""
+        matches = MARKER.findall(output)
+        if not matches:
+            continue
+        require(case.get("result") == "Passed", "paired test case did not pass")
+        payloads = {json.dumps(json.loads(match), sort_keys=True) for match in matches}
+        require(len(payloads) == 1, "conflicting paired markers in one test case")
+        row = json.loads(next(iter(payloads)))
+        scenario = row.get("scenario")
+        require(scenario in SCENARIOS, f"unexpected paired scenario: {scenario}")
+        require(scenario not in rows, f"duplicate paired scenario: {scenario}")
+        require(row.get("first") == "DxMessaging" and row.get("second") == "MessagePipe", f"{scenario}: wrong bridge order")
+        require(row.get("batchOrder") == order and row.get("protocol") == PROTOCOLS[order], f"{scenario}: scheduled order drift")
+        expected_work = target_work[scenario] if scenario in TARGETS else 0
+        require(type(row.get("pilotCpuWorkIterationsPerBatch")) is int and row["pilotCpuWorkIterationsPerBatch"] == expected_work, f"{scenario}: scheduled CPU work drift")
+        require(row.get("cycles") == 4 and row.get("batchOperations") == 10_000, f"{scenario}: cycle contract drift")
+        minimum_ms = exact_integer(row.get("minimumCycleActiveMilliseconds"), f"{scenario}.minimumCycleActiveMilliseconds")
+        require(minimum_ms == 625, f"{scenario}: minimum cycle time drift")
+        ratios = row.get("cycleRatios")
+        cycles = row.get("cycleMeasurements")
+        require(isinstance(ratios, list) and len(ratios) == 4, f"{scenario}: missing cycle ratios")
+        require(isinstance(cycles, list) and len(cycles) == 4, f"{scenario}: missing cycle measurements")
+        first_ops = second_ops = 0
+        first_seconds = second_seconds = 0.0
+        for index, (ratio, cycle) in enumerate(zip(ratios, cycles)):
+            label = f"{scenario}.cycle[{index}]"
+            require(isinstance(cycle, dict), f"{label}: malformed measurement")
+            a_ops = exact_integer(cycle.get("firstOperations"), f"{label}.firstOperations")
+            b_ops = exact_integer(cycle.get("secondOperations"), f"{label}.secondOperations")
+            require(a_ops > 0 and a_ops == b_ops and a_ops % 40_000 == 0, f"{label}: unbalanced operations")
+            a_seconds = positive_number(cycle.get("firstActiveSeconds"), f"{label}.firstActiveSeconds")
+            b_seconds = positive_number(cycle.get("secondActiveSeconds"), f"{label}.secondActiveSeconds")
+            require(a_seconds >= 0.625 and b_seconds >= 0.625, f"{label}: short active time")
+            computed = (a_ops / a_seconds) / (b_ops / b_seconds)
+            close(positive_number(ratio, f"{label}.cycleRatio"), computed, f"{label}.cycleRatio")
+            close(positive_number(cycle.get("firstToSecondRatio"), f"{label}.firstToSecondRatio"), computed, f"{label}.firstToSecondRatio")
+            first_ops += a_ops
+            second_ops += b_ops
+            first_seconds += a_seconds
+            second_seconds += b_seconds
+        geometric = math.exp(sum(math.log(value) for value in ratios) / 4)
+        close(positive_number(row.get("firstToSecondRatio"), f"{scenario}.headline"), geometric, f"{scenario}.headline")
+        aggregate = (first_ops / first_seconds) / (second_ops / second_seconds)
+        close(positive_number(row.get("aggregateRateRatio"), f"{scenario}.aggregate"), aggregate, f"{scenario}.aggregate")
+        spread = (max(ratios) / min(ratios) - 1) * 100
+        require(type(row.get("cycleRatioSpreadPercent")) in (int, float), f"{scenario}: missing spread")
+        require(abs(row["cycleRatioSpreadPercent"] - spread) <= 1e-9, f"{scenario}: spread mismatch")
+        require(isinstance(row.get("commit"), str) and re.fullmatch(r"[0-9a-f]{40}", row["commit"]), f"{scenario}: invalid commit")
+        require(isinstance(row.get("platform"), str) and row["platform"].startswith("Standalone IL2CPP x64 Release"), f"{scenario}: invalid platform")
+        if commit is None:
+            commit, platform = row["commit"], row["platform"]
+        require((row["commit"], row["platform"]) == (commit, platform), f"{scenario}: provenance drift")
+        rows[scenario] = {"ratio": geometric, "cycleRatios": ratios}
+    require(rows.keys() == SCENARIOS, f"paired scenario set mismatch: {sorted(SCENARIOS - rows.keys())}")
+    result = {"schemaVersion": 1, "commit": commit, "platform": platform, "batchOrder": order, "rows": rows}
+    if type(work) is int:
+        result["pilotCpuWorkIterationsPerBatch"] = work
+    else:
+        result["pilotCpuWorkByScenario"] = {scenario: target_work[scenario] for scenario in TARGET_ORDER}
+    return result
+
+
+def extract(path, order, work):
+    return extract_xml(Path(path).read_bytes(), order, work)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("results_xml", type=Path)
+    parser.add_argument("--batch-order", choices=tuple(PROTOCOLS), required=True)
+    work_group = parser.add_mutually_exclusive_group(required=True)
+    work_group.add_argument("--cpu-work", type=int)
+    work_group.add_argument("--cpu-work-by-scenario", help="five comma-separated integers in the fixed target order")
+    args = parser.parse_args()
+    try:
+        work = args.cpu_work
+        if args.cpu_work_by_scenario is not None:
+            parts = args.cpu_work_by_scenario.split(",")
+            require(len(parts) == len(TARGET_ORDER) and all(re.fullmatch(r"(?:0|[1-9][0-9]*)", part) for part in parts), "invalid scheduled CPU work vector")
+            work = dict(zip(TARGET_ORDER, map(int, parts)))
+        print(json.dumps(extract(args.results_xml, args.batch_order, work), sort_keys=True, separators=(",", ":")))
+    except (ET.ParseError, OSError, ValueError, TypeError) as error:
+        print(f"invalid pilot launch: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

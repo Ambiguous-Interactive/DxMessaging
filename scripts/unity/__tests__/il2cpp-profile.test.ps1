@@ -78,6 +78,7 @@ try {
     foreach ($name in @(
         'Get-ComparisonSourceEvidence',
         'Get-StandalonePlayerManifest',
+        'Test-StandalonePlayerBuildOutput',
         'Write-JsonArtifact',
         'Write-NativeBuildInputEvidence',
         'Write-StandaloneBuildOutputDiagnostics',
@@ -394,6 +395,147 @@ $observerSource
         $compilerPreparation -gt $applyStart -and $compilerPreparation -lt $compilationChange -and
         $compilationChange -lt $completionMarker
     )
+    $preparationStart = $generatedSources[0].IndexOf('public static void PrepareCompilerInputs()')
+    Assert-That 'the generated configurator has a compiler-input-only entry point' ($preparationStart -ge 0 -and $preparationStart -lt $applyStart)
+    $preparationMethod = $generatedSources[0].Substring($preparationStart, $applyStart - $preparationStart)
+    Assert-That 'Editor preparation does not apply player or global compiler settings' (
+        -not $preparationMethod.Contains('PlayerSettings') -and -not $preparationMethod.Contains('CompilationPipeline')
+    )
+    Add-Type -TypeDefinition @"
+using System;
+using System.IO;
+namespace DxMessaging.Editor {
+    public static class SetupCscRsp {
+        public static int Calls;
+        public static bool Fail;
+        public static void PrepareCompilerInputs() {
+            Calls++;
+            if (Fail) throw new InvalidOperationException("fixture preparation failure");
+        }
+    }
+}
+public static class DxmCompilerInputsFixture {
+    $preparationMethod
+}
+"@
+    $priorPreparationMarker = $env:DXM_CONFIGURE_MARKER_PATH
+    $env:DXM_CONFIGURE_MARKER_PATH = Join-Path $fixtureRoot 'compiler-marker/nested/complete.marker'
+    try {
+        [DxMessaging.Editor.SetupCscRsp]::Fail = $true
+        Assert-Fails 'preparation errors propagate before writing completion' -ExpectedMessage 'fixture preparation failure' {
+            [DxmCompilerInputsFixture]::PrepareCompilerInputs()
+        }
+        Assert-That 'failed preparation cannot create a success marker' (-not (Test-Path -LiteralPath $env:DXM_CONFIGURE_MARKER_PATH))
+        [DxMessaging.Editor.SetupCscRsp]::Fail = $false
+        [DxmCompilerInputsFixture]::PrepareCompilerInputs()
+        Assert-That 'the actual generated method completes preparation before writing its marker' (
+            [DxMessaging.Editor.SetupCscRsp]::Calls -eq 2 -and
+            [IO.File]::ReadAllText($env:DXM_CONFIGURE_MARKER_PATH) -ceq 'DxmCiTestConfigurator.PrepareCompilerInputs completed'
+        )
+    } finally {
+        $env:DXM_CONFIGURE_MARKER_PATH = $priorPreparationMarker
+    }
+    $sdkAdmissionStart = $generatedSources[0].IndexOf('public static void PrepareNativeSdkAdmission()')
+    Assert-That 'standalone configuration has an opt-in prebuild SDK admission boundary' ($sdkAdmissionStart -ge 0 -and $sdkAdmissionStart -lt $preparationStart)
+    $sdkAdmissionCall = $generatedSources[0].IndexOf('PrepareNativeSdkAdmission();', $applyStart)
+    Assert-That 'requested SDK admission completes after compiler preparation and before configuration success' (
+        $compilerPreparation -lt $sdkAdmissionCall -and $sdkAdmissionCall -lt $completionMarker
+    )
+    $sdkAdmissionMethod = $generatedSources[0].Substring($sdkAdmissionStart, $preparationStart - $sdkAdmissionStart)
+    Add-Type -TypeDefinition @"
+using System;
+public static class DxmNativeSdkAdmissionFixture {
+    $sdkAdmissionMethod
+}
+"@
+    $priorSdkAdmissionPath = $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE
+    $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = $null
+    try {
+        [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = Join-Path $fixtureRoot 'sdk-admission.json'
+        Assert-Fails 'requested admission rejects a missing optional fixture' -ExpectedMessage 'exactly one optional SDK admission fixture' {
+            [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        }
+        Assert-That 'missing fixture cannot create admission evidence' (-not (Test-Path -LiteralPath $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE))
+        Add-Type -TypeDefinition @'
+using System;
+namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch {
+    public sealed class NativeSdkFloorAdmission {
+        public static bool Fail;
+        public static bool OmitEvidence;
+        public static int Calls;
+        public void RequireActualFloorPackagesBeforeCandidates() {
+            Calls++;
+            if (Fail) throw new InvalidOperationException("fixture SDK admission failure");
+            if (OmitEvidence) return;
+            System.IO.File.WriteAllText(Environment.GetEnvironmentVariable("DXM_NATIVE_SDK_FLOOR_EVIDENCE"), "fixture SDK admitted");
+        }
+    }
+}
+'@
+        [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::Fail = $true
+        Assert-Fails 'the public admission failure propagates' -ExpectedMessage 'fixture SDK admission failure' {
+            [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        }
+        Assert-That 'failed admission cannot produce success evidence' (-not (Test-Path -LiteralPath $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE))
+        [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::Fail = $false
+        [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        Assert-That 'the actual generated boundary invokes the public instance admission method' (
+            [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::Calls -eq 2 -and
+            [IO.File]::ReadAllText($env:DXM_NATIVE_SDK_FLOOR_EVIDENCE) -ceq 'fixture SDK admitted'
+        )
+        Assert-Fails 'stale evidence cannot satisfy a new configuration' -ExpectedMessage 'must be absent before configuration' {
+            [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        }
+        [IO.File]::Delete($env:DXM_NATIVE_SDK_FLOOR_EVIDENCE)
+        [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::OmitEvidence = $true
+        Assert-Fails 'returning without admission evidence fails before success' -ExpectedMessage 'did not produce evidence' {
+            [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        }
+        [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::OmitEvidence = $false
+        [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        $duplicateAssembly = [System.Reflection.Emit.AssemblyBuilder]::DefineDynamicAssembly(
+            [System.Reflection.AssemblyName]::new('DxmDuplicateSdkAdmissionFixture'),
+            [System.Reflection.Emit.AssemblyBuilderAccess]::Run
+        )
+        $duplicateType = $duplicateAssembly.DefineDynamicModule('fixture').DefineType(
+            'DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission',
+            [System.Reflection.TypeAttributes]::Public
+        )
+        $null = $duplicateType.CreateType()
+        Assert-Fails 'ambiguous optional fixture types fail before invoking admission' -ExpectedMessage 'exactly one optional SDK admission fixture' {
+            [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        }
+        Assert-That 'ambiguity cannot invoke the previously admitted fixture' (
+            [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::Calls -eq 4
+        )
+        $missingMethodSource = @"
+using System;
+public static class DxmMissingAdmissionMethodFixture { $sdkAdmissionMethod }
+namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch { public sealed class NativeSdkFloorAdmission {} }
+"@
+        $missingMethodCommand = @'
+$ErrorActionPreference = 'Stop'
+$source = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{SOURCE}'))
+Add-Type -TypeDefinition $source
+try {
+    [DxmMissingAdmissionMethodFixture]::PrepareNativeSdkAdmission()
+    throw 'Missing public admission method was accepted.'
+} catch {
+    if (-not $_.Exception.Message.Contains('public SDK admission method')) { throw }
+}
+exit 0
+'@.Replace('{SOURCE}', [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($missingMethodSource)))
+        & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command $missingMethodCommand
+        Assert-That 'the isolated actual boundary rejects a missing public method' ($LASTEXITCODE -eq 0)
+        $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = $null
+        [DxmNativeSdkAdmissionFixture]::PrepareNativeSdkAdmission()
+        Assert-That 'ordinary configuration does not invoke or inspect optional admission fixtures' (
+            [DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission]::Calls -eq 4
+        )
+    } finally {
+        $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = $priorSdkAdmissionPath
+    }
     Assert-That 'the configurator pins OptimizeSpeed' (
         $generatedSources[0].Contains('Il2CppCodeGeneration.OptimizeSpeed')
     )
@@ -415,6 +557,198 @@ $observerSource
     Assert-That 'the player records Debug.isDebugBuild' (
         $generatedSources[1].Contains('Debug.isDebugBuild')
     )
+    $sdkRuntimeStart = $generatedSources[1].IndexOf('    [Serializable]' + "`n" + '    private sealed class NativeSdkAssembly')
+    $sdkRuntimeEnd = $generatedSources[1].IndexOf('    public void RunStarted(', $sdkRuntimeStart)
+    Assert-That 'the actual callback retains optional public SDK runtime observation' ($sdkRuntimeStart -ge 0 -and $sdkRuntimeEnd -gt $sdkRuntimeStart)
+    $sdkRuntimeSource = $generatedSources[1].Substring($sdkRuntimeStart, $sdkRuntimeEnd - $sdkRuntimeStart)
+    Assert-That 'the callback preserves the package-owned generic SDK type through PowerShell generation' ($sdkRuntimeSource.Contains('Unity.Collections.NativeList`1'))
+    Add-Type -CompilerOptions '/define:ENABLE_IL2CPP' -TypeDefinition @"
+using System;
+using System.IO;
+public static class DxmRuntimeSdkMetadataFixture {
+    private static class Application {
+        public static string unityVersion = "2021.3.45f1";
+        public static string platform = "WindowsPlayer";
+        public static bool isEditor = false;
+    }
+    private static class Debug { public static bool isDebugBuild = false; }
+    private static class JsonUtility {
+        public static string ToJson(object evidence, bool pretty) { Last = evidence; return "fixture SDK metadata"; }
+    }
+    public static object Last;
+    public static bool BurstEnabled = true;
+    public static bool LegacyMissing;
+    public static bool LegacyValid;
+    public static bool LegacyEnabled;
+    public static int LegacyReads;
+    public static int LegacyGets;
+    public static int ForcedCalls = 1;
+    public static string RecorderFault = "";
+    public static int ProfilerStarts;
+    public static int ProfilerDisposals;
+    public static bool ProfilerValid;
+    private static class UnityEngine {
+        public static class Profiling {
+            public sealed class Recorder {
+                public static Recorder Get(string name) {
+                    LegacyGets++;
+                    if (RecorderFault == "get") { throw new InvalidOperationException("fixture get"); }
+                    return LegacyMissing ? null : new Recorder();
+                }
+                public bool isValid { get { return LegacyValid; } }
+                public bool enabled { get { return LegacyEnabled; } set { LegacyEnabled = value; } }
+                public int sampleBlockCount {
+                    get {
+                        if (RecorderFault == "count") { throw new InvalidOperationException("fixture count"); }
+                        return LegacyReads++ == 0 ? ForcedCalls : 0;
+                    }
+                }
+            }
+        }
+    }
+    private static class Unity {
+        public static class Profiling {
+            public readonly struct ProfilerCategory { public static ProfilerCategory Memory { get { return default; } } }
+            public readonly struct ProfilerRecorder : IDisposable {
+                public static ProfilerRecorder StartNew(ProfilerCategory category, string name) {
+                    ProfilerStarts++;
+                    if (RecorderFault == "start") { throw new InvalidOperationException("fixture start"); }
+                    return default;
+                }
+                public bool Valid {
+                    get {
+                        if (RecorderFault == "valid") { throw new InvalidOperationException("fixture valid"); }
+                        return ProfilerValid;
+                    }
+                }
+                public void Dispose() { ProfilerDisposals++; }
+            }
+        }
+    }
+    $sdkRuntimeSource
+    public static void Capture() { WriteNativeSdkRuntimeEvidence(); }
+}
+"@
+    $priorRuntimeSdkPath = $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE
+    try {
+        $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = $null
+        [DxmRuntimeSdkMetadataFixture]::Capture()
+        Assert-That 'no runtime request does not create an observation' ($null -eq [DxmRuntimeSdkMetadataFixture]::Last)
+        Assert-That 'no runtime request performs no recorder work' (
+            [DxmRuntimeSdkMetadataFixture]::ProfilerStarts -eq 0 -and [DxmRuntimeSdkMetadataFixture]::LegacyGets -eq 0
+        )
+        $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = Join-Path $fixtureRoot 'sdk/runtime.json'
+        [DxmRuntimeSdkMetadataFixture]::Capture()
+        Assert-That 'missing SDK assemblies remain explicit errors' (@([DxmRuntimeSdkMetadataFixture]::Last.errors).Count -eq 4)
+        foreach ($entry in @(
+            @{ assembly = 'Unity.Burst'; type = 'Unity.Burst.BurstCompiler' },
+            @{ assembly = 'Unity.Collections'; type = 'Unity.Collections.NativeList`1' },
+            @{ assembly = 'UnityEngine.CoreModule'; type = 'Unity.Collections.NativeArray`1' },
+            @{ assembly = 'Unity.Mathematics'; type = 'Unity.Mathematics.math' },
+            @{ assembly = 'Unity.Jobs'; type = 'Unity.Jobs.IJobParallelForBatch' }
+        )) {
+            $assemblyName = [System.Reflection.AssemblyName]::new($entry.assembly)
+            $assemblyName.Version = [Version]::new(1, 2, 3, 4)
+            $assembly = [System.Reflection.Emit.AssemblyBuilder]::DefineDynamicAssembly(
+                $assemblyName, [System.Reflection.Emit.AssemblyBuilderAccess]::Run)
+            $type = $assembly.DefineDynamicModule('fixture').DefineType($entry.type, [System.Reflection.TypeAttributes]::Public)
+            if ($entry.assembly -ceq 'Unity.Collections' -or $entry.assembly -ceq 'UnityEngine.CoreModule') {
+                $null = $type.DefineGenericParameters(@('T'))
+            }
+            if ($entry.assembly -ceq 'Unity.Burst') {
+                $getter = $type.DefineMethod('get_IsEnabled',
+                    [System.Reflection.MethodAttributes]::Public -bor [System.Reflection.MethodAttributes]::Static -bor
+                    [System.Reflection.MethodAttributes]::SpecialName, [bool], [Type[]]@())
+                $il = $getter.GetILGenerator()
+                $il.Emit([System.Reflection.Emit.OpCodes]::Ldsfld, [DxmRuntimeSdkMetadataFixture].GetField('BurstEnabled'))
+                $il.Emit([System.Reflection.Emit.OpCodes]::Ret)
+                $property = $type.DefineProperty('IsEnabled', [System.Reflection.PropertyAttributes]::None, [bool], [Type[]]@())
+                $property.SetGetMethod($getter)
+            }
+            $null = $type.CreateType()
+        }
+        [DxmRuntimeSdkMetadataFixture]::Capture()
+        $observed = [DxmRuntimeSdkMetadataFixture]::Last
+        Assert-That 'the actual generated callback captures public allocation recorder evidence' (
+            $null -ne $observed.GetType().GetField('allocationRecorders')
+        )
+        Assert-That 'the actual managed observer captures exact public SDK metadata without compiler internals' (
+            $observed.schemaVersion -eq 2 -and @($observed.errors).Count -eq 0 -and @($observed.assemblies).Count -eq 4 -and
+            @($observed.assemblies | Where-Object { -not $_.typeObserved -or -not $_.assemblyVersion }).Count -eq 0 -and
+            $observed.burstEnabledObserved -and $observed.burstEnabled -and $observed.il2cpp -and
+            -not $observed.isEditor -and -not $observed.debugBuild -and $observed.pointerBytes -eq [IntPtr]::Size
+        )
+        $collectionsAssembly = @([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -ceq 'Unity.Collections' })[0]
+        Assert-That 'NativeArray belongs to the engine module and cannot admit the Collections package' (
+            $null -eq $collectionsAssembly.GetType('Unity.Collections.NativeArray`1', $false) -and
+            @($observed.assemblies | Where-Object { $_.name -ceq 'Unity.Collections' })[0].typeName -ceq 'Unity.Collections.NativeList`1'
+        )
+        foreach ($record in $observed.assemblies) {
+            Assert-That 'public assembly version components retain the exact observed version' (
+                @($record.assemblyVersionComponents).Count -eq 4 -and
+                ($record.assemblyVersionComponents -join '.') -ceq $record.assemblyVersion
+            )
+        }
+        $metadataRoot = Join-Path $fixtureRoot 'sdk-metadata-redaction'
+        $null = New-Item -ItemType Directory -Path $metadataRoot
+        $metadataPath = Join-Path $metadataRoot 'sdk-runtime.json'
+        Write-TestJson -Path $metadataPath -Value $observed
+        & node (Join-Path $repoRoot 'scripts/unity/redact-unity-artifacts.js') $metadataRoot
+        Assert-That 'public metadata remains safe under unchanged production redaction' ($LASTEXITCODE -eq 0)
+        $redactedMetadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+        foreach ($record in $redactedMetadata.assemblies) {
+            Assert-That 'typed public version components survive redaction without an exemption' (
+                $record.assemblyVersion -ceq '[redacted:ipv4-address]' -and
+                ($record.assemblyVersionComponents -join '.') -ceq '1.2.3.4'
+            )
+        }
+        [DxmRuntimeSdkMetadataFixture]::BurstEnabled = $false
+        [DxmRuntimeSdkMetadataFixture]::Capture()
+        Assert-That 'disabled Burst is an observed state rather than fabricated enabled evidence' (
+            [DxmRuntimeSdkMetadataFixture]::Last.burstEnabledObserved -and -not [DxmRuntimeSdkMetadataFixture]::Last.burstEnabled
+        )
+        foreach ($variant in @('missing', 'invalid', 'valid', 'zero', 'get', 'count', 'start', 'valid-read')) {
+            [DxmRuntimeSdkMetadataFixture]::LegacyMissing = $variant -ceq 'missing'
+            [DxmRuntimeSdkMetadataFixture]::LegacyValid = $variant -cne 'invalid'
+            [DxmRuntimeSdkMetadataFixture]::LegacyReads = 0
+            [DxmRuntimeSdkMetadataFixture]::LegacyEnabled = $false
+            [DxmRuntimeSdkMetadataFixture]::ForcedCalls = $(if ($variant -ceq 'zero') { 0 } else { 1 })
+            [DxmRuntimeSdkMetadataFixture]::ProfilerValid = $variant -ceq 'valid'
+            [DxmRuntimeSdkMetadataFixture]::ProfilerStarts = 0
+            [DxmRuntimeSdkMetadataFixture]::ProfilerDisposals = 0
+            [DxmRuntimeSdkMetadataFixture]::RecorderFault = $(if ($variant -ceq 'valid-read') { 'valid' } elseif ($variant -cin @('get', 'count', 'start')) { $variant } else { '' })
+            [DxmRuntimeSdkMetadataFixture]::Capture()
+            $diagnostic = [DxmRuntimeSdkMetadataFixture]::Last.allocationRecorders
+            Assert-That "recorder diagnostic variant=$variant always disables legacy recording" (-not [DxmRuntimeSdkMetadataFixture]::LegacyEnabled)
+            Assert-That "recorder diagnostic variant=$variant observes all three metric names" (
+                @($diagnostic.profilerMetrics).Count -eq 3 -and [DxmRuntimeSdkMetadataFixture]::ProfilerStarts -eq 3
+            )
+            Assert-That "recorder diagnostic variant=$variant preserves observed metric validity" (
+                @($diagnostic.profilerMetrics | Where-Object { $_.valid }).Count -eq $(if ($variant -ceq 'valid') { 3 } else { 0 }) -and
+                @($diagnostic.profilerMetrics | Where-Object { $_.observed }).Count -eq $(if ($variant -cin @('start', 'valid-read')) { 0 } else { 3 })
+            )
+            Assert-That "recorder diagnostic variant=$variant disposes every constructed metric recorder" (
+                [DxmRuntimeSdkMetadataFixture]::ProfilerDisposals -eq $(if ($variant -ceq 'start') { 0 } else { 3 })
+            )
+            if ($variant -cin @('missing', 'invalid', 'get', 'count')) {
+                Assert-That "recorder diagnostic variant=$variant retains unmeasured sentinels" (
+                    $diagnostic.forcedAllocationCalls -eq -1 -and $diagnostic.emptyOperationCalls -eq -1
+                )
+            }
+            if ($variant -cin @('valid', 'zero')) {
+                Assert-That "recorder diagnostic variant=$variant retains actual forced and empty counts" (
+                    $diagnostic.legacyObserved -and $diagnostic.legacyPresent -and $diagnostic.legacyValid -and
+                    $diagnostic.forcedAllocationCalls -eq $(if ($variant -ceq 'zero') { 0 } else { 1 }) -and
+                    $diagnostic.emptyOperationCalls -eq 0
+                )
+            }
+            Assert-That "recorder diagnostic variant=$variant preserves public API exceptions" (
+                @($diagnostic.errors).Count -eq $(if ($variant -cin @('start', 'valid-read')) { 3 } elseif ($variant -cin @('get', 'count')) { 1 } else { 0 })
+            )
+        }
+    } finally {
+        $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = $priorRuntimeSdkPath
+    }
 
     $runnerText = Get-Content -LiteralPath $runnerPath -Raw
     $workflowText = Get-Content -LiteralPath $workflowPath -Raw
@@ -457,6 +791,43 @@ $observerSource
     )
 
     & $validatorPath -ProfilePath $profilePath -ProfileOnly -ExpectedSha256 $profileSha256
+
+    $nativeProfilePath = Join-Path $repoRoot '.github/perf/native-sdk-il2cpp-qualification-profile.v1.json'
+    $nativeProfile = Copy-JsonValue -Value $profile
+    $nativeProfile.profileId = 'native-sdk-il2cpp-qualification-player-v1'
+    $nativeFixtureProfilePath = Join-Path $fixtureRoot 'native-profile.json'
+    Write-TestJson -Path $nativeFixtureProfilePath -Value $nativeProfile
+    & $validatorPath -ProfilePath $nativeFixtureProfilePath -ProfileOnly
+    $committedNativeProfile = Get-Content -LiteralPath $nativeProfilePath -Raw | ConvertFrom-Json
+    Assert-That 'the qualification profile retains every reviewed Release value' (
+        ($committedNativeProfile | ConvertTo-Json -Depth 10 -Compress) -ceq ($nativeProfile | ConvertTo-Json -Depth 10 -Compress)
+    )
+    foreach ($variant in @('complete', 'assembly', 'category', 'version', 'repeat', 'packages')) {
+        $nativeArgs = @{
+            UnityVersion = '2021.3.45f1'; TestMode = 'standalone';
+            AssemblyNames = 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch';
+            TestCategory = 'NativeSdkCpu'; CanonicalProfilePath = $nativeProfilePath;
+            ArtifactsPath = (Join-Path $fixtureRoot "native-$variant-artifacts");
+            ProjectPath = (Join-Path $fixtureRoot "native-$variant-project");
+            CachePath = (Join-Path $fixtureRoot "native-$variant-cache");
+            IncludeComparisons = $true; StandalonePlayerRunCount = 1; GenerateOnly = $true
+        }
+        if ($variant -ceq 'assembly') { $nativeArgs.AssemblyNames = 'WallstopStudios.DxMessaging.Tests.Runtime' }
+        if ($variant -ceq 'category') { $nativeArgs.TestCategory = '!Allocation' }
+        if ($variant -ceq 'version') { $nativeArgs.UnityVersion = '6000.3.16f1' }
+        if ($variant -ceq 'repeat') { $nativeArgs.StandalonePlayerRunCount = 2 }
+        if ($variant -ceq 'packages') { $nativeArgs.IncludeComparisons = $false }
+        $generationOutput = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $runnerPath @nativeArgs 2>&1
+        if ($variant -ceq 'complete') {
+            Assert-That 'the actual complete native qualification project generates without Unity execution' ($LASTEXITCODE -eq 0)
+            $callback = Get-Content -LiteralPath (Join-Path $nativeArgs.ProjectPath 'Assets/DxmCiStandaloneTestCallback/DxmCiStandaloneTestCallback.cs') -Raw
+            Assert-That 'the actual native callback embeds its distinct qualification identity' ($callback.Contains($nativeProfile.profileId))
+        } else {
+            Assert-That "the actual runner rejects qualification scope drift $variant" (
+                $LASTEXITCODE -ne 0 -and ($generationOutput | Out-String).Contains('complete old-floor scope')
+            )
+        }
+    }
 
     $badProfilePath = Join-Path $fixtureRoot 'bad-profile.json'
     foreach ($semanticMutation in @(
@@ -762,6 +1133,7 @@ $observerSource
     Write-TestJson -Path $badProfilePath -Value $badProfile
     Assert-Fails 'unsupported profile ID lists every accepted profile' -ExpectedMessage (
         "Supported profileIds: 'canonical-il2cpp-verdict-player-v1', " +
+        "'native-sdk-il2cpp-qualification-player-v1', " +
         "'shipping-fidelity-il2cpp-minimal-player-v1', " +
         "'shipping-fidelity-il2cpp-low-player-v1', " +
         "'shipping-fidelity-il2cpp-medium-player-v1', " +

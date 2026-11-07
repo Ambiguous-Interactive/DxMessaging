@@ -139,6 +139,18 @@ the bridge, which defaults to the CLI backend:
 npm run unity:mcp:bridge -- --project /absolute/host/project/path
 ```
 
+`npm run unity:mcp:run` is an alias for `unity:mcp:bridge`.
+
+Run these commands on the host, beside the Unity Editor. The devcontainer has no
+host Unity CLI or editor discovery records, so bridge startup there is rejected.
+The bridge first reports an HTTP listener, then verifies a live editor status tool
+through that listener. Only `Unity MCP ready` proves the backend answered; failed
+verification closes the listener and exits. An open port or `/healthz` response
+alone does not prove editor readiness.
+After readiness succeeds, the command stays in the foreground waiting for clients.
+Leave that host terminal running and use another terminal in the devcontainer for
+configure and probe. Ctrl-C stops the bridge; closing its terminal also stops it.
+
 Alternatively set `UNITY_PROJECT_PATH` in `.env.local` and omit `--project`.
 `UNITY_CLI_PATH` or `--cli` can select a CLI executable outside host PATH. The bridge
 starts each session as `unity mcp --project-path <selected-project>` with that project
@@ -200,10 +212,33 @@ The devcontainer maps `host.docker.internal` to the host gateway on Linux too.
 Use `UNITY_MCP_BRIDGE_HOST`, `--host`, `--port`, and `--path` to override routing.
 
 `configure --offline` writes only local files. Normal `configure` probes candidate
-endpoints and refuses to replace credentials if a running bridge rejects the token.
+endpoints and refuses to write if a listener fails initialization, including a timeout
+or rejected token. When every candidate is unreachable, it writes the configured endpoint
+for initial setup. Configure does not start the host bridge.
+Host commands default to `127.0.0.1`; Docker and Podman containers default to
+`host.docker.internal`. Discovery tries the selected host first.
+
+When host and container share the generated files, use the container's configure
+command to write its executable and repository paths. Set
+`UNITY_MCP_CLIENT_HOST=host.docker.internal` in their shared `.env.local` to keep
+the Unity client address stable even if configuration is later run on the host.
+`--client-host` overrides that value. This changes only the generated client address;
+host discovery and readiness checks still use the host-reachable endpoint.
+Host-side configuration does not start a process or reload an existing client's MCP
+connection. Reconnect the client after regenerating its files.
 Explicit host and port settings restrict discovery; defaults try ports `9020` and
 `9003` with Docker, loopback, DNS, and gateway candidates. `--no-discover` probes only
 the configured endpoint. `probe` checks editor readiness as well as initialization.
+
+If initialization times out, check which process owns the bridge port. Use
+`lsof -nP -iTCP:<port> -sTCP:LISTEN` on macOS/Linux, or `Get-NetTCPConnection`
+on Windows. VS Code can retain a port forward after the container server stops.
+Remove that entry from its Ports view or choose a free `UNITY_MCP_BRIDGE_PORT`
+in `.env.local`, restart the host bridge, then configure and probe again.
+On macOS a wildcard listener can coexist with a loopback port forward, which
+receives loopback requests instead of the bridge. Bridge startup checks local
+interface addresses before binding to prevent that false success.
+Do not forward the host bridge port from a container back onto the host.
 
 The bridge caps sessions at eight and authenticates every MCP request. Idle sessions
 expire after 60 seconds, active requests after 300 seconds. `--max-sessions`,

@@ -1,19 +1,20 @@
 name: Runner Audit (Windows)
+# cspell:ignore PSHOME
 
 # Operator-driven, workflow_dispatch-only audit of a self-hosted Windows
 # runner's host prerequisites, exact Unity editors, and required modules.
+# The optional #510 probes record outcome-free host sensors, validate one
+# pilot IL2CPP comparison player's contract path, and calibrate the control
+# shim separately from the blinded pilot on ELI-MACHINE.
 # This workflow is intentionally validation-only: GitHub Actions does not have
 # the administrator credentials required to install or repair runner software.
 # An administrator performs all installation and repair directly on the host,
 # then dispatches this audit to confirm the runner is ready.
 #
 # Targeting a SPECIFIC runner (HARD-FAIL on wrong target):
-#   * The repo's runner topology currently labels both Windows runners
-#     uniformly (`self-hosted, Windows, RAM-64GB`); only ELI-MACHINE carries
-#     the additional `fast` label (per docs/ops/ci-and-github-settings.md).
-#   * To audit one specific machine without affecting the other, take
-#     the OTHER runner offline (gh CLI or Actions UI -> Runners) BEFORE
-#     dispatching this workflow, then bring it back online afterwards.
+#   * ELI-MACHINE alone carries the `fast` label, so ELI requests select it.
+#   * DAD-MACHINE shares the generic Windows labels. To guarantee a DAD audit,
+#     take ELI offline before dispatch and restore it afterward.
 #   * If the dispatch lands on the wrong runner the workflow HARD-FAILS with
 #     `::error::` and exit 1 (NOT a silent ::warning::). This is by design:
 #     a silent audit of the WRONG machine would be operator-fatal.
@@ -44,13 +45,92 @@ on:
         options:
           - DAD-MACHINE
           - ELI-MACHINE
+      perf-event-window-utc:
+        description: 'Collect only System clock/sleep/wake events: UTC start,end (ISO 8601 with Z).'
+        required: false
+        type: string
+        default: ''
+      native-sdk-floor:
+        description: "Run all CPU/Burst native research contracts on Unity 2021.3 with pinned floor SDKs."
+        required: false
+        type: boolean
+        default: false
+      native-sdk-scope:
+        description: "Select the complete Editor or IL2CPP Release native SDK contract scope."
+        required: false
+        type: choice
+        default: PlayMode
+        options:
+          - PlayMode
+          - StandaloneRelease
+      native-sdk-registry-probe:
+        description: "Verify one exact Burst archive download on ELI without Unity or cache changes."
+        required: false
+        type: boolean
+        default: false
+      native-sdk-upm-network-probe:
+        description: "Run installed UPM network diagnostics on ELI and retain reports without Unity."
+        required: false
+        type: boolean
+        default: false
+      native-sdk-log-source:
+        description: "Collect retained UPM diagnostics only: floor run-id,attempt (no Unity launch)."
+        required: false
+        type: string
+        default: ""
+      perf-host-characterization:
+        description: "Capture the outcome-free #510 performance-host sensor probe on ELI-MACHINE."
+        required: false
+        type: boolean
+        default: false
+      perf-host-load:
+        description: "Apply synthetic load to the selected ELI-MACHINE processors during the sensor probe."
+        required: false
+        type: boolean
+        default: false
+      perf-host-monitor-smoke:
+        description: "Exercise #510 player-time sampler ready/stop signals without a Unity player."
+        required: false
+        type: boolean
+        default: false
+      perf-pilot-contract-smoke:
+        description: "Build one pilot-only IL2CPP comparison player and run contract tests on ELI without throughput rows."
+        required: false
+        type: boolean
+        default: false
+      perf-license-recovery:
+        description: "Return the Unity license on ELI without activation or player work; classify cleanup and release the organization lock."
+        required: false
+        type: boolean
+        default: false
+      perf-pilot-calibration-work:
+        description: "Optional #510 control-only calibration; one clean player, five PairedPerf launches at the selected CPU-work level."
+        required: false
+        type: choice
+        default: none
+        options:
+          - none
+          - "0"
+          - "2048"
+          - "8192"
+          - "32768"
+          - "131072"
+          - "524288"
+      perf-pilot-work-vector:
+        description: "Optional #510 physical control or pilot: five target CPU-work integers in fixed scenario order."
+        required: false
+        type: string
+        default: ""
+      perf-pilot-batch-orders:
+        description: "Five comma-separated paired batch orders; custom orders require vector mode."
+        required: false
+        type: string
+        default: "ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB"
 # Forbid concurrent audits OF THIS REPO across BOTH runners. The group
 # is intentionally NOT parameterized by `inputs.runner-label` so that two
 # dispatches (one per machine) cannot overlap. This is stricter than per-runner
 # concurrency: any in-flight audit anywhere blocks another audit from starting.
-# Distinct from `wallstop-organization-builds` (the Unity build lock). Default
-# audits are license-free; the optional shipping Editor job acquires the central
-# lock and completes its automatic license-return and cleanup sequence.
+# Host audits are license-free. Optional shipping and pilot jobs acquire the central Unity lock.
 concurrency:
   group: runner-audit-windows
   cancel-in-progress: false
@@ -80,21 +160,19 @@ jobs:
           required-label-sets: '[["self-hosted","Windows","RAM-64GB"]]'
 
   bootstrap:
-    if: ${{ !inputs['shipping-editor-verification'] }}
+    if: >-
+      ${{ !inputs['shipping-editor-verification'] && !inputs['native-sdk-floor'] &&
+      inputs['native-sdk-log-source'] == '' && !inputs['native-sdk-registry-probe'] &&
+      !inputs['native-sdk-upm-network-probe'] }}
     # F9: surface the mode (Audit vs Maintenance) in the job display name so
     # operators reading the Actions UI immediately see which mode this run is
     # without expanding the inputs.
     name: Audit ${{ inputs.runner-label }}
     needs:
       - runner-preflight
-    # Cannot dynamically pin to a specific runner without machine-name labels
-    # configured on the runners themselves (operator action; not yet done in
-    # this org). Use the documented allowlisted set; operator takes the
-    # unwanted runner offline before dispatching when targeting is needed.
-    # The "Confirm runner identity" step below HARD-FAILS if the dispatch
-    # lands on the wrong machine (see header comment for the chicken-and-egg
-    # rationale around `shell: powershell` for the rest of this job).
-    runs-on: [self-hosted, Windows, RAM-64GB]
+    # ELI has a unique fast label; DAD still needs the identity guard because
+    # it has no unique label. The generic set remains available for DAD audits.
+    runs-on: ${{ inputs.runner-label == 'ELI-MACHINE' && fromJSON('["self-hosted","Windows","RAM-64GB","fast"]') || fromJSON('["self-hosted","Windows","RAM-64GB"]') }}
     # F13: inherit workflow-level permissions (contents: read, actions: read).
     # No job-level override -- the previous explicit block silently dropped
     # `actions: read` and shadowed the workflow-level intent.
@@ -155,7 +233,134 @@ jobs:
               Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary
           }
 
+      - name: Capture performance host event logs
+        if: ${{ inputs['perf-event-window-utc'] != '' }}
+        shell: pwsh
+        timeout-minutes: 2
+        env:
+          DXM_EVENT_WINDOW_UTC: ${{ inputs['perf-event-window-utc'] }}
+          DXM_OTHER_PERF_MODES: >-
+            ${{ inputs['perf-host-characterization'] || inputs['perf-host-load'] ||
+            inputs['perf-host-monitor-smoke'] || inputs['perf-pilot-contract-smoke'] ||
+            inputs['perf-license-recovery'] || inputs['perf-pilot-calibration-work'] != 'none' ||
+            inputs['perf-pilot-work-vector'] != '' ||
+            inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' }}
+        run: |
+          if ($env:DXM_OTHER_PERF_MODES -eq 'true') {
+            throw 'Event log collection must be selected without other performance modes.'
+          }
+          $window = @($env:DXM_EVENT_WINDOW_UTC.Split(','))
+          if ($window.Count -ne 2) { throw 'Event log window requires UTC start,end.' }
+          ./scripts/unity/collect-perf-host-characterization.ps1 `
+            -EventLogsOnly -EventStartUtc $window[0] -EventEndUtc $window[1] `
+            -OutputPath '.artifacts/runner-bootstrap/host-event-logs.json'
+
+      - name: Capture outcome-free performance host conditions
+        if: ${{ inputs['perf-host-characterization'] || inputs['perf-host-load'] }}
+        shell: pwsh
+        timeout-minutes: 6
+        env:
+          DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
+          DXM_PERF_HOST_LOAD: ${{ inputs.perf-host-load }}
+        run: |
+          if ($env:DXM_REQUESTED_RUNNER -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
+              throw 'Performance host characterization is pinned to ELI-MACHINE.'
+          }
+          $path = '.artifacts/runner-bootstrap/host-characterization.json'
+          $profile = '.artifacts/runner-bootstrap/performance-cpu-profile.json'
+          ./scripts/unity/resolve-performance-cpu-profile.ps1 -OutputJson $profile
+          $applyLoad = $env:DXM_PERF_HOST_LOAD -eq 'true'
+          ./scripts/unity/collect-perf-host-characterization.ps1 `
+            -OutputPath $path -CpuProfilePath $profile -CpuLoad:$applyLoad -SampleCount 120
+          $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+          "- Outcome-free host characterization SHA-256: ``$hash``" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Smoke-test player-time host sampler signals
+        if: ${{ inputs['perf-host-monitor-smoke'] }}
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          if ($env:RUNNER_NAME -cne 'ELI-MACHINE') {
+              throw 'Performance host sampler smoke test is pinned to ELI-MACHINE.'
+          }
+          $root = '.artifacts/runner-bootstrap'
+          $profile = Join-Path $root 'performance-cpu-profile.json'
+          $output = Join-Path $root 'host-monitor-smoke.json'
+          $ready = "$output.ready"
+          $stop = "$output.stop"
+          ./scripts/unity/resolve-performance-cpu-profile.ps1 -OutputJson $profile
+          $start = [System.Diagnostics.ProcessStartInfo]::new()
+          $start.FileName = Join-Path $PSHOME 'pwsh.exe'
+          foreach ($argument in @(
+              '-NoProfile', '-NonInteractive', '-File',
+              (Join-Path $PWD 'scripts/unity/collect-perf-host-characterization.ps1'),
+              '-OutputPath', (Join-Path $PWD $output),
+              '-CpuProfilePath', (Join-Path $PWD $profile),
+              '-ReadySignalPath', (Join-Path $PWD $ready),
+              '-StopSignalPath', (Join-Path $PWD $stop),
+              '-SampleCount', '120'
+          )) { [void]$start.ArgumentList.Add($argument) }
+          $start.UseShellExecute = $false
+          $start.RedirectStandardOutput = $true
+          $start.RedirectStandardError = $true
+          $process = [System.Diagnostics.Process]::Start($start)
+          try {
+              $deadline = [DateTime]::UtcNow.AddSeconds(60)
+              while (-not (Test-Path -LiteralPath $ready -PathType Leaf)) {
+                  if ($process.HasExited -or [DateTime]::UtcNow -ge $deadline) {
+                      throw 'Host sampler did not become ready.'
+                  }
+                  Start-Sleep -Milliseconds 100
+              }
+              Start-Sleep -Seconds 90
+              Set-Content -LiteralPath $stop -Value ([DateTime]::UtcNow.ToString('O'))
+              if (-not $process.WaitForExit(120000)) { throw 'Host sampler did not stop.' }
+              if ($process.ExitCode -ne 0) {
+                  throw "Host sampler failed: $($process.StandardError.ReadToEnd())"
+              }
+              $record = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
+              if (
+                  $record.purpose -cne 'player-time-host-telemetry' -or
+                  $record.loadMode -cne 'player-workload-v1' -or
+                  $record.stopReason -cne 'player-finished' -or
+                  $record.actualSampleCount -lt 2 -or
+                  $record.actualSampleCount -ge 120
+              ) { throw 'Host sampler signal contract failed.' }
+              $indices = @(0..15 | ForEach-Object { "0,$_" })
+              $previous = $null
+              foreach ($sample in $record.samples) {
+                  if (@($sample.errors).Count -ne 0) { throw 'Host sampler sensor read failed.' }
+                  if ($previous) {
+                      $interval = ([DateTime]$sample.timestampUtc - [DateTime]$previous.timestampUtc).TotalSeconds
+                      if ($interval -lt 0.5 -or $interval -gt 1.5) {
+                          throw "Host sampler cadence failed: $interval seconds."
+                      }
+                  }
+                  foreach ($name in $indices) {
+                      $counter = @($sample.processorCounters | Where-Object { $_.name -ceq $name })
+                      if (
+                          $counter.Count -ne 1 -or
+                          $null -eq $counter[0].ProcessorFrequency -or
+                          $null -eq $counter[0].PercentProcessorPerformance -or
+                          $null -eq $counter[0].PercentProcessorTime -or
+                          $counter[0].PercentPerformanceLimit -ne 100 -or
+                          $counter[0].PerformanceLimitFlags -ne 0
+                      ) { throw "Host sampler processor counter failed: $name." }
+                  }
+                  $previous = $sample
+              }
+              $hash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+              "- Player-time sampler smoke SHA-256: ``$hash``" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          } finally {
+              if (-not $process.HasExited) {
+                  $process.Kill($true)
+                  [void]$process.WaitForExit(5000)
+              }
+              $process.Dispose()
+          }
+
       - name: Run runner audit (single-step transcript)
+        if: ${{ inputs['perf-event-window-utc'] == '' && inputs['native-sdk-log-source'] == '' }}
         # F5/F7: a single PowerShell 5.1 step opens the transcript, invokes
         # the audit script, and Stop-Transcripts in a finally{} -- the
         # previous design split Start-Transcript and the bootstrap into
@@ -418,7 +623,7 @@ jobs:
         id: return_unity_license
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 5
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@20077985093aac0e88f88f931ebedae78c1c9284
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           unity-version: 2021.3.45f1
           tool-cache: ${{ runner.tool_cache }}
@@ -430,7 +635,7 @@ jobs:
         id: cleanup_classification
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@20077985093aac0e88f88f931ebedae78c1c9284
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
           return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
@@ -457,7 +662,7 @@ jobs:
       - name: Require confirmed Unity cleanup
         if: always()
         timeout-minutes: 2
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@20077985093aac0e88f88f931ebedae78c1c9284
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
         with:
           acquired: ${{ steps.acquire_lock.outputs.acquired }}
           classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
@@ -487,5 +692,1006 @@ jobs:
         with:
           name: shipping-editor-${{ github.run_id }}-${{ github.run_attempt }}
           path: .artifacts/unity/shipping-editor/${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+
+  package-log-capture:
+    name: Package diagnostics on ELI
+    if: >-
+      ${{ inputs['native-sdk-log-source'] != '' || inputs['native-sdk-registry-probe'] ||
+      inputs['native-sdk-upm-network-probe'] }}
+    needs:
+      - runner-preflight
+    runs-on: [self-hosted, Windows, RAM-64GB, fast]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.longpaths
+          GIT_CONFIG_VALUE_0: "true"
+        with:
+          persist-credentials: false
+
+      - name: Require isolated package diagnostic mode
+        shell: pwsh
+        timeout-minutes: 1
+        env:
+          DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
+          DXM_LOG_SOURCE: ${{ inputs['native-sdk-log-source'] }}
+          DXM_REGISTRY_PROBE: ${{ inputs['native-sdk-registry-probe'] }}
+          DXM_NETWORK_PROBE: ${{ inputs['native-sdk-upm-network-probe'] }}
+          DXM_OTHER_PACKAGE_MODES: >-
+            ${{ inputs['native-sdk-floor'] || inputs['perf-event-window-utc'] != '' ||
+            inputs['perf-host-characterization'] || inputs['perf-host-load'] ||
+            inputs['perf-host-monitor-smoke'] || inputs['perf-pilot-contract-smoke'] ||
+            inputs['perf-license-recovery'] || inputs['perf-pilot-calibration-work'] != 'none' ||
+            inputs['perf-pilot-work-vector'] != '' ||
+            inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' }}
+        run: |
+          if ($env:DXM_REQUESTED_RUNNER -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
+            throw 'Package diagnostics require an ELI-MACHINE request and runner.'
+          }
+          $logs = -not [string]::IsNullOrWhiteSpace($env:DXM_LOG_SOURCE)
+          $download = $env:DXM_REGISTRY_PROBE -ceq 'true'
+          $network = $env:DXM_NETWORK_PROBE -ceq 'true'
+          $selectedModes = [int]$logs + [int]$download + [int]$network
+          if ($selectedModes -ne 1 -or $env:DXM_OTHER_PACKAGE_MODES -eq 'true') {
+            throw 'Select exactly one package diagnostic and disable all other modes.'
+          }
+          if ($logs -and $env:DXM_LOG_SOURCE -cnotmatch '^[1-9][0-9]{0,15},[1-9][0-9]{0,3}$') {
+            throw 'Package log source requires a positive run-id,attempt.'
+          }
+
+      - name: Setup Node.js for package log redaction
+        id: log_node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Install artifact tooling dependencies
+        id: log_tooling
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
+          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
+          Copy-Item package.json, package-lock.json -Destination $tooling
+          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
+
+      - name: Capture retained Unity Package Manager diagnostics
+        if: ${{ inputs['native-sdk-log-source'] != '' }}
+        shell: pwsh
+        timeout-minutes: 2
+        env:
+          DXM_LOG_SOURCE: ${{ inputs['native-sdk-log-source'] }}
+          DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
+          DXM_OTHER_LOG_MODES: >-
+            ${{ inputs['native-sdk-floor'] || inputs['perf-event-window-utc'] != '' ||
+            inputs['perf-host-characterization'] || inputs['perf-host-load'] ||
+            inputs['perf-host-monitor-smoke'] || inputs['perf-pilot-contract-smoke'] ||
+            inputs['perf-license-recovery'] || inputs['perf-pilot-calibration-work'] != 'none' ||
+            inputs['perf-pilot-work-vector'] != '' ||
+            inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' }}
+        run: |
+          if ($env:DXM_REQUESTED_RUNNER -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
+            throw 'Package log collection is pinned to ELI-MACHINE.'
+          }
+          if ($env:DXM_OTHER_LOG_MODES -eq 'true') {
+            throw 'Package log collection requires all other modes disabled.'
+          }
+          if ($env:DXM_LOG_SOURCE -cnotmatch '^[1-9][0-9]{0,15},[1-9][0-9]{0,3}$') {
+            throw 'Package log source requires a positive run-id,attempt.'
+          }
+          $source = $env:DXM_LOG_SOURCE.Split(',')
+          $project = Join-Path $env:RUNNER_WORKSPACE ("dxm-u/n/nf{0}a{1}" -f $source[0], $source[1])
+          $cache = Join-Path $env:RUNNER_WORKSPACE 'dxm-c/native-sdk-floor-2021.3.45f1'
+          $diagnostics = Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3/2021.3.45f1/Editor/Data/Resources/PackageManager/Diagnostics'
+          ./scripts/unity/collect-perf-host-characterization.ps1 `
+            -PackageLogsOnly -ProjectPath $project -CachePath $cache `
+            -InstalledDiagnosticsPath $diagnostics `
+            -OutputPath '.artifacts/runner-bootstrap/package-manager-diagnostics.json'
+
+      - name: Verify exact Burst registry archive download
+        if: ${{ inputs['native-sdk-registry-probe'] }}
+        shell: pwsh
+        timeout-minutes: 3
+        env:
+          DXM_EXPECTED_BURST_SHA1: da63315718cf3bf3d11ff958633b4b67dc8d2426
+        run: |
+          ./scripts/unity/collect-perf-host-characterization.ps1 `
+            -RegistryDownloadOnly -RegistryArchiveRoute Cdn -ExpectedArchiveSha1 $env:DXM_EXPECTED_BURST_SHA1 `
+            -OutputPath '.artifacts/runner-bootstrap/registry-download.json'
+
+      - name: Run installed UPM network diagnostics
+        if: ${{ inputs['native-sdk-upm-network-probe'] }}
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $diagnostics = Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3/2021.3.45f1/Editor/Data/Resources/PackageManager/Diagnostics'
+          ./scripts/unity/collect-perf-host-characterization.ps1 `
+            -UpmNetworkOnly -InstalledDiagnosticsPath $diagnostics `
+            -OutputPath '.artifacts/runner-bootstrap/upm-network-diagnostics.json'
+
+      - name: Redact retained package log artifacts
+        if: ${{ always() && steps.log_node.outcome == 'success' && steps.log_tooling.outcome == 'success' }}
+        id: redact_logs
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: .artifacts/runner-bootstrap
+
+      - name: Upload retained package log artifacts
+        if: ${{ always() && steps.redact_logs.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: runner-bootstrap-${{ inputs.runner-label }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/runner-bootstrap/**
+          if-no-files-found: error
+          retention-days: 30
+
+  pilot-contract-smoke:
+    name: Pilot IL2CPP contract, calibration, vector, or license recovery on ELI
+    if: >-
+      ${{ !inputs['native-sdk-upm-network-probe'] && !inputs['native-sdk-registry-probe'] && inputs['native-sdk-log-source'] == '' &&
+      !inputs['native-sdk-floor'] && (inputs['perf-pilot-contract-smoke'] || inputs['perf-pilot-calibration-work'] != 'none' ||
+      inputs['perf-pilot-work-vector'] != '' ||
+      inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' ||
+      inputs['perf-license-recovery']) }}
+    needs:
+      - runner-preflight
+      - bootstrap
+    runs-on: [self-hosted, Windows, RAM-64GB, fast]
+    timeout-minutes: 600
+    steps:
+      - name: Require ELI request and runner
+        shell: pwsh
+        timeout-minutes: 1
+        env:
+          DXM_PILOT_WORK_VECTOR: ${{ inputs['perf-pilot-work-vector'] }}
+          DXM_PILOT_BATCH_ORDERS: ${{ inputs['perf-pilot-batch-orders'] }}
+        run: |
+          if ('${{ inputs.runner-label }}' -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
+            throw 'Pilot contract smoke requires an ELI-MACHINE request and the ELI-MACHINE runner.'
+          }
+          $vector = $env:DXM_PILOT_WORK_VECTOR
+          $fixedOrders = 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB'
+          $modes = @(
+            ('${{ inputs['perf-pilot-contract-smoke'] }}' -ceq 'true'),
+            ('${{ inputs['perf-pilot-calibration-work'] }}' -cne 'none'),
+            (-not [string]::IsNullOrEmpty($vector)),
+            ('${{ inputs['perf-license-recovery'] }}' -ceq 'true')
+          )
+          if ($modes[3] -and ($modes[0] -or $modes[1] -or $modes[2])) {
+            throw 'License recovery cannot launch a player.'
+          }
+          if (@($modes | Where-Object { $_ }).Count -ne 1) {
+            throw 'Select exactly one pilot contract, scalar calibration, vector, or license recovery mode.'
+          }
+          if (-not [string]::IsNullOrEmpty($vector)) {
+            $values = @($vector.Split(','))
+            if ($values.Count -ne 5) { throw 'Vector mode requires exactly five CPU-work values.' }
+            foreach ($value in $values) {
+              if ($value -cnotmatch '^(0|[1-9][0-9]{0,6})$' -or [int]$value -gt 1000000) {
+                throw 'Vector CPU-work values must be canonical integers from 0 through 1000000.'
+              }
+            }
+            $orders = @($env:DXM_PILOT_BATCH_ORDERS.Split(','))
+            if ($orders.Count -ne 5 -or @($orders | Where-Object { $_ -cne 'ABBABAAB' -and $_ -cne 'BAABABBA' }).Count -ne 0) {
+              throw 'Vector mode requires exactly five declared paired batch orders.'
+            }
+            if (@($orders | Where-Object { $_ -ceq 'ABBABAAB' }).Count -notin @(2, 3)) {
+              throw 'Vector mode requires a balanced two/three split of paired batch orders.'
+            }
+          } elseif ($env:DXM_PILOT_BATCH_ORDERS -cne $fixedOrders) {
+            throw 'Custom pilot batch orders require vector mode.'
+          }
+
+      - name: Require manually installed Unity editor
+        id: ensure_unity_editor
+        timeout-minutes: 10
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          unity-version: 6000.5.2f1
+          install-root: ${{ runner.tool_cache }}\u6-v3
+          provisioning-profile: StandaloneWindowsIl2Cpp
+          diagnostics-path: unity-editor-check.json
+          ci-managed-only: true
+          require-healthy-existing: true
+
+      - name: Enable Git long paths
+        shell: pwsh
+        timeout-minutes: 2
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        run: git config --global core.longpaths true
+
+      - name: Checkout
+        timeout-minutes: 30
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        with:
+          lfs: true
+          persist-credentials: false
+
+      - name: Setup Node.js
+        id: setup_node
+        timeout-minutes: 5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.18.0"
+
+      - name: Install artifact tooling dependencies
+        id: install_dependencies
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
+          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
+          Copy-Item package.json, package-lock.json -Destination $tooling
+          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
+
+      - name: Compute comparison assembly list
+        id: compute_standalone
+        timeout-minutes: 5
+        uses: ./.github/actions/compute-unity-assemblies
+        with:
+          include-comparisons: "true"
+          target: standalone
+
+      - name: Require comparison assemblies
+        timeout-minutes: 1
+        shell: pwsh
+        run: |
+          if ('${{ steps.compute_standalone.outputs.is-empty }}' -ne 'false') {
+            throw 'Pilot contract smoke requires the comparison test assemblies.'
+          }
+
+      - name: Resolve pinned performance CPU profile
+        id: cpu_profile
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $artifactsPath = '.artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}'
+          New-Item -ItemType Directory -Force -Path $artifactsPath | Out-Null
+          $profilePath = Join-Path $artifactsPath 'performance-cpu-profile.json'
+          ./scripts/unity/resolve-performance-cpu-profile.ps1 -OutputJson $profilePath
+          $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+          if (
+            $profile.schemaVersion -ne 1 -or
+            $profile.executionProfileId -cne 'highest-efficiency-class-affinity-normal-v1' -or
+            $profile.cpuModel -notmatch 'i9-13900KF' -or
+            $profile.affinityMask -cne '0xFFFF' -or
+            $profile.priorityClass -cne 'Normal'
+          ) { throw 'Pilot contract smoke CPU profile does not match the pinned ELI selection.' }
+          "affinity-mask=$($profile.affinityMask)" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+
+      - name: Require MSVC C++ toolchain
+        timeout-minutes: 3
+        shell: pwsh -NoProfile -NonInteractive -Command ". '{0}'"
+        run: ./scripts/unity/assert-msvc-toolchain.ps1
+
+      - name: Validate Unity license secrets
+        timeout-minutes: 2
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Acquire organization Unity lock
+        id: acquire_lock
+        timeout-minutes: 305
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: pilot-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          require-resource-lifecycle: "true"
+          minimum-release-cooldown-seconds: "0"
+          runner-id: ${{ runner.name }}
+          github-token: ${{ github.token }}
+          timeout-minutes: "300"
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require acquired Unity lock
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
+        timeout-minutes: 1
+        shell: pwsh
+        run: exit 1
+
+      - name: Build and run pilot comparison contracts or calibration
+        id: run_contracts
+        if: ${{ steps.acquire_lock.outputs.acquired == 'true' && !inputs['perf-license-recovery'] }}
+        timeout-minutes: 120
+        shell: pwsh
+        env:
+          DXM_PILOT_WORK_VECTOR: ${{ inputs['perf-pilot-work-vector'] }}
+          DXM_PILOT_BATCH_ORDERS: ${{ inputs['perf-pilot-batch-orders'] }}
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
+          DX_PERF_COMMIT: ${{ github.sha }}
+        run: |
+          $artifactsPath = '.artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}'
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\p\pc${{ github.run_id }}a${{ github.run_attempt }}'
+          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\6000.5.2f1'
+          $calibrationWorkText = '${{ inputs['perf-pilot-calibration-work'] }}'
+          $calibration = $calibrationWorkText -cne 'none'
+          $vector = $env:DXM_PILOT_WORK_VECTOR
+          $work = if ($calibration) { [int]$calibrationWorkText } else { 0 }
+          $testCategory = if ($calibration -or $vector) { 'PairedPerf' } else { 'ComparisonContract' }
+          $pilotWorkParameters = if ($vector) {
+            @{ StandalonePilotCpuWorkByScenario = $vector }
+          } else {
+            @{ StandalonePilotCpuWorkIterationsPerBatch = $work }
+          }
+          ./scripts/unity/run-ci-tests.ps1 `
+            -UnityVersion 6000.5.2f1 `
+            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+            -TestMode standalone `
+            -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
+            -ArtifactsPath $artifactsPath `
+            -ProjectPath $projectPath `
+            -CachePath $cachePath `
+            -TestCategory $testCategory `
+            -IncludeComparisons `
+            -CanonicalProfilePath '.github/perf/canonical-il2cpp-profile.v1.json' `
+            -StandalonePlayerRunCount 5 `
+            -StandalonePlayerBatchOrders $env:DXM_PILOT_BATCH_ORDERS `
+            @pilotWorkParameters `
+            -StandalonePlayerProcessorAffinityMask 65535 `
+            -StandalonePlayerPriorityClass Normal `
+            -LicenseReturnOwner Central `
+            -ReleaseCodeOptimization `
+            -ReleasePlayerBuild
+
+      - name: Require five contract-only player launches and valid host health
+        if: ${{ steps.run_contracts.outcome == 'success' && inputs['perf-pilot-calibration-work'] == 'none' && inputs['perf-pilot-work-vector'] == '' }}
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $root = '.artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}'
+          $evidence = Get-Content -LiteralPath (Join-Path $root 'same-player-repeats/same-player-evidence.json') -Raw | ConvertFrom-Json
+          if ($evidence.runCount -ne 5 -or @($evidence.runs).Count -ne 5 -or $evidence.playerDirectoryManifestMatches -ne $true) {
+            throw 'Pilot contract smoke did not retain five launches of one unchanged player.'
+          }
+          foreach ($run in $evidence.runs) {
+            $health = Get-Content -LiteralPath (Join-Path $root "same-player-repeats/$($run.hostTelemetryHealthFile)") -Raw | ConvertFrom-Json
+            if ($health.valid -ne $true -or @($health.reasons).Count -ne 0) {
+              throw "Pilot contract smoke host health failed on launch $($run.runIndex)."
+            }
+            if (Select-String -LiteralPath (Join-Path $root $run.resultsPath) -Pattern 'DXM_PAIRED_COMPARISON' -Quiet) {
+              throw "Pilot contract smoke unexpectedly measured paired throughput on launch $($run.runIndex)."
+            }
+          }
+          $build = Get-Content -LiteralPath (Join-Path $root 'pilot-build-evidence.json') -Raw | ConvertFrom-Json
+          if ($build.projectWasAbsentBefore -ne $true -or $build.sourceCommit -cne '${{ github.sha }}') {
+            throw 'Pilot contract smoke build provenance does not match the checked-out source.'
+          }
+          "- Pilot contract smoke: five healthy launches, no paired throughput rows; build invocation ``$($build.buildInvocationId)``." | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Require five control launches with complete paired rows
+        if: ${{ steps.run_contracts.outcome == 'success' && (inputs['perf-pilot-calibration-work'] != 'none' || inputs['perf-pilot-work-vector'] != '') }}
+        timeout-minutes: 2
+        shell: pwsh
+        env:
+          DXM_PILOT_WORK_VECTOR: ${{ inputs['perf-pilot-work-vector'] }}
+          DXM_PILOT_BATCH_ORDERS: ${{ inputs['perf-pilot-batch-orders'] }}
+        run: |
+          $root = '.artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}'
+          $vector = $env:DXM_PILOT_WORK_VECTOR
+          $work = if ($vector) { $null } else { [int]'${{ inputs['perf-pilot-calibration-work'] }}' }
+          $targetScenarios = @('GlobalToOne', 'StructNoBox', 'Filtered', 'PostProcess', 'FilteredPostProcess')
+          $vectorValues = if ($vector) { @($vector.Split(',') | ForEach-Object { [int]$_ }) } else { @() }
+          $expectedOrders = @($env:DXM_PILOT_BATCH_ORDERS.Split(','))
+          $evidence = Get-Content -LiteralPath (Join-Path $root 'same-player-repeats/same-player-evidence.json') -Raw | ConvertFrom-Json
+          if ($evidence.runCount -ne 5 -or @($evidence.runs).Count -ne 5 -or $evidence.playerDirectoryManifestMatches -ne $true) {
+            throw 'Calibration did not retain five launches of one unchanged player.'
+          }
+          $expectedScenarios = @('GlobalToOne', 'GlobalToMany', 'KeyedToOne', 'StructNoBox', 'Filtered', 'PostProcess', 'FilteredPostProcess')
+          $expectedRunIndex = 1
+          foreach ($run in $evidence.runs) {
+            if ($run.runIndex -ne $expectedRunIndex) {
+              throw "Control launch index drift; expected $expectedRunIndex."
+            }
+            if ($run.batchOrder -cne $expectedOrders[$run.runIndex - 1]) {
+              throw "Control launch $($run.runIndex) has scheduled batch order drift."
+            }
+            if ($vector) {
+              $recordedNames = @($run.pilotCpuWorkByScenario.PSObject.Properties.Name | Sort-Object)
+              if ((@($recordedNames) -join ',') -cne (@($targetScenarios | Sort-Object) -join ',')) {
+                throw "Vector launch $($run.runIndex) lacks the complete named work assignment."
+              }
+              foreach ($index in 0..4) {
+                $name = $targetScenarios[$index]
+                if ($run.pilotCpuWorkByScenario.$name -ne $vectorValues[$index]) {
+                  throw "Vector launch $($run.runIndex) has recorded work drift for $name."
+                }
+              }
+              if ($null -ne $run.pilotCpuWorkIterationsPerBatch) {
+                throw "Vector launch $($run.runIndex) recorded scalar work."
+              }
+            } elseif ($run.pilotCpuWorkIterationsPerBatch -ne $work) {
+              throw "Calibration launch $($run.runIndex) has recorded scalar work drift."
+            }
+            $health = Get-Content -LiteralPath (Join-Path $root "same-player-repeats/$($run.hostTelemetryHealthFile)") -Raw | ConvertFrom-Json
+            if ($health.valid -ne $true -or @($health.reasons).Count -ne 0) {
+              throw "Calibration host health failed on launch $($run.runIndex)."
+            }
+            $xml = [xml](Get-Content -LiteralPath (Join-Path $root $run.resultsPath) -Raw)
+            $rows = @(
+              foreach ($case in $xml.SelectNodes('//test-case')) {
+                $output = $case.SelectSingleNode('output')
+                if ($null -eq $output) { continue }
+                $pairedMatches = [regex]::Matches($output.InnerText, 'DXM_PAIRED_COMPARISON\s+(\{[^\r\n<]+\})')
+                if ($pairedMatches.Count -eq 0) { continue }
+                $payloads = @($pairedMatches | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+                if ($payloads.Count -ne 1) {
+                  throw "Calibration launch $($run.runIndex) contains conflicting markers in one test case."
+                }
+                $payloads[0] | ConvertFrom-Json
+              }
+            )
+            $actualScenarios = (@($rows.scenario | Sort-Object) -join ',')
+            $requiredScenarios = (@($expectedScenarios | Sort-Object) -join ',')
+            if ($rows.Count -ne 7 -or $actualScenarios -cne $requiredScenarios) {
+              throw "Calibration launch $($run.runIndex) lacks exactly seven distinct paired rows."
+            }
+            foreach ($row in $rows) {
+              $expectedWork = if ($row.scenario -in @('GlobalToMany', 'KeyedToOne')) {
+                0
+              } elseif ($vector) {
+                $vectorValues[[array]::IndexOf($targetScenarios, $row.scenario)]
+              } else { $work }
+              if ($row.batchOrder -cne $run.batchOrder -or $row.pilotCpuWorkIterationsPerBatch -ne $expectedWork) {
+                throw "Control launch $($run.runIndex) has order or target-only work drift."
+              }
+            }
+            $expectedRunIndex++
+          }
+          $build = Get-Content -LiteralPath (Join-Path $root 'pilot-build-evidence.json') -Raw | ConvertFrom-Json
+          if ($build.projectWasAbsentBefore -ne $true -or $build.sourceCommit -cne '${{ github.sha }}') {
+            throw 'Calibration build provenance does not match the checked-out source.'
+          }
+          $setting = if ($vector) { 'per-scenario target vector' } else { "work level $work" }
+          $summary = "- Pilot control run: $setting, five healthy paired launches, " +
+            "one clean build; build invocation ``$($build.buildInvocationId)``. No rate interpreted in this job."
+          $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Redact pilot contract artifacts
+        id: redact_pilot
+        if: ${{ always() && !inputs['perf-license-recovery'] && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: .artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload pilot contract artifacts
+        if: ${{ always() && steps.redact_pilot.outcome == 'success' }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pilot-contract-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Return Unity license
+        id: return_unity_license
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          unity-version: 6000.5.2f1
+          tool-cache: ${{ runner.tool_cache }}
+          unity-email: ${{ secrets.UNITY_EMAIL }}
+          unity-password: ${{ secrets.UNITY_PASSWORD }}
+          evidence-suffix: pilot-contract-smoke
+
+      - name: Classify Unity cleanup evidence
+        id: cleanup_classification
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
+          return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
+          return-exit-code: ${{ steps.return_unity_license.outputs.return-exit-code }}
+          evidence-capture-complete: ${{ steps.return_unity_license.outputs.evidence-capture-complete }}
+          return-log-digest: ${{ steps.return_unity_license.outputs.return-log-digest }}
+
+      - name: Release organization Unity lock
+        id: release_unity_lock
+        if: always()
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: pilot-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          runner-id: ${{ runner.name }}
+          resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          resource-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require confirmed Unity cleanup
+        if: always()
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
+          classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
+          cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          cleanup-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+          release-outcome: ${{ steps.release_unity_lock.outcome }}
+          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
+          released: ${{ steps.release_unity_lock.outputs.released }}
+          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
+          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
+          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
+          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
+
+  native-sdk-floor:
+    name: Unity 2021.3 native SDK ${{ inputs['native-sdk-scope'] }} floor on ELI
+    if: >-
+      ${{ inputs['native-sdk-floor'] && inputs['native-sdk-log-source'] == '' &&
+      !inputs['native-sdk-registry-probe'] && !inputs['native-sdk-upm-network-probe'] }}
+    needs:
+      - runner-preflight
+    runs-on:
+      - self-hosted
+      - Windows
+      - RAM-64GB
+      - fast
+    timeout-minutes: 600
+    steps:
+      - name: Require ELI request and isolated SDK floor mode
+        shell: pwsh
+        timeout-minutes: 1
+        env:
+          DXM_FLOOR_REQUEST: ${{ inputs.runner-label }}
+          DXM_FLOOR_SCOPE: ${{ inputs['native-sdk-scope'] }}
+          DXM_FLOOR_OTHER_MODES: >-
+            ${{ inputs['perf-event-window-utc'] != '' || inputs['perf-host-characterization'] || inputs['perf-host-load'] ||
+            inputs['perf-host-monitor-smoke'] || inputs['perf-pilot-contract-smoke'] || inputs['perf-license-recovery'] ||
+            inputs['perf-pilot-calibration-work'] != 'none' || inputs['perf-pilot-work-vector'] != '' ||
+            inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' }}
+        run: |
+          if ($env:DXM_FLOOR_REQUEST -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
+            throw 'Native SDK floor requires an ELI-MACHINE request and runner.'
+          }
+          if ($env:DXM_FLOOR_OTHER_MODES -ceq 'true') {
+            throw 'Native SDK floor cannot combine with other experiment modes.'
+          }
+          if (@('PlayMode', 'StandaloneRelease') -cnotcontains $env:DXM_FLOOR_SCOPE) {
+            throw 'Native SDK floor requires an explicit supported scope.'
+          }
+
+      - name: Require manually installed Unity editor
+        id: ensure_unity_editor
+        timeout-minutes: 10
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          unity-version: 2021.3.45f1
+          install-root: ${{ runner.tool_cache }}\u6-v3
+          provisioning-profile: StandaloneWindowsIl2Cpp
+          diagnostics-path: unity-editor-check.json
+          ci-managed-only: true
+          require-healthy-existing: true
+
+      - name: Enable Git long paths
+        shell: pwsh
+        timeout-minutes: 2
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        run: git config --global core.longpaths true
+
+      - name: Checkout
+        timeout-minutes: 30
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/dxm-gitconfig
+        with:
+          lfs: true
+          persist-credentials: false
+
+      - name: Setup Node.js
+        id: setup_node
+        timeout-minutes: 5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.18.0
+
+      - name: Install artifact tooling dependencies
+        id: install_dependencies
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $tooling = Join-Path $env:GITHUB_WORKSPACE '.artifacts/node-tooling'
+          New-Item -ItemType Directory -Path $tooling -Force | Out-Null
+          Copy-Item package.json, package-lock.json -Destination $tooling
+          npm ci --prefix "$tooling" --userconfig "$env:GITHUB_WORKSPACE/.npmrc" --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "NODE_PATH=$(Join-Path $tooling 'node_modules')" >> $env:GITHUB_ENV
+
+      - name: Validate Unity license secrets
+        timeout-minutes: 2
+        uses: ./.github/actions/validate-unity-license
+        env:
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Acquire organization Unity lock
+        id: acquire_lock
+        timeout-minutes: 305
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: native-sdk-floor-${{ github.run_id }}-${{ github.run_attempt }}
+          require-resource-lifecycle: "true"
+          minimum-release-cooldown-seconds: "0"
+          runner-id: ${{ runner.name }}
+          github-token: ${{ github.token }}
+          timeout-minutes: "300"
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require acquired Unity lock
+        if: ${{ steps.acquire_lock.outputs.acquired != 'true' }}
+        timeout-minutes: 1
+        shell: pwsh
+        run: exit 1
+
+      - name: Run Unity native SDK floor contracts
+        id: run_sdk_floor
+        if: ${{ steps.acquire_lock.outputs.acquired == 'true' && !inputs['perf-license-recovery'] }}
+        timeout-minutes: 120
+        shell: pwsh
+        env:
+          UNITY_BURST_DEBUG: ${{ inputs['native-sdk-scope'] == 'PlayMode' && '1' || '' }}
+          DXM_FLOOR_SCOPE: ${{ inputs['native-sdk-scope'] }}
+          UNITY_EDITOR_PATH: ${{ steps.ensure_unity_editor.outputs.editor-path }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_ACCELERATOR_ENDPOINT: ${{ secrets.UNITY_ACCELERATOR_ENDPOINT }}
+          DX_PERF_COMMIT: ${{ github.sha }}
+        run: |
+          $artifactsPath = '.artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}'
+          $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\n\nf${{ github.run_id }}a${{ github.run_attempt }}'
+          $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\native-sdk-floor-2021.3.45f1'
+          $env:DXM_NATIVE_SDK_FLOOR_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-admission.json"
+          $env:DXM_NATIVE_DIRECTCALL_EVIDENCE = $null
+          $env:DXM_NATIVE_BURST_TRACE_EVIDENCE = $null
+          $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = $null
+          $arguments = @{
+            UnityVersion = '2021.3.45f1'
+            UnityInstallRoot = (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3')
+            TestMode = 'playmode'
+            AssemblyNames = 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch'
+            TestCategory = 'NativeSdkCpu'
+            ArtifactsPath = $artifactsPath
+            ProjectPath = $projectPath
+            CachePath = $cachePath
+            IncludeComparisons = $true
+            ReleaseCodeOptimization = $true
+          }
+          if ($env:DXM_FLOOR_SCOPE -ceq 'StandaloneRelease') {
+            $arguments.TestMode = 'standalone'
+            $arguments.StandaloneScriptingBackend = 'IL2CPP'
+            $arguments.ReleasePlayerBuild = $true
+            $arguments.CanonicalProfilePath = '.github/perf/native-sdk-il2cpp-qualification-profile.v1.json'
+            $env:DXM_NATIVE_SDK_RUNTIME_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-runtime.json"
+          } else {
+            $env:DXM_NATIVE_DIRECTCALL_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-direct-call"
+            if (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'Logs')) {
+              throw 'The diagnostic requires the inherited checkout Logs directory absent before work.'
+            }
+            $env:DXM_NATIVE_BURST_TRACE_EVIDENCE = Join-Path $env:GITHUB_WORKSPACE "$artifactsPath/sdk-burst-trace.json"
+          }
+          try {
+            ./scripts/unity/run-ci-tests.ps1 @arguments -LicenseReturnOwner Central
+          } finally {
+            New-Item -ItemType Directory -Path $artifactsPath -Force | Out-Null
+            foreach ($name in @('manifest.json', 'packages-lock.json')) {
+              $path = Join-Path $projectPath "Packages/$name"
+              if (Test-Path -LiteralPath $path -PathType Leaf) {
+                Copy-Item -LiteralPath $path -Destination (Join-Path $artifactsPath "post-$name")
+              }
+            }
+          }
+
+      - name: Require IL2CPP floor player proof
+        if: >-
+          ${{ always() && inputs['native-sdk-scope'] == 'StandaloneRelease' &&
+          steps.acquire_lock.outputs.acquired == 'true' && steps.run_sdk_floor.outcome != 'skipped' }}
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          $root = '.artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}'
+          $profile = '.github/perf/native-sdk-il2cpp-qualification-profile.v1.json'
+          $archived = Join-Path $root 'native-sdk-il2cpp-qualification-profile.v1.json'
+          $hash = (Get-FileHash -LiteralPath $profile -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ((Get-FileHash -LiteralPath $archived -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash -or
+              (Get-Content -LiteralPath (Join-Path $root 'configure-complete.marker') -Raw) -cne 'DxmCiTestConfigurator.Apply completed') {
+            throw 'Native SDK player requires its exact archived profile and completed configuration.'
+          }
+          foreach ($entry in @(
+            @{ file = 'configured-profile.json'; kind = 'configuration' },
+            @{ file = 'prebuild-profile.json'; kind = 'configuration' },
+            @{ file = 'postbuild-profile.json'; kind = 'configuration' },
+            @{ file = 'build-options-profile.json'; kind = 'buildOptions' },
+            @{ file = 'runtime-profile.json'; kind = 'runtime' }
+          )) {
+            ./scripts/unity/validate-il2cpp-profile.ps1 -ProfilePath $profile `
+              -EvidencePath (Join-Path $root $entry.file) -EvidenceKind $entry.kind `
+              -ExpectedUnityVersion 2021.3.45f1 -ExpectedSha256 $hash
+          }
+          $runtime = Get-Content -LiteralPath (Join-Path $root 'sdk-runtime.json') -Raw | ConvertFrom-Json
+          if (($runtime.schemaVersion -isnot [int] -and $runtime.schemaVersion -isnot [long]) -or
+              $runtime.schemaVersion -ne 2 -or $runtime.profileId -cne 'native-sdk-il2cpp-qualification-player-v1' -or
+              $runtime.profileSha256 -cne $hash -or $runtime.unityVersion -cne '2021.3.45f1' -or
+              $runtime.platform -cne 'WindowsPlayer' -or
+              ($runtime.pointerBytes -isnot [int] -and $runtime.pointerBytes -isnot [long]) -or $runtime.pointerBytes -ne 8 -or
+              $runtime.isEditor -isnot [bool] -or $runtime.isEditor -or
+              $runtime.debugBuild -isnot [bool] -or $runtime.debugBuild -or
+              $runtime.il2cpp -isnot [bool] -or -not $runtime.il2cpp -or
+              $runtime.burstEnabledObserved -isnot [bool] -or -not $runtime.burstEnabledObserved -or
+              $runtime.burstEnabled -isnot [bool] -or -not $runtime.burstEnabled -or
+              @($runtime.errors).Count -ne 0 -or @($runtime.assemblies).Count -ne 4) {
+            throw 'Actual player SDK/backend/platform/state evidence is incomplete or differs.'
+          }
+          $types = @{
+            'Unity.Burst' = 'Unity.Burst.BurstCompiler'
+            'Unity.Collections' = 'Unity.Collections.NativeList`1'
+            'Unity.Mathematics' = 'Unity.Mathematics.math'
+            'Unity.Jobs' = 'Unity.Jobs.IJobParallelForBatch'
+          }
+          foreach ($name in $types.Keys) {
+            $records = @($runtime.assemblies | Where-Object { $_.name -ceq $name })
+            if ($records.Count -ne 1 -or $records[0].typeName -cne $types[$name] -or
+                $records[0].typeObserved -isnot [bool] -or -not $records[0].typeObserved -or
+                $records[0].assemblyVersion -isnot [string] -or [string]::IsNullOrEmpty($records[0].assemblyVersion) -or
+                @($records[0].assemblyVersionComponents).Count -ne 4 -or
+                @($records[0].assemblyVersionComponents | Where-Object {
+                  ($_ -isnot [int] -and $_ -isnot [long]) -or $_ -lt 0
+                }).Count -ne 0 -or
+                ($records[0].assemblyVersion -cne ($records[0].assemblyVersionComponents -join '.') -and
+                 $records[0].assemblyVersion -cne '[redacted:ipv4-address]')) {
+              throw "Actual player public SDK type/assembly differs: $name."
+            }
+          }
+          $before = Get-Content -LiteralPath (Join-Path $root 'sdk-player.before.json') -Raw | ConvertFrom-Json
+          $after = Get-Content -LiteralPath (Join-Path $root 'sdk-player.after.json') -Raw | ConvertFrom-Json
+          if (($before.schemaVersion -isnot [int] -and $before.schemaVersion -isnot [long]) -or
+              ($before.fileCount -isnot [int] -and $before.fileCount -isnot [long]) -or
+              $before.schemaVersion -ne 1 -or $before.fileCount -ne @($before.files).Count -or
+              $before.fileCount -le 0 -or @($before.files.path | Sort-Object -Unique).Count -ne $before.fileCount -or
+              ($before | ConvertTo-Json -Depth 10 -Compress) -cne ($after | ConvertTo-Json -Depth 10 -Compress) -or
+              @($before.files | Where-Object {
+                ($_.length -isnot [int] -and $_.length -isnot [long]) -or $_.length -lt 0 -or $_.sha256 -notmatch '^[a-f0-9]{64}$'
+              }).Count -ne 0) {
+            throw 'The complete built player file manifest is incomplete or changed during execution.'
+          }
+          foreach ($name in @('DxmTestPlayer.exe', 'GameAssembly.dll', 'lib_burst_generated.dll')) {
+            $records = @($before.files | Where-Object { ($_.path -split '/')[-1] -ceq $name })
+            if ($records.Count -ne 1 -or $records[0].length -le 0) {
+              throw "Missing actual IL2CPP/Burst native player file: $name."
+            }
+          }
+
+      - name: Require the complete CPU/Burst floor scope
+        if: >-
+          ${{ always() && steps.acquire_lock.outputs.acquired == 'true' &&
+          steps.run_sdk_floor.outcome != 'skipped' }}
+        shell: pwsh
+        timeout-minutes: 2
+        env:
+          DXM_FLOOR_SCOPE: ${{ inputs['native-sdk-scope'] }}
+        run: |
+          $root = '.artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}'
+          $admission = Get-Content -LiteralPath (Join-Path $root 'sdk-admission.json') -Raw | ConvertFrom-Json
+          if ($admission.schemaVersion -ne 2 -or $admission.unityVersion -cne '2021.3.45f1' -or
+              @($admission.packages).Count -ne 4 -or $admission.batchAssembly -cne 'Unity.Jobs' -or
+              $admission.batchPackage -cne 'com.unity.jobs' -or $admission.batchVersion -cne '0.50.0-preview.9') {
+            throw 'Actual SDK floor admission is missing or differs from the fixed lane.'
+          }
+          $pins = @{ 'com.unity.burst' = '1.6.6'; 'com.unity.collections' = '1.2.3'; 'com.unity.mathematics' = '1.2.6'; 'com.unity.jobs' = '0.50.0-preview.9' }
+          foreach ($name in $pins.Keys) {
+            $packages = @($admission.packages | Where-Object { $_.name -ceq $name })
+            if ($packages.Count -ne 1 -or $packages[0].actualVersion -cne $pins[$name] -or
+                $packages[0].expectedVersion -cne $pins[$name] -or $packages[0].source -cne 'Registry' -or
+                @($packages[0].compilerSources).Count -eq 0 -or
+                @($packages[0].compilerSources | Where-Object { $_.path -ceq 'package.json' }).Count -ne 1 -or
+                @($packages[0].compilerSources | Where-Object { $_.sha256 -cnotmatch '^[a-f0-9]{64}$' }).Count -ne 0) {
+              throw "Actual SDK floor package/version/source admission differs: $name."
+            }
+          }
+          if ($env:DXM_FLOOR_SCOPE -ceq 'PlayMode') {
+            $wrapperNames = @(
+              'DxMessaging.Tests.Runtime.NativeCollectionsResearch.PureBatchKernels.Direct',
+              'DxMessaging.Tests.Runtime.NativeCollectionsResearch.VectorPureKernels.ScalarDirect',
+              'DxMessaging.Tests.Runtime.NativeCollectionsResearch.VectorPureKernels.VectorDirect'
+            )
+            $beforeMethods = $null
+            foreach ($phase in @('before', 'after')) {
+              $diagnostic = Get-Content -LiteralPath (Join-Path $root "sdk-direct-call.$phase.json") -Raw | ConvertFrom-Json
+              if ($diagnostic.schemaVersion -ne 1 -or $diagnostic.phase -cne $phase -or
+                  $diagnostic.stateCaptured -ne ($phase -ceq 'after') -or @($diagnostic.errors).Count -ne 0 -or
+                  @($diagnostic.methods).Count -ne 3) {
+                throw "Direct-call diagnostic is incomplete or differs: $phase."
+              }
+              $names = @($diagnostic.methods | ForEach-Object { "$($_.declaringType).$($_.methodName)" })
+              if (@($names | Sort-Object -Unique).Count -ne 3 -or
+                  @(Compare-Object -ReferenceObject $wrapperNames -DifferenceObject $names -CaseSensitive).Count -ne 0 -or
+                  @($diagnostic.methods | Where-Object { $_.ilHex -cnotmatch '^(?:[a-f0-9]{2})+$' }).Count -ne 0) {
+                throw "Direct-call diagnostic wrapper/IL identity differs: $phase."
+              }
+              if ($phase -ceq 'before') {
+                $beforeMethods = $diagnostic.methods
+              } else {
+                foreach ($method in $diagnostic.methods) {
+                  $before = @($beforeMethods | Where-Object { $_.declaringType -ceq $method.declaringType -and $_.methodName -ceq $method.methodName })[0]
+                  if ($before.ilHex -cne $method.ilHex) { throw 'Direct-call wrapper IL changed during observation.' }
+                }
+              }
+            }
+            $marker = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs-complete.marker') -Raw
+            if ($marker -cne 'DxmCiTestConfigurator.PrepareCompilerInputs completed') {
+              throw 'Native SDK floor compiler input preparation did not complete.'
+            }
+            $inputsBefore = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs.before.json') -Raw | ConvertFrom-Json
+            $inputsAfter = Get-Content -LiteralPath (Join-Path $root 'compiler-inputs.after.json') -Raw | ConvertFrom-Json
+            if ($inputsBefore.schemaVersion -ne 1 -or $inputsAfter.schemaVersion -ne 1 -or
+                $inputsBefore.phase -cne 'before' -or $inputsAfter.phase -cne 'after' -or
+                @($inputsBefore.files).Count -ne 2 -or @($inputsAfter.files).Count -ne 2) {
+              throw 'Compiler input snapshots are missing or malformed.'
+            }
+            foreach ($path in @('Assets/csc.rsp', 'Assets/Editor/DxMessaging.BaseCallIgnore.txt')) {
+              $before = @($inputsBefore.files | Where-Object { $_.path -ceq $path })
+              $after = @($inputsAfter.files | Where-Object { $_.path -ceq $path })
+              if ($before.Count -ne 1 -or $after.Count -ne 1 -or
+                  $before[0].status -cne 'present' -or $after[0].status -cne 'present' -or
+                  $before[0].sha256 -cnotmatch '^[a-f0-9]{64}$' -or $before[0].lengthBytes -lt 0 -or
+                  [string]::IsNullOrEmpty($before[0].lastWriteUtc) -or
+                  $before[0].sha256 -cne $after[0].sha256 -or
+                  $before[0].lengthBytes -ne $after[0].lengthBytes -or
+                  $before[0].lastWriteUtc -cne $after[0].lastWriteUtc) {
+                throw "Compiler input changed during the native SDK floor: $path."
+              }
+            }
+            $trace = Get-Content -LiteralPath (Join-Path $root 'sdk-burst-trace.json') -Raw | ConvertFrom-Json
+            if ($trace.schemaVersion -ne 1 -or $trace.debugLevel -cne '1' -or @($trace.errors).Count -ne 0 -or
+                @($trace.runtimeFiles).Count -ne 2 -or @($trace.logs).Count -lt 2 -or @($trace.logs).Count -gt 64) {
+              throw 'Burst compiler trace is missing or incomplete.'
+            }
+            $runtimeHashes = @{
+              'Burst.Compiler.IL.dll' = 'c425260738fdc8afe30520acba118df0fb488bbaaff98a912b3f3e4e6e850b8b'
+              'Burst.Backend.dll' = '8c927c75b2bc3aca96169bbe1a9076b37889f1ed395b22f16f37061a5ce16298'
+            }
+            foreach ($name in $runtimeHashes.Keys) {
+              $files = @($trace.runtimeFiles | Where-Object { $_.name -ceq $name })
+              if ($files.Count -ne 1 -or $files[0].sha256 -cne $runtimeHashes[$name] -or
+                  ($files[0].loadedAssemblyObserved -and $files[0].loadedAssemblySha256 -cne $runtimeHashes[$name])) {
+                throw "Burst runtime file identity differs: $name."
+              }
+            }
+            if (@($trace.logs | Where-Object { $_.name -ceq 'burst.log' }).Count -ne 1 -or
+                @($trace.logs.name | Sort-Object -Unique).Count -ne @($trace.logs).Count -or
+                @($trace.logs | Where-Object {
+                  $_.name -cnotmatch '^burst(?:-thread-\d+)?\.log$' -or $_.status -cne 'ok' -or
+                  $_.sourceLengthBytes -le 0 -or $_.sourceLengthBytes -gt 4 * 1024 * 1024 -or
+                  $_.capturedBytes -ne $_.sourceLengthBytes -or $_.sha256 -cnotmatch '^[a-f0-9]{64}$' -or
+                  [string]::IsNullOrEmpty($_.content)
+                }).Count -ne 0 -or ($trace.logs | Measure-Object -Property capturedBytes -Sum).Sum -gt 64 * 1024 * 1024) {
+              throw 'Burst trace log records are missing, malformed, changed or truncated.'
+            }
+          }
+          $xml = [xml](Get-Content -LiteralPath (Join-Path $root 'results.xml') -Raw)
+          $cases = @($xml.SelectNodes('//test-case'))
+          if ($cases.Count -ne 745 -or @($cases | Where-Object { $_.result -cne 'Passed' }).Count -ne 0) {
+            throw 'Native SDK floor requires all 745 CPU/Burst cases to pass without skips or inconclusive results.'
+          }
+          $counts = @{ NativeCollectionsBaselineTests = 46; ParallelPureHandlerTests = 108; PureBatchKernelTests = 88; VectorPureKernelTests = 503 }
+          foreach ($name in $counts.Keys) {
+            $prefix = "DxMessaging.Tests.Runtime.NativeCollectionsResearch.$name."
+            if (@($cases | Where-Object { $_.fullname.StartsWith($prefix, [StringComparison]::Ordinal) }).Count -ne $counts[$name]) {
+              throw "Native SDK floor fixture identity count differs: $name."
+            }
+          }
+          $expected = Get-Content -LiteralPath '.github/perf/native-sdk-floor-identities.v1.json' -Raw | ConvertFrom-Json
+          $actualNames = @($cases | ForEach-Object { $_.fullname } | Sort-Object)
+          if (@($actualNames | Sort-Object -Unique).Count -ne 745 -or
+              @(Compare-Object -ReferenceObject @($expected.identities) -DifferenceObject $actualNames -CaseSensitive).Count -ne 0) {
+            throw 'Native SDK floor leaf identities differ from the retained complete CPU/Burst scope.'
+          }
+
+      - name: Return Unity license
+        id: return_unity_license
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/return-unity-license@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          unity-version: 2021.3.45f1
+          tool-cache: ${{ runner.tool_cache }}
+          unity-email: ${{ secrets.UNITY_EMAIL }}
+          unity-password: ${{ secrets.UNITY_PASSWORD }}
+          evidence-suffix: native-sdk-floor
+
+      - name: Classify Unity cleanup evidence
+        id: cleanup_classification
+        if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/classify-unity-cleanup-evidence@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          return-log-path: ${{ steps.return_unity_license.outputs.return-log-path }}
+          return-command-completed: ${{ steps.return_unity_license.outputs.return-command-completed }}
+          return-exit-code: ${{ steps.return_unity_license.outputs.return-exit-code }}
+          evidence-capture-complete: ${{ steps.return_unity_license.outputs.evidence-capture-complete }}
+          return-log-digest: ${{ steps.return_unity_license.outputs.return-log-digest }}
+
+      - name: Release organization Unity lock
+        id: release_unity_lock
+        if: always()
+        timeout-minutes: 5
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/release-build-lock@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          lock-name: wallstop-organization-builds
+          holder-id-suffix: native-sdk-floor-${{ github.run_id }}-${{ github.run_attempt }}
+          runner-id: ${{ runner.name }}
+          resource-cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          resource-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          resource-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+        env:
+          BUILD_LOCK_APP_ID: ${{ secrets.BUILD_LOCK_APP_ID }}
+          BUILD_LOCK_APP_PRIVATE_KEY: ${{ secrets.BUILD_LOCK_APP_PRIVATE_KEY }}
+
+      - name: Require confirmed Unity cleanup
+        if: always()
+        timeout-minutes: 2
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-confirmed-unity-cleanup@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+        with:
+          acquired: ${{ steps.acquire_lock.outputs.acquired }}
+          classification-complete: ${{ steps.cleanup_classification.outputs.classification-complete }}
+          cleanup-status: ${{ steps.cleanup_classification.outputs.resource-cleanup-status }}
+          cleanup-health: ${{ steps.cleanup_classification.outputs.resource-health }}
+          cleanup-reason: ${{ steps.cleanup_classification.outputs.resource-reason }}
+          release-outcome: ${{ steps.release_unity_lock.outcome }}
+          cleanup-result: ${{ steps.release_unity_lock.outputs.cleanup-result }}
+          released: ${{ steps.release_unity_lock.outputs.released }}
+          release-health: ${{ steps.release_unity_lock.outputs.resource-health }}
+          release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
+          reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
+          reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
+
+      - name: Redact native SDK floor artifacts
+        id: redact_sdk_floor
+        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: .artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload native SDK floor artifacts
+        if: ${{ always() && steps.redact_sdk_floor.outcome == 'success' }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-sdk-floor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 14

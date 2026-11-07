@@ -36,6 +36,8 @@ Each reducer accepts only its registered artifact class:
 | `allocation-subunsub-observations` | `allocation-subunsub-observations-v1` |
 | `differential-replay-failure`      | `differential-replay-failure-v1`      |
 | `editor-settings-cache`            | `editor-settings-cache-v1`            |
+| `open-loop-editor-capture`         | `open-loop-editor-capture-v1`         |
+| `editor-latency-clock-capture`     | `editor-latency-clock-capture-v1`     |
 
 Seal, verify, replay, and manifest writes reject a different class, even when its digest was
 recomputed. The paired screen retains the existing exploratory bracket decision. It does not
@@ -43,6 +45,55 @@ supply confirmatory intervals, native binaries, or the full paired-throughput ca
 The SubUnsub class retains individual benchmark observations, including unmeasured allocation
 probes. Allocation-heavy SubUnsub campaigns, cold latency, frame/queue latency, WPR/PMU native
 mapping, and ARM64 energy still need their complete raw-input contracts and reducers under #508.
+The Editor open-loop class is a descriptive protocol screen; it does not establish an independent
+player session, interval precision, or a latency promotion verdict.
+
+### Native attribution capture admission (protocol only)
+
+`.github/perf/native-attribution-capture.v1.schema.json` and
+`scripts/unity/validate_native_attribution_capture.py` define the pre-capture admission boundary for
+one #511 Windows IL2CPP trace unit. The manifest binds the clean build, player, PDB, generated C++,
+WPR profile, ETL, marker events, sampled stacks, mapping, disassembly, PMU observations, reducer
+output, tool versions, and command provenance. Its outer workload intervals must use one declared
+player process and main thread. Resolved and unresolved samples must reconcile exactly, and an
+unavailable PMU source cannot report a zero count as if it had been measured.
+
+Validate a prepared manifest and all of its local artifacts with:
+
+```bash
+python3 scripts/unity/validate_native_attribution_capture.py \
+  .artifacts/native-capture/capture-manifest.json \
+  --artifact-root .artifacts/native-capture \
+  --source-commit "$MEASURED_SOURCE_COMMIT"
+```
+
+Acceptance reports only a protocol summary. The schema freezes the strictly-greater-than 3% primary
+share screen and at-most 1% unresolved-share boundary for one trace, but one trace is not an
+independent replicated decision. This contract is not registered with `perf-evidence-bundle.js`:
+opaque ETL, player, and PDB bytes still need format-aware privacy review, a deterministic reducer,
+and independent restore before #508 durable publication. A schema-valid manifest does not prove
+that WPR markers, PMU controls, observer effects, or native attribution passed at runtime.
+
+The open-loop class requires exactly eight text files: `capture-environment.json`,
+`capture-replay.json`, `open-loop-editor-plan.json`, one maintained-runner result JSON, and that
+result's `.run.json`, `.cleanup.json`, `.status`, and `.cleanup.status` sidecars. The `.status`
+extension receives the same reviewed-text privacy scan as other admitted extensions. The reducer
+binds the manifest source commit to the environment descriptor, hashes the plan, checks terminal
+runner ownership and clean-scene state, then recomputes every offered arrival, completion, exact
+quantile, and tail effect from the raw result. It rejects a retained replay summary that differs
+from the raw-derived result. The Node bundle tool passes only the supplied file bytes and source
+commit to the Python exact-integer auditor over process stdin; the auditor reads no data files,
+clock, or environment variables. Restorers need Python 3 and Node; the three-OS script matrix
+pins Python 3.12 and uses `python` on Windows. Source-tree and
+Unity-assembly identity still require separate remote/source checks.
+
+The Editor clock class requires exactly seven text files: `clock-environment.json`,
+`clock-replay.json`, one raw maintained-runner result JSON, and that result's four run/cleanup
+sidecars. The strict environment descriptor selects either the single-pair or batched clock
+control. The reducer binds source commit and run GUID, requires terminal clean-scene capture,
+rederives all ticks and descriptive summaries from the raw result, and rejects a retained replay
+that differs. These controls measure Editor Mono timer behavior only. Batched elapsed time includes
+loop and checksum work; neither control establishes individual player p99 resolution or IL2CPP cost.
 
 Paths are POSIX-relative. The sealer rejects absolute paths, drive letters, backslashes, traversal,
 Windows-forbidden or reserved names, trailing spaces or dots, and names that collide after Unicode
@@ -901,3 +952,98 @@ separate temporary process with deliberately invalid credentials. GitHub returne
 the experiment remained incomplete. The drill did not change the release, fabricate a missing
 asset URL, or use cached evidence as a fallback. This proves the operator procedure's refusal;
 there is no automated remote restore service implied by this result.
+
+### s336-open-loop-editor, revision 1
+
+Status: published and restored from GitHub in a fresh verifier clone on 2026-09-17. This is an
+Editor PlayMode Mono protocol screen on Unity 6000.4.6f1. Its 12 traces and one tail-control
+effect are descriptive; they do not establish an independent player session, IL2CPP confirmation,
+an interval estimate, or a performance promotion verdict.
+
+| Identity                        | Value                                                                                                                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable s336 Editor evidence prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-s336-open-loop-editor-r1-7da590ac)                         |
+| Release ID                      | `390857962`                                                                                                                                                                            |
+| Asset                           | [s336 Editor evidence archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-s336-open-loop-editor-r1-7da590ac/s336-open-loop-editor-r1.tar.gz) |
+| Exact asset name                | `s336-open-loop-editor-r1.tar.gz`                                                                                                                                                      |
+| Asset ID and size               | `570580334`, 21,824 bytes                                                                                                                                                              |
+| Archive SHA-256                 | `a7bb9e40e8afe83e691a9c4a5c7154986fc94ba2aff8e6facca75ef1f2c13259`                                                                                                                     |
+| Manifest SHA-256                | `7da590ac55e36a8a8a92c6e9e5c2fe3c325189e6f71eea0c9d28b1352b10fb8e`                                                                                                                     |
+| Bundle digest                   | `8ef62f844f1c3e4533679df2df7ec19cc50955fcbe1ad8748425c3c6b4a2871f`                                                                                                                     |
+| Measured source                 | `fe8fe99ec0382eaa2b85ad054b51209776f1d53c`                                                                                                                                             |
+| Verifier and release tag commit | `79279da3d50e52a7e452e86f5ef515a873b69be3`                                                                                                                                             |
+| Reducer                         | `open-loop-editor-capture-v1`                                                                                                                                                          |
+
+The draft held exactly one asset. Its fresh download matched the archive hash, and the extracted
+manifest matched the index before publication. Published metadata reported `draft: false`,
+`prerelease: true`, and `immutable: true`; the tag resolves to the verifier commit.
+
+An anonymous postpublication download into a new directory matched the indexed archive hash.
+The archive contained eight relative regular files plus the manifest and one directory entry,
+with normalized ownership and no links or special files. A new remote verifier clone checked out
+the exact commit with clean status, installed pinned dependencies with `npm ci --ignore-scripts`,
+and reproduced the indexed manifest hash. `verify` accepted all eight declared files and `replay`
+reproduced the sealed result; both exited zero, and the worktree stayed clean.
+
+The denied-access drill requested actual asset `570580334` through GitHub's release-asset API with
+deliberately invalid credentials. GitHub returned HTTP 401 and `curl --fail` exited 22. No asset
+file was produced, and verification and replay were not attempted. The inaccessible experiment
+remained incomplete without using a cached fallback.
+
+### s337-editor-clock-control, revision 1
+
+Status: published and restored from GitHub on 2026-09-17. This Unity 6000.4.6f1 Editor PlayMode
+Mono control retains raw timer-only and empty-callback timestamp pairs. At 10 MHz, 226/256 and
+239/256 pairs, respectively, measured zero ticks. This is a quantization observation, not an
+individual player p99 or IL2CPP precision claim.
+
+| Identity                        | Value                                                                                                                                                                        |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable s337 clock evidence prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-s337-editor-clock-control-r1-9c890828)            |
+| Release ID                      | `390880212`                                                                                                                                                                  |
+| Asset                           | [s337 clock archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-s337-editor-clock-control-r1-9c890828/s337-editor-clock-r1.tar.gz) |
+| Exact asset name                | `s337-editor-clock-r1.tar.gz`                                                                                                                                                |
+| Asset ID and size               | `570627932`, 3,414 bytes                                                                                                                                                     |
+| Archive SHA-256                 | `f058f0ebc9fdafb2c8cf545f2055e31933be0b7b899d5ca3d4a6a8ccc9b48ec9`                                                                                                           |
+| Manifest SHA-256                | `9c890828c941e03e8e515bd9704b0254fec36452db0df3d9a973e106166053a5`                                                                                                           |
+| Bundle digest                   | `811010e735874682cd0c7eae610b9a9f703ea06e6dd9d084ff99ffeb729838e2`                                                                                                           |
+| Measured source                 | `2e5cd91d72180016ee2f6ac3b64bece2532e94fe`                                                                                                                                   |
+| Verifier and release tag commit | `f22d7ab35c214a23b3332b5ffcb67a74b30a6252`                                                                                                                                   |
+| Reducer                         | `editor-latency-clock-capture-v1`                                                                                                                                            |
+
+### s338-editor-clock-batch-control, revision 1
+
+Status: published and restored from GitHub on 2026-09-17. This Unity 6000.4.6f1 Editor PlayMode
+Mono control retains 128 nonzero elapsed windows for 4,096 timestamp calls each. Summed elapsed
+time was 59,636 ticks at 10 MHz across 524,288 calls. The 11.374664306640625 ns aggregate per
+call includes loop, checksum, and window boundary work; it does not isolate Stopwatch cost or
+establish an individual player p99 or IL2CPP precision claim.
+
+| Identity                        | Value                                                                                                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release                         | [Immutable s338 clock evidence prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-s338-editor-clock-batch-control-r1-6f6df9ec)            |
+| Release ID                      | `390880898`                                                                                                                                                                        |
+| Asset                           | [s338 clock archive](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-s338-editor-clock-batch-control-r1-6f6df9ec/s338-editor-clock-r1.tar.gz) |
+| Exact asset name                | `s338-editor-clock-r1.tar.gz`                                                                                                                                                      |
+| Asset ID and size               | `570629904`, 3,846 bytes                                                                                                                                                           |
+| Archive SHA-256                 | `1aa797afbb89c77f3c3210e848918bbd79bef8935f30799d276a9b60e159b8ac`                                                                                                                 |
+| Manifest SHA-256                | `6f6df9ec760fc4d11d15b3ec3d37719a44c36ece4a166bcbb38477a3aaeb2f80`                                                                                                                 |
+| Bundle digest                   | `c15a9149e53d8ed5a19122586d262be2a315c10f75493830e191a4807746a31b`                                                                                                                 |
+| Measured source                 | `2ac9e191a21bbd594f3c543b6b73d6b4eeab9e7d`                                                                                                                                         |
+| Verifier and release tag commit | `f22d7ab35c214a23b3332b5ffcb67a74b30a6252`                                                                                                                                         |
+| Reducer                         | `editor-latency-clock-capture-v1`                                                                                                                                                  |
+
+Each draft contained exactly its one named asset. Fresh draft downloads matched the archive and
+manifest hashes, and clean remote verifier clones with `npm ci --ignore-scripts` passed `verify`
+and `replay` before publication. The published releases each reported `draft: false`,
+`prerelease: true`, and `immutable: true`; both tags resolve to the verifier commit, and their
+asset API digests match the index. A separate fresh verifier clone restored both anonymous
+postpublication downloads with clean status and exact replay. Each archive has seven declared
+regular files, a manifest, and one directory entry; paths are relative, ownership and timestamps
+are normalized, and there are no links or special files. A denied-access request to each actual
+asset API ID with invalid credentials returned HTTP 401 and `curl --fail` exit 22, produced no
+file, and did not start verification or replay. Static CI run
+[35246207564](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/35246207564)
+passed the reducer suites on Linux, macOS, and Windows at the verifier commit. This CI run tests
+the code on those operating systems; the independent archive restore was performed in a fresh
+Linux reviewer environment.
