@@ -192,11 +192,12 @@ Two public APIs reclaim synchronously:
 - `MessageHandler.TrimAll(bool force = false)` is the convenience entry point
   for the global bus.
 
-When `force` is true, the sweep ignores the idle threshold and reclaims every
-empty candidate immediately, including draining shared collection pools to
-zero. When `force` is false, the explicit call uses the same idle threshold as
-the sweep cadence, so it acts as an opportunistic top-up rather than a
-heavy-handed flush.
+When `force` is true, the sweep ignores the idle threshold and drains shared
+collection pools to zero. Empty storage still used by an active dispatch snapshot
+remains scheduled for a later sweep or trim after that emission ends.
+When `force` is false, the explicit call uses the same idle threshold as the
+sweep cadence. It also preserves in-flight storage for later cleanup, even when
+that storage has already passed the idle threshold.
 
 Both APIs return a `TrimResult` so callers can log or assert what was
 reclaimed. The master switch `EnableTrimApi` controls whether explicit trim
@@ -296,10 +297,9 @@ typical verification pattern:
 1. Snapshot `OccupiedTypeSlots` and `OccupiedTargetSlots` at the start of a
    scoped operation.
 1. Run the operation.
-1. Call `Trim(force: true)` so empty slots are reset.
-1. Compare the post-trim counters against the snapshot. Any difference
-   represents registrations that survived the operation; either intentional
-   or a leak.
+1. Call `Trim(force: true)` outside dispatch so empty slots can be reset.
+1. Compare the post-trim counters against the snapshot. A difference can reveal
+   registrations or retained empty storage that survived the operation.
 
 The `TrimResult.LiveTypeSlotsRemaining` field is identical to a post-trim
 read of `OccupiedTypeSlots` and is the cheaper option when you have just

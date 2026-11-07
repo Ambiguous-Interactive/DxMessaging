@@ -2298,7 +2298,10 @@ namespace DxMessaging.Core.MessageBus
                         out HandlerCache<int, HandlerCache> handlers
                     )
                     && handlers.handlers.Count == 0
-                    && !IsIdleForSweep(handlers.lastTouchTicks, force: false)
+                    && (
+                        HasActiveDispatchSnapshot(handlers.dispatchState)
+                        || !IsIdleForSweep(handlers.lastTouchTicks, force: false)
+                    )
                 )
                 {
                     return true;

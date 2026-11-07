@@ -50,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep empty listener storage eligible for later cleanup when ordinary trim runs during dispatch
+  ([#715](https://github.com/Ambiguous-Interactive/DxMessaging/issues/715)).
+
 - Release unrelated interceptor targets when resetting the default bus while an old registration
   handle is retained ([#712](https://github.com/Ambiguous-Interactive/DxMessaging/issues/712)).
 

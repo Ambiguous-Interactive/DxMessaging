@@ -361,5 +361,9 @@
       Include="../Tests/Runtime/MemoryReclaim/EqualOwnerHandlerResetTests.cs"
       Link="EqualOwnerHandlerResetTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/InFlightIdleSweepTests.cs"
+      Link="InFlightIdleSweepTests.cs"
+    />
   </ItemGroup>
 </Project>
