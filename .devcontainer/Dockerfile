@@ -391,7 +391,7 @@ RUN npm install --global --prefix /usr/local \
         opencode-ai@latest \
         @nanocollective/nanocoder@latest \
         @z_ai/mcp-server@latest \
-        mcp-remote@0.16.1 \
+        mcp-remote@0.16.5 \
         --no-fund \
         --no-audit \
     && codex --version \
