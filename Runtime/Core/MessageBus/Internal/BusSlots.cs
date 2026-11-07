@@ -16,17 +16,16 @@ namespace DxMessaging.Core.MessageBus.Internal
     /// separate per-kind dispatch state fields
     /// (<see cref="untargetedDispatchState"/>,
     /// <see cref="targetedDispatchState"/>,
-    /// <see cref="broadcastDispatchState"/>). The discrete fields keep the
-    /// per-emission slot select branch-free under JIT monomorphization,
-    /// avoiding the dictionary lookup the legacy non-generic
-    /// <c>HandlerCache</c> imposed.
+    /// <see cref="broadcastDispatchState"/>). The dedicated fields avoid the
+    /// per-kind dictionary lookup used by the legacy non-generic
+    /// <c>HandlerCache</c>. Generated code and cost depend on the backend.
     /// </para>
     /// </remarks>
     internal sealed class BusGlobalSlot
     {
         /// <summary>
-        /// Live global handlers, keyed by handler with insertion order tracked
-        /// via the integer payload. Mirrors the legacy non-generic
+        /// Live global handlers, keyed by handler. Each integer payload is that
+        /// handler's registration reference count. Mirrors the legacy non-generic
         /// <c>HandlerCache.handlers</c> field.
         /// </summary>
         public readonly Dictionary<MessageHandler, int> sharedHandlers = new();
@@ -66,10 +65,8 @@ namespace DxMessaging.Core.MessageBus.Internal
 
         /// <summary>
         /// Dispatch state for the Untargeted-global emission path. One of the
-        /// three discrete per-kind fields. Separate slots over a per-kind
-        /// dictionary keep the per-emission
-        /// select branch-free under JIT monomorphization. Lazy alloc on first
-        /// Stage/Acquire; null after Reset().
+        /// three dedicated per-kind fields. Created lazily by Stage/Acquire;
+        /// null after Clear() or Reset().
         /// </summary>
         public MessageBus.DispatchState untargetedDispatchState;
 
