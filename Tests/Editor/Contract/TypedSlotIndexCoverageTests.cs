@@ -10,6 +10,9 @@ namespace DxMessaging.Tests.Editor.Contract
     using DxMessaging.Core.Messages;
     using DxMessaging.Core.Pooling;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
     /// <summary>
     /// Contract guardrails for the per-message-type slot-index tables:
@@ -31,6 +34,10 @@ namespace DxMessaging.Tests.Editor.Contract
     /// <c>InternalsVisibleTo</c> declarations on
     /// <c>WallstopStudios.DxMessaging.Tests.Editor</c> let the tests reach
     /// it directly.
+    /// </para>
+    /// <para>
+    /// 2026-11-07: Portable NUnit 5 retains the original contract assertions.
+    /// Conditional classic aliases preserve the Unity assertion API where required.
     /// </para>
     /// </remarks>
     [TestFixture]

@@ -6,6 +6,22 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile
+      Include="../Tests/Editor/Contract/TypedSlotIndexCoverageTests.cs"
+      Link="TypedSlotIndexCoverageTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/RegistrationMethodAxisCoverageTests.cs"
+      Link="RegistrationMethodAxisCoverageTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/StaleOverDeregistrationTests.cs"
+      Link="StaleOverDeregistrationTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/MessageCacheStorageTests.cs"
+      Link="MessageCacheStorageTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/DifferentialBusTraceTests.cs"
       Link="DifferentialBusTraceTests.cs"
     />
