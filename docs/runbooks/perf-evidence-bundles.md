@@ -623,7 +623,7 @@ supported-version matrix, player performance, allocation-recorder, leak, or OOM-
 | Independent restore     | New published-asset download; full archive/manifest digests, inventory and identity match; normalized replay identical; verifier checkout remains clean                                                               |
 | Original source restore | All 12 original overlay source hashes match a separate checkout of the measured commit, including the one scrubbed source excerpt                                                                                     |
 | Denied access           | Actual required asset `619463560` returned HTTP 401 and retrieval exit 1 with isolated invalid authentication; no fallback; experiment remained incomplete in that context                                            |
-| Verifier CI             | [All 17 static jobs succeeded at the verifier commit](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/37666819976)                                                                                  |
+| Verifier CI             | [Historical 17-job success recorded at the verifier commit](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613#issuecomment-6044423075); run `37666819976` page is unavailable                           |
 
 The full ordinary Editor suite passed 975 leaves, including all 13 imported sample quality cases.
 The postprocessor negative control retains three expected failures; candidate import tests passed.
