@@ -44,6 +44,24 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 isEnabledByDefault: true
             );
 
+        private static readonly DiagnosticDescriptor PrimaryConstructorDiagnostic = new(
+            id: "DXMSG012",
+            title: "Cannot infer primary constructor arguments",
+            messageFormat: "Type '{0}' declares a primary constructor with parameters. To choose its arguments explicitly, remove DxAutoConstructor and write the field constructor with a this(...) initializer.",
+            category: "DxMessaging",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true
+        );
+
+        private static readonly DiagnosticDescriptor RecordCopyConstructorDiagnostic = new(
+            id: "DXMSG013",
+            title: "Field constructor conflicts with record copy constructor",
+            messageFormat: "Type '{0}' has a field constructor with the same signature as its record copy constructor. Remove DxAutoConstructor and use an init-only property or a construction API with a different signature.",
+            category: "DxMessaging",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true
+        );
+
         private const string AutoGenConstructorAttrFullName =
             "DxMessaging.Core.Attributes.DxAutoConstructorAttribute";
 
@@ -262,11 +280,52 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     }
                 }
 
+                if (
+                    typeInfo.TypeSymbol.TypeKind == TypeKind.Class
+                    && IsRecordDeclaration(typeInfo.TypeSymbol)
+                    && typeInfo.FieldsToInject.Count == 1
+                    && SymbolEqualityComparer.Default.Equals(
+                        typeInfo.FieldsToInject[0].Type,
+                        typeInfo.TypeSymbol
+                    )
+                )
+                {
+                    context.ReportDiagnostic(
+                        Diagnostic.Create(
+                            RecordCopyConstructorDiagnostic,
+                            typeInfo.DeclarationSyntax.Identifier.GetLocation(),
+                            typeInfo.TypeSymbol.ToDisplayString(
+                                SymbolDisplayFormat.MinimallyQualifiedFormat
+                            )
+                        )
+                    );
+                    continue;
+                }
+
+                ParameterListSyntax? primaryParameters = GetPrimaryConstructorParameters(
+                    typeInfo.TypeSymbol,
+                    context.CancellationToken
+                );
+                if (primaryParameters != null && 0 < primaryParameters.Parameters.Count)
+                {
+                    context.ReportDiagnostic(
+                        Diagnostic.Create(
+                            PrimaryConstructorDiagnostic,
+                            typeInfo.DeclarationSyntax.Identifier.GetLocation(),
+                            typeInfo.TypeSymbol.ToDisplayString(
+                                SymbolDisplayFormat.MinimallyQualifiedFormat
+                            )
+                        )
+                    );
+                    continue;
+                }
+
                 // Generate the partial class/struct with the constructor
                 string? generatedSource = GenerateConstructorSource(
                     context.Compilation,
                     typeInfo,
-                    context
+                    context,
+                    hasEmptyPrimaryConstructor: primaryParameters != null
                 );
                 if (generatedSource == null)
                 {
@@ -284,10 +343,41 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             }
         }
 
+        /// <summary>
+        /// Finds primary constructor syntax across every partial declaration of the target type.
+        /// </summary>
+        private static ParameterListSyntax? GetPrimaryConstructorParameters(
+            INamedTypeSymbol typeSymbol,
+            CancellationToken cancellationToken
+        )
+        {
+            foreach (SyntaxReference syntaxReference in typeSymbol.DeclaringSyntaxReferences)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (
+                    syntaxReference.GetSyntax(cancellationToken)
+                    is TypeDeclarationSyntax declaration
+                )
+                {
+                    /* Inspect direct syntax children to recognize newer primary-constructor
+                     * declarations while using Unity's Roslyn 3.8 API surface. */
+                    foreach (SyntaxNode child in declaration.ChildNodes())
+                    {
+                        if (child is ParameterListSyntax parameters)
+                        {
+                            return parameters;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
         private static string? GenerateConstructorSource(
             Compilation compilation,
             TypeToGenerateInfo typeInfo,
-            GeneratorExecutionContext spc
+            GeneratorExecutionContext spc,
+            bool hasEmptyPrimaryConstructor
         )
         {
             INamedTypeSymbol typeSymbol = typeInfo.TypeSymbol;
@@ -409,7 +499,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 bool requiresUnsafeContext,
                 bool useDefaultInitializer,
                 bool unsupportedInitialization
-            ) = AppendStructInitialization(compilation, typeSymbol, constructorBody);
+            ) = hasEmptyPrimaryConstructor
+                ? (false, true, false)
+                : AppendStructInitialization(compilation, typeSymbol, constructorBody);
             if (unsupportedInitialization)
             {
                 spc.ReportDiagnostic(

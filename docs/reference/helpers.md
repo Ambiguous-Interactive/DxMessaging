@@ -112,7 +112,8 @@ public VideoSettingsChanged(int width, int height)
 **Fixed in v4.0.0:** Generated struct constructors also initialize excluded
 instance fields and auto-property backing storage to their type defaults. Existing
 field, auto-property, and field-like event initializers retain their values and
-execute once. User parameterless constructors are not invoked.
+execute once. For types without a primary constructor, user parameterless constructors
+are not invoked.
 
 For example, this constructor takes only `amount`; `PreviousAmount` starts at zero:
 
@@ -134,6 +135,23 @@ fields, or remove `[DxAutoConstructor]` and write the constructor yourself.
 [`DXMSG011`](analyzers.md#dxmsg011-cannot-preserve-explicit-interface-struct-initializers)
 identifies this combination. This restriction does not affect classes or C# 11
 or later language versions. It does not change the supported Unity floor.
+
+**Fixed in v4.0.0:** A type whose primary constructor takes parameters now receives
+[`DXMSG012`](analyzers.md#dxmsg012-cannot-infer-primary-constructor-arguments)
+instead of an invalid generated secondary constructor. Remove `[DxAutoConstructor]`
+and write the constructor with an explicit `this(...)` chain to supply the primary
+constructor arguments. For an empty primary parameter list, the generator adds the
+required `this()` chain automatically. No diagnostic is needed when the type has no public instance fields.
+Ordinary non-positional records and nested types inside positional containers remain supported.
+
+**Breaking change in v4.0.0:** A record class with one public field of its own
+record type receives
+[`DXMSG013`](analyzers.md#dxmsg013-field-constructor-conflicts-with-record-copy-constructor).
+That constructor signature belongs to the record copy constructor. Earlier versions
+could silently change `with` results for sealed records. Remove `[DxAutoConstructor]`
+and use an init-only property with an object initializer, or write a construction
+API with a different signature. Ordinary classes and record constructors with other
+field types or multiple fields retain their behavior.
 
 ### 3. `[DxOptionalParameter]` - Optional Constructor Parameters
 

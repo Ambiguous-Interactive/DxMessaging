@@ -8,18 +8,20 @@ DxMessaging ships source generators and a Roslyn analyzer that report authoring 
 
 ## Quick reference table
 
-| ID                                                                             | Severity | Title                                                                                 | Source                                  |
-| ------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------- | --------------------------------------- |
-| [`DXMSG002`](#dxmsg002-multiple-message-attributes)                            | Error    | Multiple Message Attributes                                                           | `DxMessageIdGenerator`                  |
-| [`DXMSG003`](#dxmsg003-containing-type-must-be-partial-for-nested-generation)  | Warning  | Containing type must be partial for nested generation                                 | both generators                         |
-| [`DXMSG004`](#dxmsg004-add-partial-keyword-to-containing-type)                 | Info     | Add 'partial' keyword to containing type                                              | both generators                         |
-| [`DXMSG005`](#dxmsg005-invalid-optional-default-value)                         | Error    | Invalid optional default value                                                        | `DxAutoConstructorGenerator`            |
-| [`DXMSG006`](#dxmsg006-missing-base-call)                                      | Warning  | Missing `base.{method}()` call                                                        | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG007`](#dxmsg007-new-hides-unity-method)                                 | Warning  | Unity lifecycle method hidden with `new`                                              | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG008`](#dxmsg008-opt-out-marker)                                         | Info     | Type opted out of base-call check                                                     | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG009`](#dxmsg009-implicit-hide-and-missing-modifier)                     | Warning  | Method implicitly hides MessageAwareComponent lifecycle method (no `override`/`new`)  | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG010`](#dxmsg010-broken-transitive-base-call-chain)                      | Warning  | `base.{method}()` chains into an override that does not reach `MessageAwareComponent` | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG011`](#dxmsg011-cannot-preserve-explicit-interface-struct-initializers) | Error    | Cannot preserve explicit-interface struct initializers                                | `DxAutoConstructorGenerator`            |
+| ID                                                                               | Severity | Title                                                                                 | Source                                  |
+| -------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------- | --------------------------------------- |
+| [`DXMSG002`](#dxmsg002-multiple-message-attributes)                              | Error    | Multiple Message Attributes                                                           | `DxMessageIdGenerator`                  |
+| [`DXMSG003`](#dxmsg003-containing-type-must-be-partial-for-nested-generation)    | Warning  | Containing type must be partial for nested generation                                 | both generators                         |
+| [`DXMSG004`](#dxmsg004-add-partial-keyword-to-containing-type)                   | Info     | Add 'partial' keyword to containing type                                              | both generators                         |
+| [`DXMSG005`](#dxmsg005-invalid-optional-default-value)                           | Error    | Invalid optional default value                                                        | `DxAutoConstructorGenerator`            |
+| [`DXMSG006`](#dxmsg006-missing-base-call)                                        | Warning  | Missing `base.{method}()` call                                                        | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG007`](#dxmsg007-new-hides-unity-method)                                   | Warning  | Unity lifecycle method hidden with `new`                                              | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG008`](#dxmsg008-opt-out-marker)                                           | Info     | Type opted out of base-call check                                                     | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG009`](#dxmsg009-implicit-hide-and-missing-modifier)                       | Warning  | Method implicitly hides MessageAwareComponent lifecycle method (no `override`/`new`)  | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG010`](#dxmsg010-broken-transitive-base-call-chain)                        | Warning  | `base.{method}()` chains into an override that does not reach `MessageAwareComponent` | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG011`](#dxmsg011-cannot-preserve-explicit-interface-struct-initializers)   | Error    | Cannot preserve explicit-interface struct initializers                                | `DxAutoConstructorGenerator`            |
+| [`DXMSG012`](#dxmsg012-cannot-infer-primary-constructor-arguments)               | Error    | Cannot infer primary constructor arguments                                            | `DxAutoConstructorGenerator`            |
+| [`DXMSG013`](#dxmsg013-field-constructor-conflicts-with-record-copy-constructor) | Error    | Field constructor conflicts with record copy constructor                              | `DxAutoConstructorGenerator`            |
 
 > All diagnostic IDs can be customised per project in `.editorconfig`. For example,
 > `dotnet_diagnostic.DXMSG006.severity = error` makes a missing base call a build error.
@@ -392,6 +394,85 @@ error and assume a constructor was generated.
 Classes and C# 11 or later language versions do not have this restriction. The supported Unity
 floor is unchanged. See the [constructor rules](helpers.md#2-dxautoconstructor---automatic-constructors)
 for the default initialization behavior of other struct state.
+
+---
+
+## DXMSG012: Cannot infer primary constructor arguments
+
+- **Severity:** Error
+- **Source:** `DxAutoConstructorGenerator`
+- **Available in:** v4.0.0
+- **Triggered when:** `[DxAutoConstructor]` requests a field constructor on a type
+  that declares a primary constructor with parameters, including on another partial declaration.
+  This includes positional records and, when the consumer compiler supports them,
+  primary-constructor classes and structs.
+
+### Fix
+
+Remove `[DxAutoConstructor]` and write the constructor with a `this(...)` initializer
+that supplies the primary constructor arguments your type requires. The generator
+cannot infer those values from its public-field parameters. It emits no constructor
+for this combination; suppressing the diagnostic does not create one.
+
+```csharp
+public partial record Packet(int Primary, string Name)
+{
+    public readonly int Extra;
+
+    public Packet(int primary, string name, int extra) : this(primary, name)
+    {
+        Extra = extra;
+    }
+}
+```
+
+For an empty primary parameter list, the generator adds the required `this()` chain
+automatically and preserves initializer values. A type with no public
+instance fields needs no generated field constructor and is not diagnosed.
+Non-positional records and nested types inside positional containers remain supported.
+The diagnostic does not change the supported Unity or C# floor.
+
+---
+
+## DXMSG013: Field constructor conflicts with record copy constructor
+
+- **Severity:** Error
+- **Source:** `DxAutoConstructorGenerator`
+- **Available in:** v4.0.0
+- **Triggered when:** A record class has exactly one public instance field whose
+  type is that same constructed record type. Nullable annotations do not distinguish
+  constructor signatures. The requested field constructor would replace the record
+  copy constructor used by `with` expressions.
+
+### Fix
+
+Remove `[DxAutoConstructor]` and choose a construction API with a different signature,
+or use an init-only property with an object initializer:
+
+```csharp
+#nullable enable
+public sealed record Packet
+{
+    public Packet? Next { get; init; }
+}
+
+public static class RecordExample
+{
+    public static bool Verify()
+    {
+        Packet leaf = new Packet();
+        Packet root = new Packet { Next = leaf };
+        Packet copy = root with { };
+        return ReferenceEquals(copy.Next, leaf);
+    }
+}
+```
+
+The generator emits no constructor for this combination. Earlier versions could
+silently change `with` results for sealed records or emit compiler errors for other
+record declarations. Ordinary classes, other field types, and constructors with
+multiple public fields are unaffected. Record structs do not use record-class copy
+constructors. The supported Unity and C# floor is unchanged.
 
 ---
 

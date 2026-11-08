@@ -65,8 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filtered clearing ([#708](https://github.com/Ambiguous-Interactive/DxMessaging/issues/708)).
 - Preserve consumer caller frames in diagnostic stack traces when source paths contain
   DxMessaging namespace text ([#707](https://github.com/Ambiguous-Interactive/DxMessaging/issues/707)).
+- **BREAKING:** Reject record field constructors that replace the record copy constructor and
+  can silently change `with` results. Choose a distinct construction API as described in the
+  [migration guide](docs/guides/migration-guide.md#preserve-record-copy-behavior)
+  ([#720](https://github.com/Ambiguous-Interactive/DxMessaging/issues/720)).
 - Initialize excluded struct fields and auto-properties in generated constructors while preserving
-  initializers and avoiding unintended constructor calls ([#706](https://github.com/Ambiguous-Interactive/DxMessaging/issues/706)).
+  initializers and avoiding unintended constructor calls. Chain empty primary constructors and
+  report an actionable diagnostic when primary parameters require explicit argument choices ([#706](https://github.com/Ambiguous-Interactive/DxMessaging/issues/706),
+  [#719](https://github.com/Ambiguous-Interactive/DxMessaging/issues/719)).
 - Preserve pointer constructor signatures and accept valid `null` pointer defaults
   ([#705](https://github.com/Ambiguous-Interactive/DxMessaging/issues/705)).
 - Prevent valid `nameof(...)` optional defaults from aborting constructor generation
