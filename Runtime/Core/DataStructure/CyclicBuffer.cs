@@ -11,6 +11,8 @@ namespace DxMessaging.Core.DataStructure
     /// <remarks>
     /// Maintains the most recent <see cref="Capacity"/> items, overwriting the oldest entries as new items are added.
     /// Provides efficient iteration in chronological order and supports simple remove/resize operations.
+    /// Removal callbacks may read this buffer. Recursive removal is rejected before using scratch storage.
+    /// Other callback writes remain applied but abort the outer removal when the callback returns.
     /// </remarks>
     [Serializable]
     internal sealed class CyclicBuffer<T> : IReadOnlyList<T>
@@ -76,8 +78,8 @@ namespace DxMessaging.Core.DataStructure
         private readonly List<T> _buffer;
         private readonly List<T> _cache;
         private int _position;
-
-        internal int ScratchCacheCount => _cache.Count;
+        private int _version;
+        private bool _removalActive;
 
         /// <summary>
         /// Accesses the element at the specified chronological index (0 = oldest).
@@ -93,6 +95,10 @@ namespace DxMessaging.Core.DataStructure
             {
                 BoundsCheck(index);
                 _buffer[AdjustedIndexFor(index)] = value;
+                unchecked
+                {
+                    ++_version;
+                }
             }
         }
 
@@ -164,6 +170,10 @@ namespace DxMessaging.Core.DataStructure
             {
                 ++Count;
             }
+            unchecked
+            {
+                ++_version;
+            }
         }
 
         /// <summary>
@@ -174,6 +184,7 @@ namespace DxMessaging.Core.DataStructure
         /// <returns>True if an element was removed.</returns>
         public bool Remove(T element, IEqualityComparer<T> comparer = null)
         {
+            EnsureRemovalAvailable();
             if (Count == 0)
             {
                 return false;
@@ -181,6 +192,8 @@ namespace DxMessaging.Core.DataStructure
 
             comparer ??= EqualityComparer<T>.Default;
 
+            _removalActive = true;
+            int version = _version;
             _cache.Clear();
             try
             {
@@ -193,7 +206,9 @@ namespace DxMessaging.Core.DataStructure
                 bool removed = false;
                 for (int i = 0; i < _cache.Count; ++i)
                 {
-                    if (comparer.Equals(_cache[i], element))
+                    bool matches = comparer.Equals(_cache[i], element);
+                    EnsureUnchangedDuringCallback(version);
+                    if (matches)
                     {
                         _cache.RemoveAt(i);
                         removed = true;
@@ -212,6 +227,7 @@ namespace DxMessaging.Core.DataStructure
             finally
             {
                 _cache.Clear();
+                _removalActive = false;
             }
         }
 
@@ -222,11 +238,14 @@ namespace DxMessaging.Core.DataStructure
         /// <returns>Number of elements removed.</returns>
         public int RemoveAll(Predicate<T> predicate)
         {
+            EnsureRemovalAvailable();
             if (Count == 0)
             {
                 return 0;
             }
 
+            _removalActive = true;
+            int version = _version;
             _cache.Clear();
             try
             {
@@ -235,18 +254,37 @@ namespace DxMessaging.Core.DataStructure
                     _cache.Add(_buffer[AdjustedIndexFor(i)]);
                 }
 
-                int removedCount = _cache.RemoveAll(predicate);
+                if (predicate == null)
+                {
+                    throw new ArgumentNullException(nameof(predicate));
+                }
+
+                int originalCount = _cache.Count;
+                int survivorCount = 0;
+                for (int i = 0; i < originalCount; ++i)
+                {
+                    T item = _cache[i];
+                    bool remove = predicate(item);
+                    EnsureUnchangedDuringCallback(version);
+                    if (!remove)
+                    {
+                        _cache[survivorCount++] = item;
+                    }
+                }
+                int removedCount = originalCount - survivorCount;
                 if (removedCount == 0)
                 {
                     return 0;
                 }
 
+                _cache.RemoveRange(survivorCount, removedCount);
                 RebuildFromCache();
                 return removedCount;
             }
             finally
             {
                 _cache.Clear();
+                _removalActive = false;
             }
         }
 
@@ -257,6 +295,10 @@ namespace DxMessaging.Core.DataStructure
             Count = _cache.Count;
             _position = Count < Capacity ? Count : 0;
             _cache.Clear();
+            unchecked
+            {
+                ++_version;
+            }
         }
 
         /// <summary>
@@ -268,6 +310,10 @@ namespace DxMessaging.Core.DataStructure
             _position = 0;
             _buffer.Clear();
             _cache.Clear();
+            unchecked
+            {
+                ++_version;
+            }
         }
 
         /// <summary>
@@ -287,6 +333,10 @@ namespace DxMessaging.Core.DataStructure
             }
 
             Capacity = newCapacity;
+            unchecked
+            {
+                ++_version;
+            }
 
             // Normalize underlying storage so the oldest element is at index 0.
             _buffer.Shift(-_position);
@@ -333,6 +383,26 @@ namespace DxMessaging.Core.DataStructure
                     (_position - 1L + longCapacity - (_buffer.Count - 1 - index)) % longCapacity
                 );
                 return adjustedIndex;
+            }
+        }
+
+        private void EnsureRemovalAvailable()
+        {
+            if (_removalActive)
+            {
+                throw new InvalidOperationException(
+                    "Cannot recursively remove from the same history buffer."
+                );
+            }
+        }
+
+        private void EnsureUnchangedDuringCallback(int version)
+        {
+            if (version != _version)
+            {
+                throw new InvalidOperationException(
+                    "History changed during a removal callback; the outer removal was not applied."
+                );
             }
         }
 

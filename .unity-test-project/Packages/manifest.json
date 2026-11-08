@@ -1,7 +1,8 @@
 {
   "dependencies": {
     "com.unity.ide.rider": "3.0.40",
-    "com.unity.ide.visualstudio": "2.0.28",
+    "com.unity.ide.visualstudio": "2.0.29",
+    "com.unity.ext.nunit": "2.0.5",
     "com.unity.test-framework": "1.4.6",
     "com.unity.test-framework.performance": "3.6.0",
     "com.wallstop-studios.dxmessaging": "file:../..",
@@ -17,7 +18,9 @@
     "com.unity.ugui": "1.0.0",
     "com.unity.modules.unitywebrequest": "1.0.0",
     "com.unity.modules.unitywebrequestwww": "1.0.0",
-    "com.unity.modules.assetbundle": "1.0.0"
+    "com.unity.modules.assetbundle": "1.0.0",
+    "com.unity.modules.physics": "1.0.0",
+    "com.unity.modules.physics2d": "1.0.0"
   },
   "scopedRegistries": [
     {

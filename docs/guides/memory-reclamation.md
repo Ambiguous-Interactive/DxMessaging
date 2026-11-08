@@ -21,6 +21,12 @@ recycled context map. Keeping that old value cannot pin unrelated registrations
 when another bus reuses the map. A handle can still retain its own handler or
 external state; discard consumed values when their lifecycle ends.
 
+**Fixed in v4.0.0:** `DxMessagingStaticState.Reset()` releases unrelated interceptor
+targets from the default bus even when a caller keeps an old interceptor handle.
+An active emission can retain its captured callbacks until that emission exits.
+The old handle can still retain its own callback target; discard it when its
+lifecycle ends. Public reset preserves registrations on a custom global bus.
+
 Disabled tokens retain their staged callbacks for the next `Enable()`. After a typed
 registration's teardown succeeds, the token releases that consumed cleanup value so
 later users of recycled typed context maps can collect. A failed teardown keeps its
@@ -70,6 +76,9 @@ Reclamation targets these kinds of state:
   Reset also clears typed caches for handlers whose final registration was
   already removed, dropping frozen callback references before sweep tracking
   is cleared. Reusing a handler after reset starts with fresh callback state.
+  Distinct `MessageHandler` instances can have equal owners and separate callback
+  storage. Default-bus reset clears each known instance's storage while preserving
+  their public owner-based equality.
 - **Registration history (4.0).** Each bus keeps at most `RegistrationLogCapacity`
   entries (1,024 by default). New entries overwrite the oldest. Records retain
   numeric owner identity without retaining Unity objects. Reading history
@@ -183,11 +192,12 @@ Two public APIs reclaim synchronously:
 - `MessageHandler.TrimAll(bool force = false)` is the convenience entry point
   for the global bus.
 
-When `force` is true, the sweep ignores the idle threshold and reclaims every
-empty candidate immediately, including draining shared collection pools to
-zero. When `force` is false, the explicit call uses the same idle threshold as
-the sweep cadence, so it acts as an opportunistic top-up rather than a
-heavy-handed flush.
+When `force` is true, the sweep ignores the idle threshold and drains shared
+collection pools to zero. Empty storage still used by an active dispatch snapshot
+remains scheduled for a later sweep or trim after that emission ends.
+When `force` is false, the explicit call uses the same idle threshold as the
+sweep cadence. It also preserves in-flight storage for later cleanup, even when
+that storage has already passed the idle threshold.
 
 Both APIs return a `TrimResult` so callers can log or assert what was
 reclaimed. The master switch `EnableTrimApi` controls whether explicit trim
@@ -287,10 +297,9 @@ typical verification pattern:
 1. Snapshot `OccupiedTypeSlots` and `OccupiedTargetSlots` at the start of a
    scoped operation.
 1. Run the operation.
-1. Call `Trim(force: true)` so empty slots are reset.
-1. Compare the post-trim counters against the snapshot. Any difference
-   represents registrations that survived the operation; either intentional
-   or a leak.
+1. Call `Trim(force: true)` outside dispatch so empty slots can be reset.
+1. Compare the post-trim counters against the snapshot. A difference can reveal
+   registrations or retained empty storage that survived the operation.
 
 The `TrimResult.LiveTypeSlotsRemaining` field is identical to a post-trim
 read of `OccupiedTypeSlots` and is the cheaper option when you have just

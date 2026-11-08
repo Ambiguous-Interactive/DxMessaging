@@ -18,7 +18,7 @@
 
 ## DxMessaging Attributes (Your Code Wizards)
 
-DxMessaging provides **3 main attributes** that use source generators to eliminate boilerplate:
+Use the attributes below to declare message types, generate constructors, and set optional defaults:
 
 ### 1. Message Type Attributes (Pick Your Message Category)
 
@@ -33,8 +33,8 @@ public readonly partial struct GamePaused { }
 
 ##### What it generates
 
-- Implements `IUntargetedMessage<GamePaused>`
-- Adds required plumbing for the message system
+- Implements `IUntargetedMessage`
+- Adds a `MessageType` property for the concrete message type
 - Makes it work with `.Emit()` extension methods
 
 #### `[DxTargetedMessage]` - Messages to Specific Targets
@@ -48,8 +48,8 @@ public readonly partial struct Heal {
 
 ##### What it generates
 
-- Implements `ITargetedMessage<Heal>`
-- Adds required plumbing for targeted emissions
+- Implements `ITargetedMessage`
+- Adds a `MessageType` property for the concrete message type
 - Makes it work with `.EmitGameObjectTargeted()` / `.EmitComponentTargeted()`
 
 #### `[DxBroadcastMessage]` - Messages from a Source
@@ -63,8 +63,8 @@ public readonly partial struct TookDamage {
 
 ##### What it generates
 
-- Implements `IBroadcastMessage<TookDamage>`
-- Adds required plumbing for broadcast emissions
+- Implements `IBroadcastMessage`
+- Adds a `MessageType` property for the concrete message type
 - Makes it work with `.EmitGameObjectBroadcast()` / `.EmitComponentBroadcast()`
 
 ### 2. `[DxAutoConstructor]` - Automatic Constructors
@@ -100,8 +100,40 @@ public VideoSettingsChanged(int width, int height)
 - Only includes `public` fields
 - Ignores `static` fields
 - Works with `readonly` structs (recommended!)
-- Supports nested types (types defined inside other classes/structs)
+- Supports nested types inside partial classes, structs, and invariant interfaces
 - Supports internal types (types with `internal` visibility)
+
+> **Fixed in v4.0.0:** Generated constructors retain the required unsafe context
+> for pointer parameters, preserve `void*` syntax, and accept valid `null` pointer
+> defaults. The consumer assembly must enable unsafe compilation. Function-pointer
+> signatures also need support from your Unity version and scripting backend; the
+> generator does not add that support.
+
+**Fixed in v4.0.0:** Generated struct constructors also initialize excluded
+instance fields and auto-property backing storage to their type defaults. Existing
+field, auto-property, and field-like event initializers retain their values and
+execute once. User parameterless constructors are not invoked.
+
+For example, this constructor takes only `amount`; `PreviousAmount` starts at zero:
+
+```csharp
+using DxMessaging.Core.Attributes;
+
+[DxAutoConstructor]
+public readonly partial struct DamageState
+{
+    public readonly int amount;
+    public int PreviousAmount { get; }
+}
+```
+
+When compiling as C# 10, a struct that mixes initialized and uninitialized explicit-interface
+auto-properties with a user parameterless constructor needs an explicit choice.
+Add an initializer to every explicit-interface auto-property, use named backing
+fields, or remove `[DxAutoConstructor]` and write the constructor yourself.
+[`DXMSG011`](analyzers.md#dxmsg011-cannot-preserve-explicit-interface-struct-initializers)
+identifies this combination. This restriction does not affect classes or C# 11
+or later language versions. It does not change the supported Unity floor.
 
 ### 3. `[DxOptionalParameter]` - Optional Constructor Parameters
 
@@ -157,6 +189,12 @@ var settings2 = new SettingsChanged(0.8f, 2);  // fullscreen=false, brightness=1
 var settings3 = new SettingsChanged(0.8f, 2, fullscreen: true);  // brightness=100
 var settings4 = new SettingsChanged(0.8f, 2, brightness: 50);    // fullscreen=false
 ```
+
+For a struct without an explicit parameterless constructor, `new Message()` and
+`default(Message)` initialize fields to zero, `false`, or `null`. They do not apply
+defaults from a generated constructor with optional parameters. Pass at least one
+argument, including a named argument, to select that constructor. A required field
+also makes this choice explicit at the call site.
 
 #### Supported Default Value Types
 
@@ -257,11 +295,31 @@ public readonly partial struct DefaultExamples
 }
 ```
 
+Optional defaults follow C# implicit constant conversions. For example, `[DxOptionalParameter(7)]`
+sets a `byte` field's default, and `[DxOptionalParameter(0)]` sets an enum field's default.
+Values must fit the field type. The `Expression` property follows the same conversion rules.
+The supplied constant keeps its numeric type: `[DxOptionalParameter(7)]` can default a `byte`
+field, but `[DxOptionalParameter(7.0)]` cannot. The latter is a `double` constant.
+
+Use constants such as `float.NaN`, `double.PositiveInfinity`, and `double.NegativeInfinity`
+as attribute arguments when these values are appropriate defaults. Signed zero keeps its sign.
+
+Constructor parameters retain nullable field annotations, including nullable array and list elements.
+Fields declared with nullable annotations disabled retain that caller contract.
+Parameters from enabled contexts keep their nullable or nonnullable checks.
+
+> **Changed in 4.0.0:** Generated constructors retain nullable annotations and preserve valid constant conversions, numeric types, non-finite defaults, and signed zero.
+
 #### Advanced: Custom Constant Expressions
 
 Use the `Expression` property for compile-time constants that cannot be passed directly to an attribute constructor, such as enum values or named constants. The expression is inserted verbatim into an optional constructor parameter, so ordinary C# optional-parameter rules still apply. Use `[DxOptionalParameter]` without an expression when a struct should use its default value.
 
+> **Fixed in v4.0.0:** Valid `nameof(...)` defaults no longer abort constructor generation on Roslyn 5.9. Composed expressions keep their C# constant values and conversion rules.
+
 ```csharp
+using DxMessaging.Core.Attributes;
+using UnityEngine;
+
 public enum DamageType
 {
     Physical,
@@ -297,6 +355,10 @@ public readonly partial struct AdvancedDefaults
     // Named constants from your code
     [DxOptionalParameter(Expression = "GameConstants.DefaultHealth")]
     public readonly int health;
+
+    // Symbol names
+    [DxOptionalParameter(Expression = "nameof(AdvancedDefaults)")]
+    public readonly string source;
 }
 ```
 
@@ -330,6 +392,9 @@ var critHeal = new Heal(50, true);         // isCritical = true
 #### Example 2: Multiple Optional Parameters
 
 ```csharp
+using DxMessaging.Core.Attributes;
+using UnityEngine;
+
 [DxBroadcastMessage]
 [DxAutoConstructor]
 public readonly partial struct SpawnEffect
@@ -348,7 +413,7 @@ public readonly partial struct SpawnEffect
 }
 
 // Usage:
-_ = new SpawnEffect();                                         // All defaults
+var defaultEffect = new SpawnEffect(scale: 1.0f);              // Annotated defaults
 var largeEffect = new SpawnEffect(2.5f);                        // Custom scale
 var redEffect = new SpawnEffect(1.0f, Color.red);               // Custom color
 var customEffect = new SpawnEffect(1.5f, Color.blue, 10f, true); // All custom
@@ -383,6 +448,9 @@ var fullEvent = new GameEvent("Achievement", 1, 500, "first_blood");
 #### Example 4: Game Settings Message
 
 ```csharp
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+
 [DxUntargetedMessage]
 [DxAutoConstructor]
 public readonly partial struct AudioSettingsChanged
@@ -401,6 +469,7 @@ public readonly partial struct AudioSettingsChanged
 }
 
 // Apply all defaults
+var audioSettings = new AudioSettingsChanged(masterVolume: 1.0f);
 audioSettings.Emit();
 
 // Only change music volume
@@ -435,11 +504,16 @@ public readonly partial struct Heal
 }
 ```
 
-### What the generator emits (for reference)
+### Resulting public type
+
+The handwritten fields and generated members form this type:
 
 ```csharp
-// Auto-generated by DxMessaging (no need to hand-write this)
-public readonly partial struct Heal : ITargetedMessage<Heal>
+using System;
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+
+public readonly partial struct Heal : IMessage, ITargetedMessage
 {
     public readonly int amount;
 
@@ -475,11 +549,16 @@ public readonly partial struct PlayerDamaged
 }
 ```
 
-### Generated Output (20 lines you never write)
+### Resulting public type
+
+The handwritten fields and generated members form this type:
 
 ```csharp
-// Auto-generated by DxMessaging (for reference only)
-public readonly partial struct PlayerDamaged : IBroadcastMessage<PlayerDamaged>
+using System;
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+
+public readonly partial struct PlayerDamaged : IMessage, IBroadcastMessage
 {
     public readonly int amount;
     public readonly string damageType;
@@ -504,11 +583,20 @@ public readonly partial struct PlayerDamaged : IBroadcastMessage<PlayerDamaged>
 
 ## Advanced: Manual Implementation (When Attributes Aren't Enough)
 
-Attributes cover almost every scenario. If you intentionally drop `[DxTargetedMessage]`, `[DxUntargetedMessage]`, or `[DxBroadcastMessage]`, you'll need to hand-write the interface implementations and constructors shown in the "generated output" examples. Keep the attributes unless you have a very specific data-backed reason not to.
+If you omit a route attribute, implement the route interface and provide
+`MessageType` yourself. You can use `[DxAutoConstructor]` independently to generate
+the constructor, or write it by hand.
 
-### Generic Message Interfaces (Zero-Boxing for Structs)
+### Generated and Manual Message Interfaces
 
-`readonly struct` messages marked with the attributes already implement the generic interfaces, so emissions stay allocation-free. You get the same performance characteristics as the manual approach without writing any plumbing.
+The message attributes generate `IMessage`, the non-generic route interface, and
+a concrete `MessageType` property. The bus and emission helpers use generic
+methods to pass struct messages by reference. Generated messages do not need a
+generic route interface for those calls.
+
+For a handwritten message, you can implement `IUntargetedMessage<T>`,
+`ITargetedMessage<T>`, or `IBroadcastMessage<T>`. Those interfaces provide
+`MessageType` through their default implementation.
 
 ```csharp
 [DxTargetedMessage]
@@ -883,12 +971,17 @@ public readonly partial struct MyMsg { }
 Source generators need to **add code to your type**. The `partial` keyword allows them to extend your struct/class in a separate file.
 
 ```csharp
+using System;
+using DxMessaging.Core;
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Messages;
+
 // Your file (MyMessage.cs)
 [DxUntargetedMessage]
 public readonly partial struct MyMessage { }
 
 // Generated file (MyMessage.g.cs - auto-created!)
-public readonly partial struct MyMessage : IUntargetedMessage<MyMessage>
+public readonly partial struct MyMessage : IMessage, IUntargetedMessage
 {
     public Type MessageType => typeof(MyMessage);
 }
@@ -898,13 +991,14 @@ public readonly partial struct MyMessage : IUntargetedMessage<MyMessage>
 
 ### "Can I see the generated code?"
 
-**Yes!** In Visual Studio/Rider:
+Use your IDE's generated-source view when available. Visual Studio exposes
+generator output under the project's analyzer dependencies. Navigation to a
+generated member can also open its generated declaration.
 
-1. Right-click on the message type
-1. Select "Go to Implementation" or "Go to Definition"
-1. You'll see the auto-generated file
-
-**Or** check your `obj/` folder for `.g.cs` files.
+A missing `.g.cs` file on disk does not prove that generation failed. In .NET SDK
+projects, writing those files requires
+[`EmitCompilerGeneratedFiles`](https://learn.microsoft.com/en-us/dotnet/core/project-sdk/msbuild-props#emitcompilergeneratedfiles).
+For Unity compilation failures, start with the Console diagnostics below.
 
 ### "What if I want custom constructor logic?"
 
@@ -948,59 +1042,55 @@ public readonly partial struct MessageA
 
 ## Troubleshooting Source Generators
 
-> **Warning: Attributes not working / code not generated**
->
-> ### Checklist
->
-> 1. Is type marked `partial`?
-> 1. Did you rebuild the project?
-> 1. Is Unity 2021.3+ (Roslyn source generator support)?
-> 1. Check `obj/` folder for `.g.cs` files
->
-> #### Fix
->
-> ```csharp
-> //  Missing partial, will not compile
-> [DxAutoConstructor]
-> public readonly struct MyMsg { }
->
-> ```
->
-> ```csharp
-> //  Correct
-> [DxAutoConstructor]
-> public readonly partial struct MyMsg { }
-> ```
->
-> **Warning: Constructor not generated**
->
-> **Cause:** No public fields to generate from
->
-> ```csharp
-> //  No public fields
-> [DxAutoConstructor]
-> public readonly partial struct Empty { }
->
-> //  Has public field
-> [DxAutoConstructor]
-> public readonly partial struct WithData {
->     public readonly int value;
-> }
-> ```
->
-> **Warning: Unity can't find generated code**
->
-> ##### Solution
->
-> 1. Close Unity
-> 1. Delete `Library/` folder
-> 1. Reopen Unity
-> 1. Let it reimport everything
+Start with the first compiler error in Unity's Console. Confirm the installed
+DxMessaging version and use a [supported Unity version](compatibility.md).
+
+### Missing interfaces or MessageType
+
+Apply the matching route attribute and mark the message declaration `partial`.
+Every containing declaration must also be `partial` for a nested message.
+`DXMSG003` identifies a non-partial containing type. A handwritten implementation
+without generator attributes does not need `partial` unless you split its
+declaration across files.
+
+### Missing constructor
+
+`[DxAutoConstructor]` uses public instance fields in declaration order. Static
+fields and properties do not become constructor parameters. A type with no
+public instance fields gets no generated field constructor.
+
+```csharp
+using DxMessaging.Core.Attributes;
+
+[DxAutoConstructor]
+public readonly partial struct WithData
+{
+    public readonly int value;
+}
+
+```
+
+`new WithData(42)` calls the generated constructor and sets `value` to `42`.
+
+### Missing Emit or handler methods
+
+`Emit` helpers are extension methods in `DxMessaging.Core.Extensions`; import
+that namespace and implement the matching route contract. The generators do not
+create emission or handler methods. See the
+[emission troubleshooting steps](troubleshooting.md#source-generator-did-not-generate-emit-or-handler-methods).
+
+### Reporting a compiler failure
+
+After fixing the first diagnostic, let Unity finish recompiling. If generation
+still fails, keep the compiler output and prepare a minimal message declaration,
+including any containing types. Include the Unity version, DxMessaging version,
+first diagnostic and declaration in a
+[bug report](https://github.com/Ambiguous-Interactive/DxMessaging/issues/new?template=bug_report.yml).
 
 ## Related Documentation
 
 - **[API Reference](reference.md)** -- Complete API documentation
-- **[Message Types](../concepts/message-types.md)** -- When to use Untargeted/Targeted/Broadcast
+- **[Message Types](../concepts/message-types.md)** -- When to use untargeted, targeted, and broadcast messages
 - **[Quick Reference](quick-reference.md)** -- Cheat sheet
 - **[Design & Architecture](../architecture/design-and-architecture.md)** -- How source generation works internally
 

@@ -10,7 +10,13 @@
 
 ## Do I need an assembly definition for the source generator to work?
 
-- No. The source generator and analyzers run for code in Unity's default `Assembly-CSharp` and in your own assembly definitions alike, so you do not need to add an `.asmdef` just to get generation. Mark the message type `partial` and apply a `[DxUntargetedMessage]` / `[DxTargetedMessage]` / `[DxBroadcastMessage]` attribute (or implement the matching `I*Message` interface). If generated members are missing, see [Troubleshooting](troubleshooting.md#source-generator-did-not-generate-emit-or-handler-methods).
+No. The package's generators reach Unity's default `Assembly-CSharp` and
+assemblies that reference DxMessaging. Apply a route attribute and mark the
+message and its containing declarations `partial` when you want generated
+members. A handwritten route-interface implementation without generator
+attributes does not require `partial`. See
+[Troubleshooting](troubleshooting.md#source-generator-did-not-generate-emit-or-handler-methods)
+for missing interfaces, constructors or emission helpers.
 
 ## Which message type should I use?
 
@@ -20,7 +26,23 @@
 
 ## Does DxMessaging allocate memory? Is dispatch zero-GC?
 
-- Ordinary typed steady-state dispatch is allocation-free: emitting a struct message and invoking a typed registered handler allocates nothing after the first warm-up emit of that message type (a one-time JIT cost in the editor that IL2CPP precompiles away). The readonly by-reference (`FastHandler`) handler overloads also avoid copying the struct on each call; the by-value `Action<T>` overloads add one struct copy per dispatch but still do not allocate. Heap allocations come from constructing a class message instance. A struct message is boxed when it reaches a global accept-all handler or when user code upcasts it to a non-generic interface. Emission-site stack-trace capture also allocates while enabled. Registration itself allocates a small, bounded amount per handler (delegates and dictionary entries), so register handlers in `Awake`/setup rather than every frame. See [Performance](../architecture/performance.md) for measured numbers and [Troubleshooting](troubleshooting.md#allocations-and-boxing) if you observe unexpected allocations.
+Ordinary typed steady-state struct dispatch has a regression contract of zero managed
+allocations. This assumes the selected route, registrations, callbacks and required buffers have
+warmed up and stay stable. A first message of a type is not a universal warmup boundary. Adding
+registrations can invalidate cached snapshots; a later emission may build a new snapshot or
+interceptor array after that message type has already emitted. Compiling with IL2CPP does not
+remove those data structures.
+
+The readonly by-reference (`FastHandler`) overloads pass the struct by reference. The by-value
+`Action<T>` overloads pass a value copy; copying a struct does not itself box it. Constructing a
+class message allocates its instance. A struct is boxed when it reaches a global accept-all
+handler or user code upcasts it to a non-generic interface. Emission-site stack-trace capture
+allocates while enabled. User callbacks can also allocate independently of the bus.
+
+Registration and deregistration have separate allocation and retained memory costs. Register
+long-lived subscriptions during setup instead of recreating them every frame. See
+[Performance](../architecture/performance.md) for measured scenario results and
+[Troubleshooting](troubleshooting.md#allocations-and-boxing) for allocation checks.
 
 ## How do I enforce ordering?
 

@@ -24,34 +24,46 @@
 - DxMessaging installed via UPM
 - Zenject/Extenject installed (source or UPM)
 
+These examples require Zenject/Extenject. DxMessaging's `ZENJECT_PRESENT` Version
+Define applies to its integration assembly. Add your own assembly's Version Define
+if your application conditionally compiles framework-specific code; see
+[Unity's assembly definition rules](https://docs.unity3d.com/2021.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#define-symbols).
+
 ### 1. Create an Installer
 
 Create a `DxMessagingInstaller` to bind the message bus to your Zenject container:
 
 ```csharp
 using DxMessaging.Core.MessageBus;
+using DxMessaging.Unity.Integrations.Zenject;
 using Zenject;
+using ZenjectBusProvider = DxMessaging.Unity.Integrations.Zenject.DxMessagingRegistrationInstaller.ContainerMessageBusProvider;
 
 public sealed class DxMessagingInstaller : MonoInstaller
 {
     public override void InstallBindings()
     {
-        // Bind MessageBus as a singleton and expose IMessageBus interface
-        Container.BindInterfacesAndSelfTo<MessageBus>().AsSingle();
-
-        // Optional: Enable automatic IMessageRegistrationBuilder binding
-        // Requires ZENJECT_PRESENT define (auto-added by DxMessaging when Zenject detected)
-        #if ZENJECT_PRESENT
-        Container.RegisterMessageRegistrationBuilder();
-        #endif
+        Container.BindDxMessagingBus();
+        Container.Bind<IMessageRegistrationBuilder>()
+            .FromMethod(context => new MessageRegistrationBuilder(
+                new ZenjectBusProvider(
+                    context.Container,
+                    context.Container.Resolve<IMessageBus>()
+                )
+            ))
+            .AsTransient();
     }
 }
 ```
 
+The factory creates a builder backed by this container's resolved `IMessageBus`.
+`ZenjectBusProvider` is an alias for the existing provider type supplied by DxMessaging.
+Save the installer as `DxMessagingInstaller.cs`.
+
 #### Add to your ProjectContext
 
 1. Select (or create) your `ProjectContext` prefab
-1. Add `DxMessagingInstaller` as a MonoInstaller
+1. Add the `DxMessagingInstaller` component and add its reference to the context's installer list
 1. Save the prefab
 
 ---
@@ -63,6 +75,7 @@ public sealed class DxMessagingInstaller : MonoInstaller
 Use `IMessageRegistrationBuilder` to create message handlers in non-MonoBehaviour classes:
 
 ```csharp
+using System;
 using DxMessaging.Core.MessageBus;
 using DxMessaging.Core.Attributes;
 using DxMessaging.Core;
@@ -115,6 +128,8 @@ public sealed class PlayerController : IInitializable, IDisposable
 #### Register the service in your installer
 
 ```csharp
+using Zenject;
+
 public sealed class GameInstaller : MonoInstaller
 {
     public override void InstallBindings()
@@ -123,6 +138,10 @@ public sealed class GameInstaller : MonoInstaller
     }
 }
 ```
+
+Add `GameInstaller` to the same context's installer list. Its `IInitializable` and
+`IDisposable` bindings connect the service's lease activation and cleanup to that
+context's lifetime. See [Extenject's installer setup](https://github.com/Mathijs-Bakker/Extenject#hello-world-example).
 
 ---
 
@@ -140,34 +159,41 @@ using Zenject;
 public sealed class MessagingComponentConfigurator : MonoBehaviour
 {
     [Inject]
-    private IMessageBus _messageBus;
-
-    private void Awake()
+    public void Construct(IMessageBus messageBus)
     {
         MessagingComponent component = GetComponent<MessagingComponent>();
-        component.Configure(_messageBus, MessageBusRebindMode.RebindActive);
+        component.Configure(messageBus, MessageBusRebindMode.RebindActive);
     }
 }
 ```
 
 #### Usage
 
-1. Add `MessagingComponentConfigurator` alongside any `MessagingComponent` in your prefabs
-1. Zenject will inject the bus before `RegisterMessageHandlers` is called
-1. Your message handlers now use the container-managed bus
+1. Add `MessagingComponentConfigurator` beside each `MessagingComponent` that should use the bus.
+1. Add a configured `SceneContext` to the scene; its injection pass calls `Construct` before
+   ordinary scene `Awake` methods. Create runtime prefabs through Zenject's prefab factories so they
+   receive injection too.
+1. Keep component-specific bus/provider settings consistent with the container bus.
 
-**Alternative approach:** Extend `MessageAwareComponent` and override `Awake`:
+`MessageAwareComponent.Awake` stages registrations and `OnEnable` activates them. Configuring in a
+separate component's `Awake` would depend on their relative execution order. `RebindActive` can move
+existing registrations, but it does not replay messages emitted before configuration. Parameterless
+emission shorthands still select the global bus; pass the container bus explicitly when emitting.
+See [Extenject's context order](https://github.com/Mathijs-Bakker/Extenject#zenject-order-of-operations).
+
+Alternatively, derive from `MessageAwareComponent` and configure its bus during injection:
 
 ```csharp
-public class ZenjectAwareComponent : MessageAwareComponent
+using DxMessaging.Core.MessageBus;
+using DxMessaging.Unity;
+using Zenject;
+
+public sealed class ZenjectAwareComponent : MessageAwareComponent
 {
     [Inject]
-    private IMessageBus _messageBus;
-
-    protected override void Awake()
+    public void Construct(IMessageBus messageBus)
     {
-        Configure(_messageBus, MessageBusRebindMode.RebindActive);
-        base.Awake();
+        ConfigureMessageBus(messageBus, MessageBusRebindMode.RebindActive);
     }
 }
 ```
@@ -179,6 +205,14 @@ public class ZenjectAwareComponent : MessageAwareComponent
 For simple cases, inject `IMessageBus` and emit messages directly:
 
 ```csharp
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Core.MessageBus;
+using Zenject;
+
+[DxUntargetedMessage]
+public readonly partial struct GameStarted { }
+
 public sealed class GameInitializer : IInitializable
 {
     private readonly IMessageBus _messageBus;
@@ -190,10 +224,16 @@ public sealed class GameInitializer : IInitializable
 
     public void Initialize()
     {
-        var message = new GameStarted();
+        GameStarted message = new();
         _messageBus.EmitUntargeted(ref message);
     }
 }
+```
+
+To run it through the context's startup lifecycle, add this binding to an installer on that context:
+
+```csharp
+Container.BindInterfacesAndSelfTo<GameInitializer>().AsSingle();
 ```
 
 ---
@@ -203,9 +243,9 @@ public sealed class GameInitializer : IInitializable
 If you're gradually migrating from Zenject Signals to DxMessaging, you can create a bridge:
 
 ```csharp
-using DxMessaging.Core;
-using DxMessaging.Core.MessageBus;
 using System;
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.MessageBus;
 using Zenject;
 
 [DxUntargetedMessage]
@@ -217,48 +257,56 @@ public readonly partial struct SceneTransition
 
 public sealed class DxToSignalBridge : IInitializable, IDisposable
 {
-    private readonly IMessageBus _messageBus;
     private readonly SignalBus _signalBus;
-    private MessageRegistrationToken _token;
+    private readonly MessageRegistrationLease _lease;
 
-    public DxToSignalBridge(IMessageBus messageBus, SignalBus signalBus)
+    public DxToSignalBridge(
+        IMessageRegistrationBuilder registrationBuilder,
+        SignalBus signalBus
+    )
     {
-        _messageBus = messageBus;
         _signalBus = signalBus;
+        _lease = registrationBuilder.Build(new MessageRegistrationBuildOptions
+        {
+            Configure = token =>
+            {
+                _ = token.RegisterUntargeted<SceneTransition>(OnSceneTransition);
+            },
+        });
     }
 
     public void Initialize()
     {
-        // Create a handler to listen to DxMessaging events
-        var handler = new MessageHandler(new InstanceId(0), _messageBus)
-        {
-            active = true
-        };
-        _token = MessageRegistrationToken.Create(handler, _messageBus);
-
-        // Bridge DxMessaging -> Zenject Signals
-        _ = _token.RegisterUntargeted<SceneTransition>(OnSceneTransition);
-        _token.Enable();
+        _lease.Activate();
     }
 
     public void Dispose()
     {
-        _token?.Disable();
+        _lease.Dispose();
     }
 
     private void OnSceneTransition(in SceneTransition message)
     {
-        // Forward to SignalBus for legacy consumers
         _signalBus.Fire(message);
     }
 }
 ```
 
+The builder stages one subscription in the constructor. `Initialize()` activates the lease;
+repeated initialization keeps that same registration. `Dispose()` removes it, and initialization
+after disposal throws `ObjectDisposedException`. The bridge uses the builder's configured bus.
+
 ### Register the bridge in your installer
+
+Add these bindings to an installer on the same context as `DxMessagingInstaller`.
+Install Zenject's signal support once per context before declaring the signal. If another
+installer already installs `SignalBusInstaller`, keep that installation and add only the
+bridge binding and signal declaration below:
 
 ```csharp
 public override void InstallBindings()
 {
+    SignalBusInstaller.Install(Container);
     Container.BindInterfacesAndSelfTo<DxToSignalBridge>().AsSingle();
     Container.DeclareSignal<SceneTransition>();
 }
@@ -270,36 +318,34 @@ public override void InstallBindings()
 
 ### Unit Tests
 
+With `GameStarted` and `GameInitializer` from Pattern 3 in scope, test their emission with a fresh
+bus. This plain NUnit test calls `Initialize()` directly; it does not test Zenject context startup
+or Unity injection order.
+
 ```csharp
+using DxMessaging.Core;
 using DxMessaging.Core.MessageBus;
-using Zenject;
 using NUnit.Framework;
 
 [TestFixture]
-public class GameInitializerTests : ZenjectUnitTestFixture
+public sealed class GameInitializerTests
 {
     [Test]
-    public void Initialize_EmitsGameStarted()
+    public void InitializeEmitsGameStarted()
     {
-        // Arrange
-        var bus = new MessageBus();
-        Container.Bind<IMessageBus>().FromInstance(bus).AsSingle();
-        Container.BindInterfacesAndSelfTo<GameInitializer>().AsSingle();
-
+        MessageBus bus = new();
         bool messageReceived = false;
-        var handler = new MessageHandler(new InstanceId(1), bus) { active = true };
+        MessageHandler handler = new(new InstanceId(1), bus) { active = true };
         using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
         _ = token.RegisterUntargeted<GameStarted>(
-            (in GameStarted msg) => messageReceived = true
+            (in GameStarted message) => messageReceived = true
         );
         token.Enable();
 
-        // Act
-        var initializer = Container.Resolve<GameInitializer>();
+        GameInitializer initializer = new(bus);
         initializer.Initialize();
 
-        // Assert
-        Assert.IsTrue(messageReceived);
+        Assert.That(messageReceived, Is.True);
     }
 }
 ```
@@ -311,9 +357,9 @@ public class GameInitializerTests : ZenjectUnitTestFixture
 ### Initial Setup
 
 - [ ] Install DxMessaging and Zenject/Extenject
-- [ ] Create `DxMessagingInstaller` with `Container.BindInterfacesAndSelfTo<MessageBus>()`
-- [ ] Add installer to your `ProjectContext`
-- [ ] Add `#if ZENJECT_PRESENT` check and call `Container.RegisterMessageRegistrationBuilder()`
+- [ ] Create `DxMessagingInstaller` with `Container.BindDxMessagingBus()` and the builder factory above
+- [ ] Add the installer component to your `ProjectContext` and its installer list
+- [ ] Import `DxMessaging.Unity.Integrations.Zenject` and bind `IMessageRegistrationBuilder`
 
 ### Integration
 

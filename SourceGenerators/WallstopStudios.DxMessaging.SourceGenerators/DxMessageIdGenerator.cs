@@ -578,8 +578,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 bool containerIsRecord = IsRecordDeclaration(container);
                 string containerKind = container.TypeKind switch
                 {
-                    TypeKind.Class => containerIsRecord ? "record class" : "class",
+                    TypeKind.Class => containerIsRecord ? "record" : "class",
                     TypeKind.Struct => containerIsRecord ? "record struct" : "struct",
+                    TypeKind.Interface => "interface",
                     _ => "class",
                 };
 
@@ -604,7 +605,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             bool typeIsRecord = IsRecordDeclaration(typeSymbol);
             string typeKind = typeSymbol.TypeKind switch
             {
-                TypeKind.Class => typeIsRecord ? "record class" : "class",
+                TypeKind.Class => typeIsRecord ? "record" : "class",
                 TypeKind.Struct => typeIsRecord ? "record struct" : "struct",
                 _ => throw new InvalidOperationException("Unsupported type kind"),
             };

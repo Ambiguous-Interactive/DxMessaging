@@ -1,4 +1,5 @@
 #Requires -Version 5.1
+# cspell:ignore PSHOME
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -52,6 +53,14 @@ param(
     [ValidateRange(1, 10)]
     [int]$StandalonePlayerRunCount = 1,
 
+    [string]$StandalonePlayerBatchOrders = '',
+
+    [ValidateRange(0, 1000000)]
+    [int]$StandalonePilotCpuWorkIterationsPerBatch = 0,
+
+    # Five target values: GlobalToOne, StructNoBox, Filtered, PostProcess, FilteredPostProcess.
+    [string]$StandalonePilotCpuWorkByScenario = '',
+
     [ValidateRange(0, [long]::MaxValue)]
     [long]$StandalonePlayerProcessorAffinityMask = 0,
 
@@ -68,6 +77,48 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$pilotBatchOrders = @()
+if (-not [string]::IsNullOrEmpty($StandalonePlayerBatchOrders)) {
+    if ($TestMode -cne 'standalone' -or -not $IncludeComparisons) {
+        throw '-StandalonePlayerBatchOrders requires a standalone comparison player.'
+    }
+    $pilotBatchOrders = @($StandalonePlayerBatchOrders.Split(','))
+    if ($pilotBatchOrders.Count -ne $StandalonePlayerRunCount) {
+        throw '-StandalonePlayerBatchOrders must declare exactly one order per player launch.'
+    }
+    foreach ($pilotBatchOrder in $pilotBatchOrders) {
+        if ($pilotBatchOrder -cne 'ABBABAAB' -and $pilotBatchOrder -cne 'BAABABBA') {
+            throw "Invalid pilot batch order '$pilotBatchOrder'."
+        }
+    }
+}
+if ($StandalonePilotCpuWorkIterationsPerBatch -gt 0 -and $pilotBatchOrders.Count -eq 0) {
+    throw '-StandalonePilotCpuWorkIterationsPerBatch requires -StandalonePlayerBatchOrders.'
+}
+$pilotWorkVector = $null
+if (-not [string]::IsNullOrEmpty($StandalonePilotCpuWorkByScenario)) {
+    if ($pilotBatchOrders.Count -eq 0 -or $StandalonePilotCpuWorkIterationsPerBatch -ne 0) {
+        throw '-StandalonePilotCpuWorkByScenario requires pilot batch orders and excludes scalar work.'
+    }
+    $workFields = @($StandalonePilotCpuWorkByScenario.Split(','))
+    if ($workFields.Count -ne 5) {
+        throw '-StandalonePilotCpuWorkByScenario requires five comma-separated values.'
+    }
+    $workValues = foreach ($field in $workFields) {
+        if ($field -cnotmatch '^[0-9]{1,7}$' -or [int]$field -gt 1000000) {
+            throw '-StandalonePilotCpuWorkByScenario values must be integers from 0 through 1000000.'
+        }
+        [int]$field
+    }
+    $pilotWorkVector = [ordered]@{
+        GlobalToOne = $workValues[0]
+        StructNoBox = $workValues[1]
+        Filtered = $workValues[2]
+        PostProcess = $workValues[3]
+        FilteredPostProcess = $workValues[4]
+    }
+    $StandalonePilotCpuWorkByScenario = @($workValues) -join ','
+}
 
 # PowerShell 7.4 introduced $PSNativeCommandUseErrorActionPreference (stabilizing
 # the native-error experimental feature). Its default is $false on current builds,
@@ -1761,6 +1812,61 @@ public static class DxmCiTestConfigurator
         WriteJson(path, evidence);
     }
 
+    public static void PrepareNativeSdkAdmission()
+    {
+        string output = Environment.GetEnvironmentVariable("DXM_NATIVE_SDK_FLOOR_EVIDENCE");
+        if (string.IsNullOrEmpty(output))
+        {
+            return;
+        }
+        Type admissionType = null;
+        foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            Type candidate = assembly.GetType("DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission", false);
+            if (candidate == null)
+            {
+                continue;
+            }
+            if (admissionType != null)
+            {
+                throw new InvalidOperationException("Expected exactly one optional SDK admission fixture.");
+            }
+            admissionType = candidate;
+        }
+        if (admissionType == null || !admissionType.IsPublic)
+        {
+            throw new InvalidOperationException("Expected exactly one optional SDK admission fixture.");
+        }
+        System.Reflection.MethodInfo admission = admissionType.GetMethod(
+            "RequireActualFloorPackagesBeforeCandidates",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly,
+            null, Type.EmptyTypes, null);
+        if (admission == null || admission.ReturnType != typeof(void))
+        {
+            throw new InvalidOperationException("The public SDK admission method is missing or has a different contract.");
+        }
+        if (System.IO.File.Exists(output))
+        {
+            throw new InvalidOperationException("SDK admission evidence must be absent before configuration.");
+        }
+        admission.Invoke(Activator.CreateInstance(admissionType), null);
+        if (!System.IO.File.Exists(output) || new System.IO.FileInfo(output).Length == 0)
+        {
+            throw new InvalidOperationException("The public SDK admission method did not produce evidence.");
+        }
+    }
+
+    public static void PrepareCompilerInputs()
+    {
+        DxMessaging.Editor.SetupCscRsp.PrepareCompilerInputs();
+        string markerPath = Environment.GetEnvironmentVariable("DXM_CONFIGURE_MARKER_PATH");
+        if (!string.IsNullOrEmpty(markerPath))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(markerPath)));
+            File.WriteAllText(markerPath, "DxmCiTestConfigurator.PrepareCompilerInputs completed");
+        }
+    }
+
     public static void Apply()
     {
         // Finish package compiler inputs before this process exits. Deferring the
@@ -1820,6 +1926,7 @@ public static class DxmCiTestConfigurator
         string profilePath = Environment.GetEnvironmentVariable("DXM_CONFIGURED_PROFILE_PATH");
         WriteConfigurationEvidence(profilePath);
         WriteComparisonPackageResolution();
+        PrepareNativeSdkAdmission();
 
         // Write a success marker as the FINAL action so the runner can treat the
         // CONFIGURED PROJECT -- not Unity's process exit code -- as the source of
@@ -1931,7 +2038,8 @@ public static class DxmCiTestConfigurator
 function New-StandaloneBuildModifierSource {
     param(
         [bool]$DevelopmentBuild = $false,
-        [string]$CanonicalProfileId = ''
+        [string]$CanonicalProfileId = '',
+        [bool]$PilotControl = $false
     )
 
     # The Development BuildOptions flag is opt-in only. Unity CI defaults to a true
@@ -1948,6 +2056,9 @@ function New-StandaloneBuildModifierSource {
     # DOUBLE-quoted here-string so $developmentOption interpolates; the generated C#
     # contains no other dollar signs or backticks, so nothing else needs escaping.
     $developmentOption = if ($DevelopmentBuild) { '        playerOptions.options |= BuildOptions.Development;' } else { '        playerOptions.options &= ~BuildOptions.Development;' }
+    $pilotDefineOption = if ($PilotControl) {
+        '        playerOptions.extraScriptingDefines = (playerOptions.extraScriptingDefines ?? Array.Empty<string>()).Concat(new[] { "DXM_PILOT_CONTROL" }).ToArray();'
+    } else { '' }
     @"
 using System;
 using System.IO;
@@ -1991,6 +2102,7 @@ public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPo
             playerOptions.options |= BuildOptions.DetailedBuildReport;
         }
 $developmentOption
+$pilotDefineOption
         string outPath = Environment.GetEnvironmentVariable("DXM_PLAYER_BUILD_PATH");
         if (!string.IsNullOrEmpty(outPath))
         {
@@ -2081,6 +2193,193 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
         public bool debugBuild;
     }
 
+    [Serializable]
+    private sealed class NativeSdkAssembly
+    {
+        public string name;
+        public string typeName;
+        public string assemblyVersion;
+        public int[] assemblyVersionComponents;
+        public bool typeObserved;
+    }
+
+    [Serializable]
+    private sealed class NativeRecorderMetric
+    {
+        public string name;
+        public bool observed;
+        public bool valid;
+    }
+
+    [Serializable]
+    private sealed class NativeAllocationRecorders
+    {
+        public bool legacyObserved;
+        public bool legacyPresent;
+        public bool legacyValid;
+        public int forcedAllocationCalls = -1;
+        public int emptyOperationCalls = -1;
+        public NativeRecorderMetric[] profilerMetrics;
+        public string[] errors;
+    }
+
+    private static object allocationRecorderSink;
+
+    private static NativeAllocationRecorders ObserveAllocationRecorders()
+    {
+        NativeAllocationRecorders evidence = new NativeAllocationRecorders();
+        System.Collections.Generic.List<string> errors = new System.Collections.Generic.List<string>();
+        UnityEngine.Profiling.Recorder legacy = null;
+        try
+        {
+            legacy = UnityEngine.Profiling.Recorder.Get("GC.Alloc");
+            evidence.legacyObserved = true;
+            evidence.legacyPresent = legacy != null;
+            evidence.legacyValid = legacy != null && legacy.isValid;
+            if (evidence.legacyValid)
+            {
+                legacy.enabled = false;
+                legacy.enabled = true;
+                allocationRecorderSink = new byte[64];
+                legacy.enabled = false;
+                evidence.forcedAllocationCalls = legacy.sampleBlockCount;
+                GC.KeepAlive(allocationRecorderSink);
+                legacy.enabled = true;
+                legacy.enabled = false;
+                evidence.emptyOperationCalls = legacy.sampleBlockCount;
+            }
+        }
+        catch (Exception exception)
+        {
+            errors.Add("Legacy GC.Alloc: " + exception.GetType().Name + ": " + exception.Message);
+        }
+        finally
+        {
+            if (legacy != null)
+            {
+                try
+                {
+                    legacy.enabled = false;
+                }
+                catch (Exception exception)
+                {
+                    errors.Add("Legacy cleanup: " + exception.GetType().Name + ": " + exception.Message);
+                }
+            }
+        }
+        string[] names = { "GC.Alloc", "GC Allocation In Frame Count", "GC Allocated In Frame" };
+        evidence.profilerMetrics = new NativeRecorderMetric[names.Length];
+        for (int index = 0; index < names.Length; index++)
+        {
+            NativeRecorderMetric metric = new NativeRecorderMetric { name = names[index] };
+            evidence.profilerMetrics[index] = metric;
+            try
+            {
+                using (Unity.Profiling.ProfilerRecorder recorder = Unity.Profiling.ProfilerRecorder.StartNew(Unity.Profiling.ProfilerCategory.Memory, metric.name))
+                {
+                    metric.valid = recorder.Valid;
+                    metric.observed = true;
+                }
+            }
+            catch (Exception exception)
+            {
+                errors.Add(metric.name + ": " + exception.GetType().Name + ": " + exception.Message);
+            }
+        }
+        evidence.errors = errors.ToArray();
+        return evidence;
+    }
+
+    [Serializable]
+    private sealed class NativeSdkRuntimeEvidence
+    {
+        public int schemaVersion = 2;
+        public string profileId = "$CanonicalProfileId";
+        public string profileSha256 = "$CanonicalProfileSha256";
+        public string unityVersion = Application.unityVersion;
+        public string platform = Application.platform.ToString();
+        public bool isEditor = Application.isEditor;
+        public bool debugBuild = Debug.isDebugBuild;
+        public int pointerBytes = IntPtr.Size;
+#if ENABLE_IL2CPP
+        public bool il2cpp = true;
+#else
+        public bool il2cpp = false;
+#endif
+        public bool burstEnabledObserved;
+        public bool burstEnabled;
+        public NativeSdkAssembly[] assemblies;
+        public string[] errors;
+        public NativeAllocationRecorders allocationRecorders;
+    }
+
+    private static void WriteNativeSdkRuntimeEvidence()
+    {
+        string path = Environment.GetEnvironmentVariable("DXM_NATIVE_SDK_RUNTIME_EVIDENCE");
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+        NativeSdkRuntimeEvidence evidence = new NativeSdkRuntimeEvidence();
+        System.Collections.Generic.List<string> errors = new System.Collections.Generic.List<string>();
+        string[] names = { "Unity.Burst", "Unity.Collections", "Unity.Mathematics", "Unity.Jobs" };
+        string[] types = { "Unity.Burst.BurstCompiler", "Unity.Collections.NativeList``1", "Unity.Mathematics.math", "Unity.Jobs.IJobParallelForBatch" };
+        evidence.assemblies = new NativeSdkAssembly[names.Length];
+        for (int index = 0; index < names.Length; index++)
+        {
+            NativeSdkAssembly record = new NativeSdkAssembly { name = names[index], typeName = types[index] };
+            evidence.assemblies[index] = record;
+            try
+            {
+                System.Reflection.Assembly match = null;
+                foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    if (assembly.GetName().Name != record.name)
+                    {
+                        continue;
+                    }
+                    if (match != null)
+                    {
+                        throw new InvalidOperationException("Ambiguous SDK assembly: " + record.name);
+                    }
+                    match = assembly;
+                }
+                if (match == null)
+                {
+                    throw new InvalidOperationException("Missing SDK assembly: " + record.name);
+                }
+                Version version = match.GetName().Version;
+                record.assemblyVersion = version.ToString();
+                record.assemblyVersionComponents = new[] { version.Major, version.Minor, version.Build, version.Revision };
+                Type type = match.GetType(record.typeName, false);
+                record.typeObserved = type != null;
+                if (type == null)
+                {
+                    throw new InvalidOperationException("Missing public SDK type: " + record.typeName);
+                }
+                if (record.name == "Unity.Burst")
+                {
+                    System.Reflection.PropertyInfo enabled = type.GetProperty("IsEnabled", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    if (enabled == null || enabled.PropertyType != typeof(bool))
+                    {
+                        throw new InvalidOperationException("Missing public Burst enabled state.");
+                    }
+                    evidence.burstEnabled = (bool)enabled.GetValue(null, null);
+                    evidence.burstEnabledObserved = true;
+                }
+            }
+            catch (Exception exception)
+            {
+                errors.Add(exception.GetType().Name + ": " + exception.Message);
+            }
+        }
+        evidence.errors = errors.ToArray();
+        evidence.allocationRecorders = ObserveAllocationRecorders();
+        string directory = Path.GetDirectoryName(Path.GetFullPath(path));
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(path, JsonUtility.ToJson(evidence, true));
+    }
+
     public void RunStarted(ITest testsToRun)
     {
     }
@@ -2107,6 +2406,7 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
         {
             WriteRuntimeEvidence();
             WriteNUnitXml(result, path);
+            WriteNativeSdkRuntimeEvidence();
             exitCode = result.FailCount > 0 ? 1 : 0;
             int total = result.PassCount + result.FailCount + result.SkipCount + result.InconclusiveCount;
             Debug.LogFormat(
@@ -3689,10 +3989,12 @@ function Initialize-EphemeralProject {
         [Parameter(Mandatory = $true)][string]$Mode,
         [string]$Path,
         [switch]$IncludeComparisons,
+        [switch]$IncludeNativeCollectionsResearch,
         [string]$Backend = 'IL2CPP',
         [ValidateSet('Disabled', 'Minimal', 'Low', 'Medium', 'High')]
         [string]$ManagedStrippingLevel = 'Disabled',
         [bool]$DevelopmentBuild = $false,
+        [bool]$PilotControl = $false,
         [string]$CanonicalProfileId = '',
         [string]$CanonicalProfileSha256 = '',
         [ValidateSet('semantic', 'cardinality')]
@@ -3832,6 +4134,10 @@ EditorSettings:
   m_EnterPlayModeOptions: 3
 '@ | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'EditorSettings.asset')) -Encoding UTF8
     $cscOptions = @('-warnaserror', '-warn:9999')
+    # Shared comparison packages must not activate optional research assemblies.
+    if ($IncludeNativeCollectionsResearch) {
+        $cscOptions += '-define:DXM_NATIVE_SDK_RESEARCH'
+    }
     if ($isShippingFidelity) {
         $shippingDefine = if ($ShippingTopology -ceq 'semantic') {
             'DXM_SHIPPING_SEMANTIC_TOPOLOGY'
@@ -3875,7 +4181,7 @@ EditorSettings:
     # untouched).
     if ($Mode -eq 'standalone') {
         $standaloneFiles = @(
-            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild -CanonicalProfileId $CanonicalProfileId) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild -CanonicalProfileId $CanonicalProfileId -PilotControl $PilotControl) },
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.cs')); Content = (New-StandaloneTestCallbackSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) },
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.asmdef')); Content = (New-StandaloneTestCallbackAsmdef) }
         )
@@ -4764,9 +5070,22 @@ function Write-NativeBuildInputEvidence {
         [void]$paths.Add($entry.Key)
         [void]$paths.Add($entry.Value)
     }
-    # These are observed log references, not a claim of complete graph/response
-    # closure. The full graph and input JSON stay available for that later audit.
-    foreach ($response in [regex]::Matches($logText, '(?<![A-Za-z0-9_./-])Library/Bee/artifacts/rsp/[0-9]+\.rsp\b')) {
+    # Editor TypeDB graphs can emit transient response files in the same log.
+    # Retain references only within the validated player frontend/backend phases.
+    $phaseStarts = @([regex]::Matches($logText, '(?m)^Starting: [^\r\n]*(?:/bee_backend\.exe |/[A-Za-z0-9]+BuildProgram\.exe")[^\r\n]*\r?$'))
+    $playerResponseLog = [System.Text.StringBuilder]::new()
+    for ($phaseIndex = 0; $phaseIndex -lt $phaseStarts.Count; ++$phaseIndex) {
+        $phase = $phaseStarts[$phaseIndex]
+        if (
+            $phase.Value.Contains('/WinPlayerBuildProgram.exe"') -or
+            [regex]::IsMatch($phase.Value, '--dagfile="Library/Bee/Player[0-9a-f]+\.dag"[^\r\n]* Player\r?$')
+        ) {
+            $phaseEnd = if ($phaseIndex + 1 -lt $phaseStarts.Count) { $phaseStarts[$phaseIndex + 1].Index } else { $logText.Length }
+            [void]$playerResponseLog.Append($logText.Substring($phase.Index, $phaseEnd - $phase.Index))
+        }
+    }
+    # Observed native references still do not claim complete graph/response closure.
+    foreach ($response in [regex]::Matches($playerResponseLog.ToString(), '(?<![A-Za-z0-9_./-])Library/Bee/artifacts/rsp/[0-9]+\.rsp\b')) {
         [void]$paths.Add($response.Value)
     }
     if ($paths.Count -gt 256) {
@@ -4813,7 +5132,7 @@ function Write-NativeBuildInputEvidence {
         graphSelection = $graphSelection
         backendDagPath = $backendDag
         backendDagSha256 = (Get-FileHash -LiteralPath $backendDagPath -Algorithm SHA256).Hash.ToLowerInvariant()
-        responseFileScope = 'build-log-references-only'
+        responseFileScope = 'player-build-log-references-only'
         unredactedBuildLogSha256 = (Get-FileHash -LiteralPath $LogPath -Algorithm SHA256).Hash.ToLowerInvariant()
         files = @($records.ToArray())
     })
@@ -5199,6 +5518,145 @@ function Invoke-ProcessWithTreeKillTimeout {
     }
 }
 
+function Test-StandalonePilotHostTelemetry {
+    param(
+        [Parameter(Mandatory = $true)][string]$TelemetryPath,
+        [Parameter(Mandatory = $true)][string]$EnvelopePath,
+        [Parameter(Mandatory = $true)][string]$CpuProfilePath,
+        [string]$CollectorPath = (Join-Path $PSScriptRoot 'collect-perf-host-characterization.ps1')
+    )
+
+    # Frozen from the outcome-free ELI-MACHINE idle and selected-CPU load probes.
+    # These interfaces expose limit flags, not an identified package thermometer
+    # or an independently validated effective clock. Neither is imputed here.
+    $expectedSchemeGuid = '381b4222-f694-41f0-9685-ff5bb260df2e'
+    $expectedProcessorQuerySha256 = 'a12f432bf3f070fd84e28fa53073a3326b89fd1962713ea1c9b2fde0506d06ba'
+    $violations = New-Object System.Collections.Generic.List[string]
+    $telemetry = Get-Content -LiteralPath $TelemetryPath -Raw | ConvertFrom-Json
+    $envelope = Get-Content -LiteralPath $EnvelopePath -Raw | ConvertFrom-Json
+    $profile = Get-Content -LiteralPath $CpuProfilePath -Raw | ConvertFrom-Json
+    $profileSha256 = (Get-FileHash -LiteralPath $CpuProfilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $telemetrySha256 = (Get-FileHash -LiteralPath $TelemetryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $collectorSha256 = (Get-FileHash -LiteralPath $CollectorPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if (
+        $telemetry.schemaVersion -ne 1 -or
+        $telemetry.purpose -cne 'player-time-host-telemetry' -or
+        $telemetry.loadMode -cne 'player-workload-v1' -or
+        $telemetry.stopReason -cne 'player-finished' -or
+        $telemetry.requestedSampleCount -ne 3600 -or
+        $telemetry.requestedCadenceSeconds -ne 1 -or
+        $telemetry.actualSampleCount -ne @($telemetry.samples).Count -or
+        @($telemetry.samples).Count -lt 2
+    ) { $violations.Add('telemetry-schema-or-completeness') }
+    if ($telemetry.sourceSha256 -cne $collectorSha256) { $violations.Add('telemetry-collector-source-drift') }
+    if (
+        $telemetry.cpuProfile.sha256 -cne $profileSha256 -or
+        $telemetry.cpuProfile.affinityMask -cne $profile.affinityMask -or
+        $telemetry.cpuProfile.executionProfileId -cne $profile.executionProfileId -or
+        $telemetry.processorCount -ne $profile.logicalProcessorCount
+    ) { $violations.Add('cpu-profile-drift') }
+    if (
+        $envelope.schemaVersion -ne 1 -or
+        $envelope.unredactedTelemetrySha256 -cne $telemetrySha256 -or
+        $envelope.telemetryProcessorAffinityMask -cne '0xFFFF0000'
+    ) { $violations.Add('telemetry-envelope-or-affinity') }
+
+    try {
+        $readyUtc = ([DateTime]$envelope.telemetryReadyUtc).ToUniversalTime()
+        $playerStartUtc = ([DateTime]$envelope.playerStartUtc).ToUniversalTime()
+        $playerEndUtc = ([DateTime]$envelope.playerEndUtc).ToUniversalTime()
+        $stopUtc = ([DateTime]$envelope.telemetryStopUtc).ToUniversalTime()
+        if ($readyUtc -gt $playerStartUtc -or $playerStartUtc -gt $playerEndUtc -or $playerEndUtc -gt $stopUtc) {
+            $violations.Add('telemetry-does-not-envelope-player')
+        }
+        $previousSampleUtc = $null
+        for ($sampleIndex = 0; $sampleIndex -lt @($telemetry.samples).Count; $sampleIndex++) {
+            $sampleUtc = ([DateTime]$telemetry.samples[$sampleIndex].timestampUtc).ToUniversalTime()
+            if ($sampleUtc -gt $stopUtc -and -not $violations.Contains('sample-after-player-stop')) {
+                $violations.Add('sample-after-player-stop')
+            }
+            if ($null -ne $previousSampleUtc) {
+                $interval = ($sampleUtc - $previousSampleUtc).TotalSeconds
+                if ($interval -le 0 -or $interval -gt 1.5 -or ($sampleIndex -gt 1 -and $interval -lt 0.5)) {
+                    if (-not $violations.Contains('sample-cadence-outside-frozen-range')) {
+                        $violations.Add('sample-cadence-outside-frozen-range')
+                    }
+                }
+            }
+            $previousSampleUtc = $sampleUtc
+        }
+        # Coverage is measured from the final record even when cadence failed.
+        if ($null -ne $previousSampleUtc -and ($playerEndUtc - $previousSampleUtc).TotalSeconds -gt 1.5) {
+            $violations.Add('telemetry-gap-at-player-end')
+        }
+    } catch { $violations.Add('invalid-telemetry-timestamps') }
+
+    foreach ($power in @($telemetry.powerBefore, $telemetry.powerAfter)) {
+        if (
+            $power.active.exitCode -ne 0 -or
+            $power.active.text -notmatch [regex]::Escape($expectedSchemeGuid) -or
+            $power.processorQuery.exitCode -ne 0 -or
+            $power.processorQuerySha256 -cne $expectedProcessorQuerySha256
+        ) { $violations.Add('power-plan-drift'); break }
+    }
+    foreach ($sleep in @($telemetry.sleepBefore, $telemetry.sleepAfter)) {
+        if (
+            -not $sleep.lastBootUpTimeUtc -or
+            @($sleep.errors).Count -ne 0 -or
+            @($sleep.queries).Count -ne 2 -or
+            @($sleep.queries | Where-Object { $_.status -cne 'ok' -and $_.status -cne 'no-matches' }).Count -ne 0
+        ) { $violations.Add('sleep-evidence-missing'); break }
+    }
+    if ($telemetry.sleepBefore.lastBootUpTimeUtc -cne $telemetry.sleepAfter.lastBootUpTimeUtc) {
+        $violations.Add('reboot-during-player')
+    }
+    $eventsBefore = @($telemetry.sleepBefore.recentSleepWakeEvents | ForEach-Object { "$($_.provider):$($_.recordId)" })
+    $eventsAfter = @($telemetry.sleepAfter.recentSleepWakeEvents | ForEach-Object { "$($_.provider):$($_.recordId)" })
+    if (($eventsBefore -join ',') -cne ($eventsAfter -join ',')) { $violations.Add('sleep-wake-event-drift') }
+
+    $selectedIndices = @($profile.selectedLogicalProcessorIndices)
+    $firstNativePower = if (@($telemetry.samples).Count -gt 0) { $telemetry.samples[0].nativePower } else { $null }
+    foreach ($sample in @($telemetry.samples)) {
+        if (@($sample.errors).Count -ne 0 -or @($sample.nativePower.errors).Count -ne 0) {
+            $violations.Add('sensor-read-error'); break
+        }
+        if (
+            $sample.nativePower.lastSleepInterruptTime100ns -ne $firstNativePower.lastSleepInterruptTime100ns -or
+            $sample.nativePower.lastWakeInterruptTime100ns -ne $firstNativePower.lastWakeInterruptTime100ns
+        ) { $violations.Add('sleep-wake-marker-drift'); break }
+        foreach ($index in $selectedIndices) {
+            $counters = @($sample.processorCounters | Where-Object { $_.name -ceq "0,$index" })
+            $native = @($sample.nativePower.processors | Where-Object { $_.number -eq $index })
+            if ($counters.Count -ne 1 -or $native.Count -ne 1) {
+                $violations.Add('selected-processor-sample-missing-or-duplicate'); break
+            }
+            if (
+                $null -eq $counters[0].ProcessorFrequency -or
+                $null -eq $counters[0].PercentProcessorPerformance -or
+                $null -eq $counters[0].PercentProcessorTime -or
+                $counters[0].PercentPerformanceLimit -ne 100 -or
+                $counters[0].PerformanceLimitFlags -ne 0 -or
+                $native[0].maxMhz -le 0 -or
+                $native[0].mhzLimit -ne $native[0].maxMhz
+            ) { $violations.Add('processor-limit-detected'); break }
+        }
+        if ($violations.Count -gt 0) { break }
+    }
+    if (@($telemetry.nativeAfter.errors).Count -ne 0) { $violations.Add('post-player-native-read-error') }
+
+    $verdict = [ordered]@{
+        schemaVersion = 1
+        valid = $violations.Count -eq 0
+        reasons = @($violations.ToArray())
+        telemetrySha256 = $telemetrySha256
+        cpuProfileSha256 = $profileSha256
+        thermalPackageTemperature = 'unmeasured'
+        effectiveProcessorFrequency = 'unmeasured'
+    }
+    Write-JsonArtifact -Path "$TelemetryPath.health.json" -Value $verdict
+    return $verdict.valid
+}
+
 function Invoke-StandaloneTestPlayer {
     # RUN the editor-built standalone IL2CPP test player DIRECTLY (no
     # PlayerConnection): the player-side TestRunCallback writes NUnit XML to the
@@ -5220,6 +5678,8 @@ function Invoke-StandaloneTestPlayer {
         [string]$RuntimeProfilePath,
         [int]$TimeoutSeconds = 1800,
         [string]$HostConditionEvidencePath,
+        [string]$HostTelemetryEvidencePath,
+        [string]$HostTelemetryCpuProfilePath,
         [string]$ProcessEvidencePath,
         [ValidateRange(0, [long]::MaxValue)][long]$ProcessorAffinityMask = 0,
         [ValidateSet('Normal', 'AboveNormal', 'High')][string]$PriorityClass = 'Normal',
@@ -5247,14 +5707,112 @@ function Invoke-StandaloneTestPlayer {
         $before = Get-StandaloneHostConditionSnapshot -Phase 'before'
     }
 
-    $result = Invoke-ProcessWithTreeKillTimeout `
-        -FilePath $EditorBuiltExePath `
-        -Arguments $playerArgs `
-        -TimeoutSeconds $TimeoutSeconds `
-        -LogPath $LogPath `
-        -Label 'Run standalone test player' `
-        -ProcessorAffinityMask $ProcessorAffinityMask `
-        -PriorityClass $PriorityClass
+    $telemetryProcess = $null
+    $telemetryStopPath = "$HostTelemetryEvidencePath.stop"
+    $telemetryReadyPath = "$HostTelemetryEvidencePath.ready"
+    $playerStartUtc = $null
+    $playerEndUtc = $null
+    try {
+        if ($HostTelemetryEvidencePath) {
+            if ($PSVersionTable.PSVersion.Major -lt 7) {
+                throw 'Player-time host telemetry requires PowerShell 7.'
+            }
+            foreach ($signalPath in @($telemetryStopPath, $telemetryReadyPath)) {
+                if (Test-Path -LiteralPath $signalPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $signalPath -Force
+                }
+            }
+            $telemetryProfile = Get-Content -LiteralPath $HostTelemetryCpuProfilePath -Raw | ConvertFrom-Json
+            $profileAffinityMask = [Convert]::ToInt64($telemetryProfile.affinityMask.Substring(2), 16)
+            if ($profileAffinityMask -ne $ProcessorAffinityMask) {
+                throw 'Player and telemetry CPU profiles have different selected affinity masks.'
+            }
+            $telemetryStart = New-Object System.Diagnostics.ProcessStartInfo
+            $telemetryStart.FileName = Join-Path $PSHOME 'pwsh.exe'
+            foreach ($argument in @(
+                '-NoProfile', '-NonInteractive', '-File',
+                (Join-Path $PSScriptRoot 'collect-perf-host-characterization.ps1'),
+                '-OutputPath', $HostTelemetryEvidencePath,
+                '-CpuProfilePath', $HostTelemetryCpuProfilePath,
+                '-StopSignalPath', $telemetryStopPath,
+                '-ReadySignalPath', $telemetryReadyPath,
+                '-SampleCount', '3600'
+            )) {
+                [void]$telemetryStart.ArgumentList.Add($argument)
+            }
+            $telemetryStart.UseShellExecute = $false
+            $telemetryStart.CreateNoWindow = $true
+            $telemetryStart.RedirectStandardOutput = $true
+            $telemetryStart.RedirectStandardError = $true
+            $telemetryProcess = New-Object System.Diagnostics.Process
+            $telemetryProcess.StartInfo = $telemetryStart
+            [void]$telemetryProcess.Start()
+            $telemetryAvailableMask = $telemetryProcess.ProcessorAffinity.ToInt64()
+            $telemetryAffinityMask = $telemetryAvailableMask -band (-bnot $ProcessorAffinityMask)
+            if ($telemetryAffinityMask -eq 0) {
+                throw 'No logical processors remain outside the player affinity for host telemetry.'
+            }
+            $telemetryProcess.ProcessorAffinity = [IntPtr]::new($telemetryAffinityMask)
+            if ($telemetryProcess.ProcessorAffinity.ToInt64() -ne $telemetryAffinityMask) {
+                throw 'Host telemetry affinity verification failed.'
+            }
+            $readyDeadline = [DateTime]::UtcNow.AddSeconds(120)
+            while (-not (Test-Path -LiteralPath $telemetryReadyPath -PathType Leaf)) {
+                if ($telemetryProcess.HasExited -or [DateTime]::UtcNow -ge $readyDeadline) {
+                    throw 'Player-time host telemetry did not become ready within 120 seconds.'
+                }
+                Start-Sleep -Milliseconds 100
+            }
+        }
+
+        $playerStartUtc = [DateTime]::UtcNow.ToString('O')
+        $result = Invoke-ProcessWithTreeKillTimeout `
+            -FilePath $EditorBuiltExePath `
+            -Arguments $playerArgs `
+            -TimeoutSeconds $TimeoutSeconds `
+            -LogPath $LogPath `
+            -Label 'Run standalone test player' `
+            -ProcessorAffinityMask $ProcessorAffinityMask `
+            -PriorityClass $PriorityClass
+        $playerEndUtc = [DateTime]::UtcNow.ToString('O')
+    } finally {
+        if ($telemetryProcess) {
+            if (-not $playerEndUtc) { $playerEndUtc = [DateTime]::UtcNow.ToString('O') }
+            Set-Content -LiteralPath $telemetryStopPath -Value ([DateTime]::UtcNow.ToString('O')) -Encoding utf8
+            if (-not $telemetryProcess.WaitForExit(120000)) {
+                $telemetryProcess.Kill($true)
+                [void]$telemetryProcess.WaitForExit(5000)
+                throw 'Player-time host telemetry did not stop within 120 seconds.'
+            }
+            $telemetryStdout = $telemetryProcess.StandardOutput.ReadToEnd()
+            $telemetryStderr = $telemetryProcess.StandardError.ReadToEnd()
+            $telemetryExitCode = $telemetryProcess.ExitCode
+            $telemetryProcess.Dispose()
+            if ($telemetryExitCode -ne 0) {
+                throw "Player-time host telemetry failed with exit $telemetryExitCode`: $telemetryStderr"
+            }
+            if (-not (Test-Path -LiteralPath $HostTelemetryEvidencePath -PathType Leaf)) {
+                throw "Player-time host telemetry did not write $HostTelemetryEvidencePath`: $telemetryStdout"
+            }
+            $telemetryEvidence = Get-Content -LiteralPath $HostTelemetryEvidencePath -Raw | ConvertFrom-Json
+            if ($telemetryEvidence.stopReason -cne 'player-finished' -or $telemetryEvidence.actualSampleCount -lt 2) {
+                throw "Player-time host telemetry ended without full coverage: $($telemetryEvidence.stopReason), $($telemetryEvidence.actualSampleCount) samples."
+            }
+            $telemetryEnvelopePath = "$HostTelemetryEvidencePath.envelope.json"
+            Write-JsonArtifact -Path $telemetryEnvelopePath -Value ([ordered]@{
+                    schemaVersion = 1
+                    playerStartUtc = $playerStartUtc
+                    playerEndUtc = $playerEndUtc
+                    telemetryReadyUtc = (Get-Content -LiteralPath $telemetryReadyPath -Raw).Trim()
+                    telemetryStopUtc = (Get-Content -LiteralPath $telemetryStopPath -Raw).Trim()
+                    telemetryProcessorAffinityMask = '0x{0:X}' -f $telemetryAffinityMask
+                    unredactedTelemetrySha256 = (Get-FileHash -LiteralPath $HostTelemetryEvidencePath -Algorithm SHA256).Hash.ToLowerInvariant()
+                })
+            foreach ($signalPath in @($telemetryStopPath, $telemetryReadyPath)) {
+                Remove-Item -LiteralPath $signalPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($ProcessEvidencePath)) {
         $requestedAffinityMask = if ($ProcessorAffinityMask -gt 0) {
@@ -5298,6 +5856,13 @@ function Invoke-StandaloneTestPlayer {
             after = $after
         }
         Write-JsonArtifact -Path $HostConditionEvidencePath -Value $evidence
+    }
+
+    if ($HostTelemetryEvidencePath -and -not (Test-StandalonePilotHostTelemetry `
+            -TelemetryPath $HostTelemetryEvidencePath `
+            -EnvelopePath "$HostTelemetryEvidencePath.envelope.json" `
+            -CpuProfilePath $HostTelemetryCpuProfilePath)) {
+        throw "Player-time host telemetry failed frozen health rules; see $HostTelemetryEvidencePath.health.json."
     }
 
     # Exit 2 means the player received no -dxmTestResults arg (a harness-contract
@@ -5545,11 +6110,10 @@ function Write-UnityBenignExitWarning {
 }
 
 function Test-UnityConfigureMarker {
-    # Validate the standalone-configure SUCCESS MARKER as the source of truth for
-    # the configure pass (DxmCiTestConfigurator.Apply writes it as its final
-    # action). Returns '' when the marker exists and is FRESH for this run, else a
+    # Validate the configuration SUCCESS MARKER as the source of truth for
+    # the completed entry point. Returns '' when the marker exists and is FRESH for this run, else a
     # short reason string (mirrors Test-StandalonePlayerBuildOutput's contract).
-    # A fresh marker proves Apply() ran to completion even if Unity then crashed in
+    # A fresh marker proves the entry point completed even if Unity then crashed in
     # a background thread during shutdown and returned a crash exit code.
     param(
         [Parameter(Mandatory = $true)][string]$MarkerPath,
@@ -5557,7 +6121,7 @@ function Test-UnityConfigureMarker {
     )
 
     if (-not (Test-Path -LiteralPath $MarkerPath -PathType Leaf)) {
-        return 'configure marker was not written (DxmCiTestConfigurator.Apply did not run to completion)'
+        return 'configure marker was not written (configuration entry point did not run to completion)'
     }
     $marker = Get-Item -LiteralPath $MarkerPath
     if ($marker.LastWriteTimeUtc -lt $StartedUtc.AddSeconds(-5)) {
@@ -5686,6 +6250,60 @@ function Write-DuplicateAnalyzerDiagnostics {
         Write-Host "::endgroup::"
     } catch {
         Write-Host "::warning::Could not scan for duplicate analyzer registration: $($_.Exception.Message)"
+    }
+}
+
+function Copy-UnityImportWorkerLogs {
+    param(
+        [Parameter(Mandatory = $true)][string]$Project,
+        [Parameter(Mandatory = $true)][string]$Artifacts
+    )
+
+    # Reused projects can retain older worker logs. These are post-run snapshots,
+    # not proof that a named worker participated in this invocation.
+    try {
+        $sourceDirectory = Join-Path $Project 'Logs'
+        $destination = Join-Path $Artifacts 'import-worker-logs'
+        if (Test-Path -LiteralPath $destination) {
+            Remove-Item -LiteralPath $destination -Recurse -Force -ErrorAction Stop
+        }
+        New-Item -ItemType Directory -Force -Path $destination | Out-Null
+        $records = @(
+            if (Test-Path -LiteralPath $sourceDirectory -PathType Container) {
+                foreach ($source in @(Get-ChildItem -LiteralPath $sourceDirectory -File -Filter 'AssetImportWorker*.log' | Sort-Object Name)) {
+                    $sourceLength = $source.Length
+                    $sourceTime = $source.LastWriteTimeUtc.ToString('o')
+                    $copy = Join-Path $destination $source.Name
+                    Copy-Item -LiteralPath $source.FullName -Destination $copy -Force
+                    $copied = Get-Item -LiteralPath $copy
+                    $source.Refresh()
+                    [ordered]@{
+                        name = $copied.Name
+                        preProcessingLength = $copied.Length
+                        preProcessingSha256 = (Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash.ToLowerInvariant()
+                        sourceLengthObserved = $sourceLength
+                        sourceLastWriteTimeUtc = $sourceTime
+                        sourceMetadataUnchangedDuringCopy = (
+                            $source.Length -eq $sourceLength -and
+                            $source.LastWriteTimeUtc.ToString('o') -eq $sourceTime
+                        )
+                    }
+                }
+            }
+        )
+        Write-JsonArtifact -Path (Join-Path $destination 'snapshot.json') -Value ([ordered]@{
+            schemaVersion = 1
+            capturedAtUtc = [DateTime]::UtcNow.ToString('o')
+            scope = 'post-run-reused-project-snapshot'
+            sourceDirectory = 'Logs'
+            currentInvocationMembershipEstablished = $false
+            hashesDescribe = 'copied bytes before ordinary artifact processing'
+            files = @($records)
+        })
+    } catch {
+        # Evidence collection must preserve the original test outcome and the
+        # independent license-return path, including when a log is still open.
+        Write-Host "::warning::Could not retain Unity import worker logs: $($_.Exception.Message)"
     }
 }
 
@@ -5933,6 +6551,9 @@ function Test-StandalonePlayerBuildOutput {
     }
 
     $exe = Get-Item -LiteralPath $ExpectedExe
+    if ($exe.Length -eq 0) {
+        return "empty exe"
+    }
     if ($exe.LastWriteTimeUtc -lt $BuildStartedUtc.AddSeconds(-5)) {
         return "stale exe; LastWriteTimeUtc=$($exe.LastWriteTimeUtc.ToString('o'))"
     }
@@ -7296,11 +7917,18 @@ if (-not [string]::IsNullOrWhiteSpace($CanonicalProfilePath)) {
             throw 'The incremental shipping build factor requires the reviewed High base profile.'
         }
     } elseif (
-        $canonicalProfileId -cne 'canonical-il2cpp-verdict-player-v1' -or
+        @('canonical-il2cpp-verdict-player-v1', 'native-sdk-il2cpp-qualification-player-v1') -cnotcontains $canonicalProfileId -or
         $managedStrippingLevel -cne 'Disabled' -or
         -not $includeTestAssemblies
     ) {
         throw 'The standalone test player requires its reviewed profile with Disabled stripping and includeTestAssemblies=true.'
+    }
+    if ($canonicalProfileId -ceq 'native-sdk-il2cpp-qualification-player-v1' -and (
+        $UnityVersion -cne '2021.3.45f1' -or -not $IncludeComparisons -or
+        $AssemblyNames -cne 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch' -or
+        $TestCategory -cne 'NativeSdkCpu' -or $StandalonePlayerRunCount -ne 1 -or $pilotBatchOrders.Count -ne 0
+    )) {
+        throw 'Native SDK qualification requires the complete old-floor scope and one standalone process.'
     }
     $profileArtifactFileName = [System.IO.Path]::GetFileName($resolvedCanonicalProfilePath)
     $profileArtifactPath = Join-Path $ArtifactsPath $profileArtifactFileName
@@ -7321,15 +7949,44 @@ Initialize-UnityCacheEnvironment -Root $RepoRoot -Version $UnityVersion -Path $C
 $UseReleaseCodeOptimization = $true
 $UseReleasePlayerBuild = $true
 
+$pilotBuildInvocationId = $null
+$pilotSourceCommit = $null
+$pilotSourceTree = $null
+if ($pilotBatchOrders.Count -gt 0) {
+    $pilotProjectPath = if ([string]::IsNullOrWhiteSpace($ProjectPath)) {
+        [System.IO.Path]::Combine($RepoRoot, '.artifacts', 'u', "$UnityVersion-$TestMode")
+    } else {
+        Resolve-FullPath -Path $ProjectPath
+    }
+    if (Test-Path -LiteralPath $pilotProjectPath) {
+        throw "Pilot clean build requires a previously absent Unity project path: $pilotProjectPath"
+    }
+    $trackedChanges = @(& git -C $RepoRoot status --porcelain --untracked-files=no)
+    if ($LASTEXITCODE -ne 0 -or $trackedChanges.Count -ne 0) {
+        throw 'Pilot build requires a clean tracked source checkout.'
+    }
+    $pilotSourceCommit = [string](& git -C $RepoRoot rev-parse HEAD)
+    if ($LASTEXITCODE -ne 0 -or $pilotSourceCommit -notmatch '^[0-9a-f]{40}$') {
+        throw 'Pilot build could not resolve its source commit.'
+    }
+    $pilotSourceTree = [string](& git -C $RepoRoot rev-parse 'HEAD^{tree}')
+    if ($LASTEXITCODE -ne 0 -or $pilotSourceTree -notmatch '^[0-9a-f]{40}$') {
+        throw 'Pilot build could not resolve its source tree.'
+    }
+    $pilotBuildInvocationId = [guid]::NewGuid().ToString('D')
+}
+
 $ProjectPath = Initialize-EphemeralProject `
     -Root $RepoRoot `
     -Version $UnityVersion `
     -Mode $TestMode `
     -Path $ProjectPath `
     -IncludeComparisons:$IncludeComparisons `
+    -IncludeNativeCollectionsResearch:($AssemblyNames -ceq 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch') `
     -Backend $StandaloneScriptingBackend `
     -ManagedStrippingLevel $managedStrippingLevel `
     -DevelopmentBuild:(-not $UseReleasePlayerBuild) `
+    -PilotControl:($pilotBatchOrders.Count -gt 0) `
     -CanonicalProfileId $canonicalProfileId `
     -CanonicalProfileSha256 $canonicalProfileSha256 `
     -ShippingTopology $ShippingTopology `
@@ -8081,7 +8738,8 @@ try {
 
         # POST-BUILD ASSERT (the BUILT PLAYER EXE is the source of truth): the exe
         # MUST exist at DXM_PLAYER_BUILD_PATH, be fresh for this build, and include
-        # its companion _Data directory. A non-zero build exit code OR a watchdog
+        # its companion _Data directory and nonempty IL2CPP code/metadata. A non-zero
+        # build exit code OR a watchdog
         # tree-kill is fatal ONLY when the exe is missing/stale/incomplete: Unity can
         # crash in a background thread during shutdown AFTER the player is fully
         # built, or defer Application.Quit in -batchmode IL2CPP (the watchdog then
@@ -8113,7 +8771,7 @@ try {
             }
             throw "Editor build produced invalid DxMessaging test player output at $standaloneExe ($standaloneBuildProblem; build exit code $($buildResult.ExitCode) / $(Get-NativeExitCodeDescription -ExitCode $buildResult.ExitCode)). The build modifier may not have run, Unity may have cleaned a Temp output, or a stale player was detected. See the build log at $logPath."
         }
-        # The exe is valid. If the build process nonetheless exited non-zero or was
+        # Required player files are present. If the build process exited non-zero or was
         # tree-killed, narrate the benign post-build shutdown crash and keep going.
         if ($buildResult.TimedOut -or $buildResult.ExitCode -ne 0) {
             Write-UnityBenignExitWarning -Label "Build standalone IL2CPP test player (Unity $UnityVersion)" -ExitCode $buildResult.ExitCode -TimedOut:$buildResult.TimedOut -LogPath $logPath
@@ -8163,6 +8821,31 @@ try {
             Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'comparison-source-evidence.json') -Value $comparisonSourcesAfter
         }
 
+        if ($pilotBatchOrders.Count -gt 0) {
+            $pilotTrackedChangesAfterBuild = @(& git -C $RepoRoot status --porcelain --untracked-files=no)
+            if ($LASTEXITCODE -ne 0 -or $pilotTrackedChangesAfterBuild.Count -ne 0) {
+                throw 'Pilot player build changed tracked source files.'
+            }
+            $pilotBuildFinishedUtc = [DateTime]::UtcNow
+            $pilotPlayerManifest = Get-StandalonePlayerManifest -ExecutablePath $standaloneExe
+            Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'pilot-build-evidence.json') -Value ([ordered]@{
+                    schemaVersion = 1
+                    buildInvocationId = $pilotBuildInvocationId
+                    sourceCommit = $pilotSourceCommit
+                    sourceTree = $pilotSourceTree
+                    projectWasAbsentBefore = $true
+                    projectPathSha256 = Get-StringSha256 -Value $ProjectPath
+                    unityVersion = $UnityVersion
+                    canonicalProfileId = $canonicalProfileId
+                    canonicalProfileSha256 = $canonicalProfileSha256
+                    buildStartedUtc = $standaloneBuildStartedUtc.ToString('O')
+                    buildFinishedUtc = $pilotBuildFinishedUtc.ToString('O')
+                    buildWallClockSeconds = ($pilotBuildFinishedUtc - $standaloneBuildStartedUtc).TotalSeconds
+                    buildLogSha256 = (Get-FileHash -LiteralPath $logPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    playerDirectoryManifest = $pilotPlayerManifest
+                })
+        }
+
         # (2b) RUN the built exe directly (no PlayerConnection), under the watchdog.
         # Run 1 keeps the canonical filenames consumed by publication. Optional
         # same-player repeats use deliberately noncanonical names under a diagnostic
@@ -8172,6 +8855,10 @@ try {
         $captureSamePlayerEvidence = $StandalonePlayerRunCount -gt 1
         $samePlayerEvidenceRoot = Join-Path $ArtifactsPath 'same-player-repeats'
         $playerManifestBefore = $null
+        if ($canonicalProfileId -ceq 'native-sdk-il2cpp-qualification-player-v1') {
+            Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'sdk-player.before.json') `
+                -Value (Get-StandalonePlayerManifest -ExecutablePath $standaloneExe)
+        }
         $playerRunRecords = New-Object System.Collections.Generic.List[object]
         if ($captureSamePlayerEvidence) {
             if (Test-Path -LiteralPath $samePlayerEvidenceRoot -PathType Container) {
@@ -8201,6 +8888,11 @@ try {
             } else {
                 ''
             }
+            $hostTelemetryEvidencePath = if ($pilotBatchOrders.Count -gt 0) {
+                Join-Path $samePlayerEvidenceRoot "run-$runNumber-host-telemetry.json"
+            } else {
+                ''
+            }
             $processEvidencePath = if ($playerRunIndex -eq 1) {
                 Join-Path $ArtifactsPath 'standalone-process.json'
             } else {
@@ -8220,6 +8912,9 @@ try {
                 $currentResultsPath,
                 $currentPlayerLogPath,
                 $hostConditionEvidencePath,
+                $hostTelemetryEvidencePath,
+                $(if ($hostTelemetryEvidencePath) { "$hostTelemetryEvidencePath.envelope.json" } else { '' }),
+                $(if ($hostTelemetryEvidencePath) { "$hostTelemetryEvidencePath.health.json" } else { '' }),
                 $processEvidencePath,
                 $currentRuntimeProfilePath
             )) {
@@ -8231,18 +8926,42 @@ try {
                 }
             }
 
-            $playerResult = Invoke-StandaloneTestPlayer `
-                -EditorBuiltExePath $standaloneExe `
-                -ResultsPath $currentResultsPath `
-                -LogPath $currentPlayerLogPath `
-                -RuntimeProfilePath $currentRuntimeProfilePath `
-                -TimeoutSeconds $playerTimeoutSeconds `
-                -HostConditionEvidencePath $hostConditionEvidencePath `
-                -ProcessEvidencePath $processEvidencePath `
-                -ProcessorAffinityMask $StandalonePlayerProcessorAffinityMask `
-                -PriorityClass $StandalonePlayerPriorityClass `
-                -RunIndex $playerRunIndex `
-                -RunCount $StandalonePlayerRunCount
+            $priorBatchOrder = $env:DXM_PAIRED_BATCH_ORDER
+            $priorPilotWork = $env:DXM_PILOT_CPU_WORK_PER_BATCH
+            $priorPilotWorkVector = $env:DXM_PILOT_CPU_WORK_BY_SCENARIO
+            try {
+                if ($pilotBatchOrders.Count -gt 0) {
+                    $env:DXM_PAIRED_BATCH_ORDER = $pilotBatchOrders[$playerRunIndex - 1]
+                    $env:DXM_PILOT_CPU_WORK_PER_BATCH = if ($pilotWorkVector) { $null } else { [string]$StandalonePilotCpuWorkIterationsPerBatch }
+                    $env:DXM_PILOT_CPU_WORK_BY_SCENARIO = if ($pilotWorkVector) { $StandalonePilotCpuWorkByScenario } else { $null }
+                } else {
+                    $env:DXM_PAIRED_BATCH_ORDER = $null
+                    $env:DXM_PILOT_CPU_WORK_PER_BATCH = $null
+                    $env:DXM_PILOT_CPU_WORK_BY_SCENARIO = $null
+                }
+                $playerResult = Invoke-StandaloneTestPlayer `
+                    -EditorBuiltExePath $standaloneExe `
+                    -ResultsPath $currentResultsPath `
+                    -LogPath $currentPlayerLogPath `
+                    -RuntimeProfilePath $currentRuntimeProfilePath `
+                    -TimeoutSeconds $playerTimeoutSeconds `
+                    -HostConditionEvidencePath $hostConditionEvidencePath `
+                    -HostTelemetryEvidencePath $hostTelemetryEvidencePath `
+                    -HostTelemetryCpuProfilePath (Join-Path $ArtifactsPath 'performance-cpu-profile.json') `
+                    -ProcessEvidencePath $processEvidencePath `
+                    -ProcessorAffinityMask $StandalonePlayerProcessorAffinityMask `
+                    -PriorityClass $StandalonePlayerPriorityClass `
+                    -RunIndex $playerRunIndex `
+                    -RunCount $StandalonePlayerRunCount
+            } finally {
+                $env:DXM_PAIRED_BATCH_ORDER = $priorBatchOrder
+                $env:DXM_PILOT_CPU_WORK_PER_BATCH = $priorPilotWork
+                $env:DXM_PILOT_CPU_WORK_BY_SCENARIO = $priorPilotWorkVector
+                if ($canonicalProfileId -ceq 'native-sdk-il2cpp-qualification-player-v1') {
+                    Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'sdk-player.after.json') `
+                        -Value (Get-StandalonePlayerManifest -ExecutablePath $standaloneExe)
+                }
+            }
 
             # A watchdog timeout is fatal ONLY when the player wrote no results. If
             # results exist, validate them and treat deferred Application.Quit as a
@@ -8300,8 +9019,14 @@ try {
                         resultsPath = $relativeResultsPath
                         playerLogPath = $relativePlayerLogPath
                         hostConditionsFile = [System.IO.Path]::GetFileName($hostConditionEvidencePath)
+                        hostTelemetryFile = if ($hostTelemetryEvidencePath) { [System.IO.Path]::GetFileName($hostTelemetryEvidencePath) } else { $null }
+                        hostTelemetryEnvelopeFile = if ($hostTelemetryEvidencePath) { [System.IO.Path]::GetFileName("$hostTelemetryEvidencePath.envelope.json") } else { $null }
+                        hostTelemetryHealthFile = if ($hostTelemetryEvidencePath) { [System.IO.Path]::GetFileName("$hostTelemetryEvidencePath.health.json") } else { $null }
                         processId = $playerResult.ProcessId
                         processorAffinityMask = $playerResult.ProcessorAffinityMask
+                        batchOrder = if ($pilotBatchOrders.Count -gt 0) { $pilotBatchOrders[$playerRunIndex - 1] } else { $null }
+                        pilotCpuWorkIterationsPerBatch = if ($pilotBatchOrders.Count -gt 0 -and -not $pilotWorkVector) { $StandalonePilotCpuWorkIterationsPerBatch } else { $null }
+                        pilotCpuWorkByScenario = $pilotWorkVector
                         timedOut = $playerResult.TimedOut
                     })
             }
@@ -8330,6 +9055,54 @@ try {
             Write-CiNotice "Standalone same-player evidence captured $StandalonePlayerRunCount validated launches with an unchanged player directory manifest."
         }
     } else {
+        # Finish package-owned compiler inputs in a separate process. A delayed
+        # csc.rsp import during tests can invalidate deferred Burst requests.
+        $compilerInputMarkerPath = Join-Path $ArtifactsPath 'compiler-inputs-complete.marker'
+        if (Test-Path -LiteralPath $compilerInputMarkerPath -PathType Leaf) {
+            Remove-Item -LiteralPath $compilerInputMarkerPath -Force
+        }
+        $compilerInputLogPath = Join-Path $ArtifactsPath 'compiler-inputs.log'
+        $compilerInputStartedUtc = [DateTime]::UtcNow
+        $env:DXM_CONFIGURE_MARKER_PATH = $compilerInputMarkerPath
+        try {
+            $compilerInputExit = Invoke-UnityEditor `
+                -EditorPath $UnityEditorPath `
+                -Arguments (@(
+                    '-quit', '-batchmode', '-nographics', '-projectPath', $ProjectPath,
+                    '-releaseCodeOptimization',
+                    '-executeMethod', 'DxMessaging.Ci.DxmCiTestConfigurator.PrepareCompilerInputs',
+                    '-logFile', '-'
+                ) + $acceleratorArgs) `
+                -Label "Prepare $TestMode compiler inputs" `
+                -LogPath $compilerInputLogPath
+        } finally {
+            Remove-Item -LiteralPath Env:\DXM_CONFIGURE_MARKER_PATH -ErrorAction SilentlyContinue
+        }
+        $compilerInputProblem = Test-UnityConfigureMarker -MarkerPath $compilerInputMarkerPath -StartedUtc $compilerInputStartedUtc
+        if (-not [string]::IsNullOrWhiteSpace($compilerInputProblem)) {
+            Write-UnityRunFailureDiagnostics -Project $ProjectPath -LogPath $compilerInputLogPath `
+                -CscLabel "$TestMode compiler inputs" -DiagnosticsLabel 'Compiler input preparation'
+            throw "Compiler input preparation failed ($compilerInputProblem; Unity exit code $compilerInputExit)."
+        }
+        if ($compilerInputExit -ne 0) {
+            Write-UnityBenignExitWarning -Label 'Compiler input preparation' -ExitCode $compilerInputExit -LogPath $compilerInputLogPath
+        }
+        Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $compilerInputLogPath -Label "$TestMode compiler inputs"
+        $compilerInputsBefore = @(foreach ($relative in @('Assets/csc.rsp', 'Assets/Editor/DxMessaging.BaseCallIgnore.txt')) {
+            $inputPath = Join-Path $ProjectPath $relative
+            $record = [ordered]@{ path = $relative; status = 'missing'; lengthBytes = 0; sha256 = ''; lastWriteUtc = '' }
+            if (Test-Path -LiteralPath $inputPath -PathType Leaf) {
+                $file = Get-Item -LiteralPath $inputPath
+                $record.status = 'present'
+                $record.lengthBytes = [long]$file.Length
+                $record.sha256 = (Get-FileHash -LiteralPath $inputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                $record.lastWriteUtc = $file.LastWriteTimeUtc.ToString('O')
+            }
+            $record
+        })
+        Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'compiler-inputs.before.json') `
+            -Value ([ordered]@{ schemaVersion = 1; phase = 'before'; files = $compilerInputsBefore })
+
         # MUST NOT include '-quit' alongside '-runTests': per the Unity Editor manual
         # (https://docs.unity3d.com/Manual/EditorCommandLineArguments.html), if the
         # Editor is running tests with -runTests, -quit causes it to QUIT IMMEDIATELY
@@ -8356,13 +9129,30 @@ try {
         # missing/invalid/failing file AND folds the exit code into its diagnostics,
         # but PASSES a valid run that exited non-zero only because Unity crashed in a
         # background thread during shutdown AFTER RunFinished wrote the file.
-        $runExit = Invoke-UnityEditorTestsWithPackageManagerRetry `
-            -EditorPath $UnityEditorPath `
-            -Arguments $testArgs `
-            -Label "Run Unity $UnityVersion $TestMode tests" `
-            -LogPath $logPath `
-            -ResultsPath $resultsPath `
-            -Project $ProjectPath
+        try {
+            $runExit = Invoke-UnityEditorTestsWithPackageManagerRetry `
+                -EditorPath $UnityEditorPath `
+                -Arguments $testArgs `
+                -Label "Run Unity $UnityVersion $TestMode tests" `
+                -LogPath $logPath `
+                -ResultsPath $resultsPath `
+                -Project $ProjectPath
+        } finally {
+            $compilerInputsAfter = @(foreach ($before in $compilerInputsBefore) {
+                $inputPath = Join-Path $ProjectPath $before.path
+                $record = [ordered]@{ path = $before.path; status = 'missing'; lengthBytes = 0; sha256 = ''; lastWriteUtc = '' }
+                if (Test-Path -LiteralPath $inputPath -PathType Leaf) {
+                    $file = Get-Item -LiteralPath $inputPath
+                    $record.status = 'present'
+                    $record.lengthBytes = [long]$file.Length
+                    $record.sha256 = (Get-FileHash -LiteralPath $inputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    $record.lastWriteUtc = $file.LastWriteTimeUtc.ToString('O')
+                }
+                $record
+            })
+            Write-JsonArtifact -Path (Join-Path $ArtifactsPath 'compiler-inputs.after.json') `
+                -Value ([ordered]@{ schemaVersion = 1; phase = 'after'; files = $compilerInputsAfter })
+        }
         Write-AnalyzerSetupDiagnostics -Project $ProjectPath -LogPath $logPath -Label "$UnityVersion $TestMode test compile"
         Test-NUnitResults -Path $resultsPath -Label "Unity $UnityVersion $TestMode" -LogPath $logPath -Project $ProjectPath -UnityExitCode $runExit
     }
@@ -8383,6 +9173,7 @@ try {
     )) {
         Remove-Item -LiteralPath "Env:\$temporaryEnvironmentVariable" -ErrorAction SilentlyContinue
     }
+    Copy-UnityImportWorkerLogs -Project $ProjectPath -Artifacts $ArtifactsPath
     # Standalone/local callers retain deterministic return. Organization CI passes
     # Central so the immediately following trusted return action owns the one
     # authoritative post-activation attempt and its typed evidence.

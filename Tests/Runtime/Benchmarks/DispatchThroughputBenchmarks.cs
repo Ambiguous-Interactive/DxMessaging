@@ -1245,20 +1245,16 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         /*
-            The cold dispatch flood: the JIT-inclusive first-touch dispatch hitch, stabilized
-            via distinct types. A SINGLE first emit of one message type is pure JIT noise -- it
-            is dominated by the one-time compile of that type's dispatch path and the shared
-            dispatch infrastructure, and a single sample cannot be trusted. So, symmetric with
-            the registration flood, this routes through BenchmarkProtocol.MeasureColdLatency
-            (the cold counterpart to Measure) over 32 trials, one per RegistrationFloodMarkerTypes
-            marker. Each trial spins up a FRESH bus, registers a READONLY BY-REF
-            (FastHandler<T>) no-op
-            handler for a DISTINCT closed generic message type (UNTIMED), then times EXACTLY ONE
-            emit of that type -- which JIT-compiles that closed type's fast dispatch path
-            (RunFastHandlers), the SAME path the warm/hot scenarios measure. The MEDIAN of the
-            32 per-emit samples rejects the single outlier the very first trial carries (the
-            one-time compile of the SHARED dispatch infrastructure lands on whichever type runs
-            first). Registration and scope teardown are untimed: only the first dispatch counts.
+            The cold dispatch flood measures first-touch dispatch cost across 32 trials,
+            one per RegistrationFloodMarkerTypes marker. Each trial creates a fresh bus
+            and registers a readonly by-ref FastHandler<T> no-op for a distinct closed
+            message type outside timing, then times exactly one typed bus emission.
+            The current bus resolves those subscriptions into flattened dispatch entries
+            and fast invokers. The timed operation includes first-touch dispatch setup
+            and any JIT compilation the backend performs; distinct markers alone do
+            not establish independent compilations.
+            BenchmarkProtocol.MeasureColdLatency reports the median of the 32 samples.
+            Registration and scope teardown remain untimed.
         */
         private static DispatchBenchmarkResult MeasureColdFirstDispatch(
             DispatchBenchmarkScenario scenario
@@ -2339,18 +2335,15 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             : DxMessaging.Core.Messages.IUntargetedMessage { }
 
         /*
-            Per-kind cold first-dispatch set-up helpers. Each is generic over the closed
-            message type, so reflection (MakeGenericMethod over a marker) yields a distinct
-            closed generic whose fast dispatch path JIT-compiles on its first emit. The
-            helper (UNTIMED) creates a fresh bus, registers a READONLY BY-REF
-            (FastHandler<T>) no-op handler -- the (in ...) lambda binds the FastHandler<T>
-            overload, so the timed
-            emit JIT-compiles RunFastHandlers, the SAME path the warm/hot scenarios measure --
-            and returns a ColdTrialState whose Emit performs EXACTLY ONE emit (the single
-            timed cold sample). The static Target/Source are read here, OUTSIDE the timed
-            emit, so only the dispatch is measured (parallel to how warm EmitMany hoists them
-            out of the loop). The message structs are nested PRIVATE generics (like
-            RegistrationFloodMessage) so they can never leak into the comparison roster.
+            Per-kind cold first-dispatch setup helpers. Reflection closes each helper
+            over a marker before the trial loop. Untimed setup creates a fresh bus,
+            registers a readonly by-ref FastHandler<T> no-op, and captures Target or
+            Source before returning a ColdTrialState whose Emit performs exactly one
+            typed bus emission. The bus uses flattened dispatch and resolved invokers;
+            first-touch setup and any backend-specific JIT work belong to that timed
+            emission. These are cold-latency trials, separate from warmed throughput
+            windows. Private generic message structs keep them outside the comparison
+            roster.
         */
         private enum ColdDispatchKind
         {

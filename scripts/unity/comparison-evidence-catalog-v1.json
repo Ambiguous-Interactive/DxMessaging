@@ -3,7 +3,7 @@
     "dxBridge": {
       "origin": "repository",
       "path": "Tests/Runtime/Comparisons/DxMessagingBridge.cs",
-      "sha256": "4d4b68daa6c1d8ae760cb0a4b3b106db40370f0bcb560a341ab09d07d80a0bb0"
+      "sha256": "12b014ec75de1dd5cc15dc2e26783679116db9512e26c2cdb11dd42128c85693"
     },
     "mpBridge": {
       "origin": "repository",
@@ -38,12 +38,12 @@
     "dxBus": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/MessageBus.cs",
-      "sha256": "355e4887a581b5c6a3fe48cc8a531eb52f9d95007970901ac444611feae0e974"
+      "sha256": "1500f96557fdf1e4498fc33e7e6f60ee953a28eaf7ed9b3b75acc285eb215b58"
     },
     "dxInterface": {
       "origin": "repository",
       "path": "Runtime/Core/MessageBus/IMessageBus.cs",
-      "sha256": "c0e0e148eb3f9c732de1487f070b67eb49405b9527029f59f9b623725db8ee6d"
+      "sha256": "798b57c125d3dbecb12213acfb254c1a05acff2ff6ae7e9af69e5badf6e4f182"
     },
     "dxHandler": {
       "origin": "repository",
@@ -53,7 +53,7 @@
     "dxToken": {
       "origin": "repository",
       "path": "Runtime/Core/MessageRegistrationToken.cs",
-      "sha256": "60c0d219f54953163ae7f6bac9e3aa5838d84adf27bbe064f54defdd349e587a"
+      "sha256": "827cb85205abd1757ead41de75fbe894953a35bccca85b4aba16e9178ef8db8d"
     },
     "dxFlat": {
       "origin": "repository",
@@ -83,7 +83,7 @@
     "pins": {
       "origin": "repository",
       "path": ".github/comparison-packages.json",
-      "sha256": "b1e55e7704b401402cd457047adc670b9f32e18a60ab29d74337fc9fbab6d4db"
+      "sha256": "a64838f28d07aba685aa70ff69033cfb5a02cb01f7e17b6fe58bbc837a04fb18"
     },
     "untargetedPayload": {
       "origin": "repository",

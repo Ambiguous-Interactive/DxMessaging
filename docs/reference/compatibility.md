@@ -17,18 +17,33 @@ Notes
 - Minimum version is governed by the package manifest (`unity`: 2021.3). Newer LTS versions are expected to work.
 - Unity 6 migrates object identity to `EntityId` and deprecates `Object.GetInstanceID()` (it becomes a compile error in Unity 6.5). DxMessaging handles this internally: on Unity 6.4+ the dispatch key reads the non-deprecated `EntityId.ToULong(...)` accessor (keeping the same 32-bit value), and older Unity keeps `GetInstanceID()`. The package keeps building across the supported range, including Unity 6.5+ where the old API is removed.
 
+## Generated Record Declarations
+
+**Fixed in v4.0.0:** Message and auto-constructor generators use C# 9 syntax for reference-record
+declarations, including generic records and nested record containers. Declare each generated type
+and its containing types `partial`.
+
+Record structs require a compiler that supports C# 10. Follow
+[Unity's record support requirements](https://docs.unity3d.com/2021.3/Documentation/Manual/CSharpCompiler.html)
+for init-only properties and serialization; the generator does not add those capabilities.
+
 ## Architecture Pattern Compatibility
 
 ### Scriptable Object Architecture (SOA)
 
-DxMessaging can work alongside Scriptable Object Architecture patterns, though SOA has documented limitations. See [Pattern 14: SOA Compatibility](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa) for detailed integration strategies, code examples, and migration paths.
+DxMessaging can bridge existing event assets or report changes to state owned by an asset or
+service. [Unity's architecture guide](https://unity.com/how-to/architect-game-code-scriptable-objects)
+includes mutable runtime variables and event assets; ScriptableObjects are not limited to immutable
+configuration.
 
 #### Quick summary
 
-- [x] **Compatible** - DxMessaging can bridge with SOA systems
-- **Not recommended** - SOA has scalability and maintainability concerns ([detailed critique](https://github.com/cathei/AntiScriptableObjectArchitecture))
-- [x] **Best practice** - Use ScriptableObjects for immutable design data, DxMessaging for runtime events
-- to See [SOA Integration Patterns](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa) for three coexistence strategies with code examples
+- Bridge event assets when their notifications must reach bus listeners.
+- Keep an explicit owner for current state, runtime-set membership, reset and saved-game storage.
+- Pair asset listeners and bus registrations with their actual lifetimes.
+- Use shared configuration with runtime messages when that design meets the application needs.
+- See the [SOA integration patterns](../guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa)
+  for two examples and migration responsibilities.
 
 ### Dependency Injection (DI) Frameworks
 
@@ -64,7 +79,7 @@ IL2CPP.
 ## Plain .NET runtime
 
 The source checkout also builds the core runtime for .NET Standard 2.1, with C# 9 and
-an explicit `System.Runtime.CompilerServices.Unsafe` 6.0.0 dependency. Build it with:
+an explicit `System.Runtime.CompilerServices.Unsafe` 6.1.2 dependency. Build it with:
 
 ```bash
 dotnet build .net/DxMessaging.csproj --configuration Release

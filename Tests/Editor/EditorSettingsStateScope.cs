@@ -695,9 +695,13 @@ try {
         private readonly Dictionary<string, object> _pending = new();
         private readonly EditorDelayCallScope _sidecarCallbacks;
         private readonly EditorDelayCallScope _responseCallbacks;
+        private readonly bool _backupsComplete;
         private bool _assetEditing;
 
         internal EditorCompilerInputScope()
+            : this(File.Copy) { }
+
+        internal EditorCompilerInputScope(Action<string, string> copyFile)
         {
             _pending.Add(
                 "sidecar",
@@ -758,12 +762,11 @@ try {
                 {
                     if (saved.Value != null)
                     {
-                        string operation = "move";
+                        // Keep the readable original in place while saving its bytes.
+                        string operation = "copy";
                         try
                         {
-                            File.Move(saved.Key, saved.Value);
-                            operation = "copy";
-                            File.Copy(saved.Value, saved.Key);
+                            copyFile(saved.Key, saved.Value);
                         }
                         catch (IOException failure)
                         {
@@ -783,6 +786,7 @@ try {
                         }
                     }
                 }
+                _backupsComplete = true;
             }
             catch (Exception failure)
             {
@@ -804,8 +808,20 @@ try {
             foreach (KeyValuePair<string, string> saved in _saved)
             {
                 string operation = "inspect";
+                string diagnosticPath = saved.Key;
                 try
                 {
+                    if (!_backupsComplete)
+                    {
+                        // Construction never returned ownership of the original inputs.
+                        if (saved.Value != null && File.Exists(saved.Value))
+                        {
+                            operation = "delete backup";
+                            diagnosticPath = saved.Value;
+                            File.Delete(saved.Value);
+                        }
+                        continue;
+                    }
                     if (saved.Value == null)
                     {
                         if (File.Exists(saved.Key))
@@ -828,7 +844,7 @@ try {
                 catch (Exception exception)
                 {
                     string diagnostics = EditorCompilerInputFailureDiagnostics.Describe(
-                        saved.Key,
+                        diagnosticPath,
                         exception,
                         operation
                     );

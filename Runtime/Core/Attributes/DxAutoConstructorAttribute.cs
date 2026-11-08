@@ -6,9 +6,13 @@ namespace DxMessaging.Core.Attributes
     /// Instructs the source generator to synthesize a constructor matching the fields on the type.
     /// </summary>
     /// <remarks>
-    /// Useful for keeping message types concise and immutable. Apply this to a <c>struct</c> or <c>class</c>
-    /// and a constructor will be generated that assigns all fields in declaration order. Fields marked with
+    /// Apply this to a partial <c>struct</c> or <c>class</c> to generate a constructor whose parameters
+    /// match public instance fields in declaration order. Fields marked with
     /// <see cref="DxOptionalParameterAttribute"/> are emitted as optional parameters.
+    /// Excluded struct storage receives type defaults while existing field and auto-property initializers
+    /// are preserved. The generated constructor does not invoke a user parameterless constructor.
+    /// When compiling before C# 11, DXMSG011 reports mixed initialized and uninitialized explicit-interface
+    /// auto-properties when a user parameterless constructor prevents preserving their initializers.
     /// </remarks>
     /// <example>
     /// <code>

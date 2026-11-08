@@ -9,11 +9,13 @@ Unity Asset Store UPM publishing is separate from npm and OpenUPM. npm
 provenance and GitHub artifact attestations do not replace Unity-controlled
 package signing or Asset Store review.
 
-Unity's current UPM publishing page says the workflow is available for all
-tools, extensions, and SDKs, while the official publishing-tool listing still
-describes selected early access. Treat UPM Asset Store publishing as conditional
-until the Ambiguous publisher account reaches `Active` UPM admittance and the
-UPM Publisher Portal appears.
+Unity's [UPM publishing page](https://assetstore.unity.com/publishing/upm-publishing)
+makes the workflow available for tools, extensions, and SDKs. The official
+[publishing-tool listing](https://assetstore.unity.com/packages/tools/asset-store-upm-publishing-tools-5368745)
+now lists v0.3.3, released 2026-09-28, with Unity 2022.3 as its oldest supported
+editor. The [enrollment instructions](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/apply)
+still require the publisher account to reach `Active` UPM admittance before the
+UPM Publisher Portal appears. Verify that account state before choosing UPM.
 
 ## Publisher Account Setup
 
@@ -139,13 +141,11 @@ generator and analyzer from the RoslynAnalyzer-labeled DLLs shipped under
 `Runtime/Analyzers/`), and `Samples~` is renamed to `Samples` so samples
 import visibly.
 
-There is no sanctioned CLI or API for Unity Asset Store uploads (re-verified
-2026-08-28). Unity now ships the official `com.unity.upm-publishing-tools`
-package alongside the classic publishing tool, but the official material for
-both describes interactive Editor workflows and does not document a headless
-entry point or service credential. Community batch uploaders still drive
-undocumented internal Editor APIs that can break without warning. The pipeline
-therefore stops at staging; the upload below is manual. The release-time
+The official classic and UPM upload instructions inspected on 2026-11-04 describe
+interactive Editor workflows. That documentation check did not identify a supported
+non-interactive upload entry point or service credential. The pipeline therefore
+stops at staging; the upload below is manual. Recheck the official instructions
+when preparing a release. The release-time
 procedure -- and the full automation determination with its re-evaluation
 trigger -- lives in the
 [Asset Store Publishing runbook](../runbooks/asset-store-publishing.md).

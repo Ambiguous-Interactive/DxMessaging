@@ -28,6 +28,12 @@ after(() => fs.rmSync(dependencyPath, { recursive: true, force: true }));
 for (const row of [
   { name: "default", options: {}, suffixes: ["Editor", "Runtime"], excluded: true },
   {
+    name: "explicit native SDK research",
+    options: { includeNativeCollectionsResearch: true },
+    suffixes: ["00.Runtime.NativeCollectionsResearch", "Editor", "Runtime"],
+    excluded: true
+  },
+  {
     name: "shipping with DI",
     options: { target: "editmode", includeIntegrations: true },
     suffixes: ["Editor", "Runtime", ...integrations],

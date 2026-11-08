@@ -129,7 +129,12 @@ namespace DxMessaging.Core.MessageBus
         /// Pretty-print all of the logged Messaging registrations using the provided print function.
         /// </summary>
         /// <param name="serializer">Serialization function to use. If null, defaults to MessagingRegistration.ToString.</param>
-        /// <returns>The string representing all logged MessagingRegistrations.</returns>
+        /// <returns>The string representing the entries retained when formatting begins.</returns>
+        /// <remarks>
+        /// Since 4.0, nonempty formatting allocates a chronological entry snapshot before invoking
+        /// the serializer. Callback changes remain in the live log without altering this output.
+        /// Nested formatting uses its own snapshot. Serializer exceptions propagate unchanged.
+        /// </remarks>
         public string ToString(Func<MessagingRegistration, string> serializer)
         {
             CyclicBuffer<MessagingRegistration> finalizedRegistrations = _finalizedRegistrations;
@@ -138,17 +143,25 @@ namespace DxMessaging.Core.MessageBus
                 return "[]";
             }
 
+            MessagingRegistration[] snapshot = new MessagingRegistration[
+                finalizedRegistrations.Count
+            ];
+            for (int i = 0; i < snapshot.Length; ++i)
+            {
+                snapshot[i] = finalizedRegistrations[i];
+            }
+
             serializer ??= registration => registration.ToString();
 
             StringBuilder registrations = new();
             _ = registrations.Append('[');
-            for (int i = 0; i < finalizedRegistrations.Count; ++i)
+            for (int i = 0; i < snapshot.Length; ++i)
             {
                 if (0 < i)
                 {
                     _ = registrations.Append(", ");
                 }
-                MessagingRegistration finalizedRegistration = finalizedRegistrations[i];
+                MessagingRegistration finalizedRegistration = snapshot[i];
                 string prettyFinalizedRegistration = serializer(finalizedRegistration);
                 _ = registrations.Append(prettyFinalizedRegistration);
             }
@@ -170,6 +183,15 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         /// <param name="shouldRemove">Null if all MessagingRegistrations should be removed, or a custom function that returns true for any MessagingRegistration that should be removed.</param>
         /// <returns>Number of MessagingRegistrations removed.</returns>
+        /// <remarks>
+        /// Since 4.0, predicates may read this log, but recursive filtered clearing throws before
+        /// running the nested predicate. A predicate that changes retained history causes the outer
+        /// clear to throw after the predicate returns. Completed callback changes remain applied;
+        /// no outer removals are published. Exceptions thrown by the predicate propagate unchanged.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">
+        /// A filtered clear recursively enters this log, or the predicate changes its retained history.
+        /// </exception>
         public int Clear(Predicate<MessagingRegistration> shouldRemove = null)
         {
             CyclicBuffer<MessagingRegistration> finalizedRegistrations = _finalizedRegistrations;

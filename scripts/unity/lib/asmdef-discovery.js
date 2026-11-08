@@ -24,15 +24,6 @@ function isDxMessagingOwnedAssembly(name) {
   return typeof name === "string" && name.startsWith(DXMESSAGING_ASSEMBLY_PREFIX);
 }
 
-function readAsmdefName(asmdefPath) {
-  const raw = fs.readFileSync(asmdefPath, "utf8");
-  const parsed = JSON.parse(raw);
-  if (typeof parsed.name !== "string" || parsed.name.length === 0) {
-    return path.basename(asmdefPath, ".asmdef");
-  }
-  return parsed.name;
-}
-
 function classifyAsmdef(name) {
   for (const [pattern, classification] of [
     [PERF_NAME_REGEX, "perf"],
@@ -43,15 +34,6 @@ function classifyAsmdef(name) {
     if (typeof name === "string" && pattern.test(name)) return classification;
   }
   return "core";
-}
-
-function readAsmdefPlatforms(asmdefPath) {
-  const raw = fs.readFileSync(asmdefPath, "utf8");
-  const parsed = JSON.parse(raw);
-  return {
-    includePlatforms: Array.isArray(parsed.includePlatforms) ? parsed.includePlatforms : [],
-    excludePlatforms: Array.isArray(parsed.excludePlatforms) ? parsed.excludePlatforms : []
-  };
 }
 
 function isAsmdefCompatibleWithTarget(includePlatforms, excludePlatforms, target) {
@@ -104,9 +86,12 @@ function enumerateTestAsmdefs(repoRoot) {
   });
 
   const entries = asmdefPaths.map((asmdefPath) => {
-    const name = readAsmdefName(asmdefPath);
+    const definition = JSON.parse(fs.readFileSync(asmdefPath, "utf8"));
+    const name =
+      typeof definition.name === "string" && definition.name.length
+        ? definition.name
+        : path.basename(asmdefPath, ".asmdef");
     const classification = classifyAsmdef(name);
-    const platforms = readAsmdefPlatforms(asmdefPath);
     return {
       name,
       path: asmdefPath,
@@ -114,8 +99,12 @@ function enumerateTestAsmdefs(repoRoot) {
       isComparison: classification === "comparison",
       isInteg: classification === "integration",
       isTransport: classification === "transport",
-      includePlatforms: platforms.includePlatforms,
-      excludePlatforms: platforms.excludePlatforms,
+      includePlatforms: Array.isArray(definition.includePlatforms)
+        ? definition.includePlatforms
+        : [],
+      excludePlatforms: Array.isArray(definition.excludePlatforms)
+        ? definition.excludePlatforms
+        : [],
       isForeign: !isDxMessagingOwnedAssembly(name)
     };
   });
@@ -166,6 +155,9 @@ function resolveTestAssemblySelection(repoRoot, options) {
   }
   const assemblies = entries
     .filter((entry) => {
+      // The floor SDK assembly has a separate dependency and native qualification lane.
+      if (entry.name.endsWith(".NativeCollectionsResearch"))
+        return opts.includeNativeCollectionsResearch === true;
       if (entry.isPerf) {
         return includePerf;
       }

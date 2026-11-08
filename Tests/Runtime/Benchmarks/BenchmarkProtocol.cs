@@ -166,6 +166,31 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             TimeSpan minimumCycleActiveDuration
         )
         {
+            return MeasurePaired(
+                firstWarmup,
+                firstBatch,
+                secondWarmup,
+                secondBatch,
+                cycles,
+                minimumCycleActiveDuration,
+                complementaryOrder: false
+            );
+        }
+
+        /// <summary>
+        /// Selects the complementary BAAB/ABBA batch order for a sealed confirmatory schedule.
+        /// The legacy published path continues to use ABBA/BAAB.
+        /// </summary>
+        public static PairedBenchmarkMeasurement MeasurePaired(
+            Action firstWarmup,
+            Func<int> firstBatch,
+            Action secondWarmup,
+            Func<int> secondBatch,
+            int cycles,
+            TimeSpan minimumCycleActiveDuration,
+            bool complementaryOrder
+        )
+        {
             if (firstBatch == null)
             {
                 throw new ArgumentNullException(nameof(firstBatch));
@@ -230,7 +255,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     for (int position = 0; position < 8; position++)
                     {
                         bool firstWorkload =
-                            position == 0 || position == 3 || position == 5 || position == 6;
+                            (position == 0 || position == 3 || position == 5 || position == 6)
+                            != complementaryOrder;
                         PairedBatchMeasurement batchMeasurement = MeasurePairedBatch(
                             firstWorkload ? firstBatch : secondBatch
                         );

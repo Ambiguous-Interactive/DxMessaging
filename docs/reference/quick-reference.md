@@ -84,7 +84,14 @@ void OnAnyDamage(in InstanceId src, in TookDamage m) { /* ... */ }
 
 ## Register (DI / services)
 
+This service uses VContainer's `IStartable` and your application's untargeted
+`CombatStarted` message. Register it with `builder.RegisterEntryPoint<DamageSystem>()`
+after the bus and registration builder in your [VContainer scope](../integrations/vcontainer.md#register-the-service-in-your-scope).
+`Start()` activates the lease; scope disposal calls `Dispose()` to release it.
+
 ```csharp
+using System;
+using VContainer.Unity;
 using DxMessaging.Core.MessageBus;
 
 public sealed class DamageSystem : IStartable, IDisposable
@@ -110,7 +117,7 @@ public sealed class DamageSystem : IStartable, IDisposable
 }
 ```
 
-Tip: Define `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, or `REFLEX_PRESENT` to enable the optional shims under [Runtime/Unity/Integrations](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Runtime/Unity/Integrations) that bind the builder automatically for those containers.
+Tip: Use your container's [installer or registration extensions](../integrations/index.md) to bind the bus and builder. The optional shims compile when `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, or `REFLEX_PRESENT` is enabled; follow the corresponding framework setup.
 
 ## Interceptors and post-processors
 

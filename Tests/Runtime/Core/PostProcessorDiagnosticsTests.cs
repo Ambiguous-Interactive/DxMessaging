@@ -1,4 +1,3 @@
-#if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
     using DxMessaging.Core;
@@ -6,6 +5,9 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
     /// <summary>
     /// Proves the load-bearing safety invariant of the post-processor closure collapse:
@@ -180,4 +182,3 @@ namespace DxMessaging.Tests.Runtime.Core
         }
     }
 }
-#endif

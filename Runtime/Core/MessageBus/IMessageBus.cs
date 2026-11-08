@@ -57,15 +57,13 @@ namespace DxMessaging.Core.MessageBus
 
         /// <summary>
         /// Whether diagnostic emission records capture the managed stack trace of the emission
-        /// site. Disabled by default: capturing a trace costs hundreds of microseconds and tens of
-        /// allocations PER RECORD, and a single-subscriber emission writes two records (one on the
-        /// bus, one per token delivery), so leaving it on turns every emission into the dominant
-        /// cost of a frame. Enable it only while investigating where a message came from; the
-        /// Message Monitor and Flow Graph emission-site links are the features that consume it.
+        /// site. Disabled by default. Walking and formatting a stack adds work to each captured
+        /// record. Enable it while tracing emission sites for the Message Monitor or Flow Graph
+        /// source links.
         /// </summary>
         /// <remarks>
-        /// This is orthogonal to <see cref="GlobalDiagnosticsTargets"/>: capture happens only when
-        /// diagnostics are already recording for the current environment AND this is <c>true</c>.
+        /// This switch does not enable bus or token recording. Recording still depends on their
+        /// diagnostics settings; <see cref="GlobalDiagnosticsTargets"/> configures defaults.
         /// </remarks>
         static bool GlobalDiagnosticsStackTraces { get; set; }
 

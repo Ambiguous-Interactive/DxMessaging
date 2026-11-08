@@ -83,9 +83,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
         }
 
-        [TestCase(false)]
-        [TestCase(true)]
-        public void UntargetedPlanSweepDropsBorrowedEntryArray(bool force)
+        [TestCase(false, false)]
+        [TestCase(true, false)]
+        [TestCase(false, true)]
+        [TestCase(true, true)]
+        public void UntargetedPlanSweepDropsBorrowedEntryArray(bool force, bool prepared)
         {
             MessageBus bus = MessageBus.CreateForInternalUse(
                 new FakeClock(),
@@ -98,6 +100,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
             using IDisposable cleanup = ForceTrimCleanup(bus);
             MessageHandler handler = CreateActiveHandler(bus);
+            PreparedUntargetedEmitter<UntargetedOne> bound = prepared ? new(bus) : null;
             Action deregister = null;
             try
             {
@@ -111,7 +114,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     )
                 ).AsAction();
                 UntargetedOne message = new UntargetedOne();
-                bus.UntargetedBroadcast(ref message);
+                if (prepared)
+                {
+                    bound.Emit(ref message);
+                }
+                else
+                {
+                    bus.UntargetedBroadcast(ref message);
+                }
 
                 const BindingFlags declaredInstanceFields =
                     BindingFlags.Instance
@@ -182,6 +192,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     Is.EqualTo(0),
                     "Sweeping stale untargeted plans must reset the cached entry count."
                 );
+                GC.KeepAlive(bound);
             }
             finally
             {
@@ -284,6 +295,80 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 "[{0}] idle sweep must reclaim empty target/source slots after cadence.",
                 scenario.Kind
             );
+        }
+
+        [Test]
+        public void PreparedEmitterRefreshesAfterIdleSweep(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            FakeClock clock = new FakeClock();
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                clock,
+                idleEvictionTicks: 0,
+                evictionTickIntervalSeconds: 1d,
+                idleEvictionEnabled: true,
+                trimApiEnabled: true
+            );
+            using LeakWatcher watcher = LeakWatcher.WatchWithSlots(
+                bus,
+                label: scenario.DisplayName
+            );
+            using IDisposable cleanup = ForceTrimCleanup(bus);
+            MessageRegistrationToken token = CreateEnabledToken(bus);
+            PreparedUntargetedEmitter<UntargetedOne> untargeted = new(bus);
+            PreparedTargetedEmitter<TargetedOne> targeted = new(bus);
+            PreparedBroadcastEmitter<BroadcastOne> broadcast = new(bus);
+            int calls = 0;
+
+            void EmitPrepared()
+            {
+                InstanceId context = DefaultContext;
+                switch (scenario.Kind)
+                {
+                    case MessageKind.Untargeted:
+                        UntargetedOne one = new();
+                        untargeted.Emit(ref one);
+                        break;
+                    case MessageKind.Targeted:
+                        TargetedOne two = new();
+                        targeted.Emit(ref context, ref two);
+                        break;
+                    case MessageKind.Broadcast:
+                        BroadcastOne three = new();
+                        broadcast.Emit(ref context, ref three);
+                        break;
+                    default:
+                        throw UnsupportedScenario(scenario);
+                }
+            }
+
+            MessageRegistrationHandle first = RegisterCountingFirst(
+                scenario,
+                token,
+                DefaultContext,
+                () => calls++
+            );
+            EmitPrepared();
+            Assert.AreEqual(1, calls, "The first prepared emission must reach the live handler.");
+            token.RemoveRegistration(first);
+            EmitSweepSampleWindow(bus);
+            Assert.GreaterOrEqual(bus.OccupiedTypeSlots + bus.OccupiedTargetSlots, 1);
+            clock.Advance(1d);
+            EmitSweepSampleWindow(bus);
+            Assert.AreEqual(0, bus.OccupiedTypeSlots);
+            Assert.AreEqual(0, bus.OccupiedTargetSlots);
+
+            MessageRegistrationHandle second = RegisterCountingFirst(
+                scenario,
+                token,
+                DefaultContext,
+                () => calls++
+            );
+            EmitPrepared();
+            Assert.AreEqual(2, calls, "The same prepared handle must use the fresh route.");
+            token.RemoveRegistration(second);
         }
 
         [Test]

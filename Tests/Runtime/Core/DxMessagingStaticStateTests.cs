@@ -1,4 +1,3 @@
-#if UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Runtime.Core
 {
     using System;
@@ -7,6 +6,9 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
     public sealed class DxMessagingStaticStateTests
     {
@@ -125,4 +127,3 @@ namespace DxMessaging.Tests.Runtime.Core
         private struct TotalMessagesTestMessage : IUntargetedMessage { }
     }
 }
-#endif

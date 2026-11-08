@@ -825,7 +825,7 @@ namespace DxMessaging.Core.MessageBus
         }
 
         /// <summary>Pairs a successful method lookup with its global LRU key.</summary>
-        private readonly struct ReflexiveMethodEntry
+        internal readonly struct ReflexiveMethodEntry
         {
             public readonly (Type componentType, MethodSignatureKey signature) key;
             public readonly Action<MonoBehaviour, object[]> method;
@@ -1128,6 +1128,17 @@ namespace DxMessaging.Core.MessageBus
             get => _diagnosticsMode;
             set => _diagnosticsMode = value;
         }
+
+        /// <summary>Keeps separate handler state distinct while public equality remains owner-based.</summary>
+        private sealed class MessageHandlerReferenceComparer : IEqualityComparer<MessageHandler>
+        {
+            public bool Equals(MessageHandler first, MessageHandler second) =>
+                ReferenceEquals(first, second);
+
+            public int GetHashCode(MessageHandler handler) => RuntimeHelpers.GetHashCode(handler);
+        }
+
+        private static readonly MessageHandlerReferenceComparer HandlerReferenceComparer = new();
 
         private static readonly Type MessageBusType = typeof(MessageBus);
 
@@ -1660,8 +1671,10 @@ namespace DxMessaging.Core.MessageBus
         private readonly Dictionary<int, HashSet<InstanceId>> _dirtyTargetSets = new();
         private readonly Dictionary<ContextHandlerMap, int> _contextMapHighWaterCounts = new();
         private readonly List<MessageHandler> _dirtyHandlers = new();
-        private readonly HashSet<MessageHandler> _dirtyHandlerSet = new();
-        private readonly Dictionary<MessageHandler, long> _dirtyHandlerTicks = new();
+        private readonly HashSet<MessageHandler> _dirtyHandlerSet = new(HandlerReferenceComparer);
+        private readonly Dictionary<MessageHandler, long> _dirtyHandlerTicks = new(
+            HandlerReferenceComparer
+        );
         private bool _globalSlotSweepCandidate;
         private long _globalSlotSweepGeneration;
         private int _lastContextTypeSlotsEvicted;
@@ -2285,7 +2298,10 @@ namespace DxMessaging.Core.MessageBus
                         out HandlerCache<int, HandlerCache> handlers
                     )
                     && handlers.handlers.Count == 0
-                    && !IsIdleForSweep(handlers.lastTouchTicks, force: false)
+                    && (
+                        HasActiveDispatchSnapshot(handlers.dispatchState)
+                        || !IsIdleForSweep(handlers.lastTouchTicks, force: false)
+                    )
                 )
                 {
                     return true;
@@ -2958,6 +2974,21 @@ namespace DxMessaging.Core.MessageBus
             return count;
         }
 
+        /// <summary>
+        /// Releases interceptor targets held through stale registration handles before removing
+        /// their type slots. Clear replaces the flat array reference without changing a frozen
+        /// array still held by an active emission.
+        /// </summary>
+        private static void ClearInterceptorSink(MessageCache<InterceptorCache<object>> sink)
+        {
+            foreach (InterceptorCache<object> interceptors in sink)
+            {
+                interceptors.Clear();
+            }
+
+            sink.Clear();
+        }
+
         internal void ResetState()
         {
             ResetTypedSlotsForReferencedHandlers();
@@ -3003,9 +3034,9 @@ namespace DxMessaging.Core.MessageBus
             _targetedDispatchPlans.Clear();
             _broadcastDispatchPlans.Clear();
 
-            _untargetedInterceptsByType.Clear();
-            _targetedInterceptsByType.Clear();
-            _broadcastInterceptsByType.Clear();
+            ClearInterceptorSink(_untargetedInterceptsByType);
+            ClearInterceptorSink(_targetedInterceptsByType);
+            ClearInterceptorSink(_broadcastInterceptsByType);
             _uniqueInterceptorsAndPriorities.Clear();
             _untargetedBroadcastMethodsByType.Clear();
             _targetedBroadcastMethodsByType.Clear();
@@ -3041,7 +3072,9 @@ namespace DxMessaging.Core.MessageBus
 
         private void ResetTypedSlotsForReferencedHandlers()
         {
-            HashSet<MessageHandler> handlers = new HashSet<MessageHandler>();
+            HashSet<MessageHandler> handlers = new HashSet<MessageHandler>(
+                HandlerReferenceComparer
+            );
             foreach (MessageHandler handler in _dirtyHandlers)
             {
                 handlers.Add(handler);
@@ -8322,7 +8355,7 @@ namespace DxMessaging.Core.MessageBus
             for (int i = 0; i < components.Count; ++i)
             {
                 MonoBehaviour component = components[i];
-                SendMessage(component, ref message, onlyActive);
+                SendMessage(component, ref message, onlyActive, resetGeneration);
                 if (resetGeneration != _resetGeneration)
                 {
                     return false;
@@ -8335,7 +8368,8 @@ namespace DxMessaging.Core.MessageBus
         private void SendMessage(
             MonoBehaviour recipient,
             ref ReflexiveMessage message,
-            bool onlyActive
+            bool onlyActive,
+            long resetGeneration
         )
         {
             if (recipient == null)
@@ -8355,22 +8389,33 @@ namespace DxMessaging.Core.MessageBus
 
             Action<MonoBehaviour, object[]> method = ResolveReflexiveMethod(
                 recipient.GetType(),
-                ref message
+                ref message,
+                resetGeneration
             );
-            method?.Invoke(recipient, message.parameters);
+            if (resetGeneration == _resetGeneration)
+            {
+                method?.Invoke(recipient, message.parameters);
+            }
         }
 
         /// <summary>Resolves a dispatcher and caches only successful lookups under a global LRU bound.</summary>
         private Action<MonoBehaviour, object[]> ResolveReflexiveMethod(
             Type componentType,
-            ref ReflexiveMessage message
+            ref ReflexiveMessage message,
+            long resetGeneration
         )
         {
             (Type, MethodSignatureKey) lookupKey = (componentType, message.signatureKey);
             Action<MonoBehaviour, object[]> method;
-            if (
-                _methodCache.TryGetValue(lookupKey, out LinkedListNode<ReflexiveMethodEntry> cached)
-            )
+            bool hasCachedMethod = _methodCache.TryGetValue(
+                lookupKey,
+                out LinkedListNode<ReflexiveMethodEntry> cached
+            );
+            if (resetGeneration != _resetGeneration)
+            {
+                return null;
+            }
+            if (hasCachedMethod)
             {
                 method = cached.Value.method;
                 _methodCacheLru.Remove(cached);
@@ -8384,6 +8429,7 @@ namespace DxMessaging.Core.MessageBus
                 {
                     methodInfo = componentType.GetMethod(
                         message.method,
+                        0,
                         ReflexiveMethodBindingFlags,
                         null,
                         message.signatureKey.CapturedParameterTypes,
@@ -8392,12 +8438,20 @@ namespace DxMessaging.Core.MessageBus
                 }
                 catch (AmbiguousMatchException)
                 {
+                    if (resetGeneration != _resetGeneration)
+                    {
+                        return null;
+                    }
                     MethodInfo[] matchingMethods = componentType.GetMethods(
                         ReflexiveMethodBindingFlags
                     );
                     Span<MethodInfo> span = matchingMethods.AsSpan();
                     for (int i = 0; i < span.Length; ++i)
                     {
+                        if (resetGeneration != _resetGeneration)
+                        {
+                            return null;
+                        }
                         MethodInfo matchingMethod = span[i];
                         if (
                             !string.Equals(
@@ -8405,6 +8459,7 @@ namespace DxMessaging.Core.MessageBus
                                 message.method,
                                 StringComparison.Ordinal
                             )
+                            || matchingMethod.ContainsGenericParameters
                             || !ParameterTypesMatch(
                                 matchingMethod.GetParameters(),
                                 message.signatureKey.CapturedParameterTypes
@@ -8423,17 +8478,46 @@ namespace DxMessaging.Core.MessageBus
                     methodInfo = null;
                 }
 
-                if (methodInfo != null)
+                if (resetGeneration != _resetGeneration)
+                {
+                    return null;
+                }
+                if (methodInfo != null && !methodInfo.ContainsGenericParameters)
                 {
                     method = CompileMethodAction(methodInfo);
+                    if (resetGeneration != _resetGeneration)
+                    {
+                        return null;
+                    }
                     if (method != null && 0 < _handlerCacheRetentionLimit)
                     {
-                        TrimReflexiveMethodCache(_handlerCacheRetentionLimit - 1);
-                        LinkedListNode<ReflexiveMethodEntry> entry = new(
-                            new ReflexiveMethodEntry(lookupKey, method)
+                        /*
+                         * Metadata resolution can emit recursively and publish this key.
+                         * Reuse its node so dictionary and LRU ownership stay aligned.
+                         */
+                        bool publishedDuringResolution = _methodCache.TryGetValue(
+                            lookupKey,
+                            out cached
                         );
-                        _methodCache.Add(lookupKey, entry);
-                        _methodCacheLru.AddFirst(entry);
+                        if (resetGeneration != _resetGeneration)
+                        {
+                            return null;
+                        }
+                        if (publishedDuringResolution)
+                        {
+                            method = cached.Value.method;
+                            _methodCacheLru.Remove(cached);
+                            _methodCacheLru.AddFirst(cached);
+                        }
+                        else
+                        {
+                            TrimReflexiveMethodCache(_handlerCacheRetentionLimit - 1);
+                            LinkedListNode<ReflexiveMethodEntry> entry = new(
+                                new ReflexiveMethodEntry(lookupKey, method)
+                            );
+                            _methodCache.Add(lookupKey, entry);
+                            _methodCacheLru.AddFirst(entry);
+                        }
                     }
                 }
             }

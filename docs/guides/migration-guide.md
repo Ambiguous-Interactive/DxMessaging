@@ -26,6 +26,16 @@ public `parameterTypes` array after construction does not select a different ove
 a new message with the intended types instead. The `parameters` array still supplies the argument
 values and must remain compatible with the captured signature.
 
+### Read serialization metadata from the numeric field
+
+`InstanceId` now places `DataMember(Name = "id")` on its private numeric field instead of
+the getter-only `Id` property. The public getter and numeric wire member name remain unchanged.
+Code that inspects serialization attributes through reflection must no longer expect
+`DataMemberAttribute` on the `Id` property.
+
+XML and JSON data contract deserialization restore the numeric identity. They do not find or
+restore a Unity object reference. Retain or resolve that reference separately when it is needed.
+
 ### Remove the test-only runtime settings override
 
 DxMessaging 4.0 removes `DxMessagingRuntimeSettingsProvider.Override`. Configure
@@ -136,24 +146,45 @@ does not make the referenced object's fields immutable.
 1. **Install DxMessaging** via Package Manager
 1. **Read the [Visual Guide](../getting-started/visual-guide.md)** (5 minutes)
 1. **Import the Mini Combat sample** from Package Manager
-1. **Create a throwaway test scene** and try:
+1. **Create a throwaway test scene**. Save the component classes as `TestListener.cs` and
+   `TestEmitter.cs`, each with the shown imports, and attach both to active scene GameObjects.
+   Enter Play Mode to emit from `TestEmitter.Start` after the listener registers:
 
    ```csharp
+   using DxMessaging.Core.Attributes;
+   using DxMessaging.Core.Extensions;
+   using DxMessaging.Unity;
+   using UnityEngine;
+
    [DxUntargetedMessage]
    [DxAutoConstructor]
-   public readonly partial struct TestMessage { public readonly int value; }
+   public readonly partial struct TestMessage
+   {
+       public readonly int value;
+   }
 
-   public class TestListener : MessageAwareComponent {
-       protected override void RegisterMessageHandlers() {
+   public sealed class TestListener : MessageAwareComponent
+   {
+       protected override void RegisterMessageHandlers()
+       {
            base.RegisterMessageHandlers();
            _ = Token.RegisterUntargeted<TestMessage>(OnTest);
        }
-       void OnTest(in TestMessage m) => Debug.Log($"Got {m.value}");
+
+       private void OnTest(in TestMessage message)
+       {
+           Debug.Log($"Got {message.value}");
+       }
    }
 
-   // In another script:
-   var msg = new TestMessage(42);
-   msg.Emit();
+   public sealed class TestEmitter : MonoBehaviour
+   {
+       private void Start()
+       {
+           TestMessage message = new(42);
+           message.Emit();
+       }
+   }
    ```
 
 **Success criteria:** You understand the basic flow and have no build errors.
@@ -627,11 +658,19 @@ Phase them out gradually:
 
 Once the bus/provider abstractions are in place, wire listeners through the registration builder instead of hand-rolling handler lifecycles. Benefits:
 
-- Container-managed lifetimes (`IDisposable`, `IInitializable`, `IStartable`, etc.) automatically enable/disable registrations.
+- Activate and dispose each service's lease from its container startup and disposal callbacks.
 - Centralises diagnostics toggles and message bus selection.
 - Keeps MonoBehaviours and pure C# services on the same path.
 
+This example uses VContainer's `IStartable` interface and assumes your application already
+defines the untargeted `InventoryChanged` message. `Start()` activates the lease;
+`Dispose()` releases its registrations.
+
 ```csharp
+using System;
+using DxMessaging.Core.MessageBus;
+using VContainer.Unity;
+
 public sealed class InventoryService : IStartable, IDisposable
 {
     private readonly MessageRegistrationLease lease;
@@ -664,8 +703,15 @@ public sealed class InventoryService : IStartable, IDisposable
 }
 ```
 
-- **Unity scene code:** Call `MessagingComponent.CreateRegistrationBuilder()` during dependency injection and share the lease across helper services or pooled objects.
-- **Container shims:** Define `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, or `REFLEX_PRESENT` to enable the built-in installers/extensions that register the builder automatically when those frameworks are present.
+In the [VContainer scope setup](../integrations/vcontainer.md#register-the-service-in-your-scope),
+register this service with `builder.RegisterEntryPoint<InventoryService>()` after registering
+the bus and registration builder. VContainer calls `Start()` near `MonoBehaviour.Start()`
+and disposes singleton/scoped entry points with their scope. See
+[VContainer's entry point lifecycle](https://vcontainer.hadashikick.jp/integrations/entrypoint).
+Use your container's own startup and disposal bindings for other frameworks.
+
+- **Unity scene code:** Call `MessagingComponent.CreateRegistrationBuilder()` to use the component's configured bus/provider. Give each independent service or pooled owner its own lease and dispose it when that owner finishes. The component does not track these leases.
+- **Container shims:** Register the bus and builder through your container's [installer or registration extensions](../integrations/index.md). The `ZENJECT_PRESENT`, `VCONTAINER_PRESENT`, and `REFLEX_PRESENT` symbols enable the optional shims; follow the framework setup to bind their services.
 - **Tests:** Prefer the builder to create isolated tokens tied to the test fixture lifecycle.
 
 ### "Should we migrate tests?"

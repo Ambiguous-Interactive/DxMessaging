@@ -18,49 +18,54 @@ This combination provides:
 
 ## Supported Frameworks
 
+These are setup fragments for the callbacks named below. Each helper registers a new
+bus for its container. Follow the linked guides to register builders and services.
+
 ### [VContainer](vcontainer.md)
 
-Fast, lightweight DI with minimal overhead. Features scoped lifetimes for per-scene message buses.
+Call the helper inside `LifetimeScope.Configure(IContainerBuilder builder)`:
 
 ```csharp
-builder.Register<IMessageBus>(Lifetime.Scoped)
-    .AsImplementedInterfaces()
-    .AsSelf();
+using DxMessaging.Unity.Integrations.VContainer;
+
+builder.RegisterDxMessagingBus();
 ```
 
 ### [Zenject](zenject.md)
 
-Feature-rich DI with extensive Unity integration. Supports complex binding scenarios and sub-containers.
+Call the helper inside `MonoInstaller.InstallBindings()`, using its `Container` property:
 
 ```csharp
-Container.Bind<IMessageBus>()
-    .FromInstance(MessageHandler.MessageBus)
-    .AsSingle();
+using DxMessaging.Unity.Integrations.Zenject;
+
+Container.BindDxMessagingBus();
 ```
 
 ### [Reflex](reflex.md)
 
-Modern, reflection-free DI designed for performance. Zero-allocation resolution with AOT support.
+Call the helper inside `IInstaller.InstallBindings(ContainerBuilder builder)`:
 
 ```csharp
-Container.Singleton<IMessageBus>(MessageHandler.MessageBus);
+using DxMessaging.Unity.Integrations.Reflex;
+
+builder.AddDxMessagingBus();
 ```
 
-## Choosing a Framework
+## Configuration at a Glance
 
-| Framework      | Best For                                     | Performance |
-| -------------- | -------------------------------------------- | ----------- |
-| **VContainer** | Most projects, additive scenes               | Fast        |
-| **Zenject**    | Complex projects, existing Zenject codebases | Good        |
-| **Reflex**     | Performance-critical, AOT platforms          | Fastest     |
+| Framework      | Configuration pattern                                              |
+| -------------- | ------------------------------------------------------------------ |
+| **VContainer** | `LifetimeScope.Configure` and service entry-point registrations    |
+| **Zenject**    | `MonoInstaller.InstallBindings` in the context's installer list    |
+| **Reflex**     | `IInstaller.InstallBindings` discovered under its `ContainerScope` |
 
 ## Common Patterns
 
 All frameworks support the same core patterns:
 
-1. **Global Bus** -- Share `MessageHandler.MessageBus` across all systems
-1. **Scoped Bus** -- Create per-scene buses for isolation
-1. **Builder Injection** -- Inject `IMessageRegistrationBuilder` for flexible handler registration
-1. **Testable Design** -- Mock `IMessageBus` in unit tests
+1. **Global Bus** -- Explicitly bind `MessageHandler.MessageBus` when the container should share the global bus
+1. **Scoped Bus** -- Register a new bus in each scene or feature container and emit on the bus resolved from that container
+1. **Builder Injection** -- Bind `IMessageRegistrationBuilder` through the framework setup; each independent service owns and disposes its lease
+1. **Testable Design** -- Use an isolated `MessageBus` per test and verify delivery and cleanup
 
 See each framework's guide for detailed examples and best practices.

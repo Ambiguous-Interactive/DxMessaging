@@ -51,6 +51,7 @@ Prefer injecting `IMessageBus` (or `IMessageRegistrationBuilder`) in DI scenario
 
 ```csharp
 using DxMessaging.Core.Extensions;
+using DxMessaging.Core.MessageBus;
 using DxMessaging.Core.Attributes;
 
 public sealed class ScoreReporter

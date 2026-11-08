@@ -10,7 +10,15 @@
       "Run shipping Editor and sample tests",
       false,
       600
-    ]
+    ],
+    [
+      "runner-bootstrap.yml",
+      "pilot-contract-smoke",
+      "Build and run pilot comparison contracts or calibration",
+      false,
+      600
+    ],
+    ["runner-bootstrap.yml", "native-sdk-floor", "Run Unity native SDK floor contracts", false, 600]
   ],
   "UNITY_EDITOR_PROFILES": {
     "unity-tests.yml": "${{ fromJSON('{\"editmode\":\"EditorOnly\",\"playmode\":\"EditorOnly\",\"standalone\":\"StandaloneWindowsIl2Cpp\"}')[matrix.test-mode] }}",
@@ -28,7 +36,9 @@
     ["unity-benchmarks.yml", "benchmarks", ["run_tests"]],
     ["release.yml", "unity-checks", ["run_tests"]],
     ["perf-numbers.yml", "perf-benchmarks", ["run_allocation_contracts", "run_tests"]],
-    ["runner-bootstrap.yml", "shipping-editor-verification", ["run_editor"]]
+    ["runner-bootstrap.yml", "shipping-editor-verification", ["run_editor"]],
+    ["runner-bootstrap.yml", "pilot-contract-smoke", ["run_contracts"]],
+    ["runner-bootstrap.yml", "native-sdk-floor", ["run_sdk_floor"]]
   ],
   "DOCS_ONLY_PATH_IGNORES": [
     "docs/**",

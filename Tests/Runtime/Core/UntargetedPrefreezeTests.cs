@@ -5,6 +5,9 @@ namespace DxMessaging.Tests.Runtime.Core
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Tests.Runtime.Scripts.Messages;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
     /// <summary>
     /// Public-behavior pins for the untargeted emission-freeze contract.
@@ -17,6 +20,11 @@ namespace DxMessaging.Tests.Runtime.Core
     /// next emission, and the post-process snapshot is captured before
     /// interceptors run.
     /// </summary>
+    /// <remarks>
+    /// 2026-11-07: Portable tests use NUnit 5, where classic assertion methods live
+    /// in ClassicAssert. The conditional alias preserves the Unity assertion API
+    /// and every original expected value.
+    /// </remarks>
     public sealed class UntargetedPrefreezeTests
     {
         [Test]
@@ -87,11 +95,8 @@ namespace DxMessaging.Tests.Runtime.Core
             bool registeredLate = false;
 
             /*
-                Register the interceptor directly through the MessageHandler so
-                it lands on THIS bus:
-                MessageRegistrationToken.RegisterUntargetedInterceptor does not
-                forward the token's bus and always registers on the global bus
-                (pre-existing token behavior, flagged for API review).
+                Register through MessageHandler with an explicit bus to exercise
+                the interceptor phase independently of token staging.
             */
             Action interceptorDeregistration = (
                 handler.RegisterUntargetedInterceptor<SimpleUntargetedMessage>(

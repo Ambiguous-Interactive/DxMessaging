@@ -7,7 +7,16 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
     using MessageBus = DxMessaging.Core.MessageBus.MessageBus;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
+    /// <summary>Checks dispatch through the selected message bus.</summary>
+    /// <remarks>
+    /// 2026-11-07: Portable tests use NUnit 5, where classic assertion methods live
+    /// in ClassicAssert. The conditional alias preserves the Unity assertion API
+    /// and every original expected value.
+    /// </remarks>
     [TestFixture]
     public sealed class MessageBusExtensionsTests
     {

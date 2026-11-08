@@ -2,7 +2,7 @@
 
 ## Targeted across all targets
 
-- Accept every targeted message of a given type regardless of who it's for.
+- Listen to targeted messages of a given type across recipient IDs.
 
 ```csharp
 using DxMessaging.Core;   // InstanceId
@@ -20,7 +20,7 @@ void RecordProcessedHealRequest(InstanceId target, Heal m) =>
 
 ## Broadcast across all sources
 
-- Accept every broadcast message of a given type regardless of who emitted it.
+- Listen to broadcast messages of a given type across source IDs.
 
 ```csharp
 using DxMessaging.Core;   // InstanceId
@@ -36,12 +36,12 @@ void RecordProcessedDamage(InstanceId source, TookDamage m) =>
     replay.RecordProcessedDamageMessage(source, m.amount);
 ```
 
-The handler owns presentation state by spawning a damage number. The post-processor records
-that dispatch completed. It cannot infer the target's final health from the message payload.
+The handler owns presentation state by spawning a damage number. The post-processor runs
+when dispatch reaches post-processing. It cannot infer the target's final health from the message payload.
 
 ## Global accept-all (debug/inspection)
 
-- Receive every message of every type on a handler; useful for tooling.
+- Observe untargeted, targeted, and broadcast emissions on the token's bus when dispatch reaches the global-observer phase. An interceptor veto, inactive handler, or bus reset can prevent delivery.
 
 ```csharp
 using DxMessaging.Core;
@@ -223,22 +223,21 @@ var dealDamage = new DealDamage(50f);
 dealDamage.EmitTargeted(enemyId);
 ```
 
-### Message Analytics and Metrics
+### Message Counts
 
-Track message frequency and performance across your entire game:
+Count observed messages by type on the supplied bus. For dispatch throughput and
+allocation measurements, see [Performance](../architecture/performance.md):
 
 ```csharp
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using DxMessaging.Core;
 using DxMessaging.Core.Messages;
 using DxMessaging.Core.MessageBus;
 
 public sealed class MessageAnalytics : IDisposable
 {
-    private readonly Dictionary<Type, (int count, long totalMs)> _stats = new();
-    private readonly Stopwatch _stopwatch = new();
+    private readonly Dictionary<Type, int> _counts = new();
     private readonly MessageHandler _handler;
     private readonly MessageRegistrationToken _token;
 
@@ -267,23 +266,15 @@ public sealed class MessageAnalytics : IDisposable
 
     private void TrackMessage(Type messageType)
     {
-        _stopwatch.Restart();
-        // Message processing happens here
-        _stopwatch.Stop();
-
-        if (!_stats.TryGetValue(messageType, out var stat))
-        {
-            stat = (0, 0);
-        }
-        _stats[messageType] = (stat.count + 1, stat.totalMs + _stopwatch.ElapsedMilliseconds);
+        _counts.TryGetValue(messageType, out int count);
+        _counts[messageType] = count + 1;
     }
 
     public void PrintStats()
     {
-        foreach (var kvp in _stats)
+        foreach (KeyValuePair<Type, int> entry in _counts)
         {
-            var avg = kvp.Value.totalMs / (double)kvp.Value.count;
-            UnityEngine.Debug.Log($"{kvp.Key.Name}: {kvp.Value.count} messages, avg {avg:F2}ms");
+            UnityEngine.Debug.Log($"{entry.Key.Name}: {entry.Value} messages");
         }
     }
 
@@ -302,12 +293,17 @@ Yes **Good use cases:**
 - Message replay/recording systems
 
 Warning: **Performance consideration:**
-Global Accept-All handlers are invoked for **every** message of **every** type. For performance-sensitive gameplay logic, prefer type-specific registrations which use O(1) lookup instead of O(N) iteration.
+Global accept-all callbacks receive message interfaces. A struct payload is boxed when it reaches
+this path. Type-specific registrations select which message types reach a callback; total dispatch
+work also includes route lookup, configured listener fan-out, activity checks, and callback work.
+Measure your message rate, message shapes, listener count, and callback work before choosing a
+registration pattern. See the [allocation contract](../reference/faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc)
+and [measured scenarios](../architecture/performance.md) for scope and exceptions.
 
 No **Avoid for:**
 
 - Core gameplay logic that only needs specific message types
-- Hot paths with thousands of messages per frame
+- Paths that require allocation-free typed struct dispatch
 - Production code that can use specific type registrations instead
 
 Tips

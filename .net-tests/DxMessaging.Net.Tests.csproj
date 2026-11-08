@@ -6,6 +6,22 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile
+      Include="../Tests/Editor/Contract/TypedSlotIndexCoverageTests.cs"
+      Link="TypedSlotIndexCoverageTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/RegistrationMethodAxisCoverageTests.cs"
+      Link="RegistrationMethodAxisCoverageTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/StaleOverDeregistrationTests.cs"
+      Link="StaleOverDeregistrationTests.cs"
+    />
+    <Compile
+      Include="../Tests/Editor/Contract/MessageCacheStorageTests.cs"
+      Link="MessageCacheStorageTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/DifferentialBusTraceTests.cs"
       Link="DifferentialBusTraceTests.cs"
     />
@@ -40,10 +56,63 @@
       Include="../Tests/Runtime/Core/BuilderDiagnosticOwnershipTests.cs"
       Link="BuilderDiagnosticOwnershipTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/GeneratedFloatingDefaultTests.cs"
+      Link="GeneratedFloatingDefaultTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/GeneratedInterfaceContainerTests.cs"
+      Link="GeneratedInterfaceContainerTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/GeneratedNameofDefaultsTests.cs"
+      Link="GeneratedNameofDefaultsTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/GeneratedStructInitializationTests.cs"
+      Link="GeneratedStructInitializationTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/SourceGeneratorNestedTests.cs"
+      Link="SourceGeneratorNestedTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/PostProcessorDiagnosticsTests.cs"
+      Link="PostProcessorDiagnosticsTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/UntargetedPrefreezeTests.cs"
+      Link="UntargetedPrefreezeTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/Extensions/MessageBusExtensionsTests.cs"
+      Link="MessageBusExtensionsTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/MessageHandlerComparabilityTests.cs"
+      Link="MessageHandlerComparabilityTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/DxMessagingStaticStateTests.cs"
+      Link="DxMessagingStaticStateTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/MessageHandlerGlobalBusTests.cs"
+      Link="MessageHandlerGlobalBusTests.cs"
+    />
     <ProjectReference Include="../.net/DxMessaging.csproj" />
+    <Compile
+      Include="../Tests/Runtime/Core/CyclicBufferReentrantRemovalTests.cs"
+      Link="CyclicBufferReentrantRemovalTests.cs"
+    />
+    <Analyzer Include="../Runtime/Analyzers/*.dll" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageReference Include="NUnit" Version="5.0.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.1" />
+    <PackageReference Include="coverlet.collector" Version="10.1.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <Compile Include="../Tests/Runtime/TestUtilities/MessageKind.cs" Link="MessageKind.cs" />
     <Compile
       Include="../Tests/Runtime/TestUtilities/MessageScenario.cs"
@@ -94,6 +163,10 @@
     <Compile
       Include="../Tests/Runtime/Core/TokenRollbackReentryTests.cs"
       Link="TokenRollbackReentryTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenReentrantRetargetTests.cs"
+      Link="TokenReentrantRetargetTests.cs"
     />
     <Compile
       Include="../Tests/Runtime/Core/TokenReentrantEnableTests.cs"
@@ -152,6 +225,27 @@
       Link="GlobalNestedSnapshotReclamationTests.cs"
     />
     <Compile Include="../Tests/Runtime/Core/IntKeyMapTests.cs" Link="IntKeyMapTests.cs" />
+    <Compile Include="../Tests/Runtime/Core/CyclicBufferTests.cs" Link="CyclicBufferTests.cs" />
+    <Compile
+      Include="../Tests/Runtime/Core/RegistrationLogTests.cs"
+      Link="RegistrationLogTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Scripts/Messages/SimpleUntargetedMessage.cs"
+      Link="SimpleUntargetedMessage.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Scripts/Messages/SimpleTargetedMessage.cs"
+      Link="SimpleTargetedMessage.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Scripts/Messages/SimpleBroadcastMessage.cs"
+      Link="SimpleBroadcastMessage.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/MessageEmissionDataTests.cs"
+      Link="MessageEmissionDataTests.cs"
+    />
     <Compile
       Include="../Tests/Runtime/Core/BusIdentityResetTests.cs"
       Link="BusIdentityResetTests.cs"
@@ -226,6 +320,82 @@
     <Compile
       Include="../Tests/Runtime/Core/InstanceIdDataContractTests.cs"
       Link="InstanceIdDataContractTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/MessageRegistrationLeaseTests.cs"
+      Link="MessageRegistrationLeaseTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenDisposeReuseTests.cs"
+      Link="TokenDisposeReuseTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenInterceptorBusRoutingTests.cs"
+      Link="TokenInterceptorBusRoutingTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/TokenPostProcessorBusRoutingTests.cs"
+      Link="TokenPostProcessorBusRoutingTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/RegistrationLeakAccountingTests.cs"
+      Link="RegistrationLeakAccountingTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/NullAndInvalidInputTests.cs"
+      Link="NullAndInvalidInputTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/ScenarioCallbacks.cs"
+      Link="ScenarioCallbacks.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Scripts/Messages/ClassUntargetedMessage.cs"
+      Link="ClassUntargetedMessage.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/InterceptorResetRetentionTests.cs"
+      Link="InterceptorResetRetentionTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/EqualOwnerHandlerResetTests.cs"
+      Link="EqualOwnerHandlerResetTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/MemoryReclaim/InFlightIdleSweepTests.cs"
+      Link="InFlightIdleSweepTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/ExactSequentialBatchControl.cs"
+      Link="ExactSequentialBatchControl.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/PreparedDynamicEmitterControl.cs"
+      Link="PreparedDynamicEmitterControl.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/LockedFixedRingControl.cs"
+      Link="LockedFixedRingControl.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/ReferenceCommandQueueControl.cs"
+      Link="ReferenceCommandQueueControl.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/TestUtilities/SpscFixedRingControl.cs"
+      Link="SpscFixedRingControl.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/LockedFixedRingControlTests.cs"
+      Link="LockedFixedRingControlTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/ReferenceCommandQueueControlTests.cs"
+      Link="ReferenceCommandQueueControlTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/SpscFixedRingControlTests.cs"
+      Link="SpscFixedRingControlTests.cs"
     />
   </ItemGroup>
 </Project>

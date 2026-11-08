@@ -391,24 +391,26 @@ durable bus-identity guarantee.
 
 ## RegistrationLog API
 
-The `RegistrationLog` class tracks all messaging registrations and deregistrations for a message bus. This is invaluable for debugging subscription issues and understanding message flow.
+`RegistrationLog` retains a bounded history of registration and deregistration events. Standalone logs keep the newest 1,024 entries; bus-owned logs use the **Registration Log Capacity** runtime setting. Recording starts disabled. Old entries are overwritten at capacity, and zero capacity disables storage.
 
 ### Properties
 
 | Property        | Type                                   | Description                                                             |
 | --------------- | -------------------------------------- | ----------------------------------------------------------------------- |
 | `Enabled`       | `bool`                                 | Get/set whether logging is active. Disabled by default for performance. |
-| `Registrations` | `IReadOnlyList<MessagingRegistration>` | Read-only access to all logged registrations.                           |
+| `Registrations` | `IReadOnlyList<MessagingRegistration>` | Live read-only view of retained events, oldest first.                   |
 
 ### Methods
 
 #### `Log(MessagingRegistration registration)`
 
-Records a registration event. Called automatically by the message bus when `Enabled` is true.
+Records an event when `Enabled` is true and capacity is positive. The bus records its registration changes through this method after you enable the log.
 
 #### `GetRegistrations(InstanceId instanceId)`
 
-Returns all registrations for a specific instance. Useful for inspecting what a particular component has registered for.
+Enumerates retained events for the specified instance in chronological order. Check each entry's `registrationType` to distinguish registration from deregistration.
+
+Use this fragment inside a `MonoBehaviour` method, with `using UnityEngine;` at file scope.
 
 ```csharp
 using DxMessaging.Core;
@@ -421,13 +423,19 @@ bus.Log.Enabled = true;
 InstanceId myComponent = GetComponent<MonoBehaviour>();
 foreach (MessagingRegistration reg in bus.Log.GetRegistrations(myComponent))
 {
-    Debug.Log($"Registered for {reg.type.Name} via {reg.registrationMethod}");
+    Debug.Log($"[{reg.registrationType}] {reg.type.Name} via {reg.registrationMethod}");
 }
 ```
 
 #### `ToString()` and `ToString(Func<MessagingRegistration, string> serializer)`
 
-Returns a string representation of all logged registrations. You can provide a custom serializer for formatted output.
+Formats the retained history in chronological order. Pass a custom serializer to choose the output format.
+
+Since 4.0, formatting a nonempty log allocates a snapshot of the entries retained when the call begins.
+If the serializer records, clears, or resizes history, those changes remain in the live log; the
+current output still visits each original entry once. Nested formatting captures its own current
+history. Serializer exceptions propagate unchanged. Formatting also allocates its output text;
+keep it outside allocation-sensitive dispatch paths.
 
 ```csharp
 using DxMessaging.Core;
@@ -449,6 +457,12 @@ Debug.Log(formatted);
 #### `Clear(Predicate<MessagingRegistration> shouldRemove = null)`
 
 Removes registrations from the log. Pass `null` to clear all, or provide a predicate to selectively remove entries.
+
+In 4.0, a predicate can read the same log or use another log. If it records, clears, or otherwise
+changes the same retained history, the outer clear throws `InvalidOperationException` after the
+predicate returns. The callback's completed changes remain; the outer removal is not applied.
+A recursive filtered clear throws before running its own predicate. A predicate's own exception
+propagates unchanged. Keep predicates read-only when filtering the same log.
 
 ```csharp
 using DxMessaging.Core;
@@ -578,7 +592,10 @@ using DxMessaging.Core.MessageBus;
 IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Editor;
 ```
 
-This is the recommended default for most projects. You get full visibility during development without any performance cost in production builds. Leave emission-site capture off unless you are actively tracing a call site; see [Emission-Site Capture](#emission-site-capture).
+This sets Editor-only recording defaults for newly created buses and tokens. Use
+`MessageBus.DiagnosticsMode` or `MessageRegistrationToken.DiagnosticMode` to configure an existing
+instance. Keep emission-site capture off until you need source links; see
+[Emission-Site Capture](#emission-site-capture).
 
 ### Runtime Diagnostics for QA Builds
 
@@ -631,27 +648,32 @@ Diagnostics add overhead. Consider these factors when enabling them:
 
 ### CPU Impact
 
-- Registration logging adds overhead to every `Register` and `Deregister` call.
-- Emission recording adds overhead to every message broadcast.
-- Post-processor chains for diagnostics run after each message dispatch.
+- Registration logging records subscription changes when enabled.
+- Bus diagnostics record message emissions when enabled.
+- Token diagnostics record deliveries and maintain per-registration call counts when enabled.
 
 ### Emission-Site Capture
 
 `MessageEmissionData.stackTrace` holds the call site an emission came from, and it is what the
-Message Monitor and Flow Graph **Open** buttons resolve into source links. Capturing it means
-walking and formatting the managed stack on every diagnostic record, which is expensive enough to
-dominate a frame:
+Message Monitor and Flow Graph **Open** buttons resolve into source links. Capturing it walks
+and formats the managed stack for each diagnostic record.
 
-| Measurement (Unity 6000.4.6f1, Editor PlayMode Mono x64 Release) | Value                |
-| ---------------------------------------------------------------- | -------------------- |
-| Cost of one captured record                                      | ~236 microseconds    |
-| Allocation calls per captured record                             | ~67                  |
-| Records written per single-subscriber emission                   | 2 (bus plus token)   |
-| `Comparison_DxMessaging_GlobalToOne` with capture on             | ~1,100 emissions/sec |
-| Same row with a plain C# event, same session                     | ~340,000,000/sec     |
+The historical report in [#433](https://github.com/Ambiguous-Interactive/DxMessaging/issues/433)
+lists Unity 6000.4.6f1 Editor PlayMode, Mono x64 Release, with bus and token recording enabled.
+These observations preceded the capture opt-in and single-pass trimmer added by
+[PR #434](https://github.com/Ambiguous-Interactive/DxMessaging/pull/434) on August 21, 2026:
 
-Capture cost scales with stack depth, so deeper gameplay call stacks pay more. Because of that,
-capture is off by default.
+| Historical observation                               | Value                |
+| ---------------------------------------------------- | -------------------- |
+| Cost of one captured record                          | ~236 microseconds    |
+| Allocation calls per captured record                 | ~67                  |
+| Records written per single-subscriber emission       | 2 (bus plus token)   |
+| `Comparison_DxMessaging_GlobalToOne` with capture on | ~1,100 emissions/sec |
+| Same row with a plain C# event, same session         | ~340,000,000/sec     |
+
+Profile capture with your workload's stack depth and recording configuration. Bus records and
+token delivery records each add capture work when their diagnostics are enabled. Capture is off
+by default.
 
 The editor tells you when that is why a call site is missing, and offers the switch on the spot:
 the Message Monitor's **Stack trace** disclosure reads `Stack trace (capture off)`, opens itself,

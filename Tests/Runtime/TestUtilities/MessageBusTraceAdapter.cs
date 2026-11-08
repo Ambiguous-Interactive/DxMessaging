@@ -9,9 +9,19 @@ namespace DxMessaging.Tests.Runtime
     /// <summary>Runs trace operations through production bus and token APIs; callback output is never simulated.</summary>
     internal class MessageBusTraceAdapter : IBusTraceAdapter
     {
+        internal delegate void UntargetedEmission(ref UntargetedPayload message);
+        internal delegate void TargetedEmission(ref InstanceId target, ref TargetedPayload message);
+        internal delegate void BroadcastEmission(
+            ref InstanceId source,
+            ref BroadcastPayload message
+        );
+
         private readonly MessageScenario _scenario;
         private readonly IMessageBus _bus;
         private readonly IMessageBus _emitter;
+        private readonly UntargetedEmission _untargetedEmission;
+        private readonly TargetedEmission _targetedEmission;
+        private readonly BroadcastEmission _broadcastEmission;
         private readonly Action _reset;
         private GlobalBusScope _globalScope;
         private MessageBus _alternateGlobalBus;
@@ -69,13 +79,19 @@ namespace DxMessaging.Tests.Runtime
             IMessageBus bus,
             IMessageBus emitter = null,
             Action reset = null,
-            Func<int, MessageRegistrationToken> tokenFactory = null
+            Func<int, MessageRegistrationToken> tokenFactory = null,
+            UntargetedEmission untargetedEmission = null,
+            TargetedEmission targetedEmission = null,
+            BroadcastEmission broadcastEmission = null
         )
         {
             _scenario = scenario ?? throw new ArgumentNullException(nameof(scenario));
             _bus = bus ?? throw new ArgumentNullException(nameof(bus));
             // Keep token storage keyed by the real implementation, even when a mutant intercepts emission.
             _emitter = emitter ?? bus;
+            _untargetedEmission = untargetedEmission;
+            _targetedEmission = targetedEmission;
+            _broadcastEmission = broadcastEmission;
             _reset = reset;
             /*
                 TrimResult includes process-shared retained pools. Start every isolated replay
@@ -756,7 +772,14 @@ namespace DxMessaging.Tests.Runtime
                     UntargetedPayload untargeted = new(operation.Value);
                     try
                     {
-                        Emitter.UntargetedBroadcast(ref untargeted);
+                        if (_untargetedEmission != null)
+                        {
+                            _untargetedEmission(ref untargeted);
+                        }
+                        else
+                        {
+                            Emitter.UntargetedBroadcast(ref untargeted);
+                        }
                     }
                     finally
                     {
@@ -769,7 +792,14 @@ namespace DxMessaging.Tests.Runtime
                     TargetedPayload targeted = new(operation.Value);
                     try
                     {
-                        Emitter.TargetedBroadcast(ref context, ref targeted);
+                        if (_targetedEmission != null)
+                        {
+                            _targetedEmission(ref context, ref targeted);
+                        }
+                        else
+                        {
+                            Emitter.TargetedBroadcast(ref context, ref targeted);
+                        }
                     }
                     finally
                     {
@@ -782,7 +812,14 @@ namespace DxMessaging.Tests.Runtime
                     BroadcastPayload broadcast = new(operation.Value);
                     try
                     {
-                        Emitter.SourcedBroadcast(ref context, ref broadcast);
+                        if (_broadcastEmission != null)
+                        {
+                            _broadcastEmission(ref context, ref broadcast);
+                        }
+                        else
+                        {
+                            Emitter.SourcedBroadcast(ref context, ref broadcast);
+                        }
                     }
                     finally
                     {

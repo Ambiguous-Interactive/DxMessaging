@@ -27,6 +27,369 @@ namespace DxMessaging.Tests.Runtime.Core
         public void TearDown() => _diagnostics.Dispose();
 
         [Test]
+        public void ExactSequentialBatchControlMatchesPerItemReplay(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values("Remove", "Disable", "Reset", "Nested", "Throw", "Diagnostics")] string boundary
+        )
+        {
+            BusTraceOperation item = boundary switch
+            {
+                "Remove" => new BusTraceOperation(BusTraceOperationKind.Remove, token: 1),
+                "Disable" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithDisable,
+                    token: 0,
+                    value: 2
+                ),
+                "Reset" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithReset,
+                    token: 0,
+                    value: 2
+                ),
+                "Nested" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitNested,
+                    token: 0,
+                    nestedToken: 1,
+                    depth: 1,
+                    value: 2
+                ),
+                "Throw" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithThrow,
+                    token: 0,
+                    value: 2
+                ),
+                "Diagnostics" => new BusTraceOperation(
+                    BusTraceOperationKind.SetDiagnostics,
+                    value: 1
+                ),
+                _ => throw new ArgumentOutOfRangeException(nameof(boundary)),
+            };
+            BusTraceSequence sequence = new(
+                scenario,
+                505,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 0),
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, token: 0, value: 1),
+                    item,
+                    new BusTraceOperation(BusTraceOperationKind.Emit, token: 0, value: 3),
+                },
+                7
+            );
+            string report = $"kind={scenario.Kind}, boundary={boundary}";
+            Assert.That(DifferentialBusTrace.IsValid(sequence), Is.True, report);
+            IReadOnlyList<BusTraceObservation> control = DifferentialBusTrace.Replay(
+                sequence,
+                kind => CreateAdapter(kind, false)
+            );
+            List<BusTraceObservation> candidate = new();
+            using (MessageBusTraceAdapter adapter = CreateAdapter(scenario, false))
+            {
+                ExactSequentialBatchControl.Execute(
+                    sequence.Operations,
+                    operation => candidate.Add(adapter.Execute(operation))
+                );
+            }
+            Assert.That(candidate.Count, Is.EqualTo(sequence.Operations.Count), report);
+            Assert.That(DifferentialBusTrace.Compare(control, candidate), Is.Null, report);
+        }
+
+        [Test]
+        public void ExactSequentialBatchControlPreservesThrownExceptionAndCompletedPrefix()
+        {
+            InvalidOperationException failure = new("item 2 failed");
+            List<int> called = new();
+            InvalidOperationException observed = Assert.Throws<InvalidOperationException>(() =>
+                ExactSequentialBatchControl.Execute(
+                    new[] { 1, 2, 3 },
+                    item =>
+                    {
+                        called.Add(item);
+                        if (item == 2)
+                        {
+                            throw failure;
+                        }
+                    }
+                )
+            );
+            Assert.That(observed, Is.SameAs(failure));
+            CollectionAssert.AreEqual(new[] { 1, 2 }, called);
+        }
+
+        [Test]
+        public void ExactSequentialRefBatchPreservesMutationBeforeFailure()
+        {
+            InvalidOperationException failure = new("item 2 failed");
+            RefBatchMessage[] items = { new(1), new(2), new(3) };
+            List<int> called = new();
+            InvalidOperationException observed = Assert.Throws<InvalidOperationException>(() =>
+                ExactSequentialBatchControl.Execute(
+                    items,
+                    (ref RefBatchMessage item) =>
+                    {
+                        int original = item.Value;
+                        item.Value += 10;
+                        called.Add(original);
+                        if (original == 2)
+                        {
+                            throw failure;
+                        }
+                    }
+                )
+            );
+            Assert.That(observed, Is.SameAs(failure), "The batch must preserve the thrown object.");
+            CollectionAssert.AreEqual(new[] { 1, 2 }, called, "The third item must not execute.");
+            CollectionAssert.AreEqual(
+                new[] { 11, 12, 3 },
+                items.Select(item => item.Value).ToArray(),
+                "Mutations before failure must remain on their original array elements."
+            );
+        }
+
+        [Test]
+        public void ExactSequentialBatchControlPreservesRefInterceptorMutations(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            string direct = CaptureRefBatch(scenario.Kind, false);
+            string batch = CaptureRefBatch(scenario.Kind, true);
+            Assert.That(
+                batch,
+                Is.EqualTo(direct),
+                $"kind={scenario.Kind}: batch changed ref semantics"
+            );
+            string routes = scenario.Kind == MessageKind.Untargeted ? "100,100,100" : "200,200,200";
+            Assert.That(
+                direct,
+                Is.EqualTo($"11,12,13|11,12,13|{routes}"),
+                $"kind={scenario.Kind}: direct control failed to retain interceptor edits"
+            );
+        }
+
+        private static string CaptureRefBatch(MessageKind kind, bool batch)
+        {
+            MessageBus bus = new() { DiagnosticsMode = false };
+            MessageHandler handler = new(new InstanceId(505_001), bus) { active = true };
+            List<int> observed = new();
+            using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            token.DiagnosticMode = false;
+            token.Enable();
+            switch (kind)
+            {
+                case MessageKind.Untargeted:
+                    _ = token.RegisterUntargetedInterceptor<RefBatchMessage>(
+                        (ref RefBatchMessage message) =>
+                        {
+                            message.Value += 10;
+                            return true;
+                        }
+                    );
+                    _ = token.RegisterUntargeted<RefBatchMessage>(
+                        (in RefBatchMessage message) => observed.Add(message.Value)
+                    );
+                    break;
+                case MessageKind.Targeted:
+                    _ = token.RegisterTargetedInterceptor<RefBatchMessage>(
+                        (ref InstanceId route, ref RefBatchMessage message) =>
+                        {
+                            route = new InstanceId(200);
+                            message.Value += 10;
+                            return true;
+                        }
+                    );
+                    _ = token.RegisterTargeted<RefBatchMessage>(
+                        new InstanceId(200),
+                        (in RefBatchMessage message) => observed.Add(message.Value)
+                    );
+                    break;
+                case MessageKind.Broadcast:
+                    _ = token.RegisterBroadcastInterceptor<RefBatchMessage>(
+                        (ref InstanceId route, ref RefBatchMessage message) =>
+                        {
+                            route = new InstanceId(200);
+                            message.Value += 10;
+                            return true;
+                        }
+                    );
+                    _ = token.RegisterBroadcast<RefBatchMessage>(
+                        new InstanceId(200),
+                        (in RefBatchMessage message) => observed.Add(message.Value)
+                    );
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+
+            RefBatchItem[] items =
+            {
+                new(new InstanceId(100), new RefBatchMessage(1)),
+                new(new InstanceId(100), new RefBatchMessage(2)),
+                new(new InstanceId(100), new RefBatchMessage(3)),
+            };
+            void Emit(ref RefBatchItem item)
+            {
+                switch (kind)
+                {
+                    case MessageKind.Untargeted:
+                        bus.UntargetedBroadcast(ref item.Message);
+                        break;
+                    case MessageKind.Targeted:
+                        bus.TargetedBroadcast(ref item.Route, ref item.Message);
+                        break;
+                    case MessageKind.Broadcast:
+                        bus.SourcedBroadcast(ref item.Route, ref item.Message);
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(kind));
+                }
+            }
+
+            if (batch)
+            {
+                ExactSequentialBatchControl.Execute(
+                    items,
+                    (ref RefBatchItem item) => Emit(ref item)
+                );
+            }
+            else
+            {
+                for (int index = 0; index < items.Length; ++index)
+                {
+                    Emit(ref items[index]);
+                }
+            }
+            return string.Join(",", observed)
+                + "|"
+                + string.Join(",", items.Select(item => item.Message.Value))
+                + "|"
+                + string.Join(",", items.Select(item => item.Route.Id));
+        }
+
+        private struct RefBatchItem
+        {
+            internal RefBatchItem(InstanceId route, RefBatchMessage message)
+            {
+                Route = route;
+                Message = message;
+            }
+
+            internal InstanceId Route;
+            internal RefBatchMessage Message;
+        }
+
+        private struct RefBatchMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
+        {
+            internal RefBatchMessage(int value) => Value = value;
+
+            internal int Value;
+        }
+
+        [Test]
+        public void PreparedDynamicEmitterMatchesDirectCallsAfterChanges(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(
+                "Register",
+                "Remove",
+                "Disable",
+                "Reset",
+                "Nested",
+                "Throw",
+                "Diagnostics",
+                "Trim",
+                "Activity"
+            )]
+                string boundary
+        )
+        {
+            BusTraceOperation item = boundary switch
+            {
+                "Register" => new BusTraceOperation(BusTraceOperationKind.Register, token: 2),
+                "Remove" => new BusTraceOperation(BusTraceOperationKind.Remove, token: 1),
+                "Disable" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithDisable,
+                    token: 0,
+                    value: 2
+                ),
+                "Reset" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithReset,
+                    token: 0,
+                    value: 2
+                ),
+                "Nested" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitNested,
+                    token: 0,
+                    nestedToken: 1,
+                    depth: 1,
+                    value: 2
+                ),
+                "Throw" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithThrow,
+                    token: 0,
+                    value: 2
+                ),
+                "Diagnostics" => new BusTraceOperation(
+                    BusTraceOperationKind.SetDiagnostics,
+                    value: 1
+                ),
+                "Trim" => new BusTraceOperation(BusTraceOperationKind.Trim, value: 1),
+                "Activity" => new BusTraceOperation(
+                    BusTraceOperationKind.EmitWithHandlerActive,
+                    token: 0,
+                    handlerToken: 1,
+                    handlerActive: false,
+                    value: 2
+                ),
+                _ => throw new ArgumentOutOfRangeException(nameof(boundary)),
+            };
+            BusTraceSequence sequence = new(
+                scenario,
+                5051,
+                new[]
+                {
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 0),
+                    new BusTraceOperation(BusTraceOperationKind.Register, token: 1),
+                    new BusTraceOperation(BusTraceOperationKind.Emit, token: 0, value: 1),
+                    item,
+                    new BusTraceOperation(BusTraceOperationKind.Emit, token: 0, value: 3),
+                },
+                7
+            );
+            string report = $"kind={scenario.Kind}, boundary={boundary}";
+            Assert.That(DifferentialBusTrace.IsValid(sequence), Is.True, report);
+            BusTraceMismatch mismatch = DifferentialBusTrace.Compare(
+                DifferentialBusTrace.Replay(sequence, kind => CreateAdapter(kind, false)),
+                DifferentialBusTrace.Replay(sequence, CreatePreparedAdapter)
+            );
+            Assert.That(mismatch, Is.Null, report);
+        }
+
+        [Test]
+        public void PreparedDynamicEmitterKeepsPrivateUnlistedMessageAvailableAfterTrim()
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionTicks: 0,
+                idleEvictionEnabled: false,
+                trimApiEnabled: true
+            );
+            PreparedUntargetedEmitter<PrivatePreparedPayload> prepared = new(bus);
+            PrivatePreparedPayload first = new();
+            prepared.Emit(ref first);
+            long firstId = bus.EmissionId;
+            Assert.That(firstId, Is.GreaterThan(0));
+            bus.Trim(force: true);
+            PrivatePreparedPayload second = new();
+            prepared.Emit(ref second);
+            Assert.That(bus.EmissionId, Is.EqualTo(firstId + 1));
+            bus.ResetState();
+        }
+
+        private struct PrivatePreparedPayload : IUntargetedMessage { }
+
+        [Test]
         public void EmissionObservationScopesRestoreGlobalsAfterCompletionThrowResetAndNestedUnmatched(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
                 MessageScenario scenario,
@@ -4821,6 +5184,30 @@ namespace DxMessaging.Tests.Runtime.Core
                         ? new FinalValueEmitter(bus, observationFault, throwAfterEmit)
                     : delayed,
                 delayed != null ? delayed.RequestReset : bus.ResetState
+            );
+        }
+
+        private static MessageBusTraceAdapter CreatePreparedAdapter(MessageScenario scenario)
+        {
+            MessageBus bus = MessageBus.CreateForInternalUse(
+                new FakeClock(),
+                idleEvictionTicks: 0,
+                idleEvictionEnabled: false,
+                trimApiEnabled: true
+            );
+            bus.DiagnosticsMode = false;
+            PreparedUntargetedEmitter<MessageBusTraceAdapter.UntargetedPayload> untargeted = new(
+                bus
+            );
+            PreparedTargetedEmitter<MessageBusTraceAdapter.TargetedPayload> targeted = new(bus);
+            PreparedBroadcastEmitter<MessageBusTraceAdapter.BroadcastPayload> broadcast = new(bus);
+            return new MessageBusTraceAdapter(
+                scenario,
+                bus,
+                reset: bus.ResetState,
+                untargetedEmission: untargeted.Emit,
+                targetedEmission: targeted.Emit,
+                broadcastEmission: broadcast.Emit
             );
         }
 

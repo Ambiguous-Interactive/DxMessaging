@@ -223,7 +223,7 @@ jobs:
         if: ${{ needs.changes.outputs.actionlint != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
 
       - name: Validate Unity version single-source
         if: ${{ needs.changes.outputs.actionlint != 'false' }}
@@ -257,7 +257,7 @@ jobs:
         if: ${{ needs.changes.outputs.markdown != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -309,7 +309,7 @@ jobs:
 
       - name: Setup .NET
         if: ${{ needs.changes.outputs.csharpier != 'false' }}
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: "8.0.x"
 
@@ -347,7 +347,7 @@ jobs:
 
       - name: Setup .NET
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: SourceGenerators/global.json
 
@@ -355,7 +355,7 @@ jobs:
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
 
       - name: Install reportgenerator tool
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
@@ -496,7 +496,7 @@ jobs:
         if: ${{ needs.changes.outputs.json != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -580,7 +580,7 @@ jobs:
         if: ${{ needs.changes.outputs.spellcheck != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -616,7 +616,7 @@ jobs:
         if: ${{ needs.changes.outputs.banner != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
 
       - name: Validate banner metadata
         if: ${{ needs.changes.outputs.banner != 'false' }}
@@ -651,7 +651,7 @@ jobs:
         if: ${{ needs.changes.outputs.llms != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -696,7 +696,7 @@ jobs:
         if: ${{ needs.changes.outputs.yaml != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -763,13 +763,19 @@ jobs:
         if: ${{ needs.changes.outputs.scripts != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22.23.4"
+          node-version: "26.13.0"
           cache: "npm"
           cache-dependency-path: package.json
 
+      - name: Setup Python for script reducers
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
       - name: Setup .NET
         if: ${{ needs.changes.outputs.scripts != 'false' && matrix.os == 'ubuntu-latest' }}
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: SourceGenerators/global.json
 
@@ -802,7 +808,7 @@ jobs:
           # Let the probes finish their descendant cleanup even if this shell exits early.
           trap 'wait "$heartbeat_pid" || true' EXIT
           script_status=0
-          # The native glob lets Node 22 run test files in separate worker processes;
+          # The native glob lets Node run test files in separate worker processes;
           # scripts/ resolves to scripts/index.js and registers every suite in one process.
           node --test 'scripts/**/*.test.js' || script_status=$?
           heartbeat_status=0
@@ -819,6 +825,13 @@ jobs:
         if: ${{ needs.changes.outputs.scripts != 'false' }}
         shell: pwsh
         run: ./scripts/__tests__/test-unity-license-activation-retry.ps1 -VerboseOutput
+
+      - name: Test Python script reducers
+        if: ${{ needs.changes.outputs.scripts != 'false' }}
+        shell: bash
+        run: |
+          python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
+          python -m unittest discover -s scripts/unity/__tests__ -p 'test_*.py'
 
       - name: Run MSVC toolchain assertion tests
         if: ${{ needs.changes.outputs.scripts != 'false' }}

@@ -8,8 +8,7 @@ namespace DxMessaging.Core.MessageBus.Internal
     /// </summary>
     /// <remarks>
     /// Encoded into <see cref="SlotKey.Packed"/> in the high nibble (bits 4-7).
-    /// Packed value range is 0..3, leaving room for two additional kinds before
-    /// the nibble overflows.
+    /// The declared values are 0..3. The four-bit field can encode values 0..15.
     /// </remarks>
     internal enum DispatchKind : byte
     {

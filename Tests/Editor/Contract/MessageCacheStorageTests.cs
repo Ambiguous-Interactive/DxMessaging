@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+#if UNITY_EDITOR || !UNITY_2021_3_OR_NEWER
 namespace DxMessaging.Tests.Editor.Contract
 {
     using System;
@@ -9,6 +9,10 @@ namespace DxMessaging.Tests.Editor.Contract
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
 
+    /// <remarks>
+    /// 2026-11-07: Portable NUnit 5 retains the original contract assertions.
+    /// The portable eligibility guard preserves Unity Editor and player selection.
+    /// </remarks>
     [TestFixture]
     [Category("Contract")]
     public sealed class MessageCacheStorageTests

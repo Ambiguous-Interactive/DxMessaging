@@ -5,7 +5,7 @@ const { TextDecoder } = require("node:util");
 const { DOMParser, XMLSerializer } = require("@xmldom/xmldom");
 const { visit: visitJson } = require("jsonc-parser");
 // prettier-ignore
-const REVIEWED_TEXT_EXTENSIONS = Object.freeze([".asm", ".cpp", ".csv", ".h", ".json", ".jsonl", ".log", ".map", ".marker", ".md", ".sha256", ".tsv", ".txt", ".xml"]);
+const REVIEWED_TEXT_EXTENSIONS = Object.freeze([".asm", ".cpp", ".csv", ".h", ".json", ".jsonl", ".log", ".map", ".marker", ".md", ".sha256", ".status", ".tsv", ".txt", ".xml"]);
 const MAXIMUM_STRAY_NUL_BYTES = 8;
 const SERIALIZED_WINDOW_CHARACTERS = 4 * 1024 * 1024;
 const SERIALIZED_ESCAPE =

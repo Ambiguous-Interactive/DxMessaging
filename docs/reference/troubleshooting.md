@@ -71,10 +71,26 @@ Then check the matching cause below:
 
 ## Source generator did not generate Emit or handler methods
 
-- Mark the message type `partial`. The generator emits members into a second partial declaration, which requires the keyword on your type.
-- Apply a `[DxUntargetedMessage]`, `[DxTargetedMessage]`, or `[DxBroadcastMessage]` attribute, or implement the matching `I*Message` interface directly.
-- An assembly definition is **not** required -- generation runs for Unity's default `Assembly-CSharp` as well as for your own `.asmdef` assemblies.
-- After changing message types, let Unity finish recompiling; generated members appear once the analyzer reruns.
+The generators add message interfaces, `MessageType`, and an optional field
+constructor. `Emit` helpers are extension methods; handler callbacks are methods
+you write and register.
+
+1. For a missing `Emit` helper, import `DxMessaging.Core.Extensions` and check that
+   the message implements the matching route interface. For struct messages,
+   assign the value to a local before calling a by-reference emission helper.
+1. For generated interfaces or `MessageType`, apply `[DxUntargetedMessage]`,
+   `[DxTargetedMessage]`, or `[DxBroadcastMessage]`. Mark the message and every
+   containing declaration `partial`. You can implement the route interface by
+   hand without these attributes or the generation-related `partial` requirement.
+1. For a field constructor, apply `[DxAutoConstructor]` to a partial type with
+   public instance fields. Properties and static fields are excluded.
+1. Read the first compiler error in Unity's Console and let compilation finish
+   after fixing it. An assembly definition is not required; the package's
+   generators reach `Assembly-CSharp` and assemblies that reference DxMessaging.
+
+See [source generator troubleshooting](helpers.md#troubleshooting-source-generators)
+for nested types, constructor rules, generated-source inspection and bug-report
+details.
 
 ## Memory grows in long sessions
 

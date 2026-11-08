@@ -11,6 +11,375 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocsSnippetCompilationTests
 {
+    /// <summary>Keep receiver and sender examples valid as Unity class files.</summary>
+    /// <remarks>2026-11-03: Usage statements followed type declarations in three complete examples.</remarks>
+    [TestCase("README.md", "partial struct Heal")]
+    [TestCase("docs/guides/migration-guide.md", "partial struct TestMessage")]
+    [TestCase("docs/guides/patterns.md", "partial struct GameExit")]
+    public void ReceiverExamplesHaveCompleteClassSyntax(string relativePath, string marker)
+    {
+        string path = Path.Combine(ResolveRepoRoot(), relativePath);
+        string[] examples = ExtractCodeBlocks(path, "csharp")
+            .Where(source => source.Contains(marker, StringComparison.Ordinal))
+            .ToArray();
+        Assert.That(examples, Has.Length.EqualTo(1), path + ": " + marker);
+        SyntaxTree tree = CSharpSyntaxTree.ParseText(
+            examples[0],
+            new CSharpParseOptions(LanguageVersion.CSharp9)
+        );
+        Diagnostic[] errors = tree.GetDiagnostics()
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        Assert.That(
+            errors,
+            Is.Empty,
+            path + ": complete class-file syntax\n" + string.Join("\n", errors.AsEnumerable())
+        );
+        Assert.That(
+            tree.GetRoot().DescendantNodes().OfType<GlobalStatementSyntax>(),
+            Is.Empty,
+            path + ": Unity class files cannot contain executable top-level statements"
+        );
+    }
+
+    /// <summary>Keep changes made by synchronous listeners pending for the next batch.</summary>
+    /// <remarks>2026-11-04: Clearing the dirty flag after dispatch lost listener mutations.</remarks>
+    [TestCase("idle", new int[0])]
+    [TestCase("single", new[] { 90 })]
+    [TestCase("coalesced", new[] { 70 })]
+    [TestCase("between", new[] { 90, 85 })]
+    [TestCase("observer", new[] { 90 })]
+    [TestCase("reentrant", new[] { 90, 85 })]
+    [TestCase("repeated", new[] { 90, 85, 80, 75 })]
+    public void BatchedHealthExamplePreservesListenerChanges(string scenario, int[] expected)
+    {
+        string path = Path.Combine(ResolveRepoRoot(), "docs/guides/patterns.md");
+        string[] samples = ExtractCodeBlocks(path, "csharp")
+            .Where(source => source.Contains("private bool healthDirty", StringComparison.Ordinal))
+            .ToArray();
+        Assert.That(samples, Has.Length.EqualTo(1), path);
+        // Execute the actual methods unchanged. Only the synchronous callback and message
+        // dependencies are fixtures; this does not qualify Unity dispatch or frame scheduling.
+        string source =
+            """
+                public sealed class BatchExample
+                {
+                    private int health = 100;
+                    private BatchExample gameObject => this;
+                    public readonly System.Collections.Generic.List<int> Values = new();
+                    public System.Action<int> Listener;
+                    public void Damage(int amount) => TakeDamage(amount);
+                    public void Flush() => LateUpdate();
+                    public void Record(int value) { Values.Add(value); Listener?.Invoke(value); }
+                """
+            + "\n"
+            + samples[0]
+            + "\n}"
+            + """
+                public struct HealthChanged
+                {
+                    public int Value;
+                    public HealthChanged(int value) { Value = value; }
+                }
+                public static class EmissionFixture
+                {
+                    public static void EmitGameObjectBroadcast(this ref HealthChanged message, BatchExample owner)
+                        => owner.Record(message.Value);
+                }
+                """;
+        string[] references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(
+            Path.PathSeparator
+        );
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "BatchExample_" + Guid.NewGuid().ToString("N"),
+            new[]
+            {
+                CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp9)),
+            },
+            references.Select(reference => MetadataReference.CreateFromFile(reference)),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
+        Assert.That(emitted.Success, Is.True, string.Join("\n", emitted.Diagnostics));
+        System.Runtime.Loader.AssemblyLoadContext load = new("BatchExample", isCollectible: true);
+        try
+        {
+            image.Position = 0;
+            Type type = load.LoadFromStream(image).GetType("BatchExample", throwOnError: true)!;
+            object example = Activator.CreateInstance(type)!;
+            System.Reflection.MethodInfo damage = type.GetMethod("Damage")!;
+            System.Reflection.MethodInfo flush = type.GetMethod("Flush")!;
+            List<int> values = (List<int>)type.GetField("Values")!.GetValue(example)!;
+            int callbacks = 0;
+            Action<int> listener = _ =>
+            {
+                callbacks++;
+                if (
+                    scenario == "reentrant" && callbacks == 1
+                    || scenario == "repeated" && callbacks <= 3
+                )
+                {
+                    damage.Invoke(example, new object[] { 5 });
+                }
+            };
+            type.GetField("Listener")!.SetValue(example, listener);
+            if (scenario != "idle")
+            {
+                damage.Invoke(example, new object[] { 10 });
+            }
+            if (scenario == "coalesced")
+            {
+                damage.Invoke(example, new object[] { 20 });
+            }
+            flush.Invoke(example, null);
+            Assert.That(values, Is.EqualTo(expected.Take(1)), scenario + ": first flush");
+            if (scenario == "between")
+            {
+                damage.Invoke(example, new object[] { 5 });
+            }
+            for (int frame = 1; frame <= 4; frame++)
+            {
+                flush.Invoke(example, null);
+                Assert.That(
+                    values,
+                    Is.EqualTo(expected.Take(frame + 1)),
+                    scenario + ": flush " + (frame + 1)
+                );
+            }
+            Assert.That(callbacks, Is.EqualTo(expected.Length), scenario + ": callback count");
+        }
+        finally
+        {
+            load.Unload();
+        }
+    }
+
+    /// <summary>Release the subscribed event even when the serialized asset reference changes.</summary>
+    /// <remarks>2026-11-04: Reading the edited field during teardown left the original listener live.</remarks>
+    [TestCase("unchanged")]
+    [TestCase("replaced")]
+    [TestCase("cleared")]
+    public void SoaBridgeReleasesItsSubscribedAsset(string referenceChange)
+    {
+        string path = Path.Combine(ResolveRepoRoot(), "docs/guides/patterns.md");
+        string[] samples = ExtractCodeBlocks(path, "csharp")
+            .Where(code =>
+                code.Contains("class GameEvent :", StringComparison.Ordinal)
+                && code.Contains("EventBridge : MonoBehaviour", StringComparison.Ordinal)
+            )
+            .ToArray();
+        Assert.That(samples, Has.Length.EqualTo(1), path);
+        ClassDeclarationSyntax[] classes = CSharpSyntaxTree
+            .ParseText(samples[0])
+            .GetRoot()
+            .DescendantNodes()
+            .OfType<ClassDeclarationSyntax>()
+            .Where(type =>
+                type.Identifier.ValueText == "GameEvent"
+                || type.Identifier.ValueText.EndsWith("EventBridge", StringComparison.Ordinal)
+            )
+            .ToArray();
+        Assert.That(classes, Has.Length.EqualTo(2), "Execute both actual documented classes.");
+        ClassDeclarationSyntax bridgeDeclaration = classes.Single(type =>
+            type.Identifier.ValueText.EndsWith("EventBridge", StringComparison.Ordinal)
+        );
+        Assert.That(bridgeDeclaration.Members.OfType<ConstructorDeclarationSyntax>(), Is.Empty);
+        // Give the standalone compiler an observable serialized-field assignment. The
+        // extracted fields and lifecycle methods stay unchanged; only this fixture constructor is added.
+        classes[Array.IndexOf(classes, bridgeDeclaration)] = bridgeDeclaration.AddMembers(
+            SyntaxFactory.ParseMemberDeclaration(
+                "public "
+                    + bridgeDeclaration.Identifier.ValueText
+                    + "(GameEvent initialEvent) { onSceneTransitionSO = initialEvent; }"
+            )!
+        );
+        // Only class-body subscription ownership is qualified here. The fixtures do not
+        // model Unity fake-null, asset destruction, native lifecycle scheduling or bus delivery.
+        string source =
+            "using System.Collections.Generic; using UnityEngine; using UnityEngine.Events;\n"
+            + string.Join("\n", classes.Select(type => type.ToFullString()))
+            + """
+                namespace UnityEngine
+                {
+                    public class ScriptableObject { }
+                    public class MonoBehaviour { }
+                    public sealed class SerializeField : System.Attribute { }
+                    public sealed class CreateAssetMenuAttribute : System.Attribute
+                    { public string menuName; }
+                }
+                namespace UnityEngine.Events { public delegate void UnityAction(); }
+                public struct SceneTransitionRequested { }
+                public static class EmissionFixture
+                {
+                    public static int Count;
+                    public static void Emit(this ref SceneTransitionRequested message) { Count++; }
+                }
+                """;
+        string[] references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(
+            Path.PathSeparator
+        );
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "SoaBridge_" + Guid.NewGuid().ToString("N"),
+            new[]
+            {
+                CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.CSharp9)),
+            },
+            references.Select(reference => MetadataReference.CreateFromFile(reference)),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
+        Assert.That(emitted.Success, Is.True, string.Join("\n", emitted.Diagnostics));
+        System.Runtime.Loader.AssemblyLoadContext load = new("SoaBridge", isCollectible: true);
+        try
+        {
+            image.Position = 0;
+            System.Reflection.Assembly assembly = load.LoadFromStream(image);
+            Type bridgeType = assembly.GetType(
+                bridgeDeclaration.Identifier.ValueText,
+                throwOnError: true
+            )!;
+            Type eventType = assembly.GetType("GameEvent", throwOnError: true)!;
+            object original = Activator.CreateInstance(eventType)!;
+            object replacement = Activator.CreateInstance(eventType)!;
+            object bridge = Activator.CreateInstance(bridgeType, new[] { original })!;
+            object otherBridge = Activator.CreateInstance(bridgeType, new[] { original })!;
+            const System.Reflection.BindingFlags members =
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic;
+            System.Reflection.FieldInfo asset = bridgeType.GetField(
+                "onSceneTransitionSO",
+                members
+            )!;
+            System.Reflection.FieldInfo listeners = eventType.GetField("listeners", members)!;
+            System.Reflection.FieldInfo emissions = assembly
+                .GetType("EmissionFixture")!
+                .GetField("Count")!;
+            System.Reflection.MethodInfo enable = bridgeType.GetMethod("OnEnable", members)!;
+            System.Reflection.MethodInfo disable = bridgeType.GetMethod("OnDisable", members)!;
+            System.Reflection.MethodInfo raise = eventType.GetMethod("Raise")!;
+            int Count(object publisher) =>
+                ((System.Collections.ICollection)listeners.GetValue(publisher)!).Count;
+            void AssertCounts(int originalCount, int replacementCount, int emittedCount)
+            {
+                Assert.Multiple(() =>
+                {
+                    Assert.That(
+                        Count(original),
+                        Is.EqualTo(originalCount),
+                        referenceChange + ": original listeners"
+                    );
+                    Assert.That(
+                        Count(replacement),
+                        Is.EqualTo(replacementCount),
+                        referenceChange + ": replacement listeners"
+                    );
+                    Assert.That(
+                        emissions.GetValue(null),
+                        Is.EqualTo(emittedCount),
+                        referenceChange + ": emissions"
+                    );
+                });
+            }
+            asset.SetValue(bridge, original);
+            asset.SetValue(otherBridge, original);
+            enable.Invoke(bridge, null);
+            enable.Invoke(otherBridge, null);
+            raise.Invoke(original, null);
+            AssertCounts(2, 0, 2);
+            asset.SetValue(
+                bridge,
+                referenceChange == "replaced" ? replacement
+                    : referenceChange == "cleared" ? null
+                    : original
+            );
+            disable.Invoke(bridge, null);
+            AssertCounts(1, 0, 2);
+            raise.Invoke(original, null);
+            raise.Invoke(replacement, null);
+            AssertCounts(1, 0, 3);
+            asset.SetValue(bridge, replacement);
+            enable.Invoke(bridge, null);
+            raise.Invoke(original, null);
+            raise.Invoke(replacement, null);
+            AssertCounts(1, 1, 5);
+            disable.Invoke(bridge, null);
+            disable.Invoke(bridge, null);
+            raise.Invoke(original, null);
+            raise.Invoke(replacement, null);
+            AssertCounts(1, 0, 6);
+            disable.Invoke(otherBridge, null);
+            raise.Invoke(original, null);
+            raise.Invoke(replacement, null);
+            AssertCounts(0, 0, 6);
+        }
+        finally
+        {
+            load.Unload();
+        }
+    }
+
+    private static IEnumerable<TestCaseData> BusFirstModifierCases()
+    {
+        foreach (string kind in new[] { "Untargeted", "Targeted", "Broadcast" })
+        {
+            foreach (bool valueType in new[] { false, true })
+            {
+                foreach (bool wrongModifier in new[] { false, true })
+                {
+                    yield return new TestCaseData(kind, valueType, wrongModifier).SetName(
+                        $"BusFirst_{kind}_struct{valueType}_wrongModifier{wrongModifier}"
+                    );
+                }
+            }
+        }
+    }
+
+    [TestCaseSource(nameof(BusFirstModifierCases))]
+    public void SnippetCompilerPreservesProductionBusFirstModifiers(
+        string kind,
+        bool valueType,
+        bool wrongModifier
+    )
+    {
+        string context = kind == "Untargeted" ? "" : "new InstanceId(7), ";
+        string modifier = valueType != wrongModifier ? "ref " : "";
+        string declaration = valueType ? "struct" : "class";
+        string source =
+            "using DxMessaging.Core; using DxMessaging.Core.MessageBus; "
+            + "using DxMessaging.Core.Extensions; public "
+            + declaration
+            + " Payload { } "
+            + "public class Sender { public void Send(IMessageBus bus) { "
+            + "Payload message = new Payload(); bus.Emit"
+            + kind
+            + "("
+            + context
+            + modifier
+            + "message); } }";
+        Diagnostic[] errors = DocsSnippetCompiler
+            .CompileSnippet(source)
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        if (wrongModifier)
+        {
+            Assert.That(errors, Has.Length.EqualTo(1), string.Join("\n", errors.AsEnumerable()));
+            Assert.That(errors[0].Id, Is.EqualTo(valueType ? "CS0452" : "CS0453"));
+        }
+        else
+        {
+            Assert.That(errors, Is.Empty, string.Join("\n", errors.AsEnumerable()));
+        }
+    }
+
     private static readonly CSharpParseOptions UnityReferenceParseOptions = new(
         LanguageVersion.CSharp9,
         preprocessorSymbols: new[] { "UNITY_2021_3_OR_NEWER" }
@@ -1685,7 +2054,7 @@ internal sealed class DocsSnippetCompilationTests
         return System.Net.WebUtility.HtmlDecode(s);
     }
 
-    private static string ResolveRepoRoot()
+    internal static string ResolveRepoRoot()
     {
         string current = TestContext.CurrentContext.TestDirectory;
         while (!string.IsNullOrEmpty(current))
@@ -1820,7 +2189,7 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         Assert.That(violations.Length > 0, Is.EqualTo(expectedViolation));
     }
 
-    private static IEnumerable<string> ExtractCodeBlocks(string markdownPath, string infoString)
+    internal static IEnumerable<string> ExtractCodeBlocks(string markdownPath, string infoString)
     {
         return ExtractCodeBlocksFromLines(File.ReadLines(markdownPath), infoString);
     }

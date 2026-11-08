@@ -1,5 +1,7 @@
 "use strict";
 const crypto = require("crypto");
+const path = require("path");
+const { spawnSync } = require("child_process");
 const { isDeepStrictEqual } = require("node:util");
 const { CELL_FIELDS, TIMING_FIELDS } = require("./shipping-evidence-fields.json");
 const DIFFERENTIAL_CONTRACT = require("./differential-replay-contract.json");
@@ -10,7 +12,6 @@ const SETTINGS_SCHEMAS = Object.fromEntries(
 );
 const { extractRows, buildCsv, deriveScope } = require("./extract-perf-baseline.js");
 const { reducePairedBracket } = require("./reduce-paired-bracket.js");
-// Reducers use only supplied bytes and ordinal ordering. Replay requires exact JSON equality.
 const MATRIX_EVIDENCE_NAME = "shipping-matrix-evidence.json";
 const CELL_EVIDENCE_SUFFIX = "/shipping-cell-evidence.json";
 const NORMALIZED_SCHEMA_VERSION = 1;
@@ -233,7 +234,15 @@ function reducePairedThroughputScreen(contents, { sourceCommit } = {}) {
     throw new Error("Paired screen sourceCommit must match the first run's commit.");
   return result;
 }
-// Retain aggregate probe observations, not campaign intervals or an allocation verdict.
+function reduceOpenLoopEditorCapture(contents, { sourceCommit } = {}, clock = false) {
+  const encoded = Object.fromEntries([...contents].map(([name, bytes]) => [name, bytes.toString("base64")]));
+  const input = JSON.stringify({ sourceCommit, contents: encoded });
+  const script = path.join(__dirname, "audit_open_loop_trace.py");
+  const run = spawnSync(process.platform === "win32" ? "python" : "python3", [script, clock ? "--clock-bundle-stdin" : "--bundle-stdin"], { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (run.error || run.status !== 0)
+    throw new Error(`Open-loop capture replay failed: ${run.error?.message ?? run.stderr?.trim()}`);
+  return JSON.parse(run.stdout);
+}
 function reduceSubUnsubObservations(contents, { sourceCommit } = {}) {
   const csv = requireBytes(contents, "comparison-baseline.csv")
     .toString("utf8")
@@ -301,7 +310,6 @@ function requireStringArray(value, label) {
     throw new Error(`${label} must be an array of unique non-empty strings.`);
   return [...value].sort();
 }
-// Summarize integer sizes by stripping level in ordinal order.
 function summarizeByStrippingLevel(cells) {
   const levels = new Map();
   for (const cell of cells) {
@@ -593,6 +601,7 @@ module.exports = {
   reduceDifferentialReplayFailure,
   reduceEditorSettingsCache,
   reducePairedThroughputScreen,
+  reduceOpenLoopEditorCapture,
   reduceSubUnsubObservations,
   reduceShippingFidelityMatrix,
   summarizeByStrippingLevel

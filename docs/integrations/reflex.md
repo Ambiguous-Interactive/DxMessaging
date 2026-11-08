@@ -124,7 +124,7 @@ lifecycle contract.
 
 ## Configure an existing MessagingComponent
 
-Inject the container bus before `MessagingComponent` registers its handlers:
+Configure the bus during Reflex's injection pass:
 
 ```csharp
 using DxMessaging.Core.MessageBus;
@@ -137,12 +137,10 @@ using UnityEngine;
 public sealed class MessagingComponentConfigurator : MonoBehaviour
 {
     [Inject]
-    private IMessageBus _messageBus;
-
-    private void Awake()
+    public void Construct(IMessageBus messageBus)
     {
         GetComponent<MessagingComponent>().Configure(
-            _messageBus,
+            messageBus,
             MessageBusRebindMode.RebindActive
         );
     }
@@ -150,17 +148,28 @@ public sealed class MessagingComponentConfigurator : MonoBehaviour
 ```
 
 Add this configurator beside each `MessagingComponent` that should use the container-owned bus.
-Reflex's scene scope runs before ordinary `Awake()` methods and injects the field first.
+With a configured scene scope, Reflex calls the injection method before ordinary scene `Awake`
+methods. `MessageAwareComponent.Awake` stages registrations and `OnEnable` activates them; a separate
+configurator `Awake` would depend on their relative order. Keep component-specific bus/provider
+settings consistent with the container bus.
+
+For objects injected later, `RebindActive` moves existing registrations but does not replay earlier
+messages. Parameterless emission shorthands still use the global bus; pass the container bus
+explicitly when emitting.
 
 ## Inject IMessageBus directly
 
 Inject `IMessageBus` into a component that only emits messages:
 
 ```csharp
+using DxMessaging.Core.Attributes;
 using DxMessaging.Core.Extensions;
 using DxMessaging.Core.MessageBus;
 using Reflex.Attributes;
 using UnityEngine;
+
+[DxUntargetedMessage]
+public readonly partial struct GameStarted { }
 
 public sealed class GameBootstrap : MonoBehaviour
 {
@@ -177,8 +186,14 @@ public sealed class GameBootstrap : MonoBehaviour
 
 ## Inject pooled objects
 
-Reflex injects scene objects when it creates the scene container. Inject objects instantiated
-later through `GameObjectInjector` before returning them to callers:
+Reflex injects scene objects when it creates the scene container. For prefabs instantiated later,
+use `GameObjectInjector.InjectRecursive` to inject components on the root and its children.
+`InjectObject` covers only the root GameObject.
+
+This example assumes your game's `Enemy` component. It leaves activation, deactivation and reset to
+your pool policy. If `Awake` or `OnEnable` needs injected dependencies, use an inactive prefab and
+activate it only after `Spawn()` returns; instantiating an active prefab can run those callbacks
+before injection. See [Unity's instantiation lifecycle](https://docs.unity3d.com/2021.3/Documentation/ScriptReference/Object.Instantiate.html).
 
 ```csharp
 using System.Collections.Generic;
@@ -206,7 +221,7 @@ public sealed class EnemyPool
         }
 
         Enemy enemy = UnityEngine.Object.Instantiate(_enemyPrefab);
-        GameObjectInjector.InjectObject(enemy.gameObject, _container);
+        GameObjectInjector.InjectRecursive(enemy.gameObject, _container);
         return enemy;
     }
 
@@ -278,7 +293,8 @@ public sealed class DamageServiceTests
 
 ### Pooling and tests
 
-- [ ] Inject runtime-created GameObjects with `GameObjectInjector` before use.
+- [ ] Inject runtime-created prefab hierarchies with `GameObjectInjector.InjectRecursive` before use.
+- [ ] Define pool activation, deactivation and reset; inject inactive prefabs before activating them.
 - [ ] Build a fresh `ContainerBuilder` and `MessageBus` for each test.
 - [ ] Register real handlers and assert their observable result.
 

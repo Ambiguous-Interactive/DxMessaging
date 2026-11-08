@@ -6,56 +6,46 @@ the publisher account is already onboarded; for account setup, package-content
 rules, and the UPM-vs-classic submission choice, see
 [Unity Asset Store UPM](../ops/unity-asset-store-upm.md).
 
-The Asset Store upload is **manual by design**: Unity now provides official
-Editor tools for both classic and UPM submissions, but neither tool documents a
-non-interactive upload path (see the determination below). The release pipeline
+The Asset Store upload is **manual by design**. Unity provides official Editor
+tools for classic and UPM submissions; the instructions inspected below do not
+document a non-interactive upload entry point. The release pipeline
 removes every manual step it can -- it stages the release source payloads and
 generated checklists as a workflow artifact -- so the human step is reduced to
 "download the artifact, then drive the Editor uploader." Treat this runbook as
 the source of truth for that step; keep account IDs, screenshots, and review
 correspondence out of it.
 
-## Automation determination (re-verified 2026-08-28)
+## Automation determination (re-verified 2026-11-04)
 
-There is **no sanctioned (official, documented, supported) CLI, API, or headless
-mode** for uploading a package to the Unity Asset Store. The upload must be
-driven interactively through the Unity Editor by a signed-in publisher. Evidence:
+<a id="automation-determination-re-verified-2026-08-28"></a>
+
+The inspected official classic and UPM publishing instructions describe interactive
+Editor workflows. The 2026-11-04 documentation check did not identify a supported
+non-interactive upload entry point in those instructions:
 
 1. **Official Asset Store Publishing Tools** (`com.unity.asset-store-tools`):
-   its documented workflow is the Editor GUI
-   (`Tools > Asset Store > Uploader`),
-   which requires an interactive Unity ID login and an upload button click.
-   There is no documented `-batchmode`, `-executeMethod`, command-line,
-   API-token, or CI entry point.
+   the [classic upload instructions](https://docs.unity.com/en-us/asset-store/publishing/asset-packages/upload)
+   use the Validator and Uploader windows, with Unity ID login and
+   `Tools > Asset Store > Uploader > Export and Upload`.
 1. **Official Asset Store UPM Publishing Tools**
-   (`com.unity.upm-publishing-tools` v0.3.1, released 2026-06-08): Unity's
-   [UPM publishing page](https://assetstore.unity.com/publishing/upm-publishing)
-   says UPM publishing is available for all tools, extensions, and SDKs. The
+   (`com.unity.upm-publishing-tools` v0.3.3, released 2026-09-28): the
    [tool listing](https://assetstore.unity.com/packages/tools/asset-store-upm-publishing-tools-5368745)
-   still describes selected early access. Treat `Active` admittance as a
-   Publisher Portal preflight until Unity resolves that conflict. Unity's
+   describes validation, upload, and publication for UPM and classic packages.
+   Unity 2022.3 is the oldest editor version listed for this tool. Unity's
+   [UPM publishing page](https://assetstore.unity.com/publishing/upm-publishing)
+   makes the workflow available for tools, extensions, and SDKs; the
    [enrollment instructions](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/apply)
-   say the account must reach `Active` admittance before the UPM Publisher
-   Portal appears. The official material describes an Editor tool for
-   validation, upload, and publication; it does not document a headless API or
-   service credential. Unity 2022.3 is the oldest editor version listed for the
-   v0.3.1 tool.
-1. **Unity Manual** ("Validate and upload assets to your package"): documents
-   only the in-Editor Uploader window and interactive Unity ID login. It makes
-   no mention of CI/CD, automation, headless mode, or programmatic upload.
-1. **Community batch tools** exist (command-line `-executeMethod` uploaders and
-   reverse-engineered publisher-portal API clients), but every one of them
-   drives **undocumented internal Editor APIs** or a harvested session cookie.
-   They are self-described as unsupported -- one states the API "may break
-   without warning" and recommends a throwaway Unity account because it is
-   unofficial. Wiring any of them into CI is exactly the unsanctioned-endpoint
-   failure mode this project refuses (see
-   [Unity Asset Store UPM](../ops/unity-asset-store-upm.md) "Failure Modes").
+   still require `Active` admittance before the UPM Publisher Portal appears.
+1. **Official UPM upload instructions**: the
+   [documented procedure](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/validate)
+   uses `Window > Tools > Asset Store > Validator`, followed by the
+   `UPM Packages` tab in the Uploader and its Upload button. These instructions do not document
+   a CLI or service credential.
 
-**Decision (accepted by the maintainer):** auto-publish was approved _only if_ a
-sanctioned non-interactive path exists. Because none does, the project does
-**not** fake one against an internal API. The publish step stays an interactive
-Editor procedure, backed by the staged artifact below. This is revisited each release; see
+**Decision (accepted by the maintainer):** automate upload only if Unity documents
+and supports a non-interactive path. The inspected instructions do not supply one,
+so the project stages inputs and uses the interactive Editor procedure below.
+Recheck this finding each release; see
 [Re-evaluating automation](#re-evaluating-automation).
 
 Public-documentation checks for unsupported upload experiments are quarantined in the manual-only
@@ -124,15 +114,18 @@ Run this once the release workflow for the tag is green.
    matches its `.sha256` sidecar before uploading (use `Get-FileHash` on
    Windows, `shasum -a 256` elsewhere). This catches a truncated download
    before it reaches review.
-1. **Sign in.** Open a Unity Editor (any version on the supported matrix for the
-   classic path; an editor version supported by the installed UPM publishing
-   tool for the UPM path). The release creates the classic payload without
+1. **Sign in.** For classic submission, use Unity 2022.3 or newer from the supported
+   matrix, as required by the
+   [submission guidelines](https://marketplace.unity.com/publishing/submission-guidelines).
+   This submission-editor choice does not change DxMessaging's Unity 2021.3
+   support floor. For UPM submission, also use an editor supported by the
+   installed publishing tool. The release creates the classic payload without
    opening Unity; the clean-project import and validation below provide its
    editor compatibility gate. Install the applicable official Asset Store
    publishing tool and sign in to the publisher account via the Editor's Unity
    ID login. Complete two-factor authentication when prompted. This cannot be
-   automated because the documented upload is bound to an interactive Unity ID
-   session and Unity documents no service credential.
+   automated through the inspected instructions, which require an interactive
+   Unity ID session and do not describe a service credential.
 1. **Upload the classic package.** Skip this step for a UPM submission. Import
    the staged `.unitypackage` into a
    clean project. Confirm the import created
@@ -188,8 +181,8 @@ credential is the **Unity publisher account**, used interactively in the Editor:
 - The account must be an approved Asset Store publisher with the package draft
   created, and the person uploading must hold a publisher role that can submit.
 - Complete two-factor authentication when the account requires it. More
-  generally, Unity documents only interactive Unity ID authentication and no
-  service-account or upload-token alternative.
+  generally, the inspected upload instructions describe interactive Unity ID
+  authentication and do not provide a service-account or upload-token procedure.
 - Do not store the publisher password, recovery codes, or session cookies in the
   repository or in CI secrets. Keep them in the approved organization password
   manager. (If automation ever becomes sanctioned, wire its credentials as

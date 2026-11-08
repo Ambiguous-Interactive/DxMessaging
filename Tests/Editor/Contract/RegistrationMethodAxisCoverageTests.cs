@@ -7,6 +7,9 @@ namespace DxMessaging.Tests.Editor.Contract
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.MessageBus.Internal;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
     /// <summary>
     /// Contract guardrails for the <see cref="RegistrationMethodAxes"/> table.
@@ -15,6 +18,10 @@ namespace DxMessaging.Tests.Editor.Contract
     /// <see cref="RegistrationMethod"/> has an explicit <see cref="SlotKey"/>
     /// mapping and that real (non-sentinel) mappings are unique.
     /// </summary>
+    /// <remarks>
+    /// 2026-11-07: Portable NUnit 5 retains the original contract assertions.
+    /// Conditional classic aliases preserve the Unity assertion API where required.
+    /// </remarks>
     [TestFixture]
     [Category("Contract")]
     public sealed class RegistrationMethodAxisCoverageTests

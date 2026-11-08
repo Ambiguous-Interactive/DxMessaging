@@ -34,6 +34,16 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             isEnabledByDefault: true
         );
 
+        private static readonly DiagnosticDescriptor UnsupportedStructInitializationDiagnostic =
+            new(
+                id: "DXMSG011",
+                title: "Cannot preserve explicit-interface struct initializers",
+                messageFormat: "Type '{0}' combines initialized and uninitialized explicit-interface auto-properties with a user parameterless constructor. Add an initializer to each explicit-interface auto-property, use named backing fields, or remove DxAutoConstructor and write the constructor explicitly.",
+                category: "DxMessaging",
+                defaultSeverity: DiagnosticSeverity.Error,
+                isEnabledByDefault: true
+            );
+
         private const string AutoGenConstructorAttrFullName =
             "DxMessaging.Core.Attributes.DxAutoConstructorAttribute";
 
@@ -253,11 +263,15 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 }
 
                 // Generate the partial class/struct with the constructor
-                string generatedSource = GenerateConstructorSource(
+                string? generatedSource = GenerateConstructorSource(
                     context.Compilation,
                     typeInfo,
                     context
                 );
+                if (generatedSource == null)
+                {
+                    continue;
+                }
                 string hintName =
                     $"{typeInfo.TypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}.AutoGenConstructor.g.cs"
                         .Replace("global::", "")
@@ -270,7 +284,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             }
         }
 
-        private static string GenerateConstructorSource(
+        private static string? GenerateConstructorSource(
             Compilation compilation,
             TypeToGenerateInfo typeInfo,
             GeneratorExecutionContext spc
@@ -316,8 +330,9 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 bool containerIsRecord = IsRecordDeclaration(container);
                 string containerKind = container.TypeKind switch
                 {
-                    TypeKind.Class => containerIsRecord ? "record class" : "class",
+                    TypeKind.Class => containerIsRecord ? "record" : "class",
                     TypeKind.Struct => containerIsRecord ? "record struct" : "struct",
+                    TypeKind.Interface => "interface",
                     _ => "class",
                 };
 
@@ -339,7 +354,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             bool typeIsRecord = IsRecordDeclaration(typeSymbol);
             string typeKind = typeSymbol.TypeKind switch
             {
-                TypeKind.Class => typeIsRecord ? "record class" : "class",
+                TypeKind.Class => typeIsRecord ? "record" : "class",
                 TypeKind.Struct => typeIsRecord ? "record struct" : "struct",
                 _ => throw new InvalidOperationException(
                     "Unsupported type kind for constructor generation"
@@ -366,15 +381,23 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             SymbolDisplayFormat fieldTypeFormat =
                 SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
                     SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers
+                        | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
                 );
 
             List<(
                 string Type,
                 string Name,
                 bool IsOptional,
-                string? DefaultExpr
+                string? DefaultExpr,
+                bool AnnotationsEnabled
             )> parameterDetails =
-                new List<(string Type, string Name, bool IsOptional, string? DefaultExpr)>();
+                new List<(
+                    string Type,
+                    string Name,
+                    bool IsOptional,
+                    string? DefaultExpr,
+                    bool AnnotationsEnabled
+                )>();
 
             // For validating expressions, use the semantic model for this type's tree
             SemanticModel semanticModel = compilation.GetSemanticModel(
@@ -382,9 +405,42 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             );
             int anchorPosition = typeInfo.DeclarationSyntax.SpanStart;
 
+            (
+                bool requiresUnsafeContext,
+                bool useDefaultInitializer,
+                bool unsupportedInitialization
+            ) = AppendStructInitialization(compilation, typeSymbol, constructorBody);
+            if (unsupportedInitialization)
+            {
+                spc.ReportDiagnostic(
+                    Diagnostic.Create(
+                        UnsupportedStructInitializationDiagnostic,
+                        typeInfo.DeclarationSyntax.Identifier.GetLocation(),
+                        typeSymbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+                    )
+                );
+                return null;
+            }
             foreach (IFieldSymbol field in fieldsToInject)
             {
-                string fieldType = field.Type.ToDisplayString(fieldTypeFormat);
+                bool fieldRequiresUnsafeContext = RequiresUnsafeContext(field.Type);
+                requiresUnsafeContext |= fieldRequiresUnsafeContext;
+                SymbolDisplayFormat parameterTypeFormat = fieldRequiresUnsafeContext
+                    ? fieldTypeFormat
+                        .WithMiscellaneousOptions(
+                            fieldTypeFormat.MiscellaneousOptions
+                                | SymbolDisplayMiscellaneousOptions.UseSpecialTypes
+                        )
+                        .WithParameterOptions(
+                            fieldTypeFormat.ParameterOptions
+                                | SymbolDisplayParameterOptions.IncludeType
+                                | SymbolDisplayParameterOptions.IncludeParamsRefOut
+                        )
+                        .WithMemberOptions(
+                            fieldTypeFormat.MemberOptions | SymbolDisplayMemberOptions.IncludeRef
+                        )
+                    : fieldTypeFormat;
+                string fieldType = field.Type.ToDisplayString(parameterTypeFormat);
                 string fieldName = field.Name;
                 string parameterName = field.ToDisplayString(IdentifierNameFormat);
                 string? defaultExpr = null;
@@ -421,7 +477,6 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                                 // Validate expression compatibility with field type
                                 if (
                                     !IsValidDefaultExpression(
-                                        compilation,
                                         semanticModel,
                                         anchorPosition,
                                         field,
@@ -454,8 +509,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                         TypedConstant arg = attr.ConstructorArguments[0];
                         if (arg.IsNull)
                         {
-                            defaultExpr = "null"; // only valid for reference or nullable types; compiler will enforce
-                            if (!IsReferenceOrNullable(field.Type))
+                            defaultExpr = "null";
+                            if (!CanUseNullDefault(field.Type))
                             {
                                 Location reportLoc =
                                     attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
@@ -476,30 +531,32 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                         {
                             object? val = arg.Value;
                             defaultExpr = FormatLiteral(val);
-                            // Validate primitive conversion to field type
-                            ITypeSymbol? sourceType = arg.Type;
-                            if (sourceType != null)
+                            // Preserve the original constant type when rendering loses its suffix or cast.
+                            string expressionForValidation = arg.Type is { } constantType
+                                ? $"({constantType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({defaultExpr})"
+                                : defaultExpr;
+                            if (
+                                !IsValidDefaultExpression(
+                                    semanticModel,
+                                    anchorPosition,
+                                    field,
+                                    expressionForValidation
+                                )
+                            )
                             {
-                                Conversion conv = compilation.ClassifyConversion(
-                                    sourceType,
-                                    field.Type
+                                Location reportLoc =
+                                    attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+                                    ?? field.Locations.FirstOrDefault()
+                                    ?? Location.None;
+                                spc.ReportDiagnostic(
+                                    Diagnostic.Create(
+                                        InvalidOptionalDefaultDiagnostic,
+                                        reportLoc,
+                                        fieldName,
+                                        defaultExpr,
+                                        fieldType
+                                    )
                                 );
-                                if (!conv.IsImplicit)
-                                {
-                                    Location reportLoc =
-                                        attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
-                                        ?? field.Locations.FirstOrDefault()
-                                        ?? Location.None;
-                                    spc.ReportDiagnostic(
-                                        Diagnostic.Create(
-                                            InvalidOptionalDefaultDiagnostic,
-                                            reportLoc,
-                                            fieldName,
-                                            defaultExpr,
-                                            fieldType
-                                        )
-                                    );
-                                }
                             }
                         }
                     }
@@ -507,16 +564,54 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     break; // only one DxOptionalParameterAttribute expected
                 }
 
-                parameterDetails.Add((fieldType, parameterName, isOptional, defaultExpr));
+                SyntaxReference? fieldDeclaration =
+                    field.DeclaringSyntaxReferences.FirstOrDefault();
+                SemanticModel fieldModel =
+                    fieldDeclaration == null
+                    || ReferenceEquals(fieldDeclaration.SyntaxTree, semanticModel.SyntaxTree)
+                        ? semanticModel
+                        : compilation.GetSemanticModel(fieldDeclaration.SyntaxTree);
+                bool annotationsEnabled =
+                    (
+                        fieldModel.GetNullableContext(
+                            fieldDeclaration?.Span.Start ?? anchorPosition
+                        ) & NullableContext.AnnotationsEnabled
+                    ) != 0;
+                parameterDetails.Add(
+                    (fieldType, parameterName, isOptional, defaultExpr, annotationsEnabled)
+                );
                 constructorBody.AppendLine(
                     $"{Indent}{Indent}    this.{parameterName} = {parameterName};"
                 );
             }
 
+            bool initialAnnotationsEnabled = parameterDetails[0].AnnotationsEnabled;
+            bool currentAnnotationsEnabled = initialAnnotationsEnabled;
+            string initialNullableDirective = initialAnnotationsEnabled
+                ? "#nullable enable annotations"
+                : "#nullable disable annotations";
+
             for (int i = 0; i < parameterDetails.Count; i++)
             {
-                (string Type, string Name, bool IsOptional, string? DefaultExpr) p =
-                    parameterDetails[i];
+                (
+                    string Type,
+                    string Name,
+                    bool IsOptional,
+                    string? DefaultExpr,
+                    bool AnnotationsEnabled
+                ) p = parameterDetails[i];
+                if (currentAnnotationsEnabled != p.AnnotationsEnabled)
+                {
+                    // Retain each field's annotation context in its generated parameter.
+                    constructorParams
+                        .AppendLine()
+                        .AppendLine(
+                            p.AnnotationsEnabled
+                                ? "#nullable enable annotations"
+                                : "#nullable disable annotations"
+                        );
+                    currentAnnotationsEnabled = p.AnnotationsEnabled;
+                }
                 constructorParams.Append($"{p.Type} {p.Name}");
                 if (p.IsOptional)
                 {
@@ -536,6 +631,11 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 }
             }
 
+            if (currentAnnotationsEnabled != initialAnnotationsEnabled)
+            {
+                constructorParams.AppendLine().AppendLine(initialNullableDirective);
+            }
+
             // Close containers
             for (int i = 0; i < containers.Count; i++)
             {
@@ -546,12 +646,14 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 containersClose.Append(currentIndent).AppendLine("}");
             }
 
+            string unsafeModifier = requiresUnsafeContext ? "unsafe " : string.Empty;
+            string constructorInitializer = useDefaultInitializer ? " : this()" : string.Empty;
             return string.Join(
                 "\r\n",
                 new[]
                 {
                     "// <auto-generated by DxAutoGenConstructorGenerator/>",
-                    "#nullable enable annotations",
+                    initialNullableDirective,
                     string.Empty,
                     namespaceBlockOpen,
                     $"{containersOpen}{innerIndent}{typeAccessibility} partial {typeKind} {typeName}",
@@ -559,7 +661,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     $"{Indent}    /// <summary>",
                     $"{Indent}    /// Auto-generated constructor by DxAutoGenConstructorGenerator.",
                     $"{Indent}    /// </summary>",
-                    $"{innerIndent}    {constructorAccessibility} {typeSymbol.ToDisplayString(IdentifierNameFormat)}({constructorParams})",
+                    $"{innerIndent}    {constructorAccessibility} {unsafeModifier}{typeSymbol.ToDisplayString(IdentifierNameFormat)}({constructorParams}){constructorInitializer}",
                     $"{innerIndent}    {{",
                     $"{constructorBody}",
                     $"{innerIndent}    }}",
@@ -569,6 +671,144 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     string.Empty,
                 }
             );
+        }
+
+        private static (
+            bool RequiresUnsafeContext,
+            bool UseDefaultInitializer,
+            bool Unsupported
+        ) AppendStructInitialization(
+            Compilation compilation,
+            INamedTypeSymbol typeSymbol,
+            StringBuilder body
+        )
+        {
+            // C# 11 supplies auto-defaulting; retain the existing constructor on that path.
+            if (
+                typeSymbol.TypeKind != TypeKind.Struct
+                || compilation is not CSharpCompilation csharp
+                || 1100 <= (int)csharp.LanguageVersion
+            )
+            {
+                return (false, false, false);
+            }
+
+            List<(ISymbol Member, ITypeSymbol Type, bool Initialized)> storage = new();
+            bool hasOpaqueDefault = false;
+            bool hasOpaqueInitializer = false;
+            foreach (ISymbol member in typeSymbol.GetMembers())
+            {
+                if (member.IsStatic)
+                {
+                    continue;
+                }
+                ISymbol state;
+                ITypeSymbol stateType;
+                switch (member)
+                {
+                    case IFieldSymbol field:
+                        /* Public fields are assigned from parameters; fixed buffers do not
+                         * participate in constructor definite assignment. */
+                        if (
+                            field.IsFixedSizeBuffer
+                            || field.DeclaredAccessibility == Accessibility.Public
+                        )
+                        {
+                            continue;
+                        }
+                        state = field.AssociatedSymbol ?? field;
+                        stateType = field.Type;
+                        break;
+                    case IEventSymbol eventSymbol
+                        when eventSymbol.DeclaringSyntaxReferences.Any(reference =>
+                            reference.GetSyntax() is VariableDeclaratorSyntax
+                        ):
+                        // Roslyn does not expose field-like event backing fields as members.
+                        state = eventSymbol;
+                        stateType = eventSymbol.Type;
+                        break;
+                    default:
+                        continue;
+                }
+
+                bool initialized = state.DeclaringSyntaxReferences.Any(reference =>
+                    reference.GetSyntax()
+                        is VariableDeclaratorSyntax { Initializer: not null }
+                            or PropertyDeclarationSyntax { Initializer: not null }
+                );
+                storage.Add((state, stateType, initialized));
+                if (!state.CanBeReferencedByName)
+                {
+                    hasOpaqueDefault |= !initialized;
+                    hasOpaqueInitializer |= initialized;
+                }
+            }
+
+            /* The implicit default constructor clears backing storage before running
+             * initializers. An explicit parameterless constructor would run user code. */
+            if (hasOpaqueDefault && hasOpaqueInitializer)
+            {
+                bool hasUserDefaultConstructor = typeSymbol.InstanceConstructors.Any(constructor =>
+                    constructor.Parameters.Length == 0 && !constructor.IsImplicitlyDeclared
+                );
+                return (false, !hasUserDefaultConstructor, hasUserDefaultConstructor);
+            }
+
+            const string AssignmentIndent = "            ";
+            bool requiresUnsafeContext = false;
+            if (!hasOpaqueDefault)
+            {
+                foreach ((ISymbol member, ITypeSymbol type, bool initialized) in storage)
+                {
+                    if (initialized)
+                    {
+                        continue;
+                    }
+                    requiresUnsafeContext |= RequiresUnsafeContext(type);
+                    body.AppendLine(
+                        $"{AssignmentIndent}this.{member.ToDisplayString(IdentifierNameFormat)} = default;"
+                    );
+                }
+                return (requiresUnsafeContext, false, false);
+            }
+
+            /* An explicit-interface auto-property cannot be assigned by name. Preserve
+             * initialized named storage before clearing the remaining backing fields. */
+            HashSet<string> localNames = new(StringComparer.Ordinal);
+            foreach (ISymbol member in typeSymbol.GetMembers())
+            {
+                localNames.Add(member.Name);
+            }
+            for (INamedTypeSymbol? scope = typeSymbol; scope != null; scope = scope.ContainingType)
+            {
+                foreach (ITypeParameterSymbol parameter in scope.TypeParameters)
+                {
+                    localNames.Add(parameter.Name);
+                }
+            }
+            List<(string Member, string Local)> preserved = new();
+            foreach ((ISymbol member, ITypeSymbol type, bool initialized) in storage)
+            {
+                if (!initialized)
+                {
+                    continue;
+                }
+                requiresUnsafeContext |= RequiresUnsafeContext(type);
+                string memberName = member.ToDisplayString(IdentifierNameFormat);
+                string local = "__dxMessagingInitialized";
+                while (!localNames.Add(local))
+                {
+                    local += "_";
+                }
+                body.AppendLine($"{AssignmentIndent}var {local} = this.{memberName};");
+                preserved.Add((memberName, local));
+            }
+            body.AppendLine($"{AssignmentIndent}this = default;");
+            foreach ((string member, string local) in preserved)
+            {
+                body.AppendLine($"{AssignmentIndent}this.{member} = {local};");
+            }
+            return (requiresUnsafeContext, false, false);
         }
 
         private static string FormatLiteral(object? value)
@@ -604,18 +844,62 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 case ulong ui64:
                     return ui64.ToString(CultureInfo.InvariantCulture) + "UL";
                 case float f:
+                    // Older Mono formatters drop the sign of negative zero.
+                    if (f == 0.0f)
+                    {
+                        return float.IsNegativeInfinity(1.0f / f) ? "-0.0f" : "0.0f";
+                    }
+                    if (float.IsNaN(f))
+                    {
+                        return "global::System.Single.NaN";
+                    }
+                    if (float.IsPositiveInfinity(f))
+                    {
+                        return "global::System.Single.PositiveInfinity";
+                    }
+                    if (float.IsNegativeInfinity(f))
+                    {
+                        return "global::System.Single.NegativeInfinity";
+                    }
                     return f.ToString("R", CultureInfo.InvariantCulture) + "f";
                 case double d:
-                    return d.ToString("R", CultureInfo.InvariantCulture);
+                    // Older Mono formatters drop the sign of negative zero.
+                    if (d == 0.0d)
+                    {
+                        return double.IsNegativeInfinity(1.0d / d) ? "-0.0d" : "0.0d";
+                    }
+                    if (double.IsNaN(d))
+                    {
+                        return "global::System.Double.NaN";
+                    }
+                    if (double.IsPositiveInfinity(d))
+                    {
+                        return "global::System.Double.PositiveInfinity";
+                    }
+                    if (double.IsNegativeInfinity(d))
+                    {
+                        return "global::System.Double.NegativeInfinity";
+                    }
+                    return d.ToString("R", CultureInfo.InvariantCulture) + "d";
             }
 
             // Fallback: use ToString(), but this should not occur for attribute constants
             return value.ToString() ?? "default";
         }
 
-        private static bool IsReferenceOrNullable(ITypeSymbol type)
+        private static bool RequiresUnsafeContext(ITypeSymbol type)
         {
-            if (type.IsReferenceType)
+            while (type is IArrayTypeSymbol array)
+            {
+                type = array.ElementType;
+            }
+
+            return type.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer;
+        }
+
+        private static bool CanUseNullDefault(ITypeSymbol type)
+        {
+            if (type.IsReferenceType || RequiresUnsafeContext(type))
             {
                 return true;
             }
@@ -632,7 +916,6 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
         }
 
         private static bool IsValidDefaultExpression(
-            Compilation compilation,
             SemanticModel semanticModel,
             int anchorPosition,
             IFieldSymbol field,
@@ -648,27 +931,68 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
             if (string.Equals(trimmed, "null", StringComparison.Ordinal))
             {
-                return IsReferenceOrNullable(field.Type);
+                return CanUseNullDefault(field.Type);
             }
 
             try
             {
-                var exprSyntax = SyntaxFactory.ParseExpression(trimmed);
-                var typeInfo = semanticModel.GetSpeculativeTypeInfo(
-                    anchorPosition,
-                    exprSyntax,
-                    SpeculativeBindingOption.BindAsExpression
-                );
-
-                ITypeSymbol? sourceType = typeInfo.Type;
-                if (sourceType == null)
+                ExpressionSyntax exprSyntax = SyntaxFactory.ParseExpression(trimmed);
+                foreach (SyntaxNode node in exprSyntax.DescendantNodesAndSelf())
                 {
-                    // Could not bind; let the compiler decide but report as invalid here
-                    return false;
+                    if (
+                        node
+                            is not InvocationExpressionSyntax
+                            {
+                                Expression: IdentifierNameSyntax name,
+                            }
+                        || !string.Equals(
+                            name.Identifier.ValueText,
+                            "nameof",
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    /*
+                        Roslyn 5.9 throws when positional conversion binds detached nameof syntax.
+                        A speculative attribute model owns the complete expression, including constants.
+                    */
+                    AttributeSyntax binding = SyntaxFactory.Attribute(
+                        SyntaxFactory.ParseName("global::" + OptionalParameterAttrFullName),
+                        SyntaxFactory.AttributeArgumentList(
+                            SyntaxFactory.SingletonSeparatedList(
+                                SyntaxFactory.AttributeArgument(exprSyntax)
+                            )
+                        )
+                    );
+                    if (
+                        !semanticModel.TryGetSpeculativeSemanticModel(
+                            anchorPosition,
+                            binding,
+                            out SemanticModel? expressionModel
+                        )
+                        || expressionModel == null
+                    )
+                    {
+                        return false;
+                    }
+
+                    return expressionModel
+                        .ClassifyConversion(
+                            binding.ArgumentList!.Arguments[0].Expression,
+                            field.Type
+                        )
+                        .IsImplicit;
                 }
 
-                Conversion conv = compilation.ClassifyConversion(sourceType, field.Type);
-                return conv.IsImplicit;
+                Conversion conversion = semanticModel.ClassifyConversion(
+                    anchorPosition,
+                    exprSyntax,
+                    field.Type
+                );
+                return conversion.IsImplicit;
             }
             catch (ArgumentException)
             {

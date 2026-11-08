@@ -45,8 +45,7 @@ Version inconsistencies cause preventable issues:
 ### Common Actions to Monitor
 
 Do not treat a static table as permanent truth. Verify the official action tag
-before claiming that a workflow version is unpublished. As of 2026-08-10, this
-repo intentionally uses these published official-action majors in enabled and
+before claiming that a workflow version is unpublished. The repository uses these published official-action majors in enabled and
 disabled workflow files:
 
 | Action                            | Repo Pin | Notes                            |
@@ -59,9 +58,9 @@ disabled workflow files:
 | `actions/deploy-pages`            | `v5`     | Pages deployments                |
 | `actions/download-artifact`       | `v8`     | Workflow artifact downloads      |
 | `actions/github-script`           | `v9`     | GitHub API scripting             |
-| `actions/setup-dotnet`            | `v5`     | .NET SDK setup                   |
+| `actions/setup-dotnet`            | `v6`     | .NET SDK setup                   |
 | `actions/setup-node`              | `v7`     | Node.js setup                    |
-| `actions/setup-python`            | `v6`     | Python setup                     |
+| `actions/setup-python`            | `v7`     | Python setup                     |
 | `actions/upload-artifact`         | `v7`     | Workflow artifact uploads        |
 | `actions/upload-pages-artifact`   | `v5`     | Pages artifact uploads           |
 

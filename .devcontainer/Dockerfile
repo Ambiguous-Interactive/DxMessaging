@@ -91,11 +91,11 @@ RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
 WORKDIR /tmp/tools
 
 # ------------------------------------------------------------------------------
-# Install fd (fd-find) 10.5.0
+# Install fd (fd-find) 10.5.2
 # https://github.com/sharkdp/fd
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    FD_VERSION="10.5.0"; \
+    FD_VERSION="10.5.2"; \
     case "${TARGETARCH}" in \
         amd64) FD_ARCH="x86_64-unknown-linux-gnu" ;; \
         arm64) FD_ARCH="aarch64-unknown-linux-gnu" ;; \
@@ -127,11 +127,11 @@ RUN set -eux; \
     bat --version
 
 # ------------------------------------------------------------------------------
-# Install fzf 0.74.5
+# Install fzf 0.75.0
 # https://github.com/junegunn/fzf
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    FZF_VERSION="0.74.5"; \
+    FZF_VERSION="0.75.0"; \
     case "${TARGETARCH}" in \
         amd64) FZF_ARCH="linux_amd64" ;; \
         arm64) FZF_ARCH="linux_arm64" ;; \
@@ -199,11 +199,11 @@ RUN set -eux; \
     zoxide --version
 
 # ------------------------------------------------------------------------------
-# Install yq 4.54.1
+# Install yq 4.54.2
 # https://github.com/mikefarah/yq
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    YQ_VERSION="4.54.1"; \
+    YQ_VERSION="4.54.2"; \
     case "${TARGETARCH}" in \
         amd64) YQ_ARCH="linux_amd64" ;; \
         arm64) YQ_ARCH="linux_arm64" ;; \
@@ -250,11 +250,11 @@ RUN set -eux; \
     sd --version
 
 # ------------------------------------------------------------------------------
-# Install dust 1.2.6
+# Install dust 1.2.7
 # https://github.com/bootandy/dust
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    DUST_VERSION="1.2.6"; \
+    DUST_VERSION="1.2.7"; \
     case "${TARGETARCH}" in \
         amd64) DUST_ARCH="x86_64-unknown-linux-gnu" ;; \
         arm64) DUST_ARCH="aarch64-unknown-linux-gnu" ;; \
@@ -391,7 +391,7 @@ RUN npm install --global --prefix /usr/local \
         opencode-ai@latest \
         @nanocollective/nanocoder@latest \
         @z_ai/mcp-server@latest \
-        mcp-remote@0.15.2 \
+        mcp-remote@0.16.5 \
         --no-fund \
         --no-audit \
     && codex --version \

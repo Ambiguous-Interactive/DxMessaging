@@ -799,22 +799,23 @@ namespace DxMessaging.Tests.Runtime.Core
                 Token.DiagnosticMode = diagnostics;
             }
 
-            internal void Emit(MessageScenario scenario)
+            internal void Emit(MessageScenario scenario, IMessageBus destination = null)
             {
+                IMessageBus bus = destination ?? Bus;
                 ProbeMessage message = default;
                 InstanceId context = Context;
                 switch (scenario.Kind)
                 {
                     case MessageKind.Untargeted:
-                        Bus.UntargetedBroadcast(ref message);
+                        bus.UntargetedBroadcast(ref message);
                         break;
                     case MessageKind.Targeted:
                     case MessageKind.TargetedWithoutTargeting:
-                        Bus.TargetedBroadcast(ref context, ref message);
+                        bus.TargetedBroadcast(ref context, ref message);
                         break;
                     case MessageKind.Broadcast:
                     case MessageKind.BroadcastWithoutSource:
-                        Bus.SourcedBroadcast(ref context, ref message);
+                        bus.SourcedBroadcast(ref context, ref message);
                         break;
                     default:
                         throw new ArgumentOutOfRangeException(nameof(scenario));
@@ -958,10 +959,200 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        private static IEnumerable<TestCaseData> RetargetAdditionCases()
+        {
+            foreach ((MessageScenario Scenario, bool Action, int Family) shape in Shapes())
+            foreach (bool diagnostics in new[] { false, true })
+            foreach (bool sameBus in new[] { false, true })
+            foreach (bool add in new[] { false, true })
+            foreach (bool after in new[] { false, true })
+            {
+                yield return new TestCaseData(
+                    shape.Scenario,
+                    shape.Action,
+                    shape.Family,
+                    diagnostics,
+                    sameBus,
+                    add,
+                    after
+                ).SetName(
+                    $"RetargetTeardownAddition_{shape.Scenario}_action{shape.Action}_family{shape.Family}_diagnostics{diagnostics}_same{sameBus}_add{add}_after{after}"
+                );
+            }
+        }
+
+        /// <summary>Keeps a registration accepted during old-bus teardown active only on its accepting bus.</summary>
+        /// <remarks>
+        /// 2026-11-06: active retarget replayed a still-active teardown addition on the new bus.
+        /// The fixed cleanup snapshot leaves that addition owned by its original handle until
+        /// a later cleanup pass; re-enabling then uses the current destination for all staging.
+        /// </remarks>
+        [TestCaseSource(nameof(RetargetAdditionCases))]
+        public void ActiveRetargetDoesNotDuplicateRegistrationsAcceptedDuringTeardown(
+            MessageScenario scenario,
+            bool action,
+            int family,
+            bool diagnostics,
+            bool sameBus,
+            bool add,
+            bool after
+        )
+        {
+            string label =
+                $"[{scenario}] action={action},family={family},diagnostics={diagnostics},sameBus={sameBus},add={add},after={after}";
+            using CaseState state = new CaseState(diagnostics);
+            BusType destination = sameBus
+                ? state.Inner
+                : new BusType { DiagnosticsMode = diagnostics };
+            using LeakWatcher destinationLeaks = new LeakWatcher(destination, label: label);
+            MessageRegistrationHandle original = Register(
+                state.Token,
+                scenario,
+                action,
+                family,
+                () => state.Calls.Add("original")
+            );
+            state.Token.Enable();
+            MessageRegistrationHandle added = default;
+            int mutations = 0;
+            state.Bus.AfterDeregistration = after;
+            state.Bus.OnFirstDeregistration = () =>
+            {
+                ++mutations;
+                if (add)
+                {
+                    added = Register(
+                        state.Token,
+                        scenario,
+                        action,
+                        family,
+                        () => state.Calls.Add("added")
+                    );
+                }
+            };
+            try
+            {
+                state.Token.RetargetMessageBus(
+                    sameBus ? state.Bus : destination,
+                    MessageBusRebindMode.RebindActive
+                );
+                state.Emit(scenario);
+                string[] oldDelivery = state.Calls.ToArray();
+                state.Calls.Clear();
+                if (!sameBus)
+                {
+                    state.Emit(scenario, destination);
+                }
+                string[] newDelivery = state.Calls.ToArray();
+                int originalCount = state.Token._callCounts.GetValueOrDefault(original);
+                int addedCount = state.Token._callCounts.GetValueOrDefault(added);
+                string report =
+                    label
+                    + "; old="
+                    + string.Join(",", oldDelivery)
+                    + "; new="
+                    + string.Join(",", newDelivery);
+                TestContext.WriteLine(report);
+                AssertRetargetState(() =>
+                {
+                    Assert.That(mutations, Is.EqualTo(1), report);
+                    Assert.That(state.Token.Enabled, Is.True, report);
+                    Assert.That(state.Token._metadata.Count, Is.EqualTo(add ? 2 : 1), report);
+                    Assert.That(
+                        oldDelivery,
+                        Is.EquivalentTo(
+                            sameBus
+                                ? (add ? new[] { "original", "added" } : new[] { "original" })
+                                : (add ? new[] { "added" } : Array.Empty<string>())
+                        ),
+                        report
+                    );
+                    Assert.That(
+                        newDelivery,
+                        Is.EqualTo(sameBus ? Array.Empty<string>() : new[] { "original" }),
+                        report
+                    );
+                    Assert.That(
+                        originalCount,
+                        Is.EqualTo(diagnostics && family != 1 ? 1 : 0),
+                        report
+                    );
+                    Assert.That(
+                        addedCount,
+                        Is.EqualTo(diagnostics && family != 1 && add ? 1 : 0),
+                        report
+                    );
+                });
+                state.Token.RemoveRegistration(added);
+                state.Token.RemoveRegistration(added);
+                state.Calls.Clear();
+                state.Emit(scenario);
+                if (!sameBus)
+                {
+                    state.Emit(scenario, destination);
+                }
+                Assert.That(
+                    state.Calls,
+                    Is.EqualTo(new[] { "original" }),
+                    report + ": owner removal consumes only the addition"
+                );
+                state.Token.Disable();
+                Assert.That(
+                    state.Token.Enabled,
+                    Is.False,
+                    report + ": all accepted cleanup completes"
+                );
+                state.Calls.Clear();
+                state.Emit(scenario);
+                if (!sameBus)
+                {
+                    state.Emit(scenario, destination);
+                }
+                Assert.That(state.Calls, Is.Empty, report + ": disable cleans both buses");
+                state.Token.Enable();
+                state.Calls.Clear();
+                state.Emit(scenario);
+                string[] reenabledOld = state.Calls.ToArray();
+                state.Calls.Clear();
+                if (!sameBus)
+                {
+                    state.Emit(scenario, destination);
+                }
+                Assert.That(
+                    reenabledOld,
+                    Is.EqualTo(sameBus ? new[] { "original" } : Array.Empty<string>()),
+                    report + ": later activation selects the destination"
+                );
+                Assert.That(
+                    state.Calls,
+                    Is.EqualTo(sameBus ? Array.Empty<string>() : new[] { "original" }),
+                    report + ": one recovered destination subscription"
+                );
+            }
+            finally
+            {
+                state.Token.UnregisterAll();
+                destination.Trim(force: true);
+            }
+            Assert.That(state.Token._metadata.Count, Is.Zero, label + ": staging clears");
+            Assert.That(state.Token._callCounts.Count, Is.Zero, label + ": call counts clear");
+            Assert.That(state.Token._emissionBuffer.Count, Is.Zero, label + ": history clears");
+        }
+
+        private static void AssertRetargetState(Action assertions)
+        {
+#if UNITY_2021_3_OR_NEWER
+            assertions();
+#else
+            Assert.Multiple(assertions.Invoke);
+#endif
+        }
+
         private sealed class ReplayBus : DelegatingMessageBus
         {
             internal Action OnFirstDeregistration;
             internal bool RejectNext;
+            internal bool AfterDeregistration;
             internal readonly InvalidOperationException Failure = new InvalidOperationException(
                 "Deregistration rejected before forwarding."
             );
@@ -978,12 +1169,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 RejectNext = false;
                 Action callback = OnFirstDeregistration;
                 OnFirstDeregistration = null;
-                callback?.Invoke();
+                if (!AfterDeregistration)
+                {
+                    callback?.Invoke();
+                }
                 if (reject)
                 {
                     throw Failure;
                 }
                 base.Deregister<T>(in registration);
+                if (AfterDeregistration)
+                {
+                    callback?.Invoke();
+                }
             }
         }
 

@@ -65,6 +65,7 @@ export const FALLBACK_HOSTS = Object.freeze(["host.docker.internal", "127.0.0.1"
 const OPTION_NAMES = new Set([
   "bind",
   "host",
+  "client-host",
   "port",
   "path",
   "project",
@@ -86,6 +87,7 @@ const FLAG_NAMES = new Set(["no-discover", "offline"]);
 const ENV_KEYS = Object.freeze({
   bindHost: "UNITY_MCP_BIND_HOST",
   host: "UNITY_MCP_BRIDGE_HOST",
+  clientHost: "UNITY_MCP_CLIENT_HOST",
   port: "UNITY_MCP_BRIDGE_PORT",
   endpointPath: "UNITY_MCP_BRIDGE_PATH",
   projectPath: "UNITY_PROJECT_PATH",
@@ -235,6 +237,13 @@ function githubToken(environment, local) {
   if (value?.length > 1_024) fail("GitHub token must not exceed 1024 characters");
   return value === undefined ? value : validateText(value, "GitHub token");
 }
+export function defaultEndpointHost(
+  platform = process.platform,
+  inContainer = platform === "linux" &&
+    (fs.existsSync("/.dockerenv") || fs.existsSync("/run/.containerenv"))
+) {
+  return inContainer ? DEFAULTS.host : "127.0.0.1";
+}
 // Host project paths are validated only by bridge; they do not exist in the container.
 export function resolveOptions(args, environment = process.env, localValues, repoRoot = REPO_ROOT) {
   const local = localValues ?? readLocalEnv(repoRoot);
@@ -256,7 +265,11 @@ export function resolveOptions(args, environment = process.env, localValues, rep
   const options = {
     repoRoot,
     bindHost: validateHost(get("bind", "bindHost", DEFAULTS.bindHost), "Bind host"),
-    host: validateHost(explicitHost ?? DEFAULTS.host),
+    host: validateHost(explicitHost ?? defaultEndpointHost()),
+    clientHost:
+      get("client-host", "clientHost") === undefined
+        ? undefined
+        : validateHost(get("client-host", "clientHost")),
     explicitHost: explicitHost === undefined ? undefined : validateHost(explicitHost),
     port: integer(explicitPort ?? DEFAULTS.port, "Port", 1, 65_535),
     explicitPort: explicitPort === undefined ? undefined : integer(explicitPort, "Port", 1, 65_535),
@@ -314,8 +327,6 @@ export function endpointUrl({ host, port, endpointPath }) {
   return `http://${formatted}:${port}${endpointPath}`;
 }
 
-// Endpoint discovery
-
 /** Nameserver entries in /etc/resolv.conf. Under WSL2 this is the Windows host. */
 export function resolvConfHosts(raw) {
   if (!raw) {
@@ -369,6 +380,7 @@ export function endpointCandidates(options, runtime = {}) {
   const hosts = options.explicitHost
     ? [options.explicitHost]
     : [
+        options.host,
         ...FALLBACK_HOSTS,
         ...resolvConfHosts(readFile("/etc/resolv.conf")),
         ...procNetRouteGateways(readFile("/proc/net/route"))
@@ -638,8 +650,6 @@ export function describeAttempts(attempts) {
     .join("\n");
 }
 
-// Client configuration
-
 function stageFile(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const temporary = `${filePath}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
@@ -870,7 +880,7 @@ function clientServers(kind, options, url) {
 }
 export function configure(inputOptions, endpoint, beforeCommit) {
   const options = ensureBearerToken(inputOptions);
-  const url = endpointUrl(endpoint);
+  const url = endpointUrl({ ...endpoint, host: options.clientHost ?? endpoint.host });
   const paths = clientConfigPaths(options.repoRoot);
   const removed = options.zaiToken ? [] : ZAI_SERVERS;
   const writes = Object.entries(paths).map(([kind, file]) => {
@@ -943,14 +953,26 @@ export function buildRelayArgs(projectPath) {
 }
 
 export async function assertPortAvailable(port, host = DEFAULTS.bindHost) {
-  await new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.unref();
-    server.once("error", (error) =>
-      reject(new Error(`Port ${port} is unavailable on ${host}: ${error.message}`))
-    );
-    server.listen({ port, host, exclusive: true }, () => server.close(resolve));
-  });
+  // macOS permits a wildcard bind beside a specific listener, which then shadows the bridge.
+  const interfaces = Object.values(os.networkInterfaces())
+    .flat()
+    .filter((entry) => entry.family === "IPv4" || (host === "::" && !entry.scopeid))
+    .map((entry) => entry.address);
+  const hosts = ["0.0.0.0", "::"].includes(host) ? [...new Set(interfaces), host] : [host];
+  for (const address of hosts) {
+    await new Promise((resolve, reject) => {
+      const server = net.createServer();
+      server.unref();
+      server.once("error", (error) =>
+        reject(
+          new Error(
+            `Port ${port} is unavailable on ${address}: ${error.message}. Stop any port forward or choose another --port.`
+          )
+        )
+      );
+      server.listen({ port, host: address, exclusive: true }, () => server.close(resolve));
+    });
+  }
 }
 
 function authorized(request, token) {
@@ -1031,6 +1053,11 @@ function sendJson(response, statusCode, payload, closeConnection = false) {
 }
 
 export async function startBridge(inputOptions, runtime = {}) {
+  if (runtime.inContainer ?? defaultEndpointHost() === DEFAULTS.host) {
+    fail(
+      "Run unity:mcp:bridge on the host beside Unity. In the devcontainer, run unity:mcp:configure and unity:mcp:probe to connect to that host bridge."
+    );
+  }
   const options = ensureBearerToken(inputOptions);
   const projectPath = requireProjectPath(options);
   const relayPath =
@@ -1330,8 +1357,6 @@ export async function startBridge(inputOptions, runtime = {}) {
   return { close, closed, httpServer, options, bearerToken: options.bearerToken };
 }
 
-// Commands
-
 // --no-discover narrows candidates but still checks readiness.
 async function resolveEndpoint(options, runtime = {}) {
   const configured = {
@@ -1363,7 +1388,6 @@ export async function runProbe(options, runtime = {}) {
       `No Unity MCP endpoint is ready for editor-backed calls. Attempts:\n${describeAttempts(attempts)}`
     );
   }
-  // Report only the readiness level actually verified.
   const proven = found.editorToolAdvertised
     ? `is ready for editor-backed calls (${found.editorTool} answered)`
     : `advertises Unity_RunCommand, but has no ${EDITOR_READY_TOOL} to prove an editor is behind it`;
@@ -1379,58 +1403,75 @@ export async function runConfigure(options, runtime = {}) {
   const unauthorized = found ? undefined : attempts.find((a) => a.status === "unauthorized");
   if (unauthorized) {
     fail(
-      `A Unity MCP bridge is running at ${unauthorized.url} but rejected the bearer token ` +
-        `(${unauthorized.detail}). Nothing was written and no token was generated: copy ` +
-        `${ENV_KEYS.bearerToken} from the host's .env.local into ` +
-        `${path.join(options.repoRoot, ".env.local")}, or pass --token, then re-run configure.`
+      `Unity MCP at ${unauthorized.url} rejected the bearer token (${unauthorized.detail}). Nothing was written and no token was generated: copy ${ENV_KEYS.bearerToken} from the host's .env.local into ${path.join(options.repoRoot, ".env.local")}, or pass --token, then re-run configure.`
     );
   }
-  const target = endpoint ?? {
-    host: options.host,
-    port: options.port,
-    endpointPath: options.endpointPath
-  };
+  if (!found && !options.offline && attempts.some((attempt) => attempt.status !== "unreachable")) {
+    fail(
+      `A listener did not complete Unity MCP initialization. Nothing was written. Check the host bridge and port forwards, or use --offline to configure explicitly. Attempts:\n${describeAttempts(attempts)}`
+    );
+  }
+  const target = endpoint ?? options;
   if (!found && !options.offline) {
     console.warn(
       `No Unity MCP endpoint completed initialization; configuring ${endpointUrl(target)} anyway. Attempts:\n${describeAttempts(attempts)}`
     );
   }
   const { url, written } = configure(options, target);
-  const summary = written.length
-    ? written.map((filePath) => path.relative(options.repoRoot, filePath)).join(", ")
-    : "no changes";
+  const summary =
+    written.map((filePath) => path.relative(options.repoRoot, filePath)).join(", ") || "no changes";
   console.log(`Configured agent MCP servers; Unity endpoint ${url} (${summary}).`);
   if (!options.zaiToken)
     console.log("Z.AI servers need Z_AI_API_KEY or ZAI_API_KEY in .env.local.");
   return url;
 }
 
-export async function runBridge(options) {
-  const running = await startBridge(options);
+export async function runBridge(options, runtime = {}) {
+  const running = await startBridge(options, runtime);
   console.log(`Unity project: ${running.options.projectPath}`);
   console.log(
-    `Unity MCP bridge: http://${running.options.bindHost}:${running.options.port}${running.options.endpointPath} (bearer authentication required)`
+    `Unity MCP HTTP listener: http://${running.options.bindHost}:${running.httpServer.address().port}${running.options.endpointPath} (bearer authentication required; verifying Unity)`
   );
   const stop = () => {
     running.close().catch((error) => console.error(`Bridge shutdown failed: ${error.message}`));
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
-  await running.closed;
-  process.removeListener("SIGINT", stop);
-  process.removeListener("SIGTERM", stop);
+  try {
+    const host = ["0.0.0.0", "::"].includes(options.bindHost) ? "127.0.0.1" : options.bindHost;
+    const result = await probeEndpoint(
+      { host, port: running.httpServer.address().port, endpointPath: options.endpointPath },
+      running.options,
+      runtime.fetchImpl ?? fetch,
+      "editor"
+    );
+    if (!result.ok || !result.editorToolAdvertised)
+      fail(
+        `Unity backend is not ready: ${result.status} (${result.detail ?? "no editor status tool"}). Check the host Unity CLI and selected Editor.`
+      );
+    console.log(
+      `Unity MCP ready: ${result.editorTool} answered. Leave this host terminal running; configure and probe from the devcontainer in another terminal. Ctrl-C stops the bridge.`
+    );
+    await running.closed;
+  } finally {
+    await running.close();
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+  }
 }
 
 function usage() {
   return [
-    "Usage: node scripts/mcp/unity-mcp.mjs <probe|configure|bridge> [options]",
+    "Usage: node scripts/mcp/unity-mcp.mjs <probe|configure|bridge|run> [options]",
     "",
     "  probe      Discover Unity tools and check editor readiness.",
     "  configure  Configure agent MCP servers, discovering Unity unless --offline is set.",
     "  bridge     Serve Unity CLI or the legacy relay over authenticated HTTP on the host.",
+    "  run        Alias for bridge.",
     "",
     "Options:",
     "  --host HOST                 Endpoint host; the only host discovery probes",
+    "  --client-host HOST          Address written to client configs (independent of discovery)",
     "  --port PORT                 Endpoint port; the only port discovery probes",
     "  --path PATH                 Streamable HTTP path (default: /mcp)",
     "  --offline                   Write configs without network access (configure only)",
@@ -1452,7 +1493,7 @@ function usage() {
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const commands = { probe: runProbe, configure: runConfigure, bridge: runBridge };
+  const commands = { probe: runProbe, configure: runConfigure, bridge: runBridge, run: runBridge };
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h") {
     console.log(usage());

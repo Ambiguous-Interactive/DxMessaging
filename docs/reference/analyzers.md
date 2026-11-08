@@ -4,24 +4,25 @@
 
 ---
 
-DxMessaging ships a Roslyn analyzer (`WallstopStudios.DxMessaging.SourceGenerators.dll`) that catches the most common authoring mistakes at compile time. This page is the canonical reference for every diagnostic the package emits.
+DxMessaging ships source generators and a Roslyn analyzer that report authoring mistakes during compilation. This page is the canonical reference for every diagnostic the package emits.
 
 ## Quick reference table
 
-| ID                                                                            | Severity | Title                                                                                 | Source                                  |
-| ----------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------- | --------------------------------------- |
-| [`DXMSG002`](#dxmsg002-multiple-message-attributes)                           | Error    | Multiple Message Attributes                                                           | `DxMessageIdGenerator`                  |
-| [`DXMSG003`](#dxmsg003-containing-type-must-be-partial-for-nested-generation) | Warning  | Containing type must be partial for nested generation                                 | both generators                         |
-| [`DXMSG004`](#dxmsg004-add-partial-keyword-to-containing-type)                | Info     | Add 'partial' keyword to containing type                                              | both generators                         |
-| [`DXMSG005`](#dxmsg005-invalid-optional-default-value)                        | Error    | Invalid optional default value                                                        | `DxAutoConstructorGenerator`            |
-| [`DXMSG006`](#dxmsg006-missing-base-call)                                     | Warning  | Missing `base.{method}()` call                                                        | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG007`](#dxmsg007-new-hides-unity-method)                                | Warning  | Unity lifecycle method hidden with `new`                                              | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG008`](#dxmsg008-opt-out-marker)                                        | Info     | Type opted out of base-call check                                                     | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG009`](#dxmsg009-implicit-hide-and-missing-modifier)                    | Warning  | Method implicitly hides MessageAwareComponent lifecycle method (no `override`/`new`)  | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG010`](#dxmsg010-broken-transitive-base-call-chain)                     | Warning  | `base.{method}()` chains into an override that does not reach `MessageAwareComponent` | `MessageAwareComponentBaseCallAnalyzer` |
+| ID                                                                             | Severity | Title                                                                                 | Source                                  |
+| ------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------- | --------------------------------------- |
+| [`DXMSG002`](#dxmsg002-multiple-message-attributes)                            | Error    | Multiple Message Attributes                                                           | `DxMessageIdGenerator`                  |
+| [`DXMSG003`](#dxmsg003-containing-type-must-be-partial-for-nested-generation)  | Warning  | Containing type must be partial for nested generation                                 | both generators                         |
+| [`DXMSG004`](#dxmsg004-add-partial-keyword-to-containing-type)                 | Info     | Add 'partial' keyword to containing type                                              | both generators                         |
+| [`DXMSG005`](#dxmsg005-invalid-optional-default-value)                         | Error    | Invalid optional default value                                                        | `DxAutoConstructorGenerator`            |
+| [`DXMSG006`](#dxmsg006-missing-base-call)                                      | Warning  | Missing `base.{method}()` call                                                        | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG007`](#dxmsg007-new-hides-unity-method)                                 | Warning  | Unity lifecycle method hidden with `new`                                              | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG008`](#dxmsg008-opt-out-marker)                                         | Info     | Type opted out of base-call check                                                     | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG009`](#dxmsg009-implicit-hide-and-missing-modifier)                     | Warning  | Method implicitly hides MessageAwareComponent lifecycle method (no `override`/`new`)  | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG010`](#dxmsg010-broken-transitive-base-call-chain)                      | Warning  | `base.{method}()` chains into an override that does not reach `MessageAwareComponent` | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG011`](#dxmsg011-cannot-preserve-explicit-interface-struct-initializers) | Error    | Cannot preserve explicit-interface struct initializers                                | `DxAutoConstructorGenerator`            |
 
-!!! tip
-All diagnostic IDs can be customised per project in `.editorconfig` -- e.g. `dotnet_diagnostic.DXMSG006.severity = error` to upgrade missing base calls to a build break.
+> All diagnostic IDs can be customised per project in `.editorconfig`. For example,
+> `dotnet_diagnostic.DXMSG006.severity = error` makes a missing base call a build error.
 
 ---
 
@@ -370,6 +371,30 @@ DXMSG010 reuses the same good-faith textual check as DXMSG006 (`ContainsBaseInvo
 
 ---
 
+## DXMSG011: Cannot preserve explicit-interface struct initializers
+
+- **Severity:** Error
+- **Source:** `DxAutoConstructorGenerator`
+- **Available in:** v4.0.0
+- **Triggered when:** When compiling before C# 11, a struct has both initialized
+  and uninitialized explicit-interface auto-properties and declares a parameterless
+  constructor. The generator cannot clear the missing backing storage while
+  preserving the other initializer values without calling user code.
+
+### Fix
+
+Add an initializer to each explicit-interface auto-property, or implement the
+interface through named backing fields. Alternatively, remove `[DxAutoConstructor]`
+and write the constructor with the initialization behavior your type needs.
+The generator emits no constructor for this combination. Do not suppress the
+error and assume a constructor was generated.
+
+Classes and C# 11 or later language versions do not have this restriction. The supported Unity
+floor is unchanged. See the [constructor rules](helpers.md#2-dxautoconstructor---automatic-constructors)
+for the default initialization behavior of other struct state.
+
+---
+
 ## Suppression precedence
 
 When DxMessaging suppresses a base-call check, it consults the following sources in order. The **first** match wins:
@@ -494,7 +519,7 @@ Both target Roslyn 3.8.0 for Unity 2021 compatibility:
   (DXMSG006/007/008/009/010). Unity 2021 rejects analyzers built against Roslyn 4.x;
   Microsoft's `Microsoft.Unity.Analyzers` package pins Roslyn 3.8.0 for the same reason.
 - `WallstopStudios.DxMessaging.SourceGenerators.dll` contains the source generators
-  (DXMSG002/003/004/005). They use the classic `ISourceGenerator` API so Unity 2021 can
+  (DXMSG002/003/004/005/011). They use the classic `ISourceGenerator` API so Unity 2021 can
   instantiate them.
 
 Both DLLs ship under the package's `Runtime/Analyzers/` folder, tagged

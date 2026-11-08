@@ -7,6 +7,9 @@ namespace DxMessaging.Tests.Editor.Contract
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
+#if !UNITY_2021_3_OR_NEWER
+    using Assert = NUnit.Framework.Legacy.ClassicAssert;
+#endif
 
     /// <summary>
     /// Regression coverage for the v4 O(1) bus deregister fast-path
@@ -37,6 +40,10 @@ namespace DxMessaging.Tests.Editor.Contract
     /// <c>CounterBasedTouchTests</c>.
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// 2026-11-07: Portable NUnit 5 retains the original contract assertions.
+    /// Conditional classic aliases preserve the Unity assertion API where required.
+    /// </remarks>
     [TestFixture]
     [Category("Contract")]
     public sealed class StaleOverDeregistrationTests
