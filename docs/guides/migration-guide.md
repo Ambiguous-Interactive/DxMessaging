@@ -27,6 +27,18 @@ Remove the attribute and use an init-only property with an object initializer, o
 write a construction API with a different signature. The diagnostic reference
 includes a complete property example that preserves `with` copying.
 
+### Check constructors for split partial types
+
+Generated constructor parameters now follow source-file compilation order, then field
+declaration order within each file. Earlier versions compared file-local offsets across
+partial files, so padding one file could change positional argument meaning or place an
+optional parameter before a required parameter.
+
+Check positional calls for types whose public fields span partial files. Keep those fields
+in one declaration for a positional signature that does not depend on file order, or use
+named arguments. Optional fields must follow required fields in the resulting order.
+Each optional default now resolves imports and aliases in its own field's source file.
+
 ### Use compatible comparison arguments
 
 `InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` now follow `IComparable` input

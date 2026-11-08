@@ -7,7 +7,9 @@ namespace DxMessaging.Core.Attributes
     /// </summary>
     /// <remarks>
     /// Apply this to a partial <c>struct</c> or <c>class</c> to generate a constructor whose parameters
-    /// match public instance fields in declaration order. Fields marked with
+    /// match public instance fields in declaration order within each source file. Across partial files,
+    /// parameters follow the compiler's syntax-tree order; use named arguments when file order is not controlled.
+    /// Fields marked with
     /// <see cref="DxOptionalParameterAttribute"/> are emitted as optional parameters.
     /// Excluded struct storage receives type defaults while existing field and auto-property initializers
     /// are preserved. For types without a primary constructor, the generated constructor does not
