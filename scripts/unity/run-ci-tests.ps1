@@ -3960,12 +3960,12 @@ function Copy-SamplesForCompilation {
         $needsWrite = -not (Test-Path -LiteralPath $destinationPath -PathType Leaf)
         if (-not $needsWrite) {
             $destinationContent = Get-Content -LiteralPath $destinationPath -Raw
-            $needsWrite = $destinationContent -ne $sourceContent
+            $needsWrite = $destinationContent -cne $sourceContent
         }
         if ($needsWrite) {
             [System.IO.File]::WriteAllText($destinationPath, $sourceContent)
         }
-        if ((Get-Content -LiteralPath $destinationPath -Raw) -ne $sourceContent) {
+        if ((Get-Content -LiteralPath $destinationPath -Raw) -cne $sourceContent) {
             throw "Generated sample input differs from its source: $relativePath"
         }
     }
@@ -3975,11 +3975,27 @@ function Copy-SamplesForCompilation {
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $generatedDiAsmdefPath) | Out-Null
         if (
             -not (Test-Path -LiteralPath $generatedDiAsmdefPath -PathType Leaf) -or
-            (Get-Content -LiteralPath $generatedDiAsmdefPath -Raw) -ne $generatedDiAsmdef
+            (Get-Content -LiteralPath $generatedDiAsmdefPath -Raw) -cne $generatedDiAsmdef
         ) {
             [System.IO.File]::WriteAllText($generatedDiAsmdefPath, $generatedDiAsmdef)
         }
     }
+}
+
+# Keep unchanged compiler inputs out of Unity's asset-import change set.
+function Set-EphemeralCompilerInput {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content
+    )
+
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        $existing = [System.IO.File]::ReadAllText($Path)
+        if ($existing.TrimEnd("`r", "`n") -ceq $Content.TrimEnd("`r", "`n")) {
+            return
+        }
+    }
+    Set-Content -LiteralPath $Path -Value $Content -Encoding UTF8
 }
 
 function Initialize-EphemeralProject {
@@ -4155,9 +4171,12 @@ EditorSettings:
             $cscOptions += "-analyzerconfig:`"$ciAnalyzerConfigPath`""
         }
     }
-    $cscOptions | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'csc.rsp')) -Encoding UTF8
-    New-ConfiguratorSource -Backend $Backend -ManagedStrippingLevel $ManagedStrippingLevel -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 |
-        Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiTestConfigurator.cs')) -Encoding UTF8
+    Set-EphemeralCompilerInput `
+        -Path ([System.IO.Path]::Combine($project, 'Assets', 'csc.rsp')) `
+        -Content ($cscOptions -join [Environment]::NewLine)
+    Set-EphemeralCompilerInput `
+        -Path ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiTestConfigurator.cs')) `
+        -Content (New-ConfiguratorSource -Backend $Backend -ManagedStrippingLevel $ManagedStrippingLevel -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256)
     if (-not $isShippingFidelity) {
         Copy-SamplesForCompilation -Root $Root -Project $project -IncludeIntegrations:$includeIntegrations
     }

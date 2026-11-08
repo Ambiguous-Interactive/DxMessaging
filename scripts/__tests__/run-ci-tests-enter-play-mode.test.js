@@ -26,18 +26,8 @@ const runCiTests = fs.readFileSync(RUN_CI_SCRIPT_PATH, "utf8");
 const exportUnityPackage = fs.readFileSync(path.join(__dirname, "..", "unity", "export-unitypackage.ps1"), "utf8");
 const UNITY_VERSION = "2022.3.45f1";
 
-function commandExists(command) {
-  // prettier-ignore
-  const result = spawnSync(command, ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion"],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  return !result.error && result.status === 0;
-}
-
-const HAS_PWSH = commandExists("pwsh");
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+// prettier-ignore
+const HAS_PWSH = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion"], { stdio: "ignore" }).status === 0;
 
 function createGenerateOnlyRepo(root) {
   const analyzerRoot = path.join(root, "Runtime", "Analyzers");
@@ -152,9 +142,7 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
     for (const relative of ["Mini Combat/MiniCombat.unity", "Mini Combat/A.cs.meta"]) assert.equal(fs.readFileSync(path.join(projectPath, "Assets", "DxmCiSamples", relative), "utf8"), fs.readFileSync(path.join(fakeRepoRoot, "Samples~", relative), "utf8"));
     const cscRsp = fs.readFileSync(path.join(projectPath, "Assets", "csc.rsp"), "utf8");
     // prettier-ignore
-    const expectedCscOptions = ["-warnaserror", "-warn:9999"];
-    // prettier-ignore
-    assert.equal(cscRsp.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").trim(), expectedCscOptions.join("\n"));
+    assert.equal(cscRsp.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").trim(), ["-warnaserror", "-warn:9999"].join("\n"));
     // prettier-ignore
     const manifest = JSON.parse(fs.readFileSync(path.join(projectPath, "Packages", "manifest.json"), "utf8"));
     // prettier-ignore
@@ -167,7 +155,7 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
     for (const cacheName of ["upm", "npm", "git-lfs"]) assert.ok(fs.existsSync(path.join(cacheRoot, cacheName)), cacheName);
     // prettier-ignore
     assert.equal(fs.readFileSync(path.join(cacheRoot, ".dxmessaging-ci-cache"), "utf8").trim(), "com.wallstop-studios.dxmessaging unity ci cache");
-    assert.match(result.stdout, new RegExp(escapeRegExp(`ProjectPath: ${projectPath}`)));
+    assert.ok(result.stdout.includes(`ProjectPath: ${projectPath}`));
     assert.match(result.stdout, /LibraryState: cold/);
     const externalProject = path.join(stagingRoot, "runner-workspace", "dxm-u", "t", "editmode");
     const cold = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath, {
@@ -180,12 +168,26 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
     fs.writeFileSync(staleScene, "stale\n", "utf8");
     fs.writeFileSync(`${staleScene}.meta`, "stale meta\n", "utf8");
     fs.writeFileSync(path.join(externalProject, "Library", "warm.marker"), "warm\n", "utf8");
+    const compilerInputs = ["Assets/csc.rsp", "Assets/Editor/DxmCiTestConfigurator.cs"];
+    const preservedTime = new Date("2020-01-01T00:00:00Z");
+    // prettier-ignore
+    for (const relative of compilerInputs) fs.utimesSync(path.join(externalProject, relative), preservedTime, preservedTime);
     const warm = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath, {
       projectPath: externalProject,
       cachePath: cacheRoot
     });
     assert.equal(warm.status, 0, `GenerateOnly failed:\n${warm.stdout}\n${warm.stderr}`);
     assert.match(warm.stdout, /LibraryState: warm/);
+    // prettier-ignore
+    for (const relative of compilerInputs) assert.equal(fs.statSync(path.join(externalProject, relative)).mtimeMs, preservedTime.getTime(), `${relative}: unchanged compiler inputs must retain timestamps on a warm run`);
+    const cscPath = path.join(externalProject, "Assets/csc.rsp");
+    fs.writeFileSync(cscPath, "-WARNASERROR\n-warn:9999\n", "utf8");
+    fs.writeFileSync(path.join(fakeRepoRoot, "Samples~/Mini Combat/A.cs"), "FIXTURE Mini Combat/A.cs\n", "utf8");
+    const repaired = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath, { projectPath: externalProject, cachePath: cacheRoot });
+    assert.equal(repaired.status, 0, `GenerateOnly failed:\n${repaired.stdout}\n${repaired.stderr}`);
+    // prettier-ignore
+    assert.equal(fs.readFileSync(cscPath, "utf8").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").trim(), "-warnaserror\n-warn:9999", "case-only compiler input drift must be repaired");
+    assert.equal(fs.readFileSync(path.join(externalProject, "Assets/DxmCiSamples/Mini Combat/A.cs"), "utf8"), "FIXTURE Mini Combat/A.cs\n", "case-only sample source changes must be copied");
     assert.equal(fs.existsSync(staleScene), false);
     assert.equal(fs.existsSync(`${staleScene}.meta`), false);
   } finally {
