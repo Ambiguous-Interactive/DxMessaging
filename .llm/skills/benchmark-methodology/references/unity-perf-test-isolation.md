@@ -29,7 +29,7 @@ const PERF_NAME_REGEX = /(?:Benchmarks|Allocations)/;
 const COMPARISON_NAME_REGEX = /(?:Comparisons)/;
 ```
 
-Any asmdef under `Tests/` whose `name` field contains `Benchmarks` or `Allocations` is classified as `perf`; `Comparisons` is classified as `comparison` because those suites depend on external comparison packages that are not in the default harness manifest. The generated CI manifest in `scripts/unity/run-ci-tests.ps1` includes `com.unity.test-framework.performance`, because benchmark and allocation asmdefs reference `Unity.PerformanceTesting`. Three things have to be true for the isolation to hold:
+Any asmdef under `Tests/` whose `name` field contains `Benchmarks` or `Allocations` is classified as `perf`; `Comparisons` is classified as `comparison` because those suites depend on external comparison packages that are not in the default harness manifest. The suites use the package-owned benchmark windows and allocation probes. Generated hosts and test asmdefs do not depend on `com.unity.test-framework.performance` or `Unity.PerformanceTesting`, whose setup and cleanup hooks would add unrelated work. Three things have to be true for the isolation to hold:
 
 1. Perf assemblies live under `Tests/Editor/Benchmarks`, `Tests/Editor/Allocations`, `Tests/Runtime/Comparisons`, or `Tests/Runtime/Benchmarks`.
 1. Their asmdef `name` field contains `Benchmarks`, `Allocations`, or `Comparisons` so classification matches.

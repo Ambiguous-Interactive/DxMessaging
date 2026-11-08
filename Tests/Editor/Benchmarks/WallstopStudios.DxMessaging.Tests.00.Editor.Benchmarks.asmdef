@@ -6,8 +6,7 @@
     "UnityEditor.TestRunner",
     "WallstopStudios.DxMessaging",
     "WallstopStudios.DxMessaging.Tests.Runtime",
-    "WallstopStudios.DxMessaging.Tests.00.Runtime.Benchmarks",
-    "Unity.PerformanceTesting"
+    "WallstopStudios.DxMessaging.Tests.00.Runtime.Benchmarks"
   ],
   "includePlatforms": ["Editor"],
   "excludePlatforms": [],

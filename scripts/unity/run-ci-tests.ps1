@@ -138,7 +138,6 @@ if ($SkipCiAnalyzers -and -not $GenerateOnly) {
 
 $PackageName = 'com.wallstop-studios.dxmessaging'
 $TestFrameworkVersion = '1.4.6'
-$PerformanceFrameworkVersion = '3.6.0'
 # DxMessaging's own analyzer + source-generator assemblies. These MUST be present
 # in the package's Runtime/Analyzers/; the harness just sanity-checks they ship
 # there (see Assert-DxMessagingAnalyzerDllsPresent). The generator + analyzer apply
@@ -1331,7 +1330,6 @@ function New-ManifestJson {
     } else {
         $dependencies = [ordered]@{
             'com.unity.test-framework' = $TestFrameworkVersion
-            'com.unity.test-framework.performance' = $PerformanceFrameworkVersion
             $PackageName = "file:$packagePath"
         }
         $manifest = [ordered]@{
@@ -3991,7 +3989,7 @@ function Set-EphemeralCompilerInput {
 
     if (Test-Path -LiteralPath $Path -PathType Leaf) {
         $existing = [System.IO.File]::ReadAllText($Path)
-        if ($existing.TrimEnd("`r", "`n") -ceq $Content.TrimEnd("`r", "`n")) {
+        if ([string]::Equals($existing.TrimEnd("`r", "`n"), $Content.TrimEnd("`r", "`n"), [StringComparison]::Ordinal)) {
             return
         }
     }
@@ -4171,6 +4169,11 @@ EditorSettings:
             $cscOptions += "-analyzerconfig:`"$ciAnalyzerConfigPath`""
         }
     }
+    # Keep the package-managed option that SetupCscRsp adds after preparation.
+    # The path mirrors DxMessagingBaseCallIgnoreSync.SidecarAssetPath.
+    if (Test-Path -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxMessaging.BaseCallIgnore.txt')) -PathType Leaf) {
+        $cscOptions += '-additionalfile:"Assets/Editor/DxMessaging.BaseCallIgnore.txt"'
+    }
     Set-EphemeralCompilerInput `
         -Path ([System.IO.Path]::Combine($project, 'Assets', 'csc.rsp')) `
         -Content ($cscOptions -join [Environment]::NewLine)
@@ -4209,17 +4212,7 @@ EditorSettings:
             if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
                 New-Item -ItemType Directory -Force -Path $dir | Out-Null
             }
-            $needsWrite = -not (Test-Path -LiteralPath $file.Path -PathType Leaf)
-            if (-not $needsWrite) {
-                # Compare EOL-trailing-tolerantly: Set-Content appends a trailing
-                # newline that the here-string content lacks, so a naive `-ne` would
-                # rewrite on every run and needlessly bust Unity's import cache.
-                $existing = Get-Content -LiteralPath $file.Path -Raw
-                $needsWrite = ($existing.TrimEnd("`r", "`n") -ne $file.Content.TrimEnd("`r", "`n"))
-            }
-            if ($needsWrite) {
-                Set-Content -LiteralPath $file.Path -Value $file.Content -Encoding UTF8
-            }
+            Set-EphemeralCompilerInput -Path $file.Path -Content $file.Content
         }
         Write-Host "::group::DxMessaging standalone split-build helpers"
         Write-Host "Generated the standalone build modifier + player TestRunCallback under $project (file-based results; no PlayerConnection)."
@@ -4249,14 +4242,7 @@ EditorSettings:
             if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
                 New-Item -ItemType Directory -Force -Path $dir | Out-Null
             }
-            $needsWrite = -not (Test-Path -LiteralPath $file.Path -PathType Leaf)
-            if (-not $needsWrite) {
-                $existing = Get-Content -LiteralPath $file.Path -Raw
-                $needsWrite = ($existing.TrimEnd("`r", "`n") -ne $file.Content.TrimEnd("`r", "`n"))
-            }
-            if ($needsWrite) {
-                Set-Content -LiteralPath $file.Path -Value $file.Content -Encoding UTF8
-            }
+            Set-EphemeralCompilerInput -Path $file.Path -Content $file.Content
         }
         Write-Host "::group::DxMessaging shipping-fidelity player"
         Write-Host "Generated the stripped Assembly-CSharp consumer and direct player builder under $project."
