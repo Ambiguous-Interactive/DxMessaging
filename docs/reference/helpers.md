@@ -96,7 +96,8 @@ public VideoSettingsChanged(int width, int height)
 
 ##### Rules
 
-- Creates constructor parameters in **field declaration order**
+- Creates constructor parameters in **field declaration order** within each source file
+- Orders fields across partial files by the compiler's source-file order; use named arguments when that order is not controlled
 - Only includes `public` fields
 - Ignores `static` fields
 - Works with `readonly` structs (recommended!)
@@ -112,7 +113,8 @@ public VideoSettingsChanged(int width, int height)
 **Fixed in v4.0.0:** Generated struct constructors also initialize excluded
 instance fields and auto-property backing storage to their type defaults. Existing
 field, auto-property, and field-like event initializers retain their values and
-execute once. User parameterless constructors are not invoked.
+execute once. For types without a primary constructor, user parameterless constructors
+are not invoked.
 
 For example, this constructor takes only `amount`; `PreviousAmount` starts at zero:
 
@@ -135,6 +137,23 @@ fields, or remove `[DxAutoConstructor]` and write the constructor yourself.
 identifies this combination. This restriction does not affect classes or C# 11
 or later language versions. It does not change the supported Unity floor.
 
+**Fixed in v4.0.0:** A type whose primary constructor takes parameters now receives
+[`DXMSG012`](analyzers.md#dxmsg012-cannot-infer-primary-constructor-arguments)
+instead of an invalid generated secondary constructor. Remove `[DxAutoConstructor]`
+and write the constructor with an explicit `this(...)` chain to supply the primary
+constructor arguments. For an empty primary parameter list, the generator adds the
+required `this()` chain automatically. No diagnostic is needed when the type has no public instance fields.
+Ordinary non-positional records and nested types inside positional containers remain supported.
+
+**Breaking change in v4.0.0:** A record class with one public field of its own
+record type receives
+[`DXMSG013`](analyzers.md#dxmsg013-field-constructor-conflicts-with-record-copy-constructor).
+That constructor signature belongs to the record copy constructor. Earlier versions
+could silently change `with` results for sealed records. Remove `[DxAutoConstructor]`
+and use an init-only property with an object initializer, or write a construction
+API with a different signature. Ordinary classes and record constructors with other
+field types or multiple fields retain their behavior.
+
 ### 3. `[DxOptionalParameter]` - Optional Constructor Parameters
 
 The `DxOptionalParameterAttribute` marks a field as optional when used with `[DxAutoConstructor]`. The source generator emits a constructor parameter with a default value for annotated fields, making it easy to create messages with sensible defaults.
@@ -145,7 +164,7 @@ When you combine `[DxOptionalParameter]` with `[DxAutoConstructor]`, the generat
 
 1. **Required fields** (without the attribute) become regular constructor parameters
 1. **Optional fields** (with the attribute) become parameters with default values
-1. **Parameter order** follows field declaration order
+1. **Parameter order** follows source-file compilation order, then field declaration order within each file
 1. **C# rules apply** - optional parameters must come after required parameters
 
 ```csharp
@@ -312,7 +331,7 @@ Parameters from enabled contexts keep their nullable or nonnullable checks.
 
 #### Advanced: Custom Constant Expressions
 
-Use the `Expression` property for compile-time constants that cannot be passed directly to an attribute constructor, such as enum values or named constants. The expression is inserted verbatim into an optional constructor parameter, so ordinary C# optional-parameter rules still apply. Use `[DxOptionalParameter]` without an expression when a struct should use its default value.
+Use the `Expression` property for compile-time constants that cannot be passed directly to an attribute constructor, such as enum values or named constants. The generator resolves the expression in the field's own declaration scope, including imports, aliases, and `using static` directives. It qualifies bound names for the generated file and preserves the original string returned by `nameof`. Ordinary C# optional-parameter rules still apply. Use `[DxOptionalParameter]` without an expression when a struct should use its default value.
 
 > **Fixed in v4.0.0:** Valid `nameof(...)` defaults no longer abort constructor generation on Roslyn 5.9. Composed expressions keep their C# constant values and conversion rules.
 
@@ -364,7 +383,7 @@ public readonly partial struct AdvancedDefaults
 
 > 💡 **Tip: Expression rules**
 >
-> - The expression is inserted **verbatim** into the generated code
+> - Names resolve in the field's own source file, including when fields use different partial files
 > - Must be a valid C# constant expression
 > - Type safety is enforced by the C# compiler at build time
 > - Valid for enum members, literals, and named `const` values
@@ -810,7 +829,7 @@ Makes a constructor parameter optional. Three usage patterns:
 >
 > **Example: Expression (complex types)**
 >
-> Uses a verbatim expression for enums, Unity types, etc.:
+> Resolves constant expressions in the field's declaration scope:
 >
 > ```csharp
 > public enum DamageType
@@ -1055,7 +1074,9 @@ declaration across files.
 
 ### Missing constructor
 
-`[DxAutoConstructor]` uses public instance fields in declaration order. Static
+`[DxAutoConstructor]` uses public instance fields in source-file compilation order,
+then declaration order within each file. Use named arguments for split partial types
+when you do not control file order. Static
 fields and properties do not become constructor parameters. A type with no
 public instance fields gets no generated field constructor.
 

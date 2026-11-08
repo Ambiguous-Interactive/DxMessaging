@@ -110,7 +110,8 @@ namespace DxMessaging.Core.Attributes
         /// <summary>
         /// Advanced: supply a C# expression to use as the default value.
         /// For example: <c>Expression = "null"</c>, <c>Expression = "nameof(SomeConst)"</c>, or <c>Expression = "MyEnum.Value"</c>.
-        /// The generator inserts this expression verbatim and the C# compiler enforces type safety.
+        /// The generator resolves the expression in the field's declaration scope, qualifies imported names,
+        /// and preserves the original string produced by nameof. The C# compiler enforces optional-parameter rules.
         /// </summary>
         public string Expression { get; set; }
     }

@@ -1,0 +1,14 @@
+{
+  "name": "WallstopStudios.DxMessaging.DotNetOnly",
+  "rootNamespace": "WallstopStudios.DxMessaging",
+  "references": [],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": ["!UNITY_2021_3_OR_NEWER"],
+  "versionDefines": [],
+  "noEngineReferences": true
+}

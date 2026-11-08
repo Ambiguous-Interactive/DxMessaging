@@ -135,10 +135,10 @@ jobs:
             "(^docs/|^mkdocs\.yml$|^requirements-docs\.txt$|$ci_workflow)"
           set_output docs_links \
             "(\.md$|\.markdown$|^docs/|^\.lychee\.toml$|^\.github/scripts/check-markdown-links\.ps1$|^\.github/actions/install-pinned-lychee/action\.yml$|$ci_workflow)"
-          # docs/*.md, README.md, and Samples~/*.md are dotnet triggers because the
-          # dotnet job compiles and scans them in WallstopStudios.DxMessaging.Docs.Tests.
+          # Docs, README, CHANGELOG, and sample Markdown are dotnet triggers because the
+          # dotnet job compiles samples and checks documentation contracts.
           set_output dotnet \
-            "(\.cs$|\.csproj$|\.sln$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^Runtime/Analyzers/|^SourceGenerators/|^\.docs-tests/|^docs/.*\.(md|markdown|html)$|^README\.md$|^Samples~/.*\.(md|markdown)$|^docs/overrides/|^\.config/dotnet-tools\.json$|$ci_workflow)"
+            "(\.cs$|\.csproj$|\.sln$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^Runtime/Analyzers/|^SourceGenerators/|^\.docs-tests/|^docs/.*\.(md|markdown|html)$|^README\.md$|^CHANGELOG\.md$|^Samples~/.*\.(md|markdown)$|^docs/overrides/|^\.config/dotnet-tools\.json$|$ci_workflow)"
 
           json_pattern='(\.json$|\.asmdef$|\.asmref$|(^|/)\.prettierrc[^/]*$'
           json_pattern="$json_pattern"'|(^|/)prettier\.config\.[^/]+$'
@@ -769,7 +769,7 @@ jobs:
 
       - name: Setup Python for script reducers
         if: ${{ needs.changes.outputs.scripts != 'false' }}
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 

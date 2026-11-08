@@ -87,6 +87,12 @@ If you need to repair line endings manually (for example, after copying files fr
 
 ## SourceGenerators Analyzer Troubleshooting
 
+Build the projects under `SourceGenerators/` with `dotnet` and the pinned SDK.
+`WallstopStudios.DxMessaging.DotNetOnly.asmdef` assigns these development sources to
+an assembly boundary while its `!UNITY_2021_3_OR_NEWER` constraint excludes them from
+Unity compilation. Keep that boundary when changing the SDK projects. The shipped
+generator and analyzer DLLs remain under `Runtime/Analyzers/`.
+
 If you open the package in Unity and see project-wide `CS0315` / `CS0452` errors (`type ... cannot be used as type parameter ...; there is no boxing conversion to ...IMessage`), or `CS0006` errors that name a metadata file under `SourceGenerators/.../obj/...dll` or `SourceGenerators/.../bin/...dll`, the cause is stale build output rather than a code change.
 
 Cause: Unity imported the `SourceGenerators/` projects' in-tree `obj/` and `bin/` build DLLs and cached the auto-referenced-plugin registrations in its Library. Those stray DLLs shadow the two real analyzers shipped in `Runtime/Analyzers/`, so the wrong assemblies feed the compiler.

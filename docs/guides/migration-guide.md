@@ -4,6 +4,47 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 ## Migrating to 4.0.0
 
+### Choose primary constructor arguments explicitly
+
+When `[DxAutoConstructor]` is applied to a type with primary constructor parameters and public
+instance fields, 4.0 reports
+[`DXMSG012`](../reference/analyzers.md#dxmsg012-cannot-infer-primary-constructor-arguments).
+Earlier versions generated a secondary constructor that failed to compile.
+Remove the attribute and write the field constructor with a `this(...)` initializer
+that passes the primary constructor arguments your type needs. Non-positional records
+and types without public instance fields need no change. Empty primary parameter lists
+are chained automatically with `this()`.
+
+### Preserve record copy behavior
+
+A record class with exactly one public field of its own record type can no longer
+use `[DxAutoConstructor]`. The field constructor's signature would replace the
+record copy constructor and could silently change `with` results. Version 4.0 reports
+[`DXMSG013`](../reference/analyzers.md#dxmsg013-field-constructor-conflicts-with-record-copy-constructor)
+and emits no constructor.
+
+Remove the attribute and use an init-only property with an object initializer, or
+write a construction API with a different signature. The diagnostic reference
+includes a complete property example that preserves `with` copying.
+
+### Check constructors for split partial types
+
+Generated constructor parameters now follow source-file compilation order, then field
+declaration order within each file. Earlier versions compared file-local offsets across
+partial files, so padding one file could change positional argument meaning or place an
+optional parameter before a required parameter.
+
+Check positional calls for types whose public fields span partial files. Keep those fields
+in one declaration for a positional signature that does not depend on file order, or use
+named arguments. Optional fields must follow required fields in the resulting order.
+Each optional default now resolves imports and aliases in its own field's source file.
+
+Rebuild every assembly that calls an affected constructor, including callers that use named
+arguments. Argument names are resolved when the caller is compiled; they do not protect an
+existing DLL from a changed parameter order. Old binaries can assign same-typed arguments to
+different fields or fail to find the constructor when parameter types move. Obtain rebuilt
+versions of precompiled caller DLLs when their sources are unavailable.
+
 ### Use compatible comparison arguments
 
 `InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` now follow `IComparable` input

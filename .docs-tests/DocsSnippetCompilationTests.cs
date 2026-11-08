@@ -11,6 +11,18 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocsSnippetCompilationTests
 {
+    /// <summary>Rejects blank separators between consecutive changelog entries.</summary>
+    [Test]
+    public void ChangelogEntriesHaveNoBlankLinesBetweenBullets()
+    {
+        string changelog = File.ReadAllText(Path.Combine(ResolveRepoRoot(), "CHANGELOG.md"));
+        Assert.That(
+            changelog,
+            Does.Not.Match(@"(?m)^- [^\r\n]*(?:\r?\n[ \t]+\S[^\r\n]*)*\r?\n(?:[ \t]*\r?\n)+(?=- )"),
+            "CHANGELOG.md entries must be adjacent bullets. Remove blank lines between entries; keep section spacing and wrapped lines."
+        );
+    }
+
     /// <summary>Keep receiver and sender examples valid as Unity class files.</summary>
     /// <remarks>2026-11-03: Usage statements followed type declarations in three complete examples.</remarks>
     [TestCase("README.md", "partial struct Heal")]

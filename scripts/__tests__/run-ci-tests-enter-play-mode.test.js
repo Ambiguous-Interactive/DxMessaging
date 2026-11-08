@@ -26,18 +26,8 @@ const runCiTests = fs.readFileSync(RUN_CI_SCRIPT_PATH, "utf8");
 const exportUnityPackage = fs.readFileSync(path.join(__dirname, "..", "unity", "export-unitypackage.ps1"), "utf8");
 const UNITY_VERSION = "2022.3.45f1";
 
-function commandExists(command) {
-  // prettier-ignore
-  const result = spawnSync(command, ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion"],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  return !result.error && result.status === 0;
-}
-
-const HAS_PWSH = commandExists("pwsh");
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+// prettier-ignore
+const HAS_PWSH = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion"], { stdio: "ignore" }).status === 0;
 
 function createGenerateOnlyRepo(root) {
   const analyzerRoot = path.join(root, "Runtime", "Analyzers");
@@ -56,9 +46,10 @@ function createGenerateOnlyRepo(root) {
   for (const dllName of ["WallstopStudios.DxMessaging.SourceGenerators.dll", "WallstopStudios.DxMessaging.Analyzer.dll"]) fs.writeFileSync(path.join(analyzerRoot, dllName), "", "utf8");
 }
 
+/** Invokes the real Unity project generator with isolated fixture paths. */
 function runGenerateOnly(stagingRoot, repoRoot, artifactsPath, options = {}) {
   // prettier-ignore
-  const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", RUN_CI_SCRIPT_PATH, "-UnityVersion", UNITY_VERSION, "-TestMode", "editmode", "-AssemblyNames", "WallstopStudios.DxMessaging.Tests.Editor", "-ArtifactsPath", artifactsPath, "-RepoRoot", repoRoot];
+  const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", RUN_CI_SCRIPT_PATH, "-UnityVersion", UNITY_VERSION, "-TestMode", options.testMode ?? "editmode", "-AssemblyNames", "WallstopStudios.DxMessaging.Tests.Editor", "-ArtifactsPath", artifactsPath, "-RepoRoot", repoRoot];
   if (options.projectPath) args.push("-ProjectPath", options.projectPath);
   if (options.cachePath) args.push("-CachePath", options.cachePath);
   args.push("-GenerateOnly", "-SkipCiAnalyzers");
@@ -110,16 +101,11 @@ test("Unity native-exit, diagnostic, and retry-cleanup guards stay fail-closed",
   assert.match(runCiTests, /^(?=[\s\S]*function Test-IsReparsePoint \{(?!(?:(?!\n\})[\s\S])*Test-Path)(?:(?!\n\})[\s\S])*Get-Item -LiteralPath \$Path -Force(?:(?!\n\})[\s\S])*catch \[System\.Management\.Automation\.ItemNotFoundException\])(?=[\s\S]*foreach \(\$projectRetryPath in \$projectRetryPaths\)[\s\S]*Assert-UnityProjectRetryPathSafe)(?=[\s\S]*foreach \(\$retryCachePath in \$retryCachePaths\)[\s\S]*Assert-UnityCacheRetryPathSafe)(?=[\s\S]*\$paths = \$projectRetryPaths \+ \$retryCachePaths[\s\S]*Remove-Item -LiteralPath \$path -Recurse)/);
 });
 
-test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache paths", (t) => {
-  if (!HAS_PWSH) {
-    t.skip("PowerShell is not available");
-    return;
-  }
-
+for (const testMode of ["editmode", "standalone"]) test(`run-ci-tests -GenerateOnly preserves managed ${testMode} inputs and cache paths`, { skip: !HAS_PWSH }, (t) => {
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-run-ci-generate-"));
   const fakeRepoRoot = path.join(stagingRoot, "repo");
   const artifactsPath = path.join(stagingRoot, "artifacts");
-  const projectPath = path.join(fakeRepoRoot, ".artifacts", "u", `${UNITY_VERSION}-editmode`);
+  const projectPath = path.join(fakeRepoRoot, ".artifacts", "u", `${UNITY_VERSION}-${testMode}`);
   const cacheRoot = path.join(fakeRepoRoot, ".artifacts", "unity", "cache", UNITY_VERSION);
 
   try {
@@ -131,7 +117,7 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
     try { fs.mkdirSync(cacheRoot, { recursive: true }); fs.symlinkSync(danglingTarget, markerPath, "file"); markerLinkCreated = true; } catch (error) { t.diagnostic(`marker symlink case unavailable: ${error.message}`); }
     if (markerLinkCreated) {
       try {
-        const rejected = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath);
+        const rejected = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath, { testMode });
         assert.notEqual(rejected.status, 0, "a dangling marker symlink must be rejected");
         // prettier-ignore
         assert.match(stripVTControlCharacters(`${rejected.stdout}\n${rejected.stderr}`), /marker through a reparse(?:\s+\|\s+|\s+)point/);
@@ -140,38 +126,38 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
         fs.unlinkSync(markerPath);
       }
     }
-    const result = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath);
+    const result = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath, { testMode });
 
     assert.equal(result.status, 0, `GenerateOnly failed:\n${result.stdout}\n${result.stderr}`);
     // prettier-ignore
     const expectedFiles = ["Packages/manifest.json", "ProjectSettings/EditorSettings.asset", "Assets/Editor/DxmCiTestConfigurator.cs", "Assets/csc.rsp", "Assets/DxmCiSamples/Diagnostics Tooling Exerciser/DiagnosticsToolingExerciser.unity", "Assets/DxmCiSamples/Diagnostics Tooling Exerciser/A.cs.meta", "Assets/DxmCiSamples/Mini Combat/MiniCombat.unity", "Assets/DxmCiSamples/Mini Combat/MiniCombat.unity.meta", "Assets/DxmCiSamples/Mini Combat/Sample.asmdef", "Assets/DxmCiSamples/UI Buttons + Inspector/UIButtonsInspector.unity", "Assets/DxmCiSamples/UI Buttons + Inspector/Sample.asmdef", "Assets/DxmCiSamples/DI/VContainer/ConditionalSample.cs", "Assets/DxmCiSamples/DI/DxmCi.Samples.DI.asmdef", ".dxmessaging-ci-project", "Library"];
     for (const relative of expectedFiles) {
-      assert.ok(fs.existsSync(path.join(projectPath, ...relative.split("/"))), relative);
+      assert.equal(fs.existsSync(path.join(projectPath, ...relative.split("/"))), testMode === "editmode" || !relative.endsWith("DxmCi.Samples.DI.asmdef"), relative);
     }
     // prettier-ignore
     for (const relative of ["Mini Combat/MiniCombat.unity", "Mini Combat/A.cs.meta"]) assert.equal(fs.readFileSync(path.join(projectPath, "Assets", "DxmCiSamples", relative), "utf8"), fs.readFileSync(path.join(fakeRepoRoot, "Samples~", relative), "utf8"));
     const cscRsp = fs.readFileSync(path.join(projectPath, "Assets", "csc.rsp"), "utf8");
     // prettier-ignore
-    const expectedCscOptions = ["-warnaserror", "-warn:9999"];
-    // prettier-ignore
-    assert.equal(cscRsp.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").trim(), expectedCscOptions.join("\n"));
+    assert.equal(cscRsp.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").trim(), ["-warnaserror", "-warn:9999"].join("\n"));
     // prettier-ignore
     const manifest = JSON.parse(fs.readFileSync(path.join(projectPath, "Packages", "manifest.json"), "utf8"));
     // prettier-ignore
-    for (const [name, version] of Object.entries({ ...INTEGRATION_PACKAGES, "com.unity.modules.animation": "1.0.0" })) assert.equal(manifest.dependencies[name], version);
+    assert.equal(manifest.dependencies["com.unity.test-framework.performance"], undefined, "The custom benchmark runner must not install unused performance-package hooks");
     // prettier-ignore
-    const diAsmdef = JSON.parse(fs.readFileSync(path.join(projectPath, "Assets", "DxmCiSamples", "DI", "DxmCi.Samples.DI.asmdef"), "utf8"));
+    for (const [name, version] of Object.entries({ ...INTEGRATION_PACKAGES, "com.unity.modules.animation": "1.0.0" })) assert.equal(manifest.dependencies[name], testMode === "editmode" ? version : undefined);
     // prettier-ignore
-    assert.deepEqual([...diAsmdef.versionDefines.map(({ define }) => define), ...diAsmdef.references.filter((reference) => reference === "Reflex" || reference === "Reflex.Unity")].sort(), ["REFLEX_PRESENT", "Reflex", "VCONTAINER_PRESENT", "ZENJECT_PRESENT"]);
+    const diAsmdef = testMode === "editmode" ? JSON.parse(fs.readFileSync(path.join(projectPath, "Assets", "DxmCiSamples", "DI", "DxmCi.Samples.DI.asmdef"), "utf8")) : null;
+    // prettier-ignore
+    if (testMode === "editmode") assert.deepEqual([...diAsmdef.versionDefines.map(({ define }) => define), ...diAsmdef.references.filter((reference) => reference === "Reflex" || reference === "Reflex.Unity")].sort(), ["REFLEX_PRESENT", "Reflex", "VCONTAINER_PRESENT", "ZENJECT_PRESENT"]);
     // prettier-ignore
     for (const cacheName of ["upm", "npm", "git-lfs"]) assert.ok(fs.existsSync(path.join(cacheRoot, cacheName)), cacheName);
     // prettier-ignore
     assert.equal(fs.readFileSync(path.join(cacheRoot, ".dxmessaging-ci-cache"), "utf8").trim(), "com.wallstop-studios.dxmessaging unity ci cache");
-    assert.match(result.stdout, new RegExp(escapeRegExp(`ProjectPath: ${projectPath}`)));
+    assert.ok(result.stdout.includes(`ProjectPath: ${projectPath}`));
     assert.match(result.stdout, /LibraryState: cold/);
-    const externalProject = path.join(stagingRoot, "runner-workspace", "dxm-u", "t", "editmode");
+    const externalProject = path.join(stagingRoot, "runner-workspace", "dxm-u", "t", testMode);
     const cold = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath, {
-      projectPath: externalProject,
+      testMode, projectPath: externalProject,
       cachePath: cacheRoot
     });
     assert.equal(cold.status, 0, `GenerateOnly failed:\n${cold.stdout}\n${cold.stderr}`);
@@ -180,12 +166,35 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
     fs.writeFileSync(staleScene, "stale\n", "utf8");
     fs.writeFileSync(`${staleScene}.meta`, "stale meta\n", "utf8");
     fs.writeFileSync(path.join(externalProject, "Library", "warm.marker"), "warm\n", "utf8");
+    // prettier-ignore
+    const compilerInputs = ["Assets/csc.rsp", "Assets/Editor/DxmCiTestConfigurator.cs", ...(testMode === "standalone" ? ["Assets/Editor/DxmCiStandaloneBuildModifier.cs", "Assets/DxmCiStandaloneTestCallback/DxmCiStandaloneTestCallback.cs", "Assets/DxmCiStandaloneTestCallback/DxmCiStandaloneTestCallback.asmdef"] : [])];
+    const sidecarOption = '-additionalfile:"Assets/Editor/DxMessaging.BaseCallIgnore.txt"';
+    const ignorePath = path.join(externalProject, "Assets/Editor/DxMessaging.BaseCallIgnore.txt");
+    fs.writeFileSync(ignorePath, "# generated ignore list\n", "utf8");
+    fs.appendFileSync(path.join(externalProject, "Assets/csc.rsp"), sidecarOption + os.EOL, "utf8");
+    const preservedTime = new Date("2020-01-01T00:00:00Z");
+    // prettier-ignore
+    for (const relative of compilerInputs) fs.utimesSync(path.join(externalProject, relative), preservedTime, preservedTime);
     const warm = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath, {
-      projectPath: externalProject,
+      testMode, projectPath: externalProject,
       cachePath: cacheRoot
     });
     assert.equal(warm.status, 0, `GenerateOnly failed:\n${warm.stdout}\n${warm.stderr}`);
     assert.match(warm.stdout, /LibraryState: warm/);
+    // prettier-ignore
+    for (const relative of compilerInputs) assert.equal(fs.statSync(path.join(externalProject, relative)).mtimeMs, preservedTime.getTime(), `${relative}: unchanged compiler inputs must retain timestamps on a warm run`);
+    const helperPaths = compilerInputs.slice(2).map((relative) => path.join(externalProject, relative));
+    const helperContents = helperPaths.map((file) => fs.readFileSync(file, "utf8"));
+    for (const file of helperPaths) fs.writeFileSync(file, fs.readFileSync(file, "utf8").toUpperCase(), "utf8");
+    const cscPath = path.join(externalProject, "Assets/csc.rsp");
+    fs.writeFileSync(cscPath, "-WARNASERROR\n-warn:9999\n", "utf8");
+    fs.writeFileSync(path.join(fakeRepoRoot, "Samples~/Mini Combat/A.cs"), "FIXTURE Mini Combat/A.cs\n", "utf8");
+    const repaired = runGenerateOnly(stagingRoot, fakeRepoRoot, artifactsPath, { testMode, projectPath: externalProject, cachePath: cacheRoot });
+    assert.equal(repaired.status, 0, `GenerateOnly failed:\n${repaired.stdout}\n${repaired.stderr}`);
+    // prettier-ignore
+    assert.equal(fs.readFileSync(cscPath, "utf8").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").trim(), ["-warnaserror", "-warn:9999", sidecarOption].join("\n"), "case-only compiler input drift must be repaired without dropping the managed sidecar");
+    assert.equal(fs.readFileSync(path.join(externalProject, "Assets/DxmCiSamples/Mini Combat/A.cs"), "utf8"), "FIXTURE Mini Combat/A.cs\n", "case-only sample source changes must be copied");
+    assert.deepEqual(helperPaths.map((file) => fs.readFileSync(file, "utf8")), helperContents, "case-only generated helper drift must be repaired");
     assert.equal(fs.existsSync(staleScene), false);
     assert.equal(fs.existsSync(`${staleScene}.meta`), false);
   } finally {
@@ -193,12 +202,7 @@ test("run-ci-tests -GenerateOnly defaults to managed artifact project and cache 
   }
 });
 
-test("run-ci-tests -GenerateOnly refuses an unowned existing custom ProjectPath", (t) => {
-  if (!HAS_PWSH) {
-    t.skip("PowerShell is not available");
-    return;
-  }
-
+test("run-ci-tests -GenerateOnly refuses an unowned existing custom ProjectPath", { skip: !HAS_PWSH }, () => {
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-run-ci-unsafe-"));
   const fakeRepoRoot = path.join(stagingRoot, "repo");
   const artifactsPath = path.join(stagingRoot, "artifacts");
@@ -243,11 +247,7 @@ test("run-ci-tests -GenerateOnly refuses an unowned existing custom ProjectPath"
   }
 });
 
-test("run-ci-tests -GenerateOnly rejects an unowned CachePath without modifying it", (t) => {
-  if (!HAS_PWSH) {
-    t.skip("PowerShell is not available");
-    return;
-  }
+test("run-ci-tests -GenerateOnly rejects an unowned CachePath without modifying it", { skip: !HAS_PWSH }, () => {
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-run-ci-cache-safety-"));
   const fakeRepoRoot = path.join(stagingRoot, "repo");
   const artifactsPath = path.join(stagingRoot, "artifacts");

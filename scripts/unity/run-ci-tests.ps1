@@ -138,7 +138,6 @@ if ($SkipCiAnalyzers -and -not $GenerateOnly) {
 
 $PackageName = 'com.wallstop-studios.dxmessaging'
 $TestFrameworkVersion = '1.4.6'
-$PerformanceFrameworkVersion = '3.6.0'
 # DxMessaging's own analyzer + source-generator assemblies. These MUST be present
 # in the package's Runtime/Analyzers/; the harness just sanity-checks they ship
 # there (see Assert-DxMessagingAnalyzerDllsPresent). The generator + analyzer apply
@@ -1331,7 +1330,6 @@ function New-ManifestJson {
     } else {
         $dependencies = [ordered]@{
             'com.unity.test-framework' = $TestFrameworkVersion
-            'com.unity.test-framework.performance' = $PerformanceFrameworkVersion
             $PackageName = "file:$packagePath"
         }
         $manifest = [ordered]@{
@@ -3960,12 +3958,12 @@ function Copy-SamplesForCompilation {
         $needsWrite = -not (Test-Path -LiteralPath $destinationPath -PathType Leaf)
         if (-not $needsWrite) {
             $destinationContent = Get-Content -LiteralPath $destinationPath -Raw
-            $needsWrite = $destinationContent -ne $sourceContent
+            $needsWrite = $destinationContent -cne $sourceContent
         }
         if ($needsWrite) {
             [System.IO.File]::WriteAllText($destinationPath, $sourceContent)
         }
-        if ((Get-Content -LiteralPath $destinationPath -Raw) -ne $sourceContent) {
+        if ((Get-Content -LiteralPath $destinationPath -Raw) -cne $sourceContent) {
             throw "Generated sample input differs from its source: $relativePath"
         }
     }
@@ -3975,11 +3973,38 @@ function Copy-SamplesForCompilation {
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $generatedDiAsmdefPath) | Out-Null
         if (
             -not (Test-Path -LiteralPath $generatedDiAsmdefPath -PathType Leaf) -or
-            (Get-Content -LiteralPath $generatedDiAsmdefPath -Raw) -ne $generatedDiAsmdef
+            (Get-Content -LiteralPath $generatedDiAsmdefPath -Raw) -cne $generatedDiAsmdef
         ) {
             [System.IO.File]::WriteAllText($generatedDiAsmdefPath, $generatedDiAsmdef)
         }
     }
+}
+
+# Keep unchanged compiler inputs out of Unity's asset-import change set.
+function Set-EphemeralCompilerInput {
+    <#
+    .SYNOPSIS
+        Writes a compiler input only when its generated content changes.
+    .DESCRIPTION
+        Uses ordinal text comparison while tolerating trailing line endings.
+        Preserves warm project timestamps and applies changed settings.
+    .PARAMETER Path
+        Path to the generated input.
+    .PARAMETER Content
+        Desired generated text.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content
+    )
+
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        $existing = [System.IO.File]::ReadAllText($Path)
+        if ([string]::Equals($existing.TrimEnd("`r", "`n"), $Content.TrimEnd("`r", "`n"), [StringComparison]::Ordinal)) {
+            return
+        }
+    }
+    Set-Content -LiteralPath $Path -Value $Content -Encoding UTF8
 }
 
 function Initialize-EphemeralProject {
@@ -4155,9 +4180,17 @@ EditorSettings:
             $cscOptions += "-analyzerconfig:`"$ciAnalyzerConfigPath`""
         }
     }
-    $cscOptions | Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'csc.rsp')) -Encoding UTF8
-    New-ConfiguratorSource -Backend $Backend -ManagedStrippingLevel $ManagedStrippingLevel -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 |
-        Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiTestConfigurator.cs')) -Encoding UTF8
+    # Keep the package-managed option that SetupCscRsp adds after preparation.
+    # The path mirrors DxMessagingBaseCallIgnoreSync.SidecarAssetPath.
+    if (Test-Path -LiteralPath ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxMessaging.BaseCallIgnore.txt')) -PathType Leaf) {
+        $cscOptions += '-additionalfile:"Assets/Editor/DxMessaging.BaseCallIgnore.txt"'
+    }
+    Set-EphemeralCompilerInput `
+        -Path ([System.IO.Path]::Combine($project, 'Assets', 'csc.rsp')) `
+        -Content ($cscOptions -join [Environment]::NewLine)
+    Set-EphemeralCompilerInput `
+        -Path ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiTestConfigurator.cs')) `
+        -Content (New-ConfiguratorSource -Backend $Backend -ManagedStrippingLevel $ManagedStrippingLevel -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256)
     if (-not $isShippingFidelity) {
         Copy-SamplesForCompilation -Root $Root -Project $project -IncludeIntegrations:$includeIntegrations
     }
@@ -4190,17 +4223,7 @@ EditorSettings:
             if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
                 New-Item -ItemType Directory -Force -Path $dir | Out-Null
             }
-            $needsWrite = -not (Test-Path -LiteralPath $file.Path -PathType Leaf)
-            if (-not $needsWrite) {
-                # Compare EOL-trailing-tolerantly: Set-Content appends a trailing
-                # newline that the here-string content lacks, so a naive `-ne` would
-                # rewrite on every run and needlessly bust Unity's import cache.
-                $existing = Get-Content -LiteralPath $file.Path -Raw
-                $needsWrite = ($existing.TrimEnd("`r", "`n") -ne $file.Content.TrimEnd("`r", "`n"))
-            }
-            if ($needsWrite) {
-                Set-Content -LiteralPath $file.Path -Value $file.Content -Encoding UTF8
-            }
+            Set-EphemeralCompilerInput -Path $file.Path -Content $file.Content
         }
         Write-Host "::group::DxMessaging standalone split-build helpers"
         Write-Host "Generated the standalone build modifier + player TestRunCallback under $project (file-based results; no PlayerConnection)."
@@ -4230,14 +4253,7 @@ EditorSettings:
             if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
                 New-Item -ItemType Directory -Force -Path $dir | Out-Null
             }
-            $needsWrite = -not (Test-Path -LiteralPath $file.Path -PathType Leaf)
-            if (-not $needsWrite) {
-                $existing = Get-Content -LiteralPath $file.Path -Raw
-                $needsWrite = ($existing.TrimEnd("`r", "`n") -ne $file.Content.TrimEnd("`r", "`n"))
-            }
-            if ($needsWrite) {
-                Set-Content -LiteralPath $file.Path -Value $file.Content -Encoding UTF8
-            }
+            Set-EphemeralCompilerInput -Path $file.Path -Content $file.Content
         }
         Write-Host "::group::DxMessaging shipping-fidelity player"
         Write-Host "Generated the stripped Assembly-CSharp consumer and direct player builder under $project."

@@ -267,8 +267,8 @@ public readonly partial struct M
         );
         AssertGeneratedSourceContains(
             result,
-            "= MyEnum.Other",
-            "Generated constructor should default to MyEnum.Other."
+            "= global::Sample.MyEnum.Other",
+            "Generated constructor should qualify the bound enum default."
         );
     }
 
@@ -308,8 +308,8 @@ public readonly partial struct M
         );
         AssertGeneratedSourceContains(
             result,
-            "= default(MyStruct)",
-            "Generated constructor should default the parameter to `default(MyStruct)`."
+            "= default(global::Sample.MyStruct)",
+            "Generated constructor should qualify the bound default type."
         );
     }
 

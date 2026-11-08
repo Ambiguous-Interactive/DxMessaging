@@ -254,9 +254,11 @@ test("change detector considers current and previous paths", () => {
   );
 });
 
-test("script-test path detector covers harness and package contract inputs", () => {
+test("change detectors cover harness, package, and changelog contract inputs", () => {
   const source = readWorkflow();
   const scriptsPattern = new RegExp(extractShellPatternVariable(source, "scripts_pattern"));
+  // prettier-ignore
+  assert.match("CHANGELOG.md", new RegExp(/set_output dotnet \\\s*"([^"]+)"/.exec(source)[1]), "Changelog-only edits must run the documentation formatting contract");
   for (const path of [
     ".llm/index.md",
     ".llm/skills/github-workflow-consistency/references/workflow-consistency.md",
