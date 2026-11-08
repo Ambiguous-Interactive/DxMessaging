@@ -3982,6 +3982,17 @@ function Copy-SamplesForCompilation {
 
 # Keep unchanged compiler inputs out of Unity's asset-import change set.
 function Set-EphemeralCompilerInput {
+    <#
+    .SYNOPSIS
+        Writes a compiler input only when its generated content changes.
+    .DESCRIPTION
+        Uses ordinal text comparison while tolerating trailing line endings.
+        Preserves warm project timestamps and applies changed settings.
+    .PARAMETER Path
+        Path to the generated input.
+    .PARAMETER Content
+        Desired generated text.
+    #>
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content

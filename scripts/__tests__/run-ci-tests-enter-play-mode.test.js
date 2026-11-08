@@ -46,6 +46,7 @@ function createGenerateOnlyRepo(root) {
   for (const dllName of ["WallstopStudios.DxMessaging.SourceGenerators.dll", "WallstopStudios.DxMessaging.Analyzer.dll"]) fs.writeFileSync(path.join(analyzerRoot, dllName), "", "utf8");
 }
 
+/** Invokes the real Unity project generator with isolated fixture paths. */
 function runGenerateOnly(stagingRoot, repoRoot, artifactsPath, options = {}) {
   // prettier-ignore
   const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", RUN_CI_SCRIPT_PATH, "-UnityVersion", UNITY_VERSION, "-TestMode", options.testMode ?? "editmode", "-AssemblyNames", "WallstopStudios.DxMessaging.Tests.Editor", "-ArtifactsPath", artifactsPath, "-RepoRoot", repoRoot];

@@ -11,6 +11,7 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocsSnippetCompilationTests
 {
+    /// <summary>Rejects blank separators between consecutive changelog entries.</summary>
     [Test]
     public void ChangelogEntriesHaveNoBlankLinesBetweenBullets()
     {

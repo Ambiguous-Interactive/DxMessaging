@@ -13,9 +13,11 @@ using WallstopStudios.DxMessaging.SourceGenerators;
 
 namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 
+/// <summary>Checks generated constructor state and language-defined constructor boundaries.</summary>
 [TestFixture]
 internal sealed class GeneratedConstructorSemanticsTests
 {
+    /// <summary>Pairs declaration kinds with language versions supporting their primary constructors.</summary>
     private static IEnumerable<(string Kind, LanguageVersion Version)> Declarations()
     {
         yield return ("record", LanguageVersion.CSharp9);
@@ -24,6 +26,9 @@ internal sealed class GeneratedConstructorSemanticsTests
         yield return ("struct", LanguageVersion.CSharp12);
     }
 
+    /// <summary>Reports DXMSG012 when primary constructor arguments require an explicit choice.</summary>
+    /// <param name="declaration">The target declaration kind and supported language version.</param>
+    /// <param name="separatePartial">Whether the attribute is on a separate partial declaration.</param>
     [Test]
     public void RequestedFieldConstructorReportsPrimaryConstructorRestriction(
         [ValueSource(nameof(Declarations))] (string Kind, LanguageVersion Version) declaration,
@@ -73,6 +78,9 @@ internal sealed class GeneratedConstructorSemanticsTests
         Assert.That(output.GetDiagnostics(), Is.Empty, "No generated compiler errors: " + context);
     }
 
+    /// <summary>Chains an empty primary constructor once while assigning generated field values.</summary>
+    /// <param name="declaration">The target declaration kind and supported language version.</param>
+    /// <param name="separatePartial">Whether the attribute is on a separate partial declaration.</param>
     [Test]
     public void GeneratedEmptyPrimaryConstructorChainsWithoutRepeatingInitializers(
         [ValueSource(nameof(Declarations))] (string Kind, LanguageVersion Version) declaration,
@@ -94,6 +102,9 @@ internal sealed class GeneratedConstructorSemanticsTests
         AssertCompilationExecutes(output, context);
     }
 
+    /// <summary>Does not request a secondary constructor when no public instance fields exist.</summary>
+    /// <param name="declaration">The target declaration kind and supported language version.</param>
+    /// <param name="separatePartial">Whether the attribute is on a separate partial declaration.</param>
     [Test]
     public void PrimaryConstructorWithoutPublicFieldsNeedsNoSecondaryConstructor(
         [ValueSource(nameof(Declarations))] (string Kind, LanguageVersion Version) declaration,
@@ -117,6 +128,9 @@ internal sealed class GeneratedConstructorSemanticsTests
         Assert.That(output.GetDiagnostics(), Is.Empty, declaration.ToString());
     }
 
+    /// <summary>Executes explicit primary argument forwarding without repeating initializers.</summary>
+    /// <param name="declaration">The target declaration kind and supported language version.</param>
+    /// <param name="emptyParameters">Whether primary argument forwarding is empty.</param>
     [Test]
     public void ExplicitChainingRemedyPreservesPrimaryStateAndRunsInitializersOnce(
         [ValueSource(nameof(Declarations))] (string Kind, LanguageVersion Version) declaration,
@@ -159,6 +173,8 @@ internal sealed class GeneratedConstructorSemanticsTests
         );
     }
 
+    /// <summary>Allows generated field constructors inside containers with primary constructors.</summary>
+    /// <param name="declaration">The target declaration kind and supported language version.</param>
     [Test]
     public void PrimaryConstructorOnContainerDoesNotBlockNestedFieldConstructor(
         [ValueSource(nameof(Declarations))] (string Kind, LanguageVersion Version) declaration
@@ -191,6 +207,12 @@ public static class Consumer
         AssertCompilationExecutes(output, declaration.ToString());
     }
 
+    /// <summary>Diagnoses field constructors that would replace a record class copy constructor.</summary>
+    /// <param name="sealedRecord">Whether the record is sealed.</param>
+    /// <param name="generic">Whether the record has a type parameter.</param>
+    /// <param name="nullable">Whether the self field has a nullable annotation.</param>
+    /// <param name="separatePartial">Whether the attribute is on a separate partial declaration.</param>
+    /// <param name="emptyPrimary">Whether the record declares an empty primary constructor.</param>
     [Test]
     public void RecordCopySignatureReportsRestrictionWithoutReplacingCompilerCopying(
         [Values(false, true)] bool sealedRecord,
@@ -243,6 +265,9 @@ public static class Consumer
         Assert.That(output.GetDiagnostics(), Is.Empty, context);
     }
 
+    /// <summary>Preserves record copying when a property replaces the conflicting public field.</summary>
+    /// <param name="sealedRecord">Whether the record is sealed.</param>
+    /// <param name="generic">Whether the record has a type parameter.</param>
     [Test]
     public void RecordPropertyRemedyPreservesWithCopyState(
         [Values(false, true)] bool sealedRecord,
@@ -274,6 +299,9 @@ public static class Consumer
         );
     }
 
+    /// <summary>Keeps ordinary classes and compatible record field constructors usable.</summary>
+    /// <param name="shape">The supported field signature to construct and copy.</param>
+    /// <param name="generic">Whether the target has a type parameter.</param>
     [Test]
     public void NeighboringFieldSignaturesPreserveConstructionAndCopying(
         [Values(
@@ -339,6 +367,7 @@ public static class Consumer
         AssertCompilationExecutes(output, $"shape={shape}, generic={generic}");
     }
 
+    /// <summary>Builds annotated declarations with observable initializer state.</summary>
     private static string CreateSource(
         string kind,
         bool separatePartial,
@@ -357,12 +386,14 @@ public static class Consumer
             : $"{attributes} public partial {kind} Packet({parameters}) {{ {members} {field} }}";
     }
 
+    /// <summary>Creates the production generator driver for the requested language version.</summary>
     private static CSharpGeneratorDriver CreateDriver(LanguageVersion version) =>
         CSharpGeneratorDriver.Create(
             generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
             parseOptions: new CSharpParseOptions(version)
         );
 
+    /// <summary>Creates a compilation that treats warnings as errors and uses shipped attributes.</summary>
     private static CSharpCompilation CreateCompilation(string source, LanguageVersion version)
     {
         CSharpCompilation compilation =
@@ -377,6 +408,7 @@ public static class Consumer
             );
     }
 
+    /// <summary>Emits and executes the consumer to check its resulting state.</summary>
     private static void AssertCompilationExecutes(Compilation compilation, string context)
     {
         Assert.That(compilation.GetDiagnostics(), Is.Empty, context);
