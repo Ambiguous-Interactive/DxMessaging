@@ -46,6 +46,8 @@ deciding whether to upgrade. Keep it to what that reader needs:
 - One sentence. A second short clause is allowed only when the change removes a limit or
   changes what the reader must do. Never a paragraph.
 - Two wrapped source lines, three when the issue link does not fit.
+- Keep adjacent entries tight: use one newline between bullet entries, with no blank line.
+  Wrapped lines stay within their entry; retain blank lines before section headings and lists.
 - No implementation narrative: internal data structures, retained capacity, snapshot
   materialization order, CI policy, pinned test dependencies, and benchmark mechanics are all
   invisible to the reader and belong in the pull request.

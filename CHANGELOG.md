@@ -52,92 +52,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keep empty listener storage eligible for later cleanup when ordinary trim runs during dispatch
   ([#715](https://github.com/Ambiguous-Interactive/DxMessaging/issues/715)).
-
 - Release unrelated interceptor targets when resetting the default bus while an old registration
   handle is retained ([#712](https://github.com/Ambiguous-Interactive/DxMessaging/issues/712)).
-
 - Prevent duplicate delivery when a custom bus registers a callback during token retarget cleanup
   ([#711](https://github.com/Ambiguous-Interactive/DxMessaging/issues/711)).
-
 - Preserve token activation when a custom bus retargets it during registration. Nested retargeting
   and failure recovery avoid activating pending registrations twice
   ([#710](https://github.com/Ambiguous-Interactive/DxMessaging/issues/710)).
-
 - Preserve the original registration-history output when a custom serializer changes the log
   ([#709](https://github.com/Ambiguous-Interactive/DxMessaging/issues/709)).
-
 - Preserve registration-history changes made by a clear predicate and reject stale or recursive
   filtered clearing ([#708](https://github.com/Ambiguous-Interactive/DxMessaging/issues/708)).
-
 - Preserve consumer caller frames in diagnostic stack traces when source paths contain
   DxMessaging namespace text ([#707](https://github.com/Ambiguous-Interactive/DxMessaging/issues/707)).
 - Initialize excluded struct fields and auto-properties in generated constructors while preserving
   initializers and avoiding unintended constructor calls ([#706](https://github.com/Ambiguous-Interactive/DxMessaging/issues/706)).
-
 - Preserve pointer constructor signatures and accept valid `null` pointer defaults
   ([#705](https://github.com/Ambiguous-Interactive/DxMessaging/issues/705)).
-
 - Prevent valid `nameof(...)` optional defaults from aborting constructor generation
   ([#703](https://github.com/Ambiguous-Interactive/DxMessaging/issues/703)).
-
 - Preserve generated constructors and message identities for types nested in partial interfaces
   ([#702](https://github.com/Ambiguous-Interactive/DxMessaging/issues/702)).
-
 - Skip unbound generic receiver methods during reflexive lookup and preserve callable concrete
   overloads, including compatible object and interface parameters
   ([#700](https://github.com/Ambiguous-Interactive/DxMessaging/issues/700)).
-
 - Preserve both reflexive deliveries when a metadata getter emits the same message during
   receiver lookup, and keep its method cache within the configured retention bound
   ([#699](https://github.com/Ambiguous-Interactive/DxMessaging/issues/699)).
-
 - Prevent registration-handle hashing from throwing in builds with integer overflow checks
   ([#691](https://github.com/Ambiguous-Interactive/DxMessaging/issues/691)).
-
 - Preserve component cleanup ownership when deregistration callbacks release or register work
   for the same listener. Failed cleanup remains publicly retryable
   ([#679](https://github.com/Ambiguous-Interactive/DxMessaging/issues/679)).
 - Clean up subscriptions added by diagnostics after a failed registration build, preserving
   a retryable lease when cleanup fails ([#677](https://github.com/Ambiguous-Interactive/DxMessaging/issues/677)).
-
 - Keep lease cleanup retryable when callbacks add subscriptions during disposal, and prevent
   duplicate activation notifications ([#676](https://github.com/Ambiguous-Interactive/DxMessaging/issues/676)).
-
 - Clean up subscriptions when registration-builder setup callbacks throw, preserving a retryable
   lease when cleanup fails ([#675](https://github.com/Ambiguous-Interactive/DxMessaging/issues/675)).
-
 - Preserve activation when a custom bus registration callback calls `Enable()` on the same token.
   The owning replay completes without restarting its registration queue, including during retargeting
   ([#671](https://github.com/Ambiguous-Interactive/DxMessaging/issues/671)).
-
 - Stop reflexive dispatch when diagnostic or reflection metadata callbacks reset the bus; canceled
   lookups do not retain a resolved method, and new handlers wait for the next emission
   ([#670](https://github.com/Ambiguous-Interactive/DxMessaging/issues/670),
   [#694](https://github.com/Ambiguous-Interactive/DxMessaging/issues/694)).
-
 - Preserve retryable cleanup across diagnostic callbacks and keep a logger's successful `Disable()`
   effective during retarget recovery ([#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663),
   [#668](https://github.com/Ambiguous-Interactive/DxMessaging/issues/668)).
-
 - Fix `InstanceId` XML and JSON data contract serialization by storing the numeric `id` member on its backing field
   ([#662](https://github.com/Ambiguous-Interactive/DxMessaging/issues/662)).
-
 - **BREAKING:** Make `InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` comparisons
   follow `IComparable`: values sort after null, and unrelated argument types throw
   `ArgumentException` ([#661](https://github.com/Ambiguous-Interactive/DxMessaging/issues/661)).
-
 - Stop teardown from attaching pending context cleanup to a typed slot retired by a reentrant
   bus reset ([#660](https://github.com/Ambiguous-Interactive/DxMessaging/issues/660)).
-
 - Keep reflexive signature keys stable after caller-owned type arrays change, safe for default/null arrays,
   and usable in checked builds; resolve reflected overloads from the captured signature
   ([#659](https://github.com/Ambiguous-Interactive/DxMessaging/issues/659)).
-
 - Resolve custom bus cache indices before registration so a throwing or resetting getter cannot
   leave an inaccessible subscription. Avoid emission getters during registration and teardown
   ([#655](https://github.com/Ambiguous-Interactive/DxMessaging/issues/655),
   [#669](https://github.com/Ambiguous-Interactive/DxMessaging/issues/669)).
-
 - Stop diagnostic call-count storage from growing with handles removed during callbacks, while
   preserving completed deliveries in bounded history
   ([#674](https://github.com/Ambiguous-Interactive/DxMessaging/issues/674)).
@@ -166,10 +142,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve token cleanup and retryable failures during custom-bus callbacks, including activation
   that reuses a staged handle while older cleanup runs
   ([#642](https://github.com/Ambiguous-Interactive/DxMessaging/issues/642), [#673](https://github.com/Ambiguous-Interactive/DxMessaging/issues/673)).
-
 - Keep token replay valid when a custom-bus registration callback calls `UnregisterAll()` or `Dispose()`; cleared future entries stay inactive and accepted registrations keep their teardown
   ([#641](https://github.com/Ambiguous-Interactive/DxMessaging/issues/641)).
-
 - Keep registrations removed by an earlier custom-bus callback from activating later in the
   same token replay ([#639](https://github.com/Ambiguous-Interactive/DxMessaging/issues/639)).
 - Prevent rejected registrations on enabled tokens from reappearing after Disable/Enable
@@ -207,7 +181,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reconfigure listener owners ([#542](https://github.com/Ambiguous-Interactive/DxMessaging/issues/542),
   [#543](https://github.com/Ambiguous-Interactive/DxMessaging/issues/543),
   [#683](https://github.com/Ambiguous-Interactive/DxMessaging/issues/683)).
-
 - Fix base-call ignore compiler wiring and batch preparation while preserving consumer options
   ([#537](https://github.com/Ambiguous-Interactive/DxMessaging/issues/537),
   [#538](https://github.com/Ambiguous-Interactive/DxMessaging/issues/538),
@@ -244,7 +217,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every registration reported its own copy of each warning, so one declaration surfaced as two
   identical entries at the same location
   ([#453](https://github.com/Ambiguous-Interactive/DxMessaging/issues/453)).
-
 - Stop the Message Monitor from drawing its toolbar over the log header, and its column headings
   over each other, at narrow window widths. Neither Monitor row wraps now - the live toolbar is two
   declared rows, what the log is doing and what it is filtered to - because a wrapping row's height
@@ -252,7 +224,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   row. Every heading clips to its own column with an ellipsis, the way the row cell beneath it
   already did, and the route-kind chips give space back instead of pushing the search field past
   the edge ([#435](https://github.com/Ambiguous-Interactive/DxMessaging/issues/435)).
-
 - Keep wrapping rows in the Flow Graph and Message Monitor inside their own box. On Unity 2021.3 a
   wrapping row keeps the height of one line, so a long type name or a deep hierarchy path pushed
   the extra lines on top of the block beneath. Every wrapping container in the editor now measures
@@ -821,7 +792,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   setting the flag while the handler is lifecycle-deactivated (disabled with the
   flag clear) means a later enable no longer auto-reactivates - call
   `ToggleMessageHandler(true)` to resume.
-
 - Removed the internal per-handler dispatch-link machinery (the ten
   `*DispatchLink` wrapper classes, their lazily-populated slot array, and
   the outer-generation guard) plus the vestigial non-global prefreeze
