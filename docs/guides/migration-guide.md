@@ -39,6 +39,12 @@ in one declaration for a positional signature that does not depend on file order
 named arguments. Optional fields must follow required fields in the resulting order.
 Each optional default now resolves imports and aliases in its own field's source file.
 
+Rebuild every assembly that calls an affected constructor, including callers that use named
+arguments. Argument names are resolved when the caller is compiled; they do not protect an
+existing DLL from a changed parameter order. Old binaries can assign same-typed arguments to
+different fields or fail to find the constructor when parameter types move. Obtain rebuilt
+versions of precompiled caller DLLs when their sources are unavailable.
+
 ### Use compatible comparison arguments
 
 `InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` now follow `IComparable` input
