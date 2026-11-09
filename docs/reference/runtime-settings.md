@@ -146,8 +146,10 @@ to zero. When `force` is false, only slots past the configured idle threshold
 are eligible. The call is a no-op returning `default(TrimResult)` when
 `EnableTrimApi` is false.
 
-Plain .NET hosts must call this periodically when they need deterministic
-reclamation. Unity headless players use the same automatic loop as other players.
+On plain .NET hosts, call `Trim(force: true)` on the owning thread outside dispatch
+when you need deterministic reclamation. Repeating `Trim()` does not advance idle
+age, so a quiet bus may retain empty slots. Unity headless players use the same
+automatic loop as other players.
 The automatic PlayerLoop sweep hook is only
 installed on Unity 2021.3 or newer player and editor hosts. It runs without
 new messages and does not depend on `Time.timeScale`. `EvictionEnabled` gates

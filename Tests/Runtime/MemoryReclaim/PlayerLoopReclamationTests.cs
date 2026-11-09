@@ -14,16 +14,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
     using UnityEngine.LowLevel;
     using UnityEngine.TestTools;
 
-    /*
-        Startup and real-frame behavior belongs in the default player scope.
-        The larger explicit MemoryReclaim matrix remains separately selected.
-    */
+    /// <summary>Player startup and shared-pool controls in the default Unity player scope.</summary>
     [TestFixture]
     [Category("UnityRuntime")]
     public sealed class PlayerLoopReclamationTests : MessagingTestBase
     {
         private static readonly InstanceId DefaultContext = new InstanceId(0x5A19_0001);
 
+        /// <summary>Checks runtime defaults without relying on Editor validation callbacks.</summary>
         [Test]
         public void FreshRuntimeSettingsEnableReclamationWithoutEditorValidation()
         {
@@ -47,6 +45,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
         }
 
+        /// <summary>Checks synchronous pool entry caps and cleared contents in both retention modes.</summary>
+        /// <param name="useLru">Whether the pool retains the most recently returned entries.</param>
+        /// <param name="cap">Maximum number of retained collection objects.</param>
         [Test]
         public void RuntimePoolCapsEntriesAndClearsRecycledElements(
             [Values(false, true)] bool useLru,
@@ -121,6 +122,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
+        /// <summary>Exercises startup-installed reclamation through frame updates and provider settings.</summary>
+        /// <param name="scenario">Message route and optional post-processor under test.</param>
+        /// <returns>Frames before and after the injected sweep cadence.</returns>
         [UnityTest]
         public IEnumerator AutomaticPlayerLoopReclaimsIdleSlotsWithoutMessages(
             [ValueSource(
@@ -248,6 +252,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
+        /// <summary>Creates an enabled token on a live handler for the supplied bus.</summary>
+        /// <param name="bus">Bus that owns the test registrations.</param>
+        /// <returns>The token owned by the test.</returns>
         private static MessageRegistrationToken CreateToken(MessageBus bus)
         {
             MessageHandler handler = new MessageHandler(new InstanceId(0x5A19_0002), bus)
@@ -259,6 +266,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             return token;
         }
 
+        /// <summary>Registers the selected handler or post-processor on the fixture's route.</summary>
+        /// <param name="scenario">Message route and callback shape to register.</param>
+        /// <param name="token">Token that owns the registration.</param>
+        /// <param name="onMessage">Callback invoked when the selected message arrives.</param>
+        /// <returns>The handle used to remove this registration.</returns>
         private static MessageRegistrationHandle Register(
             MessageScenario scenario,
             MessageRegistrationToken token,
@@ -280,6 +292,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 );
         }
 
+        /// <summary>Creates a scope that force-trims the test bus and shared pools.</summary>
+        /// <param name="bus">Bus whose empty storage belongs to the test.</param>
+        /// <returns>The owned cleanup action.</returns>
         private static IDisposable ForceTrimCleanup(MessageBus bus)
         {
             return new CleanupScope(() =>
