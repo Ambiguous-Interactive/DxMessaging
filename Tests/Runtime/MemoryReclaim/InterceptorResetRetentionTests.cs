@@ -37,6 +37,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
         private bool _stackTraces;
         private int _bufferSize;
 
+        /// <summary>Captures and isolates globals before each retention case.</summary>
         [SetUp]
         public void CaptureStaticState()
         {
@@ -49,6 +50,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             MessagingDebug.enabled = false;
         }
 
+        /// <summary>Restores global configuration and releases the isolated bus scope.</summary>
         [TearDown]
         public void RestoreStaticState()
         {
@@ -67,6 +69,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
+        /// <summary>Enumerates message, ownership, reset, and teardown combinations.</summary>
+        /// <returns>Named retention cases with their original arguments.</returns>
         private static IEnumerable<TestCaseData> Cases()
         {
             foreach (MessageScenario scenario in MessageScenarios.AllKinds)
@@ -95,6 +99,16 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
+        /// <summary>Checks reset ownership, stale handles, callback counts, and final weak targets.</summary>
+        /// <param name="scenario">Message route under test.</param>
+        /// <param name="custom">Whether the case uses a custom global bus.</param>
+        /// <param name="hold">Whether to retain the anchor handle before cleanup.</param>
+        /// <param name="reset">Whether to reset the default bus during setup.</param>
+        /// <param name="warm">Whether to emit once before changing registrations.</param>
+        /// <param name="remove">Whether to remove the peer before observation.</param>
+        /// <param name="trim">Whether to force-trim after setup.</param>
+        /// <param name="inside">Whether to emit before observation and reset inside the callback when requested.</param>
+        /// <param name="diagnostics">Whether to enable bus diagnostics.</param>
         [TestCaseSource(nameof(Cases))]
         public void DefaultResetReleasesPeersAndPreservesCustomBusOwnership(
             MessageScenario scenario,
@@ -182,6 +196,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             });
         }
 
+        /// <summary>Runs assertions with the framework's supported aggregation behavior.</summary>
+        /// <param name="assertions">Assertions for the complete recorded case state.</param>
         private static void AssertState(Action assertions)
         {
 #if UNITY_2021_3_OR_NEWER
@@ -191,6 +207,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
 #endif
         }
 
+        /// <summary>Owns case inputs, bus lifetime, and recorded receiver observations.</summary>
         private sealed class State
         {
             internal readonly Bus Bus;
@@ -226,6 +243,16 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             private int _observedGroups,
                 _observedFlat;
 
+            /// <summary>Creates the selected bus and records one retention case's configuration.</summary>
+            /// <param name="scenario">Message route under test.</param>
+            /// <param name="custom">Whether the case uses a custom global bus.</param>
+            /// <param name="hold">Whether to retain the anchor handle before cleanup.</param>
+            /// <param name="reset">Whether to reset the default bus during setup.</param>
+            /// <param name="warm">Whether to emit once before changing registrations.</param>
+            /// <param name="remove">Whether to remove the peer before observation.</param>
+            /// <param name="trim">Whether to force-trim after setup.</param>
+            /// <param name="inside">Whether to emit before observation and reset inside the callback when requested.</param>
+            /// <param name="diagnostics">Whether to enable bus diagnostics.</param>
             internal State(
                 MessageScenario scenario,
                 bool custom,
@@ -263,10 +290,12 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     $"[{scenario}] custom={custom},hold={hold},reset={reset},warm={warm},remove={remove},trim={trim},inside={inside},diagnostics={diagnostics}";
             }
 
+            /// <summary>Describes the original recorded weak-target and callback observations.</summary>
             internal string Report =>
                 Label
                 + $"; peer={PeerAlive},anchor={AnchorAlive},groups={_observedGroups},flat={_observedFlat},registered={BeforeRegistered},callsBefore=[{BeforeAnchorCalls},{BeforePeerCalls}],fresh={FreshCalls},callsAfter=[{AfterFreshAnchorCalls},{AfterFreshPeerCalls}],finalPeer={FinalPeerAlive},finalAnchor={FinalAnchorAlive}";
 
+            /// <summary>Creates both receivers and applies the requested setup changes.</summary>
             [MethodImpl(MethodImplOptions.NoInlining)]
             internal void Populate()
             {
@@ -302,6 +331,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 }
             }
 
+            /// <summary>Collects and records weak targets, registrations, and callback counts before cleanup.</summary>
             [MethodImpl(MethodImplOptions.NoInlining)]
             internal void Observe()
             {
@@ -316,6 +346,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 ObserveOwner();
             }
 
+            /// <summary>Records the captured interceptor cache's group and flat-array sizes.</summary>
             [MethodImpl(MethodImplOptions.NoInlining)]
             private void ObserveOwner()
             {
@@ -332,6 +363,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 _observedFlat = ((Array)MessageBusInspection.ReadField(cache, "_flat")).Length;
             }
 
+            /// <summary>Records stale removal and fresh dispatch against the surviving registrations.</summary>
             [MethodImpl(MethodImplOptions.NoInlining)]
             internal void ExerciseFreshRegistration()
             {
@@ -356,6 +388,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 AfterFreshRemovalRegistered = Bus.RegisteredInterceptors;
             }
 
+            /// <summary>Releases case ownership, collects, and records the final weak targets.</summary>
             [MethodImpl(MethodImplOptions.NoInlining)]
             internal void Cleanup()
             {
@@ -367,6 +400,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 GC.KeepAlive(Bus);
             }
 
+            /// <summary>Drops the retained handle, resets the case bus, and force-trims storage.</summary>
             [MethodImpl(MethodImplOptions.NoInlining)]
             private void Release()
             {
@@ -382,6 +416,10 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 _ = Bus.Trim(force: true);
             }
 
+            /// <summary>Registers an interceptor for the selected message route.</summary>
+            /// <param name="receiver">Callback target registered on this case's bus.</param>
+            /// <param name="priority">Interceptor execution priority.</param>
+            /// <returns>Raw registration handle for the selected interceptor.</returns>
             private MessageBusRegistration Register(Receiver receiver, int priority)
             {
                 return _scenario.Kind switch
@@ -402,6 +440,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 };
             }
 
+            /// <summary>Emits one probe message through the selected route.</summary>
             [MethodImpl(MethodImplOptions.NoInlining)]
             private void Emit()
             {
@@ -448,6 +487,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
+        /// <summary>Stores callback totals without retaining receiver instances.</summary>
         private sealed class Counts
         {
             internal int Anchor,
@@ -456,22 +496,35 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 Resets;
         }
 
+        /// <summary>Records callbacks and optionally resets the default bus during dispatch.</summary>
         private sealed class Receiver
         {
             private readonly Counts _counts;
             private readonly int _role;
             internal bool ResetOnNextCall;
 
+            /// <summary>Creates a callback target with a fixed counter role.</summary>
+            /// <param name="counts">Shared callback totals owned by the case.</param>
+            /// <param name="role">Receiver role used to select the counter.</param>
             internal Receiver(Counts counts, int role)
             {
                 _counts = counts;
                 _role = role;
             }
 
+            /// <summary>Records an untargeted interceptor callback.</summary>
+            /// <param name="_">Unused probe message.</param>
+            /// <returns>True after recording the callback.</returns>
             internal bool Scalar(ref ProbeMessage _) => Invoke();
 
+            /// <summary>Records a targeted or broadcast interceptor callback.</summary>
+            /// <param name="_">Unused route context.</param>
+            /// <param name="__">Unused probe message.</param>
+            /// <returns>True after recording the callback.</returns>
             internal bool Context(ref InstanceId _, ref ProbeMessage __) => Invoke();
 
+            /// <summary>Updates the role counter and performs a requested callback reset.</summary>
+            /// <returns>True to allow interceptor processing to continue.</returns>
             private bool Invoke()
             {
                 switch (_role)
@@ -496,6 +549,7 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
         }
 
+        /// <summary>Resets default-bus state and keeps test logging disabled.</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static void ResetDefault()
         {
@@ -503,10 +557,14 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             MessagingDebug.enabled = false;
         }
 
+        /// <summary>Returns whether the supplied weak reference currently has a target.</summary>
+        /// <param name="reference">Receiver reference observed by the case.</param>
+        /// <returns>True when a non-null weak reference is alive.</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static bool IsAlive(WeakReference reference) =>
             reference != null && reference.IsAlive;
 
+        /// <summary>Runs the fixture's original full-collection and finalizer sequence.</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static void Collect()
         {
@@ -515,17 +573,23 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true, true);
         }
 
+        /// <summary>Provides the fixed clock used by custom-bus controls.</summary>
         private sealed class ConstantClock : IDxMessagingClock
         {
+            /// <summary>Gets the fixed tick value.</summary>
             public long NowTicks => 0;
+
+            /// <summary>Gets the fixed clock value in seconds.</summary>
             public double NowSeconds => 0;
         }
 
+        /// <summary>Implements all three message interfaces for the route checks.</summary>
         private readonly struct ProbeMessage
             : IUntargetedMessage,
                 ITargetedMessage,
                 IBroadcastMessage
         {
+            /// <summary>Gets the probe message's runtime type.</summary>
             public Type MessageType => typeof(ProbeMessage);
         }
     }
