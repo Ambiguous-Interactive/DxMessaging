@@ -152,7 +152,7 @@ age, so a quiet bus may retain empty slots. Unity headless players use the same
 automatic loop as other players.
 The automatic PlayerLoop sweep hook is only
 installed on Unity 2021.3 or newer player and editor hosts. It runs without
-new messages and does not depend on `Time.timeScale`. `EvictionEnabled` gates
+new messages. `EvictionEnabled` gates
 this automatic path; `EnableTrimApi` gates explicit trim calls separately.
 
 `BufferMaxDistinctEntries` limits how many collection objects each shared pool

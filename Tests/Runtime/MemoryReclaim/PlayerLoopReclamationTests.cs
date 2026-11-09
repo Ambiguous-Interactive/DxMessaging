@@ -172,7 +172,6 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             using MessageRegistrationToken disabledToken = CreateToken(disabledBus);
             MessageRegistrationHandle handle = Register(scenario, token, () => { });
             MessageRegistrationHandle disabledHandle = Register(scenario, disabledToken, () => { });
-            float previousTimeScale = Time.timeScale;
             try
             {
                 token.RemoveRegistration(handle);
@@ -193,7 +192,6 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     scenario.Kind
                 );
 
-                Time.timeScale = 0f;
                 yield return null;
 
                 Assert.AreEqual(
@@ -246,7 +244,6 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             }
             finally
             {
-                Time.timeScale = previousTimeScale;
                 token.RemoveRegistration(handle);
                 disabledToken.RemoveRegistration(disabledHandle);
             }
