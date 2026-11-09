@@ -19,6 +19,9 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
     /// interceptor groups and flat arrays. Separate factory, observation, emission and cleanup
     /// frames distinguish that retained graph from temporary JIT roots. Custom-bus preservation
     /// and the retained handle's own target are deliberate positive controls.
+    /// 2026-11-09: an ARM64 Mono full run retained both targets after cleanup. The cause
+    /// remains unresolved. Failure-only ownership output follows the original weak-target
+    /// observations without another collection or a change to their assertions.
     /// </remarks>
     [TestFixture]
     [Category("MemoryReclaim")]
@@ -128,6 +131,16 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 {
                     state.Cleanup();
                 }
+            }
+
+            if (
+                state.PeerAlive != (!remove && (custom || !reset))
+                || state.AnchorAlive != (hold || custom || !reset)
+                || state.FinalPeerAlive
+                || state.FinalAnchorAlive
+            )
+            {
+                TestContext.WriteLine(state.BuildReleasedOwnershipReport());
             }
 
             string report = state.Report;
@@ -408,6 +421,30 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     default:
                         throw new ArgumentOutOfRangeException(nameof(_scenario));
                 }
+            }
+
+            /// <summary>Describes final owners after the original weak-target observations fail.</summary>
+            /// <returns>Cold registration, dispatch and cache counts without another collection.</returns>
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            internal string BuildReleasedOwnershipReport()
+            {
+                int registered = Bus.RegisteredInterceptors;
+                int live = MessageBusInspection.CountLiveRegistrations(Bus);
+                int unique = (
+                    (IDictionary)
+                        MessageBusInspection.ReadField(Bus, "_uniqueInterceptorsAndPriorities")
+                ).Count;
+                int depth = (int)MessageBusInspection.ReadField(Bus, "_dispatchDepth");
+                object cache = _cache.Target;
+                int groups =
+                    cache == null
+                        ? -1
+                        : ((IDictionary)MessageBusInspection.ReadField(cache, "handlers")).Count;
+                int flat =
+                    cache == null
+                        ? -1
+                        : ((Array)MessageBusInspection.ReadField(cache, "_flat")).Length;
+                return $"Final ownership {Label}; registered={registered},live={live},unique={unique},depth={depth},cacheAlive={cache != null},groups={groups},flat={flat}";
             }
         }
 
