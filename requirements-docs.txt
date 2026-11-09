@@ -85,7 +85,11 @@ pygments==2.21.0
     # via
     #   -r requirements-docs.in
     #   mkdocs-material
-pymdown-extensions==12.3
+pymdown-extensions==12.3 ; python_full_version < '3.11.5'
+    # via
+    #   -r requirements-docs.in
+    #   mkdocs-material
+pymdown-extensions==13.0 ; python_full_version >= '3.11.5'
     # via
     #   -r requirements-docs.in
     #   mkdocs-material

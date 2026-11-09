@@ -146,9 +146,18 @@ to zero. When `force` is false, only slots past the configured idle threshold
 are eligible. The call is a no-op returning `default(TrimResult)` when
 `EnableTrimApi` is false.
 
-Non-Unity and headless hosts must call this periodically when they need
-deterministic reclamation. The automatic PlayerLoop sweep hook is only
-installed on Unity 2021.3 or newer player and editor hosts.
+Plain .NET hosts must call this periodically when they need deterministic
+reclamation. Unity headless players use the same automatic loop as other players.
+The automatic PlayerLoop sweep hook is only
+installed on Unity 2021.3 or newer player and editor hosts. It runs without
+new messages and does not depend on `Time.timeScale`. `EvictionEnabled` gates
+this automatic path; `EnableTrimApi` gates explicit trim calls separately.
+
+`BufferMaxDistinctEntries` limits how many collection objects each shared pool
+retains. It does not limit total retained bytes or resize every pooled collection.
+For example, clearing a pooled list removes its elements but preserves its
+backing capacity. Forced trim releases pooled objects for collection. Reflexive
+scratch buffers have the separate per-buffer capacity limit described above.
 
 ### `MessageHandler.TrimAll`
 
