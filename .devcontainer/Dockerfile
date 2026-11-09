@@ -199,11 +199,11 @@ RUN set -eux; \
     zoxide --version
 
 # ------------------------------------------------------------------------------
-# Install yq 4.54.2
+# Install yq 4.54.3
 # https://github.com/mikefarah/yq
 # ------------------------------------------------------------------------------
 RUN set -eux; \
-    YQ_VERSION="4.54.2"; \
+    YQ_VERSION="4.54.3"; \
     case "${TARGETARCH}" in \
         amd64) YQ_ARCH="linux_amd64" ;; \
         arm64) YQ_ARCH="linux_arm64" ;; \
