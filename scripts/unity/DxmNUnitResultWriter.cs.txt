@@ -1,0 +1,199 @@
+/*
+ * The NUnit 3.5 XML schema below follows TestResult and TestMethod from NUnit.
+ * https://github.com/nunit/nunit/tree/3.5/src/NUnitFramework/framework/Internal
+ * Copyright (c) 2010-2014 Charlie Poole
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is furnished to do
+ * so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+namespace DxMessaging.Ci
+{
+    using System;
+    using System.Globalization;
+    using System.Xml;
+    using NUnit.Framework.Interfaces;
+    using NUnit.Framework.Internal;
+
+    /// <summary>Writes complete NUnit results without retaining a second recursive result tree.</summary>
+    internal static class DxmNUnitResultWriter
+    {
+        private static readonly bool KnownSchema =
+            typeof(TestResult).Assembly.GetName().Version == new Version(3, 5, 0, 0);
+
+        /// <summary>Preserves the existing test-run wrapper and every result below it.</summary>
+        /// <returns>The number of standard leaves written through the accelerated path.</returns>
+        internal static int Write(TNode run, ITestResult result, XmlWriter writer)
+        {
+            WriteStart(run, writer);
+            int accelerated = WriteResult(result, writer);
+            writer.WriteEndElement();
+            return accelerated;
+        }
+
+        /// <summary>Uses NUnit for suites and unfamiliar implementations; accelerates standard 3.5 leaves.</summary>
+        private static int WriteResult(ITestResult result, XmlWriter writer)
+        {
+            bool knownLeaf =
+                KnownSchema
+                && result.GetType() == typeof(TestCaseResult)
+                && result.Test.GetType() == typeof(TestMethod);
+            bool knownSuite =
+                KnownSchema
+                && result.GetType() == typeof(TestSuiteResult)
+                && result.Test.GetType().Assembly == typeof(TestSuite).Assembly;
+            if (!knownLeaf && !knownSuite)
+            {
+                result.ToXml(true).WriteTo(writer);
+                return 0;
+            }
+
+            TNode node = knownLeaf ? Leaf((TestCaseResult)result) : result.ToXml(false);
+            WriteStart(node, writer);
+            int accelerated = knownLeaf ? 1 : 0;
+            if (result.HasChildren)
+            {
+                foreach (ITestResult child in result.Children)
+                {
+                    accelerated += WriteResult(child, writer);
+                }
+            }
+            writer.WriteEndElement();
+            return accelerated;
+        }
+
+        /// <summary>Writes upstream metadata children before the descendant test results.</summary>
+        private static void WriteStart(TNode node, XmlWriter writer)
+        {
+            writer.WriteStartElement(node.Name);
+            foreach (string name in node.Attributes.Keys)
+            {
+                writer.WriteAttributeString(name, node.Attributes[name]);
+            }
+            foreach (TNode child in node.ChildNodes)
+            {
+                child.WriteTo(writer);
+            }
+        }
+
+        /// <summary>Retains the NUnit 3.5 standard leaf schema and delegates property serialization.</summary>
+        private static TNode Leaf(TestCaseResult result)
+        {
+            TestMethod test = (TestMethod)result.Test;
+            TNode node = new TNode("test-case");
+            Attribute(node, "id", test.Id.ToString());
+            Attribute(node, "name", test.Name);
+            Attribute(node, "fullname", test.FullName);
+            if (test.MethodName != null)
+            {
+                Attribute(node, "methodname", test.MethodName);
+            }
+            if (test.ClassName != null)
+            {
+                Attribute(node, "classname", test.ClassName);
+            }
+            Attribute(node, "runstate", test.RunState.ToString());
+            if (0 < test.Properties.Keys.Count)
+            {
+                test.Properties.AddToXml(node, false);
+            }
+            Attribute(node, "seed", test.Seed.ToString());
+            Attribute(node, "result", result.ResultState.Status.ToString());
+            if (result.ResultState.Label != string.Empty)
+            {
+                Attribute(node, "label", result.ResultState.Label);
+            }
+            if (result.ResultState.Site != FailureSite.Test)
+            {
+                Attribute(node, "site", result.ResultState.Site.ToString());
+            }
+            Attribute(node, "start-time", result.StartTime.ToString("u"));
+            Attribute(node, "end-time", result.EndTime.ToString("u"));
+            Attribute(
+                node,
+                "duration",
+                result.Duration.ToString("0.000000", NumberFormatInfo.InvariantInfo)
+            );
+            Attribute(node, "asserts", result.AssertCount.ToString());
+            if (result.ResultState.Status == TestStatus.Failed)
+            {
+                TNode failure = node.AddElement("failure");
+                if (result.Message != null)
+                {
+                    CData(failure, "message", result.Message);
+                }
+                if (result.StackTrace != null)
+                {
+                    CData(failure, "stack-trace", result.StackTrace);
+                }
+            }
+            else if (
+                result.Message != null
+                && (
+                    result.ResultState.Status == TestStatus.Passed
+                    || result.ResultState.Status == TestStatus.Skipped
+                    || result.ResultState.Status == TestStatus.Inconclusive
+                )
+            )
+            {
+                CData(node.AddElement("reason"), "message", result.Message);
+            }
+            string output = result.Output;
+            if (0 < output.Length)
+            {
+                CData(node, "output", output);
+            }
+            return node;
+        }
+
+        /// <summary>Lets XmlWriter escape XML punctuation after matching NUnit's character sanitization.</summary>
+        private static void Attribute(TNode node, string name, string value)
+        {
+            node.Attributes.Add(name, Sanitize(value));
+        }
+
+        /// <summary>Keeps NUnit's CDATA splitting behavior, including embedded terminators.</summary>
+        private static void CData(TNode node, string name, string value)
+        {
+            node.ChildNodes.Add(new TNode(name, Sanitize(value), true));
+        }
+
+        /// <summary>Avoids the upstream regex only for strings composed entirely of valid ASCII XML characters.</summary>
+        private static string Sanitize(string value)
+        {
+            if (value == null)
+            {
+                return null;
+            }
+            foreach (char character in value)
+            {
+                if (
+                    (character < ' ' || '~' < character)
+                    && character != '\t'
+                    && character != '\n'
+                    && character != '\r'
+                )
+                {
+                    TNode fallback = new TNode("value");
+                    fallback.AddAttribute("value", value);
+                    return fallback.Attributes["value"];
+                }
+            }
+            return value;
+        }
+    }
+}

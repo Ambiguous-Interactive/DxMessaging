@@ -325,9 +325,15 @@ try {
     }, $true))
     Assert-That 'three successful build paths and shared failure diagnostics retain native inputs' ($nativeCallSites.Count -eq 4)
 
+    $resultWriterSource = [System.IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/unity/DxmNUnitResultWriter.cs.txt'))
+    $callbackSource = New-StandaloneTestCallbackSource `
+        -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256 `
+        -ResultWriterSource $resultWriterSource
+    Assert-That 'standalone callback invokes the complete NUnit writer' ($callbackSource.Contains('DxMessaging.Ci.DxmNUnitResultWriter.Write(run, result, xw);'))
+    Assert-That 'standalone callback includes the tested writer source verbatim' ($callbackSource.EndsWith($resultWriterSource, [System.StringComparison]::Ordinal))
     $generatedSources = @(
         New-ConfiguratorSource -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256
-        New-StandaloneTestCallbackSource -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256
+        $callbackSource
     )
     foreach ($source in $generatedSources) {
         Assert-That 'generated C# embeds the profile ID' ($source.Contains($profile.profileId))

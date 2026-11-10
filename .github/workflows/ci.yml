@@ -138,7 +138,7 @@ jobs:
           # Docs, README, CHANGELOG, and sample Markdown are dotnet triggers because the
           # dotnet job compiles samples and checks documentation contracts.
           set_output dotnet \
-            "(\.cs$|\.csproj$|\.sln$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^Runtime/Analyzers/|^SourceGenerators/|^\.docs-tests/|^docs/.*\.(md|markdown|html)$|^README\.md$|^CHANGELOG\.md$|^Samples~/.*\.(md|markdown)$|^docs/overrides/|^\.config/dotnet-tools\.json$|$ci_workflow)"
+            "(\.cs$|\.csproj$|\.sln$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^Runtime/Analyzers/|^SourceGenerators/|^\.docs-tests/|^docs/.*\.(md|markdown|html)$|^README\.md$|^CHANGELOG\.md$|^Samples~/.*\.(md|markdown)$|^docs/overrides/|^\.config/dotnet-tools\.json$|^scripts/unity/.*\.cs\.txt$|$ci_workflow)"
 
           json_pattern='(\.json$|\.asmdef$|\.asmref$|(^|/)\.prettierrc[^/]*$'
           json_pattern="$json_pattern"'|(^|/)prettier\.config\.[^/]+$'

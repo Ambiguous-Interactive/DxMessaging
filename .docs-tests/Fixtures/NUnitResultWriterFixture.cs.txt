@@ -1,0 +1,168 @@
+namespace ResultWriterProbe
+{
+    using System;
+    using System.Globalization;
+    using System.IO;
+    using System.Xml;
+    using DxMessaging.Ci;
+    using NUnit.Framework.Interfaces;
+    using NUnit.Framework.Internal;
+
+    public static class Probe
+    {
+        public static void NoOp() { }
+
+        public static string Compare(
+            string payload,
+            string status,
+            string label,
+            string site,
+            string shape,
+            string culture
+        )
+        {
+            CultureInfo previous = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+                MethodWrapper method = new MethodWrapper(typeof(Probe), nameof(NoOp));
+                TestMethod test =
+                    shape == "custom-test" ? new CustomMethod(method) : new TestMethod(method);
+                test.Name = "name:" + payload;
+                test.FullName = "full:" + payload;
+                test.RunState = RunState.Explicit;
+                test.Seed = 123;
+                test.Properties.Add("Category", payload ?? string.Empty);
+                test.Properties.Add("Category", "second");
+                test.Properties.Add("property:" + payload, payload ?? string.Empty);
+                TestCaseResult leaf =
+                    shape == "custom-result" ? new CustomResult(test) : new TestCaseResult(test);
+                leaf.SetResult(
+                    new ResultState(
+                        (TestStatus)Enum.Parse(typeof(TestStatus), status),
+                        label,
+                        (FailureSite)Enum.Parse(typeof(FailureSite), site)
+                    ),
+                    payload,
+                    payload
+                );
+                leaf.StartTime = new DateTime(2026, 11, 10, 1, 2, 3, DateTimeKind.Utc);
+                leaf.EndTime = leaf.StartTime.AddSeconds(2);
+                leaf.Duration = 1.23456789;
+                leaf.OutWriter.Write(payload);
+                TestSuite suite = new TestSuite("suite:" + payload);
+                suite.Properties.Add("Category", payload ?? string.Empty);
+                suite.Add(test);
+                TestSuiteResult result =
+                    shape == "custom-suite" ? new CustomSuite(suite) : new TestSuiteResult(suite);
+                result.AddResult(leaf);
+                result.StartTime = leaf.StartTime;
+                result.EndTime = leaf.EndTime;
+                result.Duration = leaf.Duration;
+                result.OutWriter.Write(payload);
+                if (shape == "suite-failure")
+                {
+                    result.SetResult(ResultState.Failure, payload, payload);
+                }
+                if (shape == "empty")
+                {
+                    result = new TestSuiteResult(new TestSuite("empty"));
+                    result.SetResult(ResultState.Inconclusive, payload);
+                }
+
+                string expected;
+                using (StringWriter text = new StringWriter(CultureInfo.InvariantCulture))
+                {
+                    using (
+                        XmlWriter writer = XmlWriter.Create(
+                            text,
+                            new XmlWriterSettings { Indent = true }
+                        )
+                    )
+                    {
+                        TNode run = Header(payload);
+                        run.ChildNodes.Add(result.ToXml(true));
+                        run.WriteTo(writer);
+                    }
+                    expected = text.ToString();
+                }
+                string actual;
+                int accelerated;
+                using (StringWriter text = new StringWriter(CultureInfo.InvariantCulture))
+                {
+                    using (
+                        XmlWriter writer = XmlWriter.Create(
+                            text,
+                            new XmlWriterSettings { Indent = true }
+                        )
+                    )
+                    {
+                        accelerated = DxmNUnitResultWriter.Write(Header(payload), result, writer);
+                    }
+                    actual = text.ToString();
+                }
+                int expectedAccelerated = shape == "standard" || shape == "suite-failure" ? 1 : 0;
+                if (accelerated != expectedAccelerated)
+                {
+                    return "Expected accelerated leaves="
+                        + expectedAccelerated
+                        + "; actual="
+                        + accelerated;
+                }
+                return expected == actual
+                    ? "equal"
+                    : "Expected:\n" + expected + "\nActual:\n" + actual;
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = previous;
+            }
+        }
+
+        private static TNode Header(string value)
+        {
+            TNode node = new TNode("test-run");
+            node.AddAttribute("extra", value);
+            return node;
+        }
+
+        private sealed class CustomMethod : TestMethod
+        {
+            public CustomMethod(IMethodInfo method)
+                : base(method) { }
+
+            public override TNode AddToXml(TNode parent, bool recursive)
+            {
+                TNode node = base.AddToXml(parent, recursive);
+                node.AddElementWithCDATA("custom-method", "method metadata");
+                return node;
+            }
+        }
+
+        private sealed class CustomResult : TestCaseResult
+        {
+            public CustomResult(TestMethod method)
+                : base(method) { }
+
+            public override TNode AddToXml(TNode parent, bool recursive)
+            {
+                TNode node = base.AddToXml(parent, recursive);
+                node.AddElementWithCDATA("custom-result", "result metadata");
+                return node;
+            }
+        }
+
+        private sealed class CustomSuite : TestSuiteResult
+        {
+            public CustomSuite(TestSuite suite)
+                : base(suite) { }
+
+            public override TNode AddToXml(TNode parent, bool recursive)
+            {
+                TNode node = base.AddToXml(parent, recursive);
+                node.Value = "custom suite text";
+                return node;
+            }
+        }
+    }
+}
