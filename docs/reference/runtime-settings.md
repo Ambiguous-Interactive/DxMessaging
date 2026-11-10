@@ -239,6 +239,12 @@ subscriptions from previous Play mode sessions from firing.
 Use `DxMessagingRuntimeSettingsProvider.Current` to read the resource asset or its
 default fallback. The provider clears its cached reference on player subsystem
 initialization and `DxMessagingStaticState.Reset()`, then loads settings on the next read.
+Reset also destroys the default fallback created by the provider. Destruction is immediate
+outside Play mode and completes at the end of the frame in a player. Read `Current` again
+after reset instead of retaining that fallback. Resource assets remain alive.
+Before an Editor assembly reload, the provider immediately releases its owned fallback.
+An Editor-only serialized owner preserves any fallback created by a later reload callback
+until the provider next reads or resets it; it creates no settings asset on disk.
 
 4.0 removes the test-only `DxMessagingRuntimeSettingsProvider.Override` API.
 Configure `Assets/Resources/DxMessagingRuntimeSettings.asset` for application settings.
