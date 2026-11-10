@@ -12,6 +12,81 @@ namespace ResultWriterProbe
     {
         public static void NoOp() { }
 
+        public static string Publication(string filePath, string mode)
+        {
+            TestSuite suite = new TestSuite("publication");
+            TestSuiteResult result = new TestSuiteResult(suite);
+            for (int index = 0; index < 2; ++index)
+            {
+                TestMethod test = new TestMethod(new MethodWrapper(typeof(Probe), nameof(NoOp)));
+                suite.Add(test);
+                TestCaseResult leaf;
+                if ((mode == "throw-first" && index == 0) || (mode == "throw-last" && index == 1))
+                {
+                    leaf = new PublicationResult(
+                        test,
+                        () =>
+                        {
+                            throw new IOException("controlled serializer failure");
+                        }
+                    );
+                }
+                else if (mode == "publish-directory" && index == 1)
+                {
+                    leaf = new PublicationResult(test, () => Directory.CreateDirectory(filePath));
+                }
+                else
+                {
+                    leaf = mode == "custom" ? new CustomResult(test) : new TestCaseResult(test);
+                }
+                leaf.SetResult(ResultState.Success);
+                result.AddResult(leaf);
+            }
+
+            int accelerated = DxmNUnitResultWriter.WriteFile(
+                Header("publication"),
+                result,
+                filePath
+            );
+            int expectedAccelerated = mode == "custom" ? 0 : 2;
+            if (accelerated != expectedAccelerated)
+            {
+                return "Expected accelerated=" + expectedAccelerated + "; actual=" + accelerated;
+            }
+            using (MemoryStream stream = new MemoryStream())
+            {
+                using (StreamWriter text = new StreamWriter(stream))
+                {
+                    using (
+                        XmlWriter writer = XmlWriter.Create(
+                            text,
+                            new XmlWriterSettings { Indent = true }
+                        )
+                    )
+                    {
+                        TNode run = Header("publication");
+                        run.ChildNodes.Add(result.ToXml(true));
+                        run.WriteTo(writer);
+                    }
+                    text.Flush();
+                    byte[] expected = stream.ToArray();
+                    byte[] actual = File.ReadAllBytes(filePath);
+                    if (expected.Length != actual.Length)
+                    {
+                        return "Complete XML byte lengths differ";
+                    }
+                    for (int index = 0; index < expected.Length; ++index)
+                    {
+                        if (expected[index] != actual[index])
+                        {
+                            return "Complete XML bytes differ at " + index;
+                        }
+                    }
+                }
+            }
+            return "equal";
+        }
+
         public static string Compare(
             string payload,
             string status,
@@ -149,6 +224,23 @@ namespace ResultWriterProbe
                 TNode node = base.AddToXml(parent, recursive);
                 node.AddElementWithCDATA("custom-result", "result metadata");
                 return node;
+            }
+        }
+
+        private sealed class PublicationResult : TestCaseResult
+        {
+            private readonly Action _serialize;
+
+            public PublicationResult(TestMethod method, Action serialize)
+                : base(method)
+            {
+                _serialize = serialize;
+            }
+
+            public override TNode AddToXml(TNode parent, bool recursive)
+            {
+                _serialize();
+                return base.AddToXml(parent, recursive);
             }
         }
 

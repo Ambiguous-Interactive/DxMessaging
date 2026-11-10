@@ -25,6 +25,7 @@ namespace DxMessaging.Ci
 {
     using System;
     using System.Globalization;
+    using System.IO;
     using System.Xml;
     using NUnit.Framework.Interfaces;
     using NUnit.Framework.Internal;
@@ -34,6 +35,53 @@ namespace DxMessaging.Ci
     {
         private static readonly bool KnownSchema =
             typeof(TestResult).Assembly.GetName().Version == new Version(3, 5, 0, 0);
+
+        /// <summary>Publishes a fresh report only after serialization and writer disposal succeed.</summary>
+        /// <returns>The number of standard leaves written through the accelerated path.</returns>
+        internal static int WriteFile(TNode run, ITestResult result, string filePath)
+        {
+            string path = Path.GetFullPath(filePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            bool ownsTemporary = false;
+            try
+            {
+                int accelerated;
+                using (
+                    FileStream output = new FileStream(
+                        temporary,
+                        FileMode.CreateNew,
+                        FileAccess.Write,
+                        FileShare.None
+                    )
+                )
+                {
+                    ownsTemporary = true;
+                    using (StreamWriter text = new StreamWriter(output))
+                    using (
+                        XmlWriter writer = XmlWriter.Create(
+                            text,
+                            new XmlWriterSettings { Indent = true, NewLineOnAttributes = false }
+                        )
+                    )
+                    {
+                        accelerated = Write(run, result, writer);
+                    }
+                }
+                // The caller removes stale outputs before each player launch. Refuse an
+                // unexpected existing destination instead of overwriting prior evidence.
+                File.Move(temporary, path);
+                ownsTemporary = false;
+                return accelerated;
+            }
+            finally
+            {
+                if (ownsTemporary)
+                {
+                    File.Delete(temporary);
+                }
+            }
+        }
 
         /// <summary>Preserves the existing test-run wrapper and every result below it.</summary>
         /// <returns>The number of standard leaves written through the accelerated path.</returns>

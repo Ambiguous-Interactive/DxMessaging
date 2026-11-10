@@ -352,7 +352,7 @@ try {
     $callbackSource = New-StandaloneTestCallbackSource `
         -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256 `
         -ResultWriterSource $resultWriterSource
-    Assert-That 'standalone callback invokes the complete NUnit writer' ($callbackSource.Contains('DxMessaging.Ci.DxmNUnitResultWriter.Write(run, result, xw);'))
+    Assert-That 'standalone callback publishes the complete NUnit report' ($callbackSource.Contains('DxMessaging.Ci.DxmNUnitResultWriter.WriteFile(run, result, filePath);'))
     Assert-That 'standalone callback includes the tested writer source verbatim' ($callbackSource.EndsWith($resultWriterSource, [System.StringComparison]::Ordinal))
     $generatedSources = @(
         New-ConfiguratorSource -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256
