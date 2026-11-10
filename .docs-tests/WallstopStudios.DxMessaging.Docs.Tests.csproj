@@ -6,6 +6,22 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Match Unity's NUnit ABI for the generated result-writer compatibility tests. -->
+    <PackageDownload Include="NUnit" Version="[3.5.0]" />
+    <None
+      Include="$(NuGetPackageRoot)nunit/3.5.0/lib/net45/nunit.framework.dll"
+      Link="NUnit35/nunit.framework.dll"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <None
+      Include="../scripts/unity/DxmNUnitResultWriter.cs.txt"
+      Link="DxmNUnitResultWriter.cs.txt"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <None
+      Update="Fixtures/NUnitResultWriterFixture.cs.txt"
+      CopyToOutputDirectory="PreserveNewest"
+    />
     <Compile Include="../scripts/mcp/DxMcpTestRunner.cs.txt" Link="DxMcpTestRunner.cs" />
     <ProjectReference
       Include="../SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.csproj"

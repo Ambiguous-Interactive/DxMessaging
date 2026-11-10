@@ -2157,7 +2157,8 @@ $pilotDefineOption
 function New-StandaloneTestCallbackSource {
     param(
         [string]$CanonicalProfileId = '',
-        [string]$CanonicalProfileSha256 = ''
+        [string]$CanonicalProfileSha256 = '',
+        [Parameter(Mandatory = $true)][string]$ResultWriterSource
     )
 
     @"
@@ -2380,6 +2381,16 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
 
     public void RunStarted(ITest testsToRun)
     {
+        int remoteResultSenders = 0;
+        foreach (MonoBehaviour component in Resources.FindObjectsOfTypeAll<MonoBehaviour>())
+        {
+            if (component != null && component.GetType().FullName == "UnityEngine.TestTools.TestRunner.Callbacks.RemoteTestResultSender")
+            {
+                ++remoteResultSenders;
+            }
+        }
+        Debug.LogFormat(LogType.Log, LogOption.NoStacktrace, null,
+            "DXM: standalone file results transport (remoteResultSenders={0})", remoteResultSenders);
     }
 
     public void TestStarted(ITest test)
@@ -2463,6 +2474,7 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
 
     private static void WriteNUnitXml(ITestResult result, string filePath)
     {
+        System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
         string dir = Path.GetDirectoryName(filePath);
         if (!string.IsNullOrEmpty(dir))
         {
@@ -2473,6 +2485,7 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
             Indent = true,
             NewLineOnAttributes = false
         };
+        int acceleratedLeaves;
         using (StreamWriter sw = File.CreateText(filePath))
         using (XmlWriter xw = XmlWriter.Create(sw, settings))
         {
@@ -2492,12 +2505,15 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
             run.AddAttribute("start-time", result.StartTime.ToString("u"));
             run.AddAttribute("end-time", result.EndTime.ToString("u"));
             run.AddAttribute("duration", result.Duration.ToString());
-            run.ChildNodes.Add(result.ToXml(true));
-            run.WriteTo(xw);
+            acceleratedLeaves = DxMessaging.Ci.DxmNUnitResultWriter.Write(run, result, xw);
         }
+        Debug.LogFormat(LogType.Log, LogOption.NoStacktrace, null,
+            "DXM: serialized standalone results (acceleratedLeaves={0}, durationMs={1})",
+            acceleratedLeaves,
+            stopwatch.Elapsed.TotalMilliseconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
     }
 }
-"@
+"@ + "`n" + $ResultWriterSource
 }
 
 # STANDALONE ONLY. The asmdef for the player-side test callback above. Referencing
@@ -4215,7 +4231,7 @@ EditorSettings:
     if ($Mode -eq 'standalone') {
         $standaloneFiles = @(
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild -CanonicalProfileId $CanonicalProfileId -PilotControl $PilotControl) },
-            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.cs')); Content = (New-StandaloneTestCallbackSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.cs')); Content = (New-StandaloneTestCallbackSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 -ResultWriterSource ([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'DxmNUnitResultWriter.cs.txt')))) },
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.asmdef')); Content = (New-StandaloneTestCallbackAsmdef) }
         )
         foreach ($file in $standaloneFiles) {
@@ -8734,6 +8750,9 @@ try {
             '-nographics',
             '-projectPath', $ProjectPath,
             '-runTests',
+            # Unity's pinned framework otherwise constructs a second full XML/JSON
+            # report for PlayerConnection before invoking our file callback.
+            '-doNotReportTestResultsBackToEditor',
             '-testPlatform', 'StandaloneWindows64',
             '-testResults', $resultsPath,
             '-assemblyNames', $AssemblyNames,
