@@ -2381,6 +2381,16 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
 
     public void RunStarted(ITest testsToRun)
     {
+        int remoteResultSenders = 0;
+        foreach (MonoBehaviour component in Resources.FindObjectsOfTypeAll<MonoBehaviour>())
+        {
+            if (component != null && component.GetType().FullName == "UnityEngine.TestTools.TestRunner.Callbacks.RemoteTestResultSender")
+            {
+                ++remoteResultSenders;
+            }
+        }
+        Debug.LogFormat(LogType.Log, LogOption.NoStacktrace, null,
+            "DXM: standalone file results transport (remoteResultSenders={0})", remoteResultSenders);
     }
 
     public void TestStarted(ITest test)
@@ -8740,6 +8750,9 @@ try {
             '-nographics',
             '-projectPath', $ProjectPath,
             '-runTests',
+            # Unity's pinned framework otherwise constructs a second full XML/JSON
+            # report for PlayerConnection before invoking our file callback.
+            '-doNotReportTestResultsBackToEditor',
             '-testPlatform', 'StandaloneWindows64',
             '-testResults', $resultsPath,
             '-assemblyNames', $AssemblyNames,

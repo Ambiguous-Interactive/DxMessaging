@@ -325,6 +325,29 @@ try {
     }, $true))
     Assert-That 'three successful build paths and shared failure diagnostics retain native inputs' ($nativeCallSites.Count -eq 4)
 
+    $standaloneBuildArguments = @($runnerAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+            $node.Left.Extent.Text -ceq '$buildArgs' -and
+            $node.Right.Extent.Text.Contains("'StandaloneWindows64'")
+    }, $true))
+    Assert-That 'one standalone build command is selected' ($standaloneBuildArguments.Count -eq 1)
+    $buildArguments = @(& {
+        $ProjectPath = 'fixture-project'
+        $resultsPath = 'fixture-results.xml'
+        $AssemblyNames = 'fixture-assemblies'
+        $categoryArgs = @('-testCategory', 'fixture-category')
+        $acceleratorArgs = @()
+        Invoke-Expression $standaloneBuildArguments[0].Right.Extent.Text
+    })
+    Assert-That 'standalone build keeps tests and file results while omitting remote result reporting' (
+        $buildArguments -contains '-doNotReportTestResultsBackToEditor' -and
+        $buildArguments -contains '-runTests' -and
+        $buildArguments -contains 'fixture-results.xml' -and
+        $buildArguments -contains 'fixture-assemblies' -and
+        $buildArguments -contains 'fixture-category'
+    )
+
     $resultWriterSource = [System.IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/unity/DxmNUnitResultWriter.cs.txt'))
     $callbackSource = New-StandaloneTestCallbackSource `
         -CanonicalProfileId $profile.profileId -CanonicalProfileSha256 $profileSha256 `
