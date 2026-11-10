@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.Loader;
 using Microsoft.CodeAnalysis;
@@ -203,6 +204,24 @@ internal sealed class NUnitResultWriterTests
             if (mode.StartsWith("throw-", StringComparison.Ordinal))
             {
                 Assert.That(error!.Message, Is.EqualTo("controlled serializer failure"));
+            }
+            else
+            {
+                Assert.That(
+                    Directory.Exists(path),
+                    Is.EqualTo(mode == "publish-directory"),
+                    "The selected publication conflict must exist."
+                );
+                Assert.That(
+                    new StackTrace(error!)
+                        .GetFrames()
+                        .Any(frame =>
+                            frame.GetMethod()?.DeclaringType == typeof(File)
+                            && frame.GetMethod()?.Name == nameof(File.Move)
+                        ),
+                    Is.True,
+                    "The IOException must come from final publication after serialization and writer disposal."
+                );
             }
             Assert.That(File.Exists(path), Is.EqualTo(mode == "prior-report"));
             if (mode == "prior-report")
