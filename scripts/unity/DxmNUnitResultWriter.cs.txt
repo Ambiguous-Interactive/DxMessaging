@@ -38,7 +38,12 @@ namespace DxMessaging.Ci
 
         /// <summary>Publishes a fresh report only after serialization and writer disposal succeed.</summary>
         /// <returns>The number of standard leaves written through the accelerated path.</returns>
-        internal static int WriteFile(TNode run, ITestResult result, string filePath)
+        internal static int WriteFile(
+            TNode run,
+            ITestResult result,
+            string filePath,
+            Func<Stream, Stream> wrapOutput = null
+        )
         {
             string path = Path.GetFullPath(filePath);
             Directory.CreateDirectory(Path.GetDirectoryName(path));
@@ -57,7 +62,11 @@ namespace DxMessaging.Ci
                 )
                 {
                     ownsTemporary = true;
-                    using (StreamWriter text = new StreamWriter(output))
+                    using (
+                        StreamWriter text = new StreamWriter(
+                            wrapOutput == null ? output : wrapOutput(output)
+                        )
+                    )
                     using (
                         XmlWriter writer = XmlWriter.Create(
                             text,

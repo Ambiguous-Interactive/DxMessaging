@@ -185,6 +185,7 @@ internal sealed class NUnitResultWriterTests
     /// <summary>Never publishes partial XML after serializer or final publication failures.</summary>
     [TestCase("throw-first")]
     [TestCase("throw-last")]
+    [TestCase("throw-dispose")]
     [TestCase("publish-directory")]
     [TestCase("prior-report")]
     public void FailedReportDoesNotReplacePriorEvidence(string mode)
@@ -201,7 +202,11 @@ internal sealed class NUnitResultWriterTests
         try
         {
             IOException? error = Assert.Catch<IOException>(() => _publication!(path, mode));
-            if (mode.StartsWith("throw-", StringComparison.Ordinal))
+            if (mode == "throw-dispose")
+            {
+                Assert.That(error!.Message, Is.EqualTo("controlled stream disposal failure"));
+            }
+            else if (mode.StartsWith("throw-", StringComparison.Ordinal))
             {
                 Assert.That(error!.Message, Is.EqualTo("controlled serializer failure"));
             }
