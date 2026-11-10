@@ -2164,7 +2164,6 @@ function New-StandaloneTestCallbackSource {
     @"
 using System;
 using System.IO;
-using System.Xml;
 using NUnit.Framework.Interfaces;
 using UnityEngine;
 using UnityEngine.Scripting;
@@ -2475,38 +2474,23 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
     private static void WriteNUnitXml(ITestResult result, string filePath)
     {
         System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        string dir = Path.GetDirectoryName(filePath);
-        if (!string.IsNullOrEmpty(dir))
-        {
-            Directory.CreateDirectory(dir);
-        }
-        XmlWriterSettings settings = new XmlWriterSettings
-        {
-            Indent = true,
-            NewLineOnAttributes = false
-        };
-        int acceleratedLeaves;
-        using (StreamWriter sw = File.CreateText(filePath))
-        using (XmlWriter xw = XmlWriter.Create(sw, settings))
-        {
-            int total = result.PassCount + result.FailCount + result.SkipCount + result.InconclusiveCount;
-            TNode run = new TNode("test-run");
-            run.AddAttribute("id", "2");
-            run.AddAttribute("testcasecount", total.ToString());
-            run.AddAttribute("result", result.ResultState.ToString());
-            run.AddAttribute("total", total.ToString());
-            run.AddAttribute("passed", result.PassCount.ToString());
-            run.AddAttribute("failed", result.FailCount.ToString());
-            run.AddAttribute("inconclusive", result.InconclusiveCount.ToString());
-            run.AddAttribute("skipped", result.SkipCount.ToString());
-            run.AddAttribute("asserts", result.AssertCount.ToString());
-            run.AddAttribute("engine-version", "3.5.0.0");
-            run.AddAttribute("clr-version", Environment.Version.ToString());
-            run.AddAttribute("start-time", result.StartTime.ToString("u"));
-            run.AddAttribute("end-time", result.EndTime.ToString("u"));
-            run.AddAttribute("duration", result.Duration.ToString());
-            acceleratedLeaves = DxMessaging.Ci.DxmNUnitResultWriter.Write(run, result, xw);
-        }
+        int total = result.PassCount + result.FailCount + result.SkipCount + result.InconclusiveCount;
+        TNode run = new TNode("test-run");
+        run.AddAttribute("id", "2");
+        run.AddAttribute("testcasecount", total.ToString());
+        run.AddAttribute("result", result.ResultState.ToString());
+        run.AddAttribute("total", total.ToString());
+        run.AddAttribute("passed", result.PassCount.ToString());
+        run.AddAttribute("failed", result.FailCount.ToString());
+        run.AddAttribute("inconclusive", result.InconclusiveCount.ToString());
+        run.AddAttribute("skipped", result.SkipCount.ToString());
+        run.AddAttribute("asserts", result.AssertCount.ToString());
+        run.AddAttribute("engine-version", "3.5.0.0");
+        run.AddAttribute("clr-version", Environment.Version.ToString());
+        run.AddAttribute("start-time", result.StartTime.ToString("u"));
+        run.AddAttribute("end-time", result.EndTime.ToString("u"));
+        run.AddAttribute("duration", result.Duration.ToString());
+        int acceleratedLeaves = DxMessaging.Ci.DxmNUnitResultWriter.WriteFile(run, result, filePath);
         Debug.LogFormat(LogType.Log, LogOption.NoStacktrace, null,
             "DXM: serialized standalone results (acceleratedLeaves={0}, durationMs={1})",
             acceleratedLeaves,

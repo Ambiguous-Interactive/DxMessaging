@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.Loader;
 using Microsoft.CodeAnalysis;
@@ -14,6 +15,7 @@ internal sealed class NUnitResultWriterTests
 {
     private AssemblyLoadContext? _context;
     private Func<string?, string, string, string, string, string, string>? _compare;
+    private Func<string, string, string>? _publication;
 
     /// <summary>Compiles the actual writer and oracle fixture against Unity's NUnit ABI.</summary>
     [OneTimeSetUp]
@@ -63,6 +65,10 @@ internal sealed class NUnitResultWriterTests
         _compare = method.CreateDelegate<
             Func<string?, string, string, string, string, string, string>
         >();
+        _publication = assembly
+            .GetType("ResultWriterProbe.Probe", throwOnError: true)!
+            .GetMethod("Publication", BindingFlags.Public | BindingFlags.Static)!
+            .CreateDelegate<Func<string, string, string>>();
     }
 
     /// <summary>Releases the isolated compatibility assembly and its delegates.</summary>
@@ -70,6 +76,7 @@ internal sealed class NUnitResultWriterTests
     public void ReleaseCompiledFixture()
     {
         _compare = null;
+        _publication = null;
         _context?.Unload();
         _context = null;
     }
@@ -152,5 +159,86 @@ internal sealed class NUnitResultWriterTests
             Is.EqualTo("equal"),
             $"status={status}; label={label}; site={site}; shape={shape}; culture={culture}; payloadLength={payload?.Length}"
         );
+    }
+
+    /// <summary>Publishes byte-identical complete reports with standard and delegated leaves.</summary>
+    [TestCase("standard")]
+    [TestCase("custom")]
+    public void PublishesCompleteReport(string mode)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "dxm-result-" + Guid.NewGuid());
+        string path = Path.Combine(directory, "nested", "results.xml");
+        try
+        {
+            Assert.That(_publication!(path, mode), Is.EqualTo("equal"));
+            Assert.That(
+                Directory.GetFiles(directory, "*.tmp", SearchOption.AllDirectories),
+                Is.Empty
+            );
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>Never publishes partial XML after serializer or final publication failures.</summary>
+    [TestCase("throw-first")]
+    [TestCase("throw-last")]
+    [TestCase("throw-dispose")]
+    [TestCase("publish-directory")]
+    [TestCase("prior-report")]
+    public void FailedReportDoesNotReplacePriorEvidence(string mode)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "dxm-result-" + Guid.NewGuid());
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "results.xml");
+        string unrelated = Path.Combine(directory, "other.tmp");
+        File.WriteAllText(unrelated, "unrelated evidence");
+        if (mode == "prior-report")
+        {
+            File.WriteAllText(path, "prior report");
+        }
+        try
+        {
+            IOException? error = Assert.Catch<IOException>(() => _publication!(path, mode));
+            if (mode == "throw-dispose")
+            {
+                Assert.That(error!.Message, Is.EqualTo("controlled stream disposal failure"));
+            }
+            else if (mode.StartsWith("throw-", StringComparison.Ordinal))
+            {
+                Assert.That(error!.Message, Is.EqualTo("controlled serializer failure"));
+            }
+            else
+            {
+                Assert.That(
+                    Directory.Exists(path),
+                    Is.EqualTo(mode == "publish-directory"),
+                    "The selected publication conflict must exist."
+                );
+                Assert.That(
+                    new StackTrace(error!)
+                        .GetFrames()
+                        .Any(frame =>
+                            frame.GetMethod()?.DeclaringType == typeof(File)
+                            && frame.GetMethod()?.Name == nameof(File.Move)
+                        ),
+                    Is.True,
+                    "The IOException must come from final publication after serialization and writer disposal."
+                );
+            }
+            Assert.That(File.Exists(path), Is.EqualTo(mode == "prior-report"));
+            if (mode == "prior-report")
+            {
+                Assert.That(File.ReadAllText(path), Is.EqualTo("prior report"));
+            }
+            Assert.That(Directory.GetFiles(directory, "*.tmp"), Is.EqualTo(new[] { unrelated }));
+            Assert.That(File.ReadAllText(unrelated), Is.EqualTo("unrelated evidence"));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 }
