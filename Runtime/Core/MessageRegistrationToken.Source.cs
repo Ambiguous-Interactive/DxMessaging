@@ -26,6 +26,8 @@ namespace DxMessaging.Core
         /// accepted after a reentrant lifecycle cancellation remains under this handle; finish it
         /// through Disable, RemoveRegistration or an owning group before enabling again. A move
         /// during this handle's cleanup or with overlapping retry cleanup is rejected before staging changes.
+        /// The retained teardown determines the active bus even after another bus rejects replay.
+        /// Successful outer acceptance restores enabled state after a caught nested move failure.
         /// </remarks>
         public bool RetargetSource(MessageRegistrationHandle handle, InstanceId newSource)
         {
@@ -59,7 +61,9 @@ namespace DxMessaging.Core
             moves.Add(handle);
             long cancellationVersion = _sourceMoveCancellationVersion;
             bool active = slot.Deregistration != null;
-            IMessageBus activeMessageBus = active ? source.ActiveMessageBus : null;
+            IMessageBus activeMessageBus = active
+                ? (slot.Deregistration as MessageHandler.HandlerDeregistration)?.CapturedMessageBus
+                : null;
             try
             {
                 if (active)
@@ -143,10 +147,7 @@ namespace DxMessaging.Core
                     }
                     ExceptionDispatchInfo.Capture(activationFailure).Throw();
                 }
-                if (cancellationVersion != _sourceMoveCancellationVersion)
-                {
-                    _enabled = 0 < _deregistrationCount;
-                }
+                _enabled = 0 < _deregistrationCount;
                 return TryGetSlot(handle.Slot, handle.Id, out slot)
                     && ReferenceEquals(slot.Registration, registration);
             }
@@ -185,7 +186,6 @@ namespace DxMessaging.Core
         private interface ISourceRegistration
         {
             bool SupportsSourceRetargeting { get; }
-            IMessageBus ActiveMessageBus { get; }
             InstanceId Source { get; set; }
         }
     }

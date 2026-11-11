@@ -945,6 +945,295 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Moves the sole accepted spill cleanup on its own bus after reentrant replacement.</summary>
+        /// <remarks>2026-11-11: Independent cleanup wrappers carry their accepted bus even after the original inline action completes.</remarks>
+        [Test]
+        public void AcceptedSpillCleanupRetainsItsOwnBus(
+            [Values(false, true)] bool post,
+            [Values(false, true)] bool action
+        )
+        {
+            string label = $"post={post},action={action}";
+            using CaseState other = new CaseState(false);
+            using CaseState state = new CaseState(false);
+            state.Token.Enable();
+            int calls = 0;
+            MessageRegistrationHandle handle = Register(state.Token, post, action, () => ++calls);
+            state.Bus.OnCleanup = () =>
+            {
+                state.Token.RetargetMessageBus(
+                    other.Bus,
+                    MessageBusRebindMode.PreserveRegistrations
+                );
+                state.Token.Disable();
+                state.Token.Enable();
+            };
+            Assert.Throws<InvalidOperationException>(
+                () => state.Token.RetargetSource(handle, NewSource),
+                label + ": the outer move stops when cleanup accepted a replacement."
+            );
+            Emit(state.Bus, OldSource);
+            Assert.That(calls, Is.Zero, label + ": original inline cleanup completed.");
+            Emit(other.Bus, OldSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(1),
+                label + ": replacement cleanup owns the only accepted binding."
+            );
+            Assert.That(
+                state.Token.RetargetSource(handle, NewSource),
+                Is.True,
+                label + ": a sole spill can move."
+            );
+            Emit(state.Bus, NewSource);
+            Emit(other.Bus, OldSource);
+            Assert.That(calls, Is.EqualTo(1), label + ": no original or stale source remains.");
+            Emit(other.Bus, NewSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(2),
+                label + ": source activation uses the spill cleanup bus."
+            );
+            state.Token.RemoveRegistration(handle);
+            Emit(other.Bus, NewSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(2),
+                label + ": the stable handle still removes its accepted cleanup."
+            );
+        }
+
+        /// <summary>Keeps the bus owned by retained cleanup after nested replay rejects a different bus.</summary>
+        /// <remarks>2026-11-11: A failed attempt replaced the invocation binding even though the original accepted cleanup survived; a retired successful attempt must not replace that owner either.</remarks>
+        [Test]
+        public void RejectedReplayDuringCleanupRetainsTheAcceptedBus(
+            [Values(false, true)] bool post,
+            [Values(false, true)] bool action,
+            [Values(false, true)] bool acceptThenRemove
+        )
+        {
+            string label = $"post={post},action={action},acceptThenRemove={acceptThenRemove}";
+            using CaseState other = new CaseState(false);
+            using CaseState state = new CaseState(false);
+            state.Token.Enable();
+            int calls = 0;
+            MessageRegistrationHandle handle = Register(state.Token, post, action, () => ++calls);
+            Exception rejected = null;
+            state.Bus.OnCleanup = () =>
+            {
+                state.Token.RetargetMessageBus(
+                    other.Bus,
+                    MessageBusRebindMode.PreserveRegistrations
+                );
+                state.Token.Disable();
+                if (acceptThenRemove)
+                {
+                    state.Token.Enable();
+                    state.Token.Disable();
+                }
+                other.Bus.RejectRegistrations = 1;
+                try
+                {
+                    state.Token.Enable();
+                }
+                catch (Exception exception)
+                {
+                    rejected = exception;
+                }
+            };
+            state.Bus.RejectCleanup = 1;
+            Assert.That(
+                Assert.Throws<InvalidOperationException>(() =>
+                    state.Token.RetargetSource(handle, NewSource)
+                ),
+                Is.SameAs(state.Bus.Failure),
+                label + ": original cleanup fails before forwarding."
+            );
+            Assert.That(
+                rejected,
+                Is.SameAs(other.Bus.Failure),
+                label + ": the future bus rejects replay."
+            );
+            Assert.That(
+                state.Token.Enabled,
+                Is.True,
+                label + ": retained original cleanup remains active."
+            );
+            Emit(state.Bus, OldSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(1),
+                label + ": the original accepted bus still delivers."
+            );
+            Emit(other.Bus, OldSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(1),
+                label + ": rejected or retired attempts do not deliver."
+            );
+            Assert.That(
+                state.Token.RetargetSource(handle, NewSource),
+                Is.True,
+                label + ": retry keeps its handle."
+            );
+            Emit(state.Bus, OldSource);
+            Emit(state.Bus, NewSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(2),
+                label + ": the move uses the bus that owns retained cleanup."
+            );
+            Emit(other.Bus, NewSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(2),
+                label + ": a rejected binding cannot steal source activation."
+            );
+            state.Token.Disable();
+            state.Token.Enable();
+            Emit(state.Bus, NewSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(2),
+                label + ": explicit replay retires the original bus."
+            );
+            Emit(other.Bus, NewSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(3),
+                label + ": later explicit replay uses the configured bus."
+            );
+        }
+
+        /// <summary>Restores enabled state when an outer move accepts after a nested move fails.</summary>
+        /// <remarks>2026-11-11: A caught nested activation/recovery failure detached the last cleanup and cleared Enabled; outer acceptance must restore it without duplicating registrations on Enable.</remarks>
+        [Test]
+        public void SuccessfulOuterMoveRestoresEnabledAfterNestedFailure(
+            [Values(false, true)] bool post,
+            [Values(false, true)] bool action,
+            [Values(1, 2)] int failures
+        )
+        {
+            string label = $"post={post},action={action},failures={failures}";
+            using CaseState state = new CaseState(false);
+            state.Token.Enable();
+            int outerCalls = 0;
+            int innerCalls = 0;
+            int peerCalls = 0;
+            MessageRegistrationHandle outer = Register(
+                state.Token,
+                post,
+                action,
+                () => ++outerCalls,
+                7
+            );
+            MessageRegistrationHandle inner = Register(
+                state.Token,
+                post,
+                action,
+                () => ++innerCalls,
+                11
+            );
+            InstanceId alternate = new InstanceId(974);
+            Exception nested = null;
+            state.Bus.OnCleanup = () =>
+            {
+                state.Bus.RejectRegistrations = failures;
+                try
+                {
+                    state.Token.RetargetSource(inner, alternate);
+                }
+                catch (Exception exception)
+                {
+                    nested = exception;
+                }
+            };
+            Assert.That(
+                state.Token.RetargetSource(outer, NewSource),
+                Is.True,
+                label + ": outer activation succeeds."
+            );
+            if (failures == 1)
+            {
+                Assert.That(
+                    nested,
+                    Is.SameAs(state.Bus.Failure),
+                    label + ": nested recovery succeeds after one rejection."
+                );
+            }
+            else
+            {
+                Assert.That(
+                    nested,
+                    Is.TypeOf<AggregateException>(),
+                    label + ": both nested attempts fail."
+                );
+                Assert.That(
+                    ((AggregateException)nested).InnerExceptions,
+                    Has.Count.EqualTo(2),
+                    label
+                );
+            }
+            Assert.That(
+                state.Token.Enabled,
+                Is.True,
+                label + ": accepted outer cleanup restores enabled state."
+            );
+            Emit(state.Bus, OldSource);
+            Assert.That(
+                innerCalls,
+                Is.EqualTo(failures == 1 ? 1 : 0),
+                label + ": only successful nested recovery delivers."
+            );
+            Assert.That(
+                outerCalls,
+                Is.Zero,
+                label + ": outer staging moved away from the old source."
+            );
+            Emit(state.Bus, NewSource);
+            Assert.That(
+                outerCalls,
+                Is.EqualTo(1),
+                label + ": outer acceptance is active exactly once."
+            );
+            _ = state.Token.RegisterUntargeted<PeerMessage>((in PeerMessage _) => ++peerCalls);
+            PeerMessage peer = default;
+            state.Bus.UntargetedBroadcast(ref peer);
+            Assert.That(
+                peerCalls,
+                Is.EqualTo(1),
+                label + ": new registrations activate immediately."
+            );
+            state.Token.Enable();
+            Assert.That(
+                state.Token.RetargetSource(outer, alternate),
+                Is.True,
+                label + ": Enable cannot create overlapping cleanup."
+            );
+            Emit(state.Bus, NewSource);
+            Emit(state.Bus, alternate);
+            Assert.That(
+                outerCalls,
+                Is.EqualTo(2),
+                label + ": the original handle moves again without duplicate replay."
+            );
+            state.Token.Disable();
+            state.Token.Enable();
+            int previousInner = innerCalls;
+            Emit(state.Bus, OldSource);
+            Assert.That(
+                innerCalls,
+                Is.EqualTo(previousInner + 1),
+                label + ": explicit replay recovers nested staging."
+            );
+            Emit(state.Bus, alternate);
+            Assert.That(
+                outerCalls,
+                Is.EqualTo(3),
+                label + ": explicit replay retains the final outer source."
+            );
+        }
+
         private static void Emit(IMessageBus bus, InstanceId source)
         {
             ProbeMessage message = default;

@@ -3258,6 +3258,9 @@ namespace DxMessaging.Core
             private MessageHandler.TypedHandler<T>.TypedHandlerDeregistrationState _typedDeregistration;
             private bool _hasInlineDeregistration;
 
+            internal override IMessageBus CapturedMessageBus =>
+                _hasInlineDeregistration ? _typedDeregistration.CapturedMessageBus : null;
+
             protected Registration(MessageRegistrationToken token)
                 : base(token) { }
 
@@ -3652,8 +3655,6 @@ namespace DxMessaging.Core
             private InstanceId _context;
             private readonly object _userHandler;
             private readonly int _priority;
-
-            public IMessageBus ActiveMessageBus => _binding?.MessageBus;
 
             public bool SupportsSourceRetargeting =>
                 _kind == RegistrationKind.BroadcastHandlerAction
