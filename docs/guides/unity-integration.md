@@ -120,6 +120,64 @@ public sealed class InventoryUI : UnityEngine.MonoBehaviour
 }
 ```
 
+### Composable lifecycle ownership (4.0.0)
+
+Use `MessagingLifecycle` when your class already inherits another base, such as
+`RuntimeSingleton<T>`, and cannot inherit `MessageAwareComponent`. The manual example above
+keeps both the component and token. The helper below owns those references together and
+keeps failed cleanup available for retry. Keep your existing base class and follow its own
+base-call requirements.
+
+```csharp
+using DxMessaging.Core.Messages;
+using DxMessaging.Unity;
+using UnityEngine;
+
+public readonly struct InventoryChanged : IUntargetedMessage<InventoryChanged>
+{
+    public System.Type MessageType => typeof(InventoryChanged);
+}
+
+[RequireComponent(typeof(MessagingComponent))]
+public sealed class InventoryLifecycleUI : MonoBehaviour
+{
+    private MessagingLifecycle _messages;
+
+    private void Awake()
+    {
+        MessagingComponent component = GetComponent<MessagingComponent>();
+        _messages = component.CreateLifecycleBound(this);
+        _ = _messages.Token.RegisterUntargeted<InventoryChanged>(OnInventoryChanged);
+    }
+
+    private void OnEnable() => _messages.Enable();
+    private void OnDisable() => _messages?.Disable();
+    private void OnDestroy() => _messages?.Dispose();
+
+    private void OnInventoryChanged(in InventoryChanged message)
+    {
+        Debug.Log("Inventory changed");
+    }
+}
+```
+
+The helper requires explicit forwarding from all four callbacks; it does not install callbacks.
+`DXMSG015` reports missing initialization, activation, deactivation, or disposal for owned helper
+fields. It follows source forwarding methods and inherited callbacks, but does not prove
+conditional reachability, aliases, interface dispatch, or behavior in referenced binaries.
+
+Configure the `MessagingComponent` bus or provider before creating the helper. Existing
+`Configure` calls and active bus migration also apply to its captured token. Disabling keeps
+staged handlers for pooling; successful disposal removes them and releases the listener cache.
+A released or replaced token cannot be re-enabled through a stale helper, and stale disposal
+never releases its replacement. Calls for the same listener capture the same cached token.
+
+A custom bus can throw during cleanup. Retain the helper and retry `Dispose` after the bus
+recovers. Work accepted by a cleanup callback can also leave `IsDisposed` false without an
+exception. `Token` remains available until final cleanup succeeds. Afterward, `Token` and
+`Enable` throw `ObjectDisposedException`; `Disable` and repeated `Dispose` are harmless.
+For a never-active host, dispose explicitly because Unity may not send `OnDestroy`.
+
 ## Manual enable/disable (advanced)
 
 ```csharp

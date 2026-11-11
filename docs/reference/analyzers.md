@@ -23,6 +23,7 @@ DxMessaging ships source generators and a Roslyn analyzer that report authoring 
 | [`DXMSG012`](#dxmsg012-cannot-infer-primary-constructor-arguments)               | Error    | Cannot infer primary constructor arguments                                            | `DxAutoConstructorGenerator`            |
 | [`DXMSG013`](#dxmsg013-field-constructor-conflicts-with-record-copy-constructor) | Error    | Field constructor conflicts with record copy constructor                              | `DxAutoConstructorGenerator`            |
 | [`DXMSG014`](#dxmsg014-aot-registration-requires-an-accessible-closed-message)   | Error    | AOT registration requires an accessible closed message                                | `DxMessageIdGenerator`                  |
+| [`DXMSG015`](#dxmsg015-missing-messaging-lifecycle-forwarding)                   | Warning  | A MonoBehaviour does not forward a required callback to its owned lifecycle           | `MessagingLifecycleAnalyzer`            |
 
 > All diagnostic IDs can be customised per project in `.editorconfig`. For example,
 > `dotnet_diagnostic.DXMSG006.severity = error` makes a missing base call a build error.
@@ -651,3 +652,18 @@ for a complete assembly-attribute example.
 - [Inheritance and base calls](../guides/unity-integration.md#important-inheritance-and-base-calls) -- the inheritance contract this analyzer enforces.
 - [Unity Integration](../guides/unity-integration.md) -- broader Unity-side guidance for inheritance and lifecycle.
 - [Quick Reference](quick-reference.md) -- concise listing of all diagnostic IDs.
+
+## DXMSG015: Missing messaging lifecycle forwarding
+
+Available in 4.0.0. A `MonoBehaviour` with an instance `MessagingLifecycle` field must assign
+that field from `CreateLifecycleBound(this)` in `Awake`, call its `Enable` from `OnEnable`,
+call its `Disable` from `OnDisable`, and call its `Dispose` from `OnDestroy`.
+
+The analyzer follows source forwarding methods, inherited callbacks, and explicit base calls.
+A call on another listener's helper or through the raw token does not satisfy the contract.
+Uninvoked lambda and local function bodies do not count. The analysis does not prove conditional
+reachability or arbitrary aliases, interface dispatch, or forwarding in referenced assemblies.
+
+See the [composable lifecycle example](../guides/unity-integration.md#composable-lifecycle-ownership-400)
+for the complete callback pattern. Configure the existing `MessagingComponent` bus or provider
+before creating the helper. Retry failed cleanup through the helper while `IsDisposed` is false.

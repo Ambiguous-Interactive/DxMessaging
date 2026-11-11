@@ -104,17 +104,36 @@ internal static class DocsSnippetCompiler
         return root.FullName;
     }
 
-    /// <summary>Imports recorder API signatures from production source and replaces executable members with stubs.</summary>
+    /// <summary>Imports public recorder and lifecycle declarations directly from shipped source.</summary>
     private static SyntaxTree BuildTestSupportApi()
     {
-        string path = Path.Combine(
-            FindRepositoryRoot(),
-            "Runtime",
-            "Testing",
-            "MessageRecorder.cs"
+        string[] files =
+        {
+            "Runtime/Testing/MessageRecorder.cs",
+            "Runtime/Unity/MessagingLifecycle.cs",
+            "Runtime/Unity/MessagingComponent.cs",
+        };
+        CompilationUnitSyntax declarations = SyntaxFactory
+            .CompilationUnit()
+            .WithMembers(
+                SyntaxFactory.List<MemberDeclarationSyntax>(files.Select(BuildSupportApiScope))
+            );
+        return CSharpSyntaxTree.ParseText(
+            declarations.NormalizeWhitespace().ToFullString(),
+            ParseOptions,
+            "ProductionSupportApi.cs"
         );
+    }
+
+    /// <summary>Replaces implementation bodies while preserving public parameter and return contracts.</summary>
+    private static NamespaceDeclarationSyntax BuildSupportApiScope(string relativePath)
+    {
+        string path = Path.Combine(FindRepositoryRoot(), relativePath);
         CompilationUnitSyntax source = CSharpSyntaxTree
-            .ParseText(File.ReadAllText(path), ParseOptions)
+            .ParseText(
+                File.ReadAllText(path),
+                ParseOptions.WithPreprocessorSymbols("UNITY_2021_3_OR_NEWER")
+            )
             .GetCompilationUnitRoot();
         NamespaceDeclarationSyntax scope = source
             .Members.OfType<NamespaceDeclarationSyntax>()
@@ -134,6 +153,16 @@ internal static class DocsSnippetCompiler
             List<MemberDeclarationSyntax> members = new();
             foreach (MemberDeclarationSyntax member in type.Members)
             {
+                if (
+                    type.Identifier.ValueText == "MessagingComponent"
+                    && (
+                        member is not MethodDeclarationSyntax factory
+                        || factory.Identifier.ValueText != "CreateLifecycleBound"
+                    )
+                )
+                {
+                    continue;
+                }
                 if (
                     member is MethodDeclarationSyntax method
                     && method.Modifiers.Any(SyntaxKind.PublicKeyword)
@@ -177,17 +206,18 @@ internal static class DocsSnippetCompiler
                         .WithBody(SyntaxFactory.Block())
                 );
             }
-            types.Add(type.WithMembers(SyntaxFactory.List(members)));
+            types.Add(type.WithAttributeLists(default).WithMembers(SyntaxFactory.List(members)));
         }
-        return CSharpSyntaxTree.Create(
-            source.WithMembers(
-                SyntaxFactory.SingletonList<MemberDeclarationSyntax>(
-                    scope.WithMembers(SyntaxFactory.List(types))
+        return SyntaxFactory
+            .NamespaceDeclaration(scope.Name)
+            .WithUsings(
+                SyntaxFactory.List(
+                    scope.Usings.Where(directive =>
+                        directive.Name?.ToString() is not "UnityEngine.Serialization"
+                    )
                 )
-            ),
-            ParseOptions,
-            path: path
-        );
+            )
+            .WithMembers(SyntaxFactory.List(types));
     }
 
     /// <summary>Imports bus API declarations while removing production implementation details from documentation stubs.</summary>
@@ -926,7 +956,16 @@ namespace UnityEngine
         public GameObject() { }
         public GameObject(string name) { }
     }
-    public class Component : Object { public GameObject gameObject => default; }
+    public class Component : Object
+    {
+        public GameObject gameObject => default;
+        public T GetComponent<T>() => default;
+    }
+    [AttributeUsage(AttributeTargets.Class)]
+    public sealed class RequireComponent : Attribute
+    {
+        public RequireComponent(Type requiredType) { }
+    }
     public class MonoBehaviour : Component { }
 
     [AttributeUsage(AttributeTargets.Field)]

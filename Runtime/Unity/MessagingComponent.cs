@@ -142,6 +142,22 @@ namespace DxMessaging.Unity
         }
 
         /// <summary>
+        /// Creates an owner that forwards Unity lifecycle calls to this listener's token.
+        /// </summary>
+        /// <param name="listener">A listener attached to this GameObject.</param>
+        /// <returns>An owner for the token returned by <see cref="Create(MonoBehaviour)"/>.</returns>
+        /// <remarks>
+        /// Assign the result in Awake, configure its Token, then forward OnEnable, OnDisable,
+        /// and OnDestroy to Enable, Disable, and Dispose. This does not install Unity callbacks.
+        /// Repeated calls for the same listener capture its existing token, not independent subscriptions.
+        /// The component's configured bus or provider also applies to this owner.
+        /// </remarks>
+        public MessagingLifecycle CreateLifecycleBound(MonoBehaviour listener)
+        {
+            return new MessagingLifecycle(this, listener, Create(listener));
+        }
+
+        /// <summary>
         /// Overrides the default message bus used when new handlers are created.
         /// </summary>
         /// <param name="messageBus">Message bus to prefer. Pass <c>null</c> to fall back to the global bus.</param>

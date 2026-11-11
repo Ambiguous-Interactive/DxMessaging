@@ -1534,6 +1534,29 @@ internal sealed class DocsSnippetCompilationTests
         );
     }
 
+    /// <summary>Compiles the complete lifecycle guide against imported production helper declarations.</summary>
+    [Test]
+    public void ComposableLifecycleGuideUsesProductionApiContracts()
+    {
+        string path = Path.Combine(ResolveRepoRoot(), "docs/guides/unity-integration.md");
+        string source = ExtractCodeBlocks(path, "csharp")
+            .Single(block =>
+                block.Contains("class InventoryLifecycleUI", StringComparison.Ordinal)
+            );
+        Diagnostic[] diagnostics = DocsSnippetCompiler
+            .CompileSnippet(source)
+            .Where(d =>
+                d.Severity == DiagnosticSeverity.Error || d.Severity == DiagnosticSeverity.Warning
+            )
+            .ToArray();
+        Assert.That(
+            diagnostics,
+            Is.Empty,
+            "The complete lifecycle example must compile without context-only exclusions: "
+                + string.Join("\n", diagnostics.AsEnumerable())
+        );
+    }
+
     private static IEnumerable<TestCaseData> GetDocumentationSnippets()
     {
         int testIndex = 0;

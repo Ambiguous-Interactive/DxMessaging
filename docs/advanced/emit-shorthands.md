@@ -356,7 +356,7 @@ Use the built-in diagnostics:
 // Add to any Unity component
 using DxMessaging.Unity;
 
-public class DebugListener : MessagingComponent
+public sealed class DebugListener : MessageAwareComponent
 {
     // Inspector will show recent emissions and registrations
 }

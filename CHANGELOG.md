@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add composable Unity messaging lifecycle ownership with retryable cleanup, stale-token protection,
+  and `DXMSG015` callback forwarding diagnostics for classes with another base
+  ([#737](https://github.com/Ambiguous-Interactive/DxMessaging/issues/737)).
 - Add test-only message recorders with scoped subscriptions and read-only captures for all three routes
   ([#740](https://github.com/Ambiguous-Interactive/DxMessaging/issues/740)).
 - Add `DxAotMessage` assembly selections so closed generic messages can dispatch untyped first on IL2CPP
