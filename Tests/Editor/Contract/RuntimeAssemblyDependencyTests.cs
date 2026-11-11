@@ -62,6 +62,26 @@ namespace DxMessaging.Tests.Editor.Contract
             }
         }
 
+        /// <summary>Test recorders are available to tests and excluded from ordinary players.</summary>
+        [TestCase(AssembliesType.Editor, true)]
+        [TestCase(AssembliesType.Player, true)]
+        [TestCase(AssembliesType.PlayerWithoutTestAssemblies, false)]
+        public void MessageRecorderAssemblyFollowsTestBuildBoundary(
+            AssembliesType kind,
+            bool expected
+        )
+        {
+            const string supportAssembly = "WallstopStudios.DxMessaging.Testing";
+            bool included = CompilationPipeline
+                .GetAssemblies(kind)
+                .Any(assembly => assembly.name == supportAssembly);
+            Assert.That(
+                included,
+                Is.EqualTo(expected),
+                kind + ": message recorders belong only to test-enabled compilations."
+            );
+        }
+
         [Test]
         public void RuntimeAssemblyDoesNotReferenceOptionalImguiModule()
         {
