@@ -89,7 +89,7 @@ dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release
 Reference `.net/DxMessaging.csproj` from a .NET application. This source-build target
 is separate from UPM installation; the repository does not publish a NuGet package.
 The runtime project compiles `Runtime/` without Unity symbols or Unity assemblies.
-The tests run on .NET 9 and share the message-kind scenarios and leak watcher used by
+The tests run on .NET 10 and share the message-kind scenarios and leak watcher used by
 Unity tests. The checked-in analyzer payload supplies runtime message generation. A project reference
 does not forward analyzers: consumer projects using `[Dx*Message]` attributes must also
 reference `Runtime/Analyzers/*.dll` as MSBuild `Analyzer` items. Implement the message

@@ -181,12 +181,6 @@ validate_dotnet() {
         echo "        $line"
     done
 
-    if dotnet --list-sdks | grep -q "^9\.[0-9]\+\."; then
-        log_success ".NET 9 SDK found"
-    else
-        log_warning ".NET 9 SDK not detected (expected from base image)."
-    fi
-
     if dotnet --list-sdks | grep -q "^10\.[0-9]\+\."; then
         log_success ".NET 10 SDK found"
     else
