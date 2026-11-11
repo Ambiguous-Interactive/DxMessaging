@@ -133,30 +133,33 @@ using DxMessaging.Core.Messages;
 using DxMessaging.Unity;
 using UnityEngine;
 
-public readonly struct InventoryChanged : IUntargetedMessage<InventoryChanged>
+namespace Examples.Inventory
 {
-    public System.Type MessageType => typeof(InventoryChanged);
-}
-
-[RequireComponent(typeof(MessagingComponent))]
-public sealed class InventoryLifecycleUI : MonoBehaviour
-{
-    private MessagingLifecycle _messages;
-
-    private void Awake()
+    public readonly struct InventoryChanged : IUntargetedMessage<InventoryChanged>
     {
-        MessagingComponent component = GetComponent<MessagingComponent>();
-        _messages = component.CreateLifecycleBound(this);
-        _ = _messages.Token.RegisterUntargeted<InventoryChanged>(OnInventoryChanged);
+        public System.Type MessageType => typeof(InventoryChanged);
     }
 
-    private void OnEnable() => _messages.Enable();
-    private void OnDisable() => _messages?.Disable();
-    private void OnDestroy() => _messages?.Dispose();
-
-    private void OnInventoryChanged(in InventoryChanged message)
+    [RequireComponent(typeof(MessagingComponent))]
+    public sealed class InventoryLifecycleUI : MonoBehaviour
     {
-        Debug.Log("Inventory changed");
+        private MessagingLifecycle _messages;
+
+        private void Awake()
+        {
+            MessagingComponent component = GetComponent<MessagingComponent>();
+            _messages = component.CreateLifecycleBound(this);
+            _ = _messages.Token.RegisterUntargeted<InventoryChanged>(OnInventoryChanged);
+        }
+
+        private void OnEnable() => _messages.Enable();
+        private void OnDisable() => _messages?.Disable();
+        private void OnDestroy() => _messages?.Dispose();
+
+        private void OnInventoryChanged(in InventoryChanged message)
+        {
+            Debug.Log("Inventory changed");
+        }
     }
 }
 ```
