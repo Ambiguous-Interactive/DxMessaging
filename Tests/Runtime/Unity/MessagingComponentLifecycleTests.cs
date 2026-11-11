@@ -36,6 +36,7 @@ namespace DxMessaging.Tests.Runtime.Unity
     public sealed class MessagingComponentLifecycleTests : MessagingTestBase
     {
         /// <summary>Moves a group-owned source handle through the GameObject overload.</summary>
+        /// <remarks>2026-11-11: the null overload must select EmptyId before Unity identity conversion dereferences its input.</remarks>
         [Test]
         public void RetargetGameObjectSourceKeepsTheGroupOwnedHandle(
             [Values(false, true)] bool emptySource
@@ -67,7 +68,7 @@ namespace DxMessaging.Tests.Runtime.Unity
                 $"emptySource={emptySource}: GameObject conversion preserves the registration handle."
             );
             InstanceId previousId = previous;
-            InstanceId nextId = next;
+            InstanceId nextId = emptySource ? InstanceId.EmptyId : (InstanceId)next;
             SimpleBroadcastMessage message = new SimpleBroadcastMessage();
             bus.SourcedBroadcast(ref previousId, ref message);
             bus.SourcedBroadcast(ref nextId, ref message);

@@ -150,7 +150,10 @@ namespace DxMessaging.Core
             UnityEngine.GameObject newSource
         )
         {
-            return RetargetSource(handle, (InstanceId)newSource);
+            return RetargetSource(
+                handle,
+                newSource == null ? InstanceId.EmptyId : (InstanceId)newSource
+            );
         }
 #endif
 
