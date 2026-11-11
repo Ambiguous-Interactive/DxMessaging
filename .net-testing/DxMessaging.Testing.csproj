@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <AssemblyName>WallstopStudios.DxMessaging.Testing</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningLevel>9999</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../.net/DxMessaging.csproj" />
+    <Compile Include="../Runtime/Testing/MessageRecorder.cs" Link="MessageRecorder.cs" />
+  </ItemGroup>
+</Project>

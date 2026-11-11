@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add test-only message recorders with scoped subscriptions and read-only captures for all three routes
+  ([#740](https://github.com/Ambiguous-Interactive/DxMessaging/issues/740)).
 - Add `DxAotMessage` assembly selections so closed generic messages can dispatch untyped first on IL2CPP
   ([#734](https://github.com/Ambiguous-Interactive/DxMessaging/issues/734)).
 - Add replayable native Editor settings cache evidence, retaining stopped measurements,

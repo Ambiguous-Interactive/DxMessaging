@@ -6,6 +6,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile
+      Include="../Tests/Runtime/Core/MessageRecorderTests.cs"
+      Link="MessageRecorderTests.cs"
+    />
+    <Compile
       Include="../Tests/Editor/Contract/TypedSlotIndexCoverageTests.cs"
       Link="TypedSlotIndexCoverageTests.cs"
     />
@@ -101,6 +105,7 @@
       Link="MessageHandlerGlobalBusTests.cs"
     />
     <ProjectReference Include="../.net/DxMessaging.csproj" />
+    <ProjectReference Include="../.net-testing/DxMessaging.Testing.csproj" />
     <Compile
       Include="../Tests/Runtime/Core/CyclicBufferReentrantRemovalTests.cs"
       Link="CyclicBufferReentrantRemovalTests.cs"

@@ -23,6 +23,7 @@ internal static class DocsSnippetCompiler
         BuildCoreReferences();
 
     private static readonly Lazy<SyntaxTree> BusFirstApi = new(BuildBusFirstApi);
+    private static readonly Lazy<SyntaxTree> TestSupportApi = new(BuildTestSupportApi);
 
     private static readonly string[] DefaultDocNamespaces =
     {
@@ -53,7 +54,7 @@ internal static class DocsSnippetCompiler
 
         CSharpCompilation compilation = CSharpCompilation.Create(
             assemblyName: "DocsSnippetCompilation",
-            syntaxTrees: new[] { stubs, BusFirstApi.Value, userTree },
+            syntaxTrees: new[] { stubs, BusFirstApi.Value, TestSupportApi.Value, userTree },
             references: CoreReferences,
             options: CompilationOptions
         );
@@ -87,7 +88,7 @@ internal static class DocsSnippetCompiler
             .AddRange(documentationDiagnostics);
     }
 
-    private static SyntaxTree BuildBusFirstApi()
+    private static string FindRepositoryRoot()
     {
         DirectoryInfo? root = new(AppContext.BaseDirectory);
         while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
@@ -99,8 +100,98 @@ internal static class DocsSnippetCompiler
             throw new DirectoryNotFoundException("Locate the production bus-first declarations.");
         }
 
+        return root.FullName;
+    }
+
+    private static SyntaxTree BuildTestSupportApi()
+    {
         string path = Path.Combine(
-            root.FullName,
+            FindRepositoryRoot(),
+            "Runtime",
+            "Testing",
+            "MessageRecorder.cs"
+        );
+        CompilationUnitSyntax source = CSharpSyntaxTree
+            .ParseText(File.ReadAllText(path), ParseOptions)
+            .GetCompilationUnitRoot();
+        NamespaceDeclarationSyntax scope = source
+            .Members.OfType<NamespaceDeclarationSyntax>()
+            .Single();
+        List<MemberDeclarationSyntax> types = new();
+        BlockSyntax stubBody = SyntaxFactory.Block(
+            SyntaxFactory.ThrowStatement(
+                SyntaxFactory
+                    .ObjectCreationExpression(
+                        SyntaxFactory.ParseTypeName("global::System.NotSupportedException")
+                    )
+                    .WithArgumentList(SyntaxFactory.ArgumentList())
+            )
+        );
+        foreach (ClassDeclarationSyntax type in scope.Members.OfType<ClassDeclarationSyntax>())
+        {
+            List<MemberDeclarationSyntax> members = new();
+            foreach (MemberDeclarationSyntax member in type.Members)
+            {
+                if (
+                    member is MethodDeclarationSyntax method
+                    && method.Modifiers.Any(SyntaxKind.PublicKeyword)
+                )
+                {
+                    members.Add(
+                        method
+                            .WithBody(stubBody)
+                            .WithExpressionBody(null)
+                            .WithSemicolonToken(default)
+                    );
+                }
+                else if (
+                    member is PropertyDeclarationSyntax property
+                    && property.Modifiers.Any(SyntaxKind.PublicKeyword)
+                )
+                {
+                    members.Add(
+                        property
+                            .WithAccessorList(null)
+                            .WithInitializer(null)
+                            .WithExpressionBody(
+                                SyntaxFactory.ArrowExpressionClause(
+                                    SyntaxFactory.LiteralExpression(
+                                        SyntaxKind.DefaultLiteralExpression
+                                    )
+                                )
+                            )
+                            .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
+                    );
+                }
+            }
+            if (!type.Modifiers.Any(SyntaxKind.StaticKeyword))
+            {
+                members.Add(
+                    SyntaxFactory
+                        .ConstructorDeclaration(type.Identifier)
+                        .WithModifiers(
+                            SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword))
+                        )
+                        .WithBody(SyntaxFactory.Block())
+                );
+            }
+            types.Add(type.WithMembers(SyntaxFactory.List(members)));
+        }
+        return CSharpSyntaxTree.Create(
+            source.WithMembers(
+                SyntaxFactory.SingletonList<MemberDeclarationSyntax>(
+                    scope.WithMembers(SyntaxFactory.List(types))
+                )
+            ),
+            ParseOptions,
+            path: path
+        );
+    }
+
+    private static SyntaxTree BuildBusFirstApi()
+    {
+        string path = Path.Combine(
+            FindRepositoryRoot(),
             "Runtime",
             "Core",
             "Extensions",
