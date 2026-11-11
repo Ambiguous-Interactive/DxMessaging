@@ -174,7 +174,8 @@ Configure the `MessagingComponent` bus or provider before creating the helper. E
 staged handlers for pooling; successful disposal removes them and releases the listener cache.
 Activation stops when component destruction begins. A released or replaced token cannot be
 re-enabled through a stale helper, and stale disposal
-never releases its replacement. Calls for the same listener capture the same cached token.
+never releases its replacement. Keep one lifecycle owner per listener token. A second factory call throws `InvalidOperationException`
+until successful disposal or `Release` removes that token. Failed cleanup keeps ownership reserved.
 
 A custom bus can throw during cleanup. Retain the helper and retry `Dispose` after the bus
 recovers. Work accepted by a cleanup callback can also leave `IsDisposed` false without an

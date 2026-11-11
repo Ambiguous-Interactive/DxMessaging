@@ -585,6 +585,105 @@ namespace DxMessaging.Tests.Runtime.Unity
             );
         }
 
+        /// <summary>Reserves one lifecycle owner per token until its cleanup successfully releases it.</summary>
+        [Test]
+        public void DuplicateLifecycleOwnershipIsRejectedUntilSuccessfulRelease(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool failedCleanup
+        )
+        {
+            Bus inner = new();
+            CallbackBus bus = new(inner);
+            using LeakWatcher leaks = new(bus: inner, label: scenario.Kind.ToString());
+            MessagingComponent component = Create(bus, out ManualListenerComponent listener);
+            MessagingLifecycle lifecycle = component.CreateLifecycleBound(listener);
+            MessageRegistrationToken token = lifecycle.Token;
+            int calls = 0;
+            Register(scenario, token, () => ++calls);
+            lifecycle.Enable();
+            try
+            {
+                Assert.Throws<InvalidOperationException>(
+                    () => component.CreateLifecycleBound(listener),
+                    "A second disposable owner must not capture the same token."
+                );
+                Emit(scenario, bus);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(1),
+                    $"[{scenario.Kind}] Rejected ownership must preserve the first subscription."
+                );
+                if (failedCleanup)
+                {
+                    bus.FailCleanup = true;
+                    Assert.Throws<InvalidOperationException>(
+                        () => lifecycle.Dispose(),
+                        "The declared cleanup failure must reach the owner."
+                    );
+                    Assert.Throws<InvalidOperationException>(
+                        () => component.CreateLifecycleBound(listener),
+                        "Pending cleanup must keep exclusive ownership reserved."
+                    );
+                    bus.FailCleanup = false;
+                }
+                lifecycle.Dispose();
+                using MessagingLifecycle replacement = component.CreateLifecycleBound(listener);
+                Assert.That(
+                    replacement.Token,
+                    Is.Not.SameAs(token),
+                    "Successful release must permit a fresh lifecycle and token."
+                );
+                Assert.That(
+                    component._registeredListeners.Count,
+                    Is.EqualTo(1),
+                    "Only the replacement owner may remain cached."
+                );
+            }
+            finally
+            {
+                bus.FailCleanup = false;
+                lifecycle.Dispose();
+            }
+        }
+
+        /// <summary>Releases the token held by the component's optional lifecycle ownership reservation.</summary>
+        [Test]
+        [Category("MemoryReclaim")]
+        public void SuccessfulLifecycleReleaseDoesNotRetainItsToken()
+        {
+            MessagingComponent component = Create(new Bus(), out ManualListenerComponent listener);
+            WeakReference token = CreateReleasedToken(component, listener);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            Assert.That(
+                token.IsAlive,
+                Is.False,
+                "A live component must not retain a successfully released lifecycle token."
+            );
+            Assert.That(
+                component._registeredListeners.Count,
+                Is.Zero,
+                "The listener cache must also release the owner."
+            );
+        }
+
+        /// <summary>Ends local token lifetimes before checking whether the live component retains them.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
+        private static WeakReference CreateReleasedToken(
+            MessagingComponent component,
+            ManualListenerComponent listener
+        )
+        {
+            MessagingLifecycle lifecycle = component.CreateLifecycleBound(listener);
+            WeakReference token = new(lifecycle.Token);
+            lifecycle.Dispose();
+            return token;
+        }
+
         /// <summary>Builds an explicitly configured test host and tracks its destruction.</summary>
         private MessagingComponent Create(IMessageBus bus, out ManualListenerComponent listener)
         {

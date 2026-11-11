@@ -246,6 +246,45 @@ public class Listener : UnityEngine.MonoBehaviour
         );
     }
 
+    /// <summary>Rejects generic methods that Unity cannot invoke as lifecycle callbacks.</summary>
+    [TestCase("Awake")]
+    [TestCase("OnEnable")]
+    [TestCase("OnDisable")]
+    [TestCase("OnDestroy")]
+    public void GenericMethodsCannotSatisfyUnityCallbacks(string method)
+    {
+        string source = Listener.Replace(
+            "void " + method + "()",
+            "void " + method + "<T>()",
+            StringComparison.Ordinal
+        );
+        Assert.That(
+            Analyze(source).Select(d => d.Id),
+            Is.EqualTo(ExpectedMissing),
+            "A Unity callback must have zero generic arity: " + method
+        );
+    }
+
+    /// <summary>Selects the real callback when a generic overload appears first in source.</summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void GenericOverloadCannotHideTheRealCallback(bool valid)
+    {
+        string body = valid ? "messages.Enable();" : "";
+        string source = Listener.Replace(
+            "protected virtual void OnEnable() { messages.Enable(); }",
+            "protected virtual void OnEnable<T>() { messages.Enable(); } protected virtual void OnEnable() { "
+                + body
+                + " }",
+            StringComparison.Ordinal
+        );
+        Assert.That(
+            Analyze(source).Select(d => d.Id),
+            valid ? Is.Empty : Is.EqualTo(ExpectedMissing),
+            "Only the nongeneric callback may satisfy Unity forwarding."
+        );
+    }
+
     /// <summary>Compiles an isolated consumer and executes every registered production diagnostic analyzer.</summary>
     private static ImmutableArray<Diagnostic> Analyze(string source)
     {

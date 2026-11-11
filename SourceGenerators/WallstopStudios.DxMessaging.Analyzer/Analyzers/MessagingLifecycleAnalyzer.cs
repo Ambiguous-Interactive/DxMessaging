@@ -195,6 +195,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                     if (
                         member is IMethodSymbol method
                         && !method.IsStatic
+                        && !method.IsGenericMethod
                         && method.Parameters.Length == 0
                         && method.ReturnsVoid
                     )
