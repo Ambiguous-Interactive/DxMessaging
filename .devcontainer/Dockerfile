@@ -4,11 +4,11 @@ FROM rust:1-bookworm AS tokei-builder
 RUN rustc --version && cargo install tokei --version 15.0.0 --locked
 
 # DxMessaging Development Container
-# Base image: .NET 9.0 on Debian Bookworm
-# Note: .NET 10 SDK is installed alongside .NET 9 to support C# Dev Kit.
+# Base image: .NET 10 LTS on Ubuntu Noble.
+# The exact repository SDK is installed below for compiler-payload reproducibility.
 # Local Unity verification runs through the unity-mcp-remote MCP server (the host
 # editor), so this image ships only the .NET / Node / docs toolchain.
-FROM mcr.microsoft.com/devcontainers/dotnet:1-9.0-bookworm
+FROM mcr.microsoft.com/devcontainers/dotnet:2-10.0-noble
 
 # Import BuildKit's automatic target architecture (amd64 or arm64) into this
 # stage. Do not assign a default: doing so shadows the native target on ARM64.
@@ -65,24 +65,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get autoremove -y
 
 # ------------------------------------------------------------------------------
-# Install .NET 10 SDK side-by-side (required by C# Dev Kit extension)
-# Unity is targeting .NET Standard 2.1 / .NET 9, so .NET 9 SDK remains primary.
-# We install .NET 10 SDK + runtime via the official dotnet-install.sh into a
-# shared location so both vscode and root see it on PATH.
+# Install the exact repository SDK for builds, tests, and C# Dev Kit.
+# Unity's shipped API target remains .NET Standard 2.1, independently of this SDK.
 # ------------------------------------------------------------------------------
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=tmpfs,target=/tmp \
-    apt-get update \
-    && apt-get -y install --no-install-recommends \
-        wget \
-        ca-certificates \
-    && wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh \
-    && chmod +x /tmp/dotnet-install.sh \
-    && /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet \
-    && apt-get autoremove -y
-
-COPY SourceGenerators/global.json /tmp/dxm-global.json
+COPY global.json /tmp/dxm-global.json
 RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
     && bash /tmp/dotnet-install.sh --jsonfile /tmp/dxm-global.json --install-dir /usr/share/dotnet \
     && rm /tmp/dotnet-install.sh /tmp/dxm-global.json
@@ -331,12 +317,12 @@ RUN set -eux; \
 
 # ------------------------------------------------------------------------------
 # Install PowerShell
-# https://docs.microsoft.com/en-us/powershell/scripting/install/install-debian
+# https://learn.microsoft.com/powershell/scripting/install/install-ubuntu
 # ------------------------------------------------------------------------------
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     set -eux; \
-    wget -q https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -O packages-microsoft-prod.deb; \
+    wget -q https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb; \
     dpkg -i packages-microsoft-prod.deb; \
     rm packages-microsoft-prod.deb; \
     apt-get update; \
@@ -379,6 +365,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y nodejs; \
     apt-get autoremove -y; \
     node --version; \
+    npm install --global --prefix /usr/local npm@12.2.2 --no-fund --no-audit; \
     npm --version
 
 # ------------------------------------------------------------------------------

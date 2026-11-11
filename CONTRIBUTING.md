@@ -15,7 +15,7 @@ Git hooks are managed solely by the standard [pre-commit framework](https://pre-
 ## Before you push
 
 - Script tests: `npm test` (the built-in `node --test` runner; no jest)
-- Repo validators: `npm run validate:all` (note: the `check:analyzers` step builds `SourceGenerators/` and requires the exact .NET SDK pinned in `SourceGenerators/global.json` — `rollForward` is `disable`, so a nearby 9.0.3xx SDK does not satisfy it. The devcontainer installs the pinned SDK during post-create; if `dotnet build` still reports a missing SDK, install it into the existing dotnet host location with: `wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && sudo bash /tmp/dotnet-install.sh --jsonfile SourceGenerators/global.json --install-dir /usr/share/dotnet`. The `--install-dir /usr/share/dotnet` part matters: the default `~/.dotnet` location is not consulted by the system `dotnet` host on `PATH`.)
+- Run `npm run validate:all` for repository checks. Its `check:analyzers` step requires the exact SDK in root `global.json`. The devcontainer installs it during post-create. The `rollForward: disable` policy rejects nearby SDK versions. If the SDK is missing, install it into the system dotnet location: `wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && sudo bash /tmp/dotnet-install.sh --jsonfile global.json --install-dir /usr/share/dotnet`. The system dotnet host on `PATH` does not use `~/.dotnet`.
 - Formatting: `npm run format:check` (fix with `npm run format`)
 - Markdown lint: `npm run lint:markdown`
 - Spelling: `npm run check:spelling`

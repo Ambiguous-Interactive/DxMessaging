@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 "use strict";
-
 /**
  * Validate npm package tarball hygiene and Unity .meta pairing invariants.
  *
@@ -14,16 +13,13 @@
  *   node scripts/validate-npm-meta.js --release-dir .artifacts/release \
  *     --expected-name com.example.package --expected-version 1.2.3
  */
-
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { execFileSync } = require("child_process");
-
 const { normalizeToLf } = require("./lib/line-endings");
 const { toPosixPath } = require("./lib/path-classifier");
 const { spawnPlatformCommandSync } = require("./lib/shell-command");
-
 const REPO_ROOT = path.resolve(__dirname, "..");
 const UNITY_META_EXEMPT_PATHS = new Set(["Samples~"]);
 const STANDARD_CSHARP_META_MONO_IMPORTER_LINES = [
@@ -95,11 +91,23 @@ function parsePackJsonEntries(packJsonText) {
     throw new Error(`Unable to parse npm pack JSON output: ${error.message}`);
   }
 
-  if (!Array.isArray(parsed) || parsed.length === 0 || parsed[0] === null) {
-    throw new Error("npm pack JSON output did not contain an entry list.");
+  // npm 11 returns an array; npm 12 keys records by package name.
+  const rows = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === "object"
+      ? Object.values(parsed)
+      : [];
+  const record = rows.length === 1 && rows[0];
+  if (
+    !record ||
+    typeof record !== "object" ||
+    Array.isArray(record) ||
+    (!Array.isArray(parsed) && Object.keys(parsed)[0] !== record.name)
+  ) {
+    throw new Error("npm pack JSON output did not contain exactly one package entry list.");
   }
 
-  const files = parsed[0].files;
+  const files = record.files;
   if (!Array.isArray(files)) {
     throw new Error("npm pack JSON output is missing the files array.");
   }

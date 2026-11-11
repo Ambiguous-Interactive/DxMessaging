@@ -1,13 +1,10 @@
 "use strict";
-
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-
 const validateNpmMeta = require("../validate-npm-meta.js");
-
 const {
   buildLocalTarArchiveSpec,
   buildStandardCsharpMetaContent,
@@ -22,7 +19,6 @@ const {
   validatePackEntries,
   validateRepositoryMetaPairs
 } = validateNpmMeta;
-
 const FORBIDDEN_PATH_CASES = [
   ["SourceGenerators/Generator.cs", "source-generator-development-input"],
   ["SourceGenerators.meta", "source-generator-development-input"],
@@ -38,7 +34,6 @@ const FORBIDDEN_PATH_CASES = [
   ["Editor/cache.lscache", "lscache"],
   ["Editor/Project.DotSettings.user", "dotsettings-user"]
 ];
-
 function withQuietValidation(callback) {
   const originalLog = console.log;
   const originalError = console.error;
@@ -51,23 +46,19 @@ function withQuietValidation(callback) {
     console.error = originalError;
   }
 }
-
 const VALID_CSHARP_META = buildStandardCsharpMetaContent("0123456789abcdef0123456789abcdef");
 const VALID_CSHARP_META_HEADER = "fileFormatVersion: 2\nguid: 0123456789abcdef0123456789abcdef\n";
-
 test("normalizePackEntry strips package prefix and trailing slash", () => {
   assert.equal(normalizePackEntry("package/Runtime/Core/Foo.cs"), "Runtime/Core/Foo.cs");
   assert.equal(normalizePackEntry("./package/Editor/"), "Editor");
   assert.equal(normalizePackEntry("package"), "");
   assert.equal(normalizePackEntry(""), "");
 });
-
 test("getCsharpMetaShapeViolation validates Unity C# MonoImporter shape", () => {
   const withLegacyMetadata = VALID_CSHARP_META.replace(
     "guid: 0123456789abcdef0123456789abcdef\n",
     "guid: 0123456789abcdef0123456789abcdef\ntimeCreated: 1745161457\n"
   );
-
   for (const [relativePath, content, expected] of [
     ["Runtime/Foo.cs.meta", VALID_CSHARP_META, ""],
     ["Runtime/Foo.asmdef.meta", VALID_CSHARP_META_HEADER, ""],
@@ -127,7 +118,6 @@ test("getCsharpMetaShapeViolation validates Unity C# MonoImporter shape", () => 
     }
   }
 });
-
 test("validateCsharpMetaFiles aggregates invalid tracked C# meta diagnostics", () => {
   const contents = {
     "Trailing.cs.meta": VALID_CSHARP_META.replace("  userData:\n", "  userData: \n"),
@@ -138,7 +128,6 @@ test("validateCsharpMetaFiles aggregates invalid tracked C# meta diagnostics", (
   const result = validateCsharpMetaFiles(Object.keys(contents), {
     readFileSync: (filePath) => contents[path.basename(filePath)]
   });
-
   assert.equal(result.checked, 3);
   assert.deepEqual(result.invalid, [
     {
@@ -151,7 +140,6 @@ test("validateCsharpMetaFiles aggregates invalid tracked C# meta diagnostics", (
     }
   ]);
 });
-
 test("repository meta pairing covers tracked ignored, ancestor, orphaned, and index-only assets", () => {
   // prettier-ignore
   const cases = [
@@ -163,7 +151,6 @@ test("repository meta pairing covers tracked ignored, ancestor, orphaned, and in
     assert.deepEqual(validateRepositoryMetaPairs({ existsSync: () => true, ...options }), expected);
   }
 });
-
 test("runValidation --repo-metas-only aggregates pair and C# shape failures", () => {
   const git = (_command, args) =>
     args[0] === "ls-files"
@@ -175,7 +162,6 @@ test("runValidation --repo-metas-only aggregates pair and C# shape failures", ()
       execFileSync: git
     })
   );
-
   assert.equal(result.valid, false);
   assert.deepEqual(result.missingMetas, []);
   assert.deepEqual(result.orphanMetas, []);
@@ -186,7 +172,6 @@ test("runValidation --repo-metas-only aggregates pair and C# shape failures", ()
     }
   ]);
 });
-
 test("runValidation fails closed when tracked repository git listing fails", () => {
   const failGit = () => {
     throw new Error("spawn git ENOENT");
@@ -196,27 +181,36 @@ test("runValidation fails closed when tracked repository git listing fails", () 
     /Unable to list tracked repository files with git: spawn git ENOENT/
   );
 });
-
-test("parsePackJsonEntries loads npm --json file entries", () => {
-  const json = JSON.stringify([
-    {
-      filename: "pkg-1.0.0.tgz",
-      files: [{ path: "Runtime/Foo.cs" }, { path: "Runtime/Foo.cs.meta" }]
-    }
-  ]);
-
-  assert.deepEqual(parsePackJsonEntries(json), ["Runtime/Foo.cs", "Runtime/Foo.cs.meta"]);
+test("parsePackJsonEntries loads npm 11 and npm 12 file entries", () => {
+  const record = {
+    name: "pkg",
+    filename: "pkg-1.0.0.tgz",
+    files: [{ path: "Runtime/Foo.cs" }, { path: "Runtime/Foo.cs.meta" }]
+  };
+  for (const envelope of [[record], { pkg: record }]) {
+    assert.deepEqual(parsePackJsonEntries(JSON.stringify(envelope)), [
+      "Runtime/Foo.cs",
+      "Runtime/Foo.cs.meta"
+    ]);
+  }
 });
-
-test("parsePackJsonEntries rejects malformed pack JSON payloads", () => {
-  assert.throws(() => parsePackJsonEntries("{}"), /entry list/);
-  assert.throws(() => parsePackJsonEntries('[{"files":"oops"}]'), /files array/);
-  assert.throws(() => parsePackJsonEntries('[{"files":[{"noPath":true}]}]'), /has no string path/);
+test("parsePackJsonEntries rejects malformed or ambiguous package records", () => {
+  // prettier-ignore
+  for (const input of ["{}", "[]", "null", "1", '\"pkg\"', "[null]", "[1]", "[{},{}]", '{"a":{},"b":{}}', '{"pkg":null}', '{"other":{"name":"pkg","files":[]}}']) {
+    assert.throws(() => parsePackJsonEntries(input), /entry list/, input);
+  }
+  for (const envelope of [[{ files: "oops" }], { pkg: { name: "pkg", files: "oops" } }]) {
+    assert.throws(() => parsePackJsonEntries(JSON.stringify(envelope)), /files array/);
+  }
+  for (const envelope of [
+    [{ files: [{ noPath: true }] }],
+    { pkg: { name: "pkg", files: [{ noPath: true }] } }
+  ]) {
+    assert.throws(() => parsePackJsonEntries(JSON.stringify(envelope)), /has no string path/);
+  }
 });
-
 test("findForbiddenTarballPaths catches issue-204 style artifact leaks", () => {
   const violations = findForbiddenTarballPaths(FORBIDDEN_PATH_CASES.map(([path]) => path));
-
   assert.deepEqual(
     violations.map((violation) => violation.path),
     FORBIDDEN_PATH_CASES.map(([path]) => path)
@@ -226,14 +220,12 @@ test("findForbiddenTarballPaths catches issue-204 style artifact leaks", () => {
     FORBIDDEN_PATH_CASES.map(([, rule]) => rule)
   );
 });
-
 test("computeRequiredMetaPaths includes ancestor dirs but skips Samples~ root", () => {
   const required = computeRequiredMetaPaths([
     "Samples~/Mini Combat/Scenes/Demo.unity",
     "Runtime/Core/Bus.cs",
     "Runtime/Core/Bus.cs.meta"
   ]);
-
   assert.equal(required.has("Samples~.meta"), false);
   assert.equal(required.has("Samples~/Mini Combat.meta"), true);
   assert.equal(required.has("Samples~/Mini Combat/Scenes.meta"), true);
@@ -242,7 +234,6 @@ test("computeRequiredMetaPaths includes ancestor dirs but skips Samples~ root", 
   assert.equal(required.has("Runtime/Core.meta"), true);
   assert.equal(required.has("Runtime/Core/Bus.cs.meta"), true);
 });
-
 test("validatePackEntries returns valid for properly paired Unity paths", () => {
   const entries = [
     "Editor.meta",
@@ -257,25 +248,21 @@ test("validatePackEntries returns valid for properly paired Unity paths", () => 
     "Samples~/Demo/Scene.unity",
     "Samples~/Demo/Scene.unity.meta"
   ];
-
   const result = validatePackEntries(entries);
   assert.equal(result.valid, true);
   assert.deepEqual(result.forbidden, []);
   assert.deepEqual(result.missingMetas, []);
   assert.deepEqual(result.orphanMetas, []);
 });
-
 test("validatePackEntries aggregates forbidden, missing, and orphan diagnostics", () => {
   // prettier-ignore
   const result = validatePackEntries(["Runtime/Foo.cs", "Runtime.meta", "Runtime/Leak.pdb", "Runtime/Orphan.meta", "docs.meta", "docs/images.meta", "docs/images/Banner.svg", "docs/Orphan.asset.meta", "RootOrphan.asset.meta"]);
-
   assert.equal(result.valid, false);
   assert.equal(result.forbidden.length, 1);
   assert.deepEqual(result.missingMetas, ["Runtime/Foo.cs.meta", "docs/images/Banner.svg.meta"]);
   // prettier-ignore
   assert.deepEqual(result.orphanMetas, ["RootOrphan.asset.meta", "Runtime/Orphan.meta", "docs/Orphan.asset.meta"]);
 });
-
 test("runValidation rejects forbidden paths from npm pack JSON output", () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pack-json-validation-test-"));
   try {
@@ -291,7 +278,6 @@ test("runValidation rejects forbidden paths from npm pack JSON output", () => {
         ]),
         "utf8"
       );
-
       const result = withQuietValidation(() => runValidation({ packJson: jsonFile }));
       assert.equal(result.valid, false, `${forbiddenPath} should make pack validation fail`);
       assert.deepEqual(
@@ -307,40 +293,33 @@ test("runValidation rejects forbidden paths from npm pack JSON output", () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
-
 test("buildLocalTarArchiveSpec keeps Windows drive letters out of tar operands", () => {
   const spec = buildLocalTarArchiveSpec(
     "C:\\Temp\\release\\com.example.package-1.2.3.tgz",
     path.win32,
     "D:\\Repo"
   );
-
   assert.deepEqual(spec, {
     archive: "./com.example.package-1.2.3.tgz",
     cwd: "C:\\Temp\\release"
   });
 });
-
 test("buildLocalTarArchiveSpec keeps local colon basenames local", () => {
   const spec = buildLocalTarArchiveSpec("/tmp/release/foo:bar.tgz", path.posix, "/workspace/repo");
-
   assert.deepEqual(spec, {
     archive: "./foo:bar.tgz",
     cwd: "/tmp/release"
   });
 });
-
 test("readTarballPackageJson uses the local tar archive operand", () => {
   const calls = [];
   const json = JSON.stringify({ name: "com.example.package", version: "1.2.3" });
   const tarball = path.join(os.tmpdir(), "release", "pkg.tgz");
   const expectedArchiveSpec = buildLocalTarArchiveSpec(tarball);
-
   const packageJson = validateNpmMeta.readTarballPackageJson(tarball, (command, args, options) => {
     calls.push({ command, args, cwd: options.cwd });
     return json;
   });
-
   assert.deepEqual(packageJson, { name: "com.example.package", version: "1.2.3" });
   assert.deepEqual(calls, [
     {
@@ -350,7 +329,6 @@ test("readTarballPackageJson uses the local tar archive operand", () => {
     }
   ]);
 });
-
 test("collectTarballEntries lists the archive from its parent directory", () => {
   const archiveDir = path.join(os.tmpdir(), "tarball-entry-test");
   const tarball = path.join(archiveDir, "pkg.tgz");
@@ -360,7 +338,6 @@ test("collectTarballEntries lists the archive from its parent directory", () => 
     calls.push({ command, args, cwd: options.cwd });
     return "package/Runtime/Core/Foo.cs\npackage/Runtime/Core/Foo.cs.meta\n";
   });
-
   assert.deepEqual(entries, ["Runtime/Core/Foo.cs", "Runtime/Core/Foo.cs.meta"]);
   assert.deepEqual(calls, [
     {
@@ -370,7 +347,6 @@ test("collectTarballEntries lists the archive from its parent directory", () => 
     }
   ]);
 });
-
 test("collectTarballEntries reports tar command errors clearly", () => {
   assert.throws(() => {
     collectTarballEntries("missing.tgz", () => {

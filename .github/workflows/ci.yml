@@ -311,7 +311,7 @@ jobs:
         if: ${{ needs.changes.outputs.csharpier != 'false' }}
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
-          dotnet-version: "8.0.x"
+          global-json-file: global.json
 
       - name: Restore .NET tools
         if: ${{ needs.changes.outputs.csharpier != 'false' }}
@@ -349,7 +349,7 @@ jobs:
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
-          global-json-file: SourceGenerators/global.json
+          global-json-file: global.json
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
@@ -777,7 +777,7 @@ jobs:
         if: ${{ needs.changes.outputs.scripts != 'false' && matrix.os == 'ubuntu-latest' }}
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
-          global-json-file: SourceGenerators/global.json
+          global-json-file: global.json
 
       - name: Install dependencies
         if: ${{ needs.changes.outputs.scripts != 'false' }}

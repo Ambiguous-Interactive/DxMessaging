@@ -35,6 +35,8 @@ on:
       - master
     paths:
       - ".devcontainer/**"
+      - ".dockerignore"
+      - "global.json"
       - ".github/workflows/devcontainer-prebuild.yml"
   schedule:
     # Sunday 00:00 UTC — weekly rebuild keeps the image fresh and captures

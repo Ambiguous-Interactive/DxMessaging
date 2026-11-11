@@ -728,7 +728,7 @@ internal sealed class DocsSnippetCompilationTests
     }
 
     [Test]
-    public void DocsTestSdkAcceptsAvailableNet9FeatureBands()
+    public void DocsTestSdkAcceptsAvailableNet10FeatureBands()
     {
         string globalJsonPath = Path.Combine(ResolveRepoRoot(), ".docs-tests", "global.json");
         using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(
@@ -738,13 +738,13 @@ internal sealed class DocsSnippetCompilationTests
 
         Assert.That(
             sdk.GetProperty("version").GetString(),
-            Is.EqualTo("9.0.100"),
-            "The docs test SDK must use the first .NET 9 feature-band floor so Dependabot can run on any available .NET 9 SDK."
+            Is.EqualTo("10.0.100"),
+            "The docs test SDK must use the first .NET 10 feature-band floor so Dependabot can run on any available .NET 10 SDK."
         );
         Assert.That(
             sdk.GetProperty("rollForward").GetString(),
             Is.EqualTo("latestFeature"),
-            "The docs test SDK must roll forward across installed .NET 9 feature bands."
+            "The docs test SDK must roll forward across installed .NET 10 feature bands."
         );
     }
 

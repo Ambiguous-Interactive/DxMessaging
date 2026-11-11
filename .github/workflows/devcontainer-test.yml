@@ -4,7 +4,7 @@
 # Purpose:
 #   Builds the .devcontainer image (with the GHCR-cached layers) and runs an
 #   in-container smoke test verifying:
-#     - .NET SDK (9 + 10 side-by-side) is present and runnable
+#     - .NET 10 LTS SDK is present and runnable
 #     - git LFS is installed (Unity LFS workflow)
 #     - PowerShell is installed (parity with .ps1 entry points)
 #     - The asmdef-discovery node module loads and self-tests cleanly
@@ -38,6 +38,8 @@ on:
       - master
     paths:
       - ".devcontainer/**"
+      - ".dockerignore"
+      - "global.json"
       - ".github/workflows/**"
       - ".github/actions/**"
       - "scripts/**"
@@ -92,7 +94,7 @@ jobs:
             exit 0
           fi
           files="$(printf '%s\n' "$records" | jq -er '.[] | select(. != null) | if type == "string" and length > 0 then . else error("Invalid changed path") end')"
-          if printf '%s\n' "$files" | grep -qE '(^\.devcontainer/|^\.github/(workflows|actions)/|^scripts/|^package(-lock)?\.json$)'; then
+          if printf '%s\n' "$files" | grep -qE '(^\.devcontainer/|^\.github/(workflows|actions)/|^scripts/|^package(-lock)?\.json$|^global\.json$|^\.dockerignore$)'; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "relevant=false" >> "$GITHUB_OUTPUT"
@@ -171,6 +173,15 @@ jobs:
             node --version
             python3 --version
 
+            test "$(npm --version)" = "12.2.2"
+
+            echo "=== Exact repository SDK resolution ==="
+            expected_sdk="$(node -p 'require("./global.json").sdk.version')"
+            test "$(dotnet --version)" = "$expected_sdk"
+            test "$(cd SourceGenerators && dotnet --version)" = "$expected_sdk"
+            test "$(cd .net-tests && dotnet --version)" = "$expected_sdk"
+            test "$(cd .docs-tests && dotnet --version)" = "$expected_sdk"
+
             echo "=== .NET 10 SDK + runtime presence ==="
             dotnet --list-sdks | grep -E '^10\.0' \
               || (echo "ERROR: .NET 10 SDK not found" >&2 && exit 1)
@@ -230,6 +241,15 @@ jobs:
 
             echo "=== Toolchain versions ==="
             bash .devcontainer/verify-tools.sh
+
+            test "$(npm --version)" = "12.2.2"
+
+            echo "=== Exact repository SDK resolution ==="
+            expected_sdk="$(node -p 'require("./global.json").sdk.version')"
+            test "$(dotnet --version)" = "$expected_sdk"
+            test "$(cd SourceGenerators && dotnet --version)" = "$expected_sdk"
+            test "$(cd .net-tests && dotnet --version)" = "$expected_sdk"
+            test "$(cd .docs-tests && dotnet --version)" = "$expected_sdk"
 
             echo "=== .NET 10 SDK + runtime presence ==="
             dotnet --list-sdks | grep -E '^10\.0' \

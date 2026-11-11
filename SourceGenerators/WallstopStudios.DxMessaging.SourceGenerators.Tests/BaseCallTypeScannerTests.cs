@@ -911,7 +911,7 @@ namespace DxMessaging.Unity
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
         };
-        // Ensure System.Runtime is loaded; required for MetadataReference resolution on net9.0.
+        // Ensure System.Runtime is loaded; required for MetadataReference resolution on net10.0.
         Assembly runtime = Assembly.Load("System.Runtime");
         if (!string.IsNullOrEmpty(runtime.Location))
         {
