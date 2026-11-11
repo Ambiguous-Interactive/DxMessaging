@@ -796,6 +796,7 @@ public readonly partial struct {{secondType}}
         return count;
     }
 
+    /// <summary>Enumerates closed message shapes across every marker and dispatch route.</summary>
     public static IEnumerable<TestCaseData> ClosedGenericMessageCases()
     {
         foreach (string kind in new[] { "Untargeted", "Targeted", "Broadcast" })
@@ -841,6 +842,7 @@ namespace Sample
         AssertGeneratedOutputCompilesForIl2Cpp(source);
     }
 
+    /// <summary>Checks stable source output for duplicate and reordered nested closed selections.</summary>
     [Test]
     public void AssemblySelectionsDeduplicateAndSortClosedNestedMessages()
     {
@@ -898,6 +900,7 @@ namespace Sample
         AssertGeneratedOutputCompilesForIl2Cpp(source);
     }
 
+    /// <summary>Checks the diagnostic for open, abstract, ref-like and non-message selections.</summary>
     [TestCase("typeof(Sample.Message<>)")]
     [TestCase("typeof(int)")]
     [TestCase("typeof(Sample.AbstractMessage<int>)")]
@@ -929,6 +932,7 @@ namespace Sample
         );
     }
 
+    /// <summary>Checks one bridge per implemented route for a multi-interface selection.</summary>
     [Test]
     public void AssemblySelectionRootsEveryImplementedRouteOnce()
     {
@@ -957,6 +961,7 @@ namespace Sample
         AssertGeneratedOutputCompilesForIl2Cpp(source);
     }
 
+    /// <summary>Checks that explicit selection preserves the existing single non-generic startup registration.</summary>
     [Test]
     public void AssemblySelectionDoesNotDuplicateOrdinaryAttributedBridge()
     {
@@ -980,6 +985,7 @@ namespace Sample
         AssertGeneratedOutputCompilesForIl2Cpp(source);
     }
 
+    /// <summary>Checks that inaccessible containing types or generic arguments cannot produce invalid registrar code.</summary>
     [TestCase("Sample.Container.PrivateMessage<int>")]
     [TestCase("Sample.Container.PublicMessage<Sample.Container.PrivateArgument>")]
     public void InaccessibleAssemblySelectionsReportDiagnostic(string selected)
@@ -1011,6 +1017,7 @@ namespace Sample
         );
     }
 
+    /// <summary>Checks closed registration in an assembly containing only selections for externally declared messages.</summary>
     [Test]
     public void AssemblyOnlyConsumerRootsReferencedGenericMessage()
     {

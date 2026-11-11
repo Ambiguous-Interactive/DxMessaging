@@ -127,6 +127,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             context.RegisterForSyntaxNotifications(static () => new TypeSyntaxReceiver());
         }
 
+        /// <summary>Collects message definitions and explicit selections, then emits their deterministic message and bridge sources.</summary>
         public void Execute(GeneratorExecutionContext context)
         {
             if (context.SyntaxReceiver is not TypeSyntaxReceiver receiver)
@@ -162,6 +163,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             Execute(typesToGenerate, aotTypes, context);
         }
 
+        /// <summary>Adds valid closed assembly selections and reports invalid selections at their attribute locations.</summary>
         private static void AddExplicitAotSelections(
             List<AotRegistrarInfo> aotTypes,
             GeneratorExecutionContext context
@@ -206,6 +208,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             }
         }
 
+        /// <summary>Validates a concrete selected type and captures every message route it implements or declares.</summary>
         private static bool TryGetExplicitAotSelection(
             INamedTypeSymbol? typeSymbol,
             Compilation compilation,
@@ -468,6 +471,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             return false;
         }
 
+        /// <summary>Collects message definitions and explicit selections, then emits their deterministic message and bridge sources.</summary>
         private static void Execute(
             List<MessageToGenerateInfo> typesToGenerate,
             List<AotRegistrarInfo> aotTypes,
@@ -1214,6 +1218,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 || accessibility == Accessibility.ProtectedOrInternal;
         }
 
+        /// <summary>Detects unresolved generic arguments through containing types and array element types.</summary>
         private static bool ContainsTypeParameters(ITypeSymbol typeSymbol)
         {
             if (

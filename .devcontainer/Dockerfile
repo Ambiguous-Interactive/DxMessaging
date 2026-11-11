@@ -316,18 +316,23 @@ RUN set -eux; \
     actionlint --version
 
 # ------------------------------------------------------------------------------
-# Install PowerShell
-# https://learn.microsoft.com/powershell/scripting/install/install-ubuntu
+# Install PowerShell 7.7.0 from its native architecture archive
+# https://github.com/PowerShell/PowerShell/releases/tag/v7.7.0
 # ------------------------------------------------------------------------------
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    set -eux; \
-    wget -q https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb; \
-    dpkg -i packages-microsoft-prod.deb; \
-    rm packages-microsoft-prod.deb; \
-    apt-get update; \
-    apt-get install -y powershell; \
-    apt-get autoremove -y; \
+RUN set -eux; \
+    POWERSHELL_VERSION="7.7.0"; \
+    case "${TARGETARCH}" in \
+        amd64) POWERSHELL_ARCH="x64"; POWERSHELL_SHA256="c89d9c682d2c403dfe726f3df948e359675235a5bd6fab535776de69729ca0cb" ;; \
+        arm64) POWERSHELL_ARCH="arm64"; POWERSHELL_SHA256="e59c89776eaa59790d44b3edd14277435225ab08b6e7603763101b89de83d935" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    esac; \
+    wget -q "https://github.com/PowerShell/PowerShell/releases/download/v${POWERSHELL_VERSION}/powershell-${POWERSHELL_VERSION}-linux-${POWERSHELL_ARCH}.tar.gz" -O /tmp/dxm-powershell.tar.gz; \
+    printf '%s  %s\n' "${POWERSHELL_SHA256}" /tmp/dxm-powershell.tar.gz | sha256sum -c -; \
+    mkdir -p "/opt/microsoft/powershell/${POWERSHELL_VERSION}"; \
+    tar -xzf /tmp/dxm-powershell.tar.gz -C "/opt/microsoft/powershell/${POWERSHELL_VERSION}"; \
+    chmod +x "/opt/microsoft/powershell/${POWERSHELL_VERSION}/pwsh"; \
+    ln -sf "/opt/microsoft/powershell/${POWERSHELL_VERSION}/pwsh" /usr/local/bin/pwsh; \
+    rm /tmp/dxm-powershell.tar.gz; \
     pwsh --version
 
 # ------------------------------------------------------------------------------
@@ -366,7 +371,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get autoremove -y; \
     node --version; \
     npm install --global --prefix /usr/local npm@12.2.2 --no-fund --no-audit; \
-    npm --version
+    /usr/local/bin/npm --version
 
 # ------------------------------------------------------------------------------
 # Install agent CLIs into the image
@@ -376,6 +381,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN npm install --global --prefix /usr/local \
         @openai/codex@latest \
         opencode-ai@latest \
+        --allow-scripts=opencode-ai \
         @nanocollective/nanocoder@latest \
         @z_ai/mcp-server@latest \
         mcp-remote@0.16.5 \
@@ -590,7 +596,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         bubblewrap \
         socat \
     && npm install --global --prefix /usr/local --cache /tmp/dxm-backend-npm \
-        @anthropic-ai/claude-code@latest --no-fund --no-audit \
+        @anthropic-ai/claude-code@latest --allow-scripts=@anthropic-ai/claude-code --no-fund --no-audit \
     && rm -rf /tmp/dxm-backend-npm \
     && claude --version
 USER vscode

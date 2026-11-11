@@ -868,6 +868,7 @@ internal sealed class BaseCallTypeScannerTests
         return fixture.GetTypes().Where(t => t != mac && mac.IsAssignableFrom(t));
     }
 
+    /// <summary>Compiles an isolated component fixture and enforces its declared compiler-warning expectations.</summary>
     private static Assembly CompileFixture(string userSource, params string[] allowedWarningIds)
     {
         /*

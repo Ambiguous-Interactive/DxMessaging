@@ -727,6 +727,7 @@ internal sealed class DocsSnippetCompilationTests
         }
     }
 
+    /// <summary>Checks that documentation builds accept stable .NET 10 feature bands without requiring one installed patch.</summary>
     [Test]
     public void DocsTestSdkAcceptsAvailableNet10FeatureBands()
     {

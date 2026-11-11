@@ -361,6 +361,8 @@ main() {
 
     cd "${WORKSPACE_DIR}"
 
+    # Resolve the repository SDK before any command that requires its exact pin.
+    ensure_pinned_sdk
     run_optional "Restoring .NET local tools" dotnet tool restore
     # npm install reuses the persistent modules tree; npm ci would remove it.
     run_optional "Installing workspace npm dependencies" npm install --prefer-offline --no-audit --no-fund
@@ -375,11 +377,7 @@ main() {
     fi
     run_optional "Installing pre-commit hooks" pre-commit install
 
-    # Step 4: make the SDK pinned by global.json resolvable
-    # so `npm run validate:all` (check:analyzers) works out of the box.
-    ensure_pinned_sdk
-
-    # Step 5: validate environment (warn-only, never blocking).
+    # Step 4: validate environment (warn-only, never blocking).
     validate_dotnet || { log_error ".NET validation failed"; exit_code=1; }
     validate_workspace || { log_error "Workspace validation failed"; exit_code=1; }
 

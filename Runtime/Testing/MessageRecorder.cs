@@ -84,6 +84,7 @@ namespace DxMessaging.Testing
         private MessageRegistrationLease _lease;
         private bool _disposing;
 
+        /// <summary>Creates the private subscription lease after validating the explicit bus.</summary>
         internal MessageRecorder(
             IMessageBus bus,
             Action<MessageRegistrationToken, MessageHandler.FastHandler<TMessage>> register

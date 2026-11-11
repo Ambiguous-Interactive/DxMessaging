@@ -83,6 +83,11 @@ function uniqSortedPaths(entries) {
   return [...new Set(normalized)].sort();
 }
 
+/**
+ * Return normalized file paths from one npm 11 or npm 12 package record.
+ * @param {string} packJsonText npm pack JSON output.
+ * @returns {string[]} Sorted, unique package-relative paths.
+ */
 function parsePackJsonEntries(packJsonText) {
   let parsed;
   try {

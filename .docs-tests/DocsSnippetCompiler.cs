@@ -88,6 +88,7 @@ internal static class DocsSnippetCompiler
             .AddRange(documentationDiagnostics);
     }
 
+    /// <summary>Finds the checkout containing the real API declarations used by documentation tests.</summary>
     private static string FindRepositoryRoot()
     {
         DirectoryInfo? root = new(AppContext.BaseDirectory);
@@ -103,6 +104,7 @@ internal static class DocsSnippetCompiler
         return root.FullName;
     }
 
+    /// <summary>Imports recorder API signatures from production source and replaces executable members with stubs.</summary>
     private static SyntaxTree BuildTestSupportApi()
     {
         string path = Path.Combine(
@@ -188,6 +190,7 @@ internal static class DocsSnippetCompiler
         );
     }
 
+    /// <summary>Imports bus API declarations while removing production implementation details from documentation stubs.</summary>
     private static SyntaxTree BuildBusFirstApi()
     {
         string path = Path.Combine(

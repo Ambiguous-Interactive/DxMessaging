@@ -55,6 +55,7 @@ namespace DxMessaging.Tests.Runtime.Core
     [Category("Contract")]
     public sealed class ClosedGenericAotBridgeTests
     {
+        /// <summary>Checks first untyped delivery before any typed use of the dedicated closed payloads.</summary>
         [Test]
         public void FirstUntypedDispatchUsesSelectedClosedGenericBridge(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -90,6 +91,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Creates one dedicated closed payload and sends it through its untyped route.</summary>
         private static void Dispatch<T>(
             IMessageBus bus,
             MessageKind kind,

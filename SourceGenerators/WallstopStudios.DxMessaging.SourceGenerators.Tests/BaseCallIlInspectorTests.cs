@@ -515,6 +515,7 @@ internal sealed class BaseCallIlInspectorTests
 
     // ---- Compilation harness ----------------------------------------------------------------
 
+    /// <summary>Compiles an isolated component fixture using the active SDK runtime references.</summary>
     private static Assembly CompileFixture(string userSource)
     {
         /*

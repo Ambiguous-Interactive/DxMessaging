@@ -9,9 +9,11 @@ namespace DxMessaging.Tests.Runtime.Core
     using NUnit.Framework;
     using BusType = DxMessaging.Core.MessageBus.MessageBus;
 
+    /// <summary>Checks ordered value and reference captures plus disposal for each message route.</summary>
     [Category("Contract")]
     public sealed class MessageRecorderTests
     {
+        /// <summary>Checks ordered value and reference captures plus disposal for each message route.</summary>
         [Test]
         public void RecorderCapturesMessagesAndReleasesItsSubscription(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -29,6 +31,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        /// <summary>Checks that clearing updates the existing read-only view without removing the subscription.</summary>
         [Test]
         public void ClearPreservesTheReadOnlyViewAndSubscription(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -53,6 +56,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(view, Is.EqualTo(new[] { message }), "Clear must leave recording active.");
         }
 
+        /// <summary>Checks that disposing one recorder leaves another recorder active on the same bus.</summary>
         [Test]
         public void RecordersOwnIndependentSubscriptions(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -89,6 +93,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks bus isolation and contextual filtering without observing unrelated messages.</summary>
         [Test]
         public void RecorderUsesOnlyItsExplicitBusAndContext(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -124,6 +129,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks the required explicit bus argument for each recorder factory.</summary>
         [Test]
         public void NullBusIsRejected(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -136,6 +142,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks that failed cleanup preserves captures and can be completed by the same recorder.</summary>
         [Test]
         public void DisposalFailureRetainsCleanupOnTheRecorderForRetry(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -185,6 +192,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        /// <summary>Checks assembly separation and the emitted support assembly references.</summary>
         [Test]
         public void TestSupportIsSeparateFromTheRuntimeAndHasNoFrameworkApiDependency()
         {
@@ -214,6 +222,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        /// <summary>Checks zero and extreme numeric contexts through the ordinary routing APIs.</summary>
         [Test]
         public void NumericContextBoundariesRemainValid(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -238,6 +247,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks that recording starts at subscription time and does not replay earlier emissions.</summary>
         [Test]
         public void RecorderDoesNotReplayEarlierMessages(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -256,6 +266,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks nested disposal during both successful and failed outer cleanup.</summary>
         [Test]
         public void ReentrantDisposalDoesNotLoseRetryableCleanup(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -312,6 +323,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        /// <summary>Checks that captures follow ordinary interceptor acceptance and payload mutation.</summary>
         [Test]
         public void RecorderRespectsInterceptorVetoAndMutation(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -373,6 +385,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks capture order, reference identity and final subscription cleanup for one payload shape.</summary>
         private static void Exercise<T>(MessageScenario scenario, T first, T second)
             where T : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
         {
@@ -406,6 +419,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(recorder.Received, Is.Empty, "Disposal must remove the receiver.");
         }
 
+        /// <summary>Selects the recorder factory matching the shared message scenario.</summary>
         private static MessageRecorder<T> Create<T>(
             MessageScenario scenario,
             IMessageBus bus,
@@ -423,6 +437,7 @@ namespace DxMessaging.Tests.Runtime.Core
             };
         }
 
+        /// <summary>Emits a shared test payload through the scenario route and selected context.</summary>
         private static void Emit<T>(
             MessageScenario scenario,
             IMessageBus bus,
@@ -456,6 +471,7 @@ namespace DxMessaging.Tests.Runtime.Core
             internal FailingCleanupBus(IMessageBus inner)
                 : base(inner) { }
 
+            /// <summary>Runs the controlled cleanup callback before optionally raising the declared cleanup failure.</summary>
             public override void Deregister<T>(in MessageBusRegistration registration)
             {
                 Action callback = OnCleanup;

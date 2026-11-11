@@ -72,6 +72,12 @@ $ProjectOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unitypackage 
 # the header comment. SourceGenerators.meta pairs with the excluded folder.
 $ExcludedPayloadEntries = @('SourceGenerators', 'SourceGenerators.meta')
 
+<#
+.SYNOPSIS
+    Reads one matching package record from npm 11 or npm 12 output.
+.DESCRIPTION
+    Preserves the original array shape and requires a package name plus a tarball filename.
+#>
 function Get-NpmPackRecord {
     param(
         [Parameter(Mandatory = $true)][string]$JsonText,

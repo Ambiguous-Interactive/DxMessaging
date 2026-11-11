@@ -1,18 +1,14 @@
 "use strict";
-
 // Execute the installer against a hermetic npm/CLI fixture.
 // cspell:ignore mcps
-
 const assert = require("node:assert/strict");
 const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
-
 // The devcontainer shell requires POSIX; structural tests run on Windows too.
 const CAN_RUN_SHELL = process.platform !== "win32";
-
 const ROOT = path.resolve(__dirname, "..", "..");
 
 // Expose only these system tools so image-provided CLIs cannot satisfy the fixture.
@@ -38,8 +34,8 @@ case "$1" in
         spec="$3"
         case "\${spec%@*}" in
             @openai/codex) shim="codex" ;;
-            @anthropic-ai/claude-code) shim="claude" ;;
-            opencode-ai) shim="opencode" ;;
+            @anthropic-ai/claude-code) [[ " $* " == *" --allow-scripts=@anthropic-ai/claude-code "* ]] || exit 1; shim="claude" ;;
+            opencode-ai) [[ " $* " == *" --allow-scripts=opencode-ai "* ]] || exit 1; shim="opencode" ;;
             @nanocollective/nanocoder) shim="nanocoder" ;;
             *) exit 1 ;;
         esac
@@ -187,6 +183,8 @@ test("post-create owns its CLI refresh", { skip: !CAN_RUN_SHELL }, (t) => {
     for stub in fix_volume_permissions ensure_path_line dotnet configure_agent_mcps git pre-commit ensure_pinned_sdk validate_dotnet validate_workspace print_summary; do
       eval "$stub() { :; }"
     done
+    ensure_pinned_sdk() { printf '%s\\n' sdk >>"$TMPDIR/sdk-order"; }
+    dotnet() { if [[ "$*" == "tool restore" ]]; then printf '%s\\n' restore >>"$TMPDIR/sdk-order"; fi; }
     install_agent_clis() { printf '%s' "$BASH_SUBSHELL" >"$TMPDIR/refresh-scope"; }
     npm() {
       if [[ "$*" == "config get prefix" ]]; then echo "$HOME/.local";
@@ -194,7 +192,8 @@ test("post-create owns its CLI refresh", { skip: !CAN_RUN_SHELL }, (t) => {
     }
     main
     wait
-    cmp "$TMPDIR/refresh-scope" "$TMPDIR/npm-scope"`;
+    cmp "$TMPDIR/refresh-scope" "$TMPDIR/npm-scope"
+    [[ "$(cat "$TMPDIR/sdk-order")" == $'sdk\\nrestore' ]]`;
   const result = childProcess.spawnSync("bash", ["-c", script, "bash", dev("post-create.sh")], {
     encoding: "utf8",
     env: { ...process.env, HOME: temp, TMPDIR: temp }
