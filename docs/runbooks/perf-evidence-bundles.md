@@ -456,6 +456,13 @@ source commit, verifier commit, release URL, and exact asset name in the reviewe
 The source commit identifies the measured build; the verifier commit identifies the checked-out
 scripts used to inspect and replay it. They need not match.
 
+Choose an unused revision and pass it as `--revision <revision>` when sealing the publication's
+staging copy. Ordinary shipping CI seals its workflow artifact with the default revision `1`.
+For a later revision, prepare a fresh staging directory and seal it with the chosen revision
+before naming the tag or creating a draft. Copy the declared evidence files, leaving the old
+manifest with its original archive. The sealed manifest, tag, and reviewed index must agree on
+the experiment ID and revision. Stop on a mismatch even if the archive hash and replay agree.
+
 Before enabling publication:
 
 1. Confirm the package release workflow uploads and verifies assets while the release is a draft.
@@ -784,10 +791,14 @@ invalid credentials returned HTTP 401, produced no file, and did not use a cache
 
 ### shipping-fidelity-matrix-2021.3.45f1, revision 2
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-09-14. This revision
-retains the exact PR #593 merge endpoint after the clean-predecessor snapshot correction. All 20
-clean shipping cells and the separately bound High-semantic incremental build completed. Revision
-1 remains immutable and available above.
+Status: **restore incomplete.** The immutable tag and this entry identify revision `2`, but the
+sealed manifest identifies revision `1`. Its manifest bytes differ from the earlier revision `1`
+entry. The archive and manifest hashes below match the downloaded bytes. Keep this archive for
+historical review and exclude it from restore acceptance. See [#732](https://github.com/Ambiguous-Interactive/DxMessaging/issues/732).
+
+The 2026-09-14 verification and replay below concern the exact PR #593 merge endpoint after the
+clean-predecessor snapshot correction. All 20 clean shipping cells and the separately bound
+High-semantic incremental build completed. Those observations do not resolve the revision mismatch.
 
 | Identity                        | Value                                                                                                                                                                                                                                                |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -848,10 +859,14 @@ fallback.
 
 ### shipping-fidelity-matrix-6000.5.2f1, revision 3
 
-Status: published and restored from GitHub in a fresh verifier clone on 2026-09-14. This revision
-retains the exact PR #593 merge endpoint after the clean-predecessor snapshot correction. All 20
-clean shipping cells and the separately bound High-semantic incremental build completed. Earlier
-revisions remain immutable and available above.
+Status: **restore incomplete.** The immutable tag and this entry identify revision `3`, but the
+sealed manifest identifies revision `1`. Its manifest bytes differ from the earlier revision `1`
+entry. The archive and manifest hashes below match the downloaded bytes. Keep this archive for
+historical review and exclude it from restore acceptance. See [#732](https://github.com/Ambiguous-Interactive/DxMessaging/issues/732).
+
+The 2026-09-14 verification and replay below concern the exact PR #593 merge endpoint after the
+clean-predecessor snapshot correction. All 20 clean shipping cells and the separately bound
+High-semantic incremental build completed. Those observations do not resolve the revision mismatch.
 
 | Identity                        | Value                                                                                                                                                                                                                                              |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
