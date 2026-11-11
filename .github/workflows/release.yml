@@ -120,7 +120,12 @@ jobs:
             exit 1
           fi
           package_file="$(basename "${package_files[0]}")"
-          (cd .artifacts/release && sha256sum "${package_file}" > "${package_file}.sha256")
+          (cd .artifacts/release && node -e '
+            const fs = require("node:fs");
+            const hash = require("node:crypto").createHash("sha256")
+              .update(fs.readFileSync(process.argv[1])).digest("hex");
+            process.stdout.write(hash + "  " + process.argv[1] + "\n");
+          ' "${package_file}" > "${package_file}.sha256")
           echo "package-file=${package_file}" >> "${GITHUB_OUTPUT}"
 
       - name: Generate the GitHub Release notes from CHANGELOG.md

@@ -6,6 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const YAML = require("yaml");
 const { spawnSync } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const { walkFiles } = require("../lib/repo-files.js");
 const {
   UNITY_LOCK_WINDOWS,
@@ -907,7 +908,6 @@ test("release workflows pin App write scopes and denied-push diagnostics", () =>
   );
   assert.doesNotMatch(prepare, /\.artifacts\/release-prepare/);
 });
-
 for (const [mode, expected] of Object.entries(CORRECTNESS_CATEGORY_FILTERS)) {
   test(`${mode} correctness category filter retains lifecycle coverage and excludes heavy work`, () => {
     const steps = YAML.parse(readWorkflow("unity-tests.yml")).jobs["unity-tests"].steps;
@@ -917,10 +917,10 @@ for (const [mode, expected] of Object.entries(CORRECTNESS_CATEGORY_FILTERS)) {
     assert.deepEqual(step.env.DXM_UNITY_TEST_CATEGORY.split(";").sort(), expected.toSorted());
   });
 }
-
 /** Check the actual release pack step against single and ambiguous archive output. */
 // prettier-ignore
 test("release pack step hashes one actual archive and rejects ambiguous output", () => {
+  const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles, "Git", "bin", "bash.exe") : "bash";
   const step = Object.values(YAML.parse(fs.readFileSync(path.join(WORKFLOW_DIR, "release.yml"), "utf8")).jobs).flatMap((job) => job.steps ?? []).find((candidate) => candidate.name === "Pack npm package");
   for (const ambiguous of [false, true]) {
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-release-pack-"));
@@ -928,13 +928,13 @@ test("release pack step hashes one actual archive and rejects ambiguous output",
       fs.writeFileSync(path.join(temp, "package.json"), JSON.stringify({ name: "com.wallstop-studios.dxmessaging", version: "0.0.0" }));
       fs.mkdirSync(path.join(temp, ".artifacts/release"), { recursive: true });
       const stale = path.join(temp, ".artifacts/release/stale.tgz"); if (ambiguous) fs.writeFileSync(stale, "retained");
-      const output = path.join(temp, "output.txt"); const result = spawnSync("bash", ["-c", step.run], { cwd: temp, encoding: "utf8", env: { ...process.env, GITHUB_OUTPUT: output } });
+      fs.mkdirSync(path.join(temp, "bin")); fs.writeFileSync(path.join(temp, "bin", "sha256sum"), "#!/bin/sh\nexit 89\n"); fs.chmodSync(path.join(temp, "bin", "sha256sum"), 0o755);
+      const output = path.join(temp, "output.txt"); const result = spawnSync(bash, ["-c", 'export PATH="$PWD/bin:$PATH";\n' + step.run], { cwd: temp, encoding: "utf8", env: { ...process.env, GITHUB_OUTPUT: output } });
       if (ambiguous) { assert.notEqual(result.status, 0, "An existing second archive must fail qualification"); assert.equal(fs.readFileSync(stale, "utf8"), "retained"); }
-      else { assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`); assert.match(fs.readFileSync(output, "utf8"), /^package-file=com.wallstop-studios.dxmessaging-0.0.0\.tgz\r?\n$/); const verify = spawnSync("sha256sum", ["--check", "com.wallstop-studios.dxmessaging-0.0.0.tgz.sha256"], { cwd: path.join(temp, ".artifacts/release"), encoding: "utf8" }); assert.equal(verify.status, 0, verify.stdout + verify.stderr); }
+      else { assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`); assert.match(fs.readFileSync(output, "utf8"), /^package-file=com.wallstop-studios.dxmessaging-0.0.0\.tgz\r?\n$/); const archive = path.join(temp, ".artifacts/release/com.wallstop-studios.dxmessaging-0.0.0.tgz"); const digest = createHash("sha256").update(fs.readFileSync(archive)).digest("hex"); assert.equal(fs.readFileSync(archive + ".sha256", "utf8"), `${digest}  ${path.basename(archive)}\n`); }
     } finally { fs.rmSync(temp, { recursive: true, force: true }); }
   }
 });
-
 /** Check both actual smoke command blocks against valid and invalid documentation SDK versions. */
 // prettier-ignore
 test("container SDK smoke checks accept allowed docs feature bands", { skip: process.platform === "win32" }, () => {

@@ -232,20 +232,36 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             bool untargeted = ImplementsInterface(typeSymbol, UntargetedInterfaceFullName);
             bool targeted = ImplementsInterface(typeSymbol, TargetedInterfaceFullName);
             bool broadcast = ImplementsInterface(typeSymbol, BroadcastInterfaceFullName);
+            bool external = !SymbolEqualityComparer.Default.Equals(
+                typeSymbol.ContainingAssembly,
+                compilation.Assembly
+            );
             int messageAttributes = 0;
             foreach (AttributeData attribute in typeSymbol.GetAttributes())
             {
                 switch (attribute.AttributeClass?.ToDisplayString())
                 {
                     case UntargetedAttrFullName:
+                        if (external && !untargeted)
+                        {
+                            return false;
+                        }
                         untargeted = true;
                         ++messageAttributes;
                         break;
                     case TargetedAttrFullName:
+                        if (external && !targeted)
+                        {
+                            return false;
+                        }
                         targeted = true;
                         ++messageAttributes;
                         break;
                     case BroadcastAttrFullName:
+                        if (external && !broadcast)
+                        {
+                            return false;
+                        }
                         broadcast = true;
                         ++messageAttributes;
                         break;

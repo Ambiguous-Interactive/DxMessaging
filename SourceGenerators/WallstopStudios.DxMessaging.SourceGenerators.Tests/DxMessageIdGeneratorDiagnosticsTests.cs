@@ -1071,6 +1071,91 @@ namespace External
         );
     }
 
+    /// <summary>Rejects metadata-only markers whose referenced assembly never generated the required route interface.</summary>
+    /// <remarks>2026-11-11: A referenced assembly cannot receive a missing interface from this consumer's generator.</remarks>
+    [TestCase("Untargeted", "", false)]
+    [TestCase("Targeted", "", false)]
+    [TestCase("Broadcast", "", false)]
+    [TestCase("Untargeted", "Untargeted", true)]
+    [TestCase("Targeted", "Targeted", true)]
+    [TestCase("Broadcast", "Broadcast", true)]
+    [TestCase("Untargeted", "Targeted", false)]
+    [TestCase("Targeted", "Broadcast", false)]
+    [TestCase("Broadcast", "Untargeted", false)]
+    public void ReferencedMarkedMessagesRequireTheirActualRoute(
+        string marker,
+        string implemented,
+        bool valid
+    )
+    {
+        string inheritance =
+            implemented.Length == 0
+                ? ""
+                : $" : DxMessaging.Core.Messages.I{implemented}Message<MarkedMessage<T>>";
+        PortableExecutableReference external = GeneratorTestUtilities.CompileBaseCallAnalyzerParent(
+            $"namespace External {{ [DxMessaging.Core.Attributes.Dx{marker}Message] public readonly struct MarkedMessage<T>{inheritance} {{ }} }}"
+        );
+        CSharpParseOptions options = new(
+            LanguageVersion.CSharp9,
+            preprocessorSymbols: Il2CppPreprocessorSymbols
+        );
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "ExternalMarkedConsumer",
+            new[]
+            {
+                CSharpSyntaxTree.ParseText(
+                    "[assembly: DxMessaging.Core.Attributes.DxAotMessage(typeof(External.MarkedMessage<bool>))]",
+                    options
+                ),
+            },
+            GeneratorTestUtilities.CompilationReferences.Add(external),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new[] { new DxMessageIdGenerator() },
+            parseOptions: options
+        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(
+            compilation,
+            out Compilation output,
+            out System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics
+        );
+        if (valid)
+        {
+            Assert.That(
+                diagnostics,
+                Is.Empty,
+                $"{marker}/{implemented}: an external implemented route must be accepted."
+            );
+            Assert.That(
+                GetGeneratedSource(driver.GetRunResult()),
+                Does.Contain("typeof(global::External.MarkedMessage<bool>)"),
+                "The accepted external route must retain its startup root."
+            );
+        }
+        else
+        {
+            Assert.That(
+                diagnostics,
+                Has.Exactly(1).Matches<Diagnostic>(d => d != null && d.Id == "DXMSG014"),
+                $"{marker}/{implemented}: an unimplemented external marker must report DXMSG014."
+            );
+            Assert.That(
+                GetGeneratedSource(driver.GetRunResult()),
+                Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"),
+                "Rejected external types must not produce invalid bridges."
+            );
+        }
+        Assert.That(
+            output.GetDiagnostics(),
+            Is.Empty,
+            $"{marker}/{implemented}: generated consumer output must compile cleanly."
+        );
+    }
+
     private static void AssertGeneratedOutputCompilesForIl2Cpp(string source)
     {
         Diagnostic[] errors = GeneratorTestUtilities

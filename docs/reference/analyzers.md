@@ -633,6 +633,9 @@ An assembly-level `DxAotMessage` attribute must select a closed, concrete class
 or struct with a Dx message contract. The type and its generic arguments must be
 accessible from the assembly containing the attribute. A generic definition,
 abstract class, interface, null value, or non-message type cannot produce a bridge.
+A type from a referenced assembly must already implement every route named by its
+message marker. A marker alone cannot add an interface to another assembly.
+Types generated in the current compilation can still infer their route from the marker.
 
 Replace an open selection with each concrete form used by untyped dispatch.
 Use a public or internal type accessible to the assembly, or perform typed
