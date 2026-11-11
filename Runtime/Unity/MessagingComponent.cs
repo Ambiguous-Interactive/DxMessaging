@@ -53,6 +53,9 @@ namespace DxMessaging.Unity
         internal readonly Dictionary<MonoBehaviour, MessageRegistrationToken> _registeredListeners =
             new();
 
+        /// <summary>Gets whether Unity has begun the owner's destruction callback.</summary>
+        internal bool DestructionStarted => _destroyed;
+
         internal bool AutoConfigureSerializedProviderOnAwake =>
             autoConfigureSerializedProviderOnAwake;
 

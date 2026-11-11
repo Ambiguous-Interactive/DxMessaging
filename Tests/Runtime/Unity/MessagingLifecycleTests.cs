@@ -231,7 +231,7 @@ namespace DxMessaging.Tests.Runtime.Unity
             bus.OnCleanup = () =>
             {
                 Register(scenario, token, () => ++calls);
-                token.Enable();
+                lifecycle.Enable();
                 lifecycle.Dispose();
             };
             lifecycle.Dispose();
@@ -467,6 +467,121 @@ namespace DxMessaging.Tests.Runtime.Unity
                 lifecycle.IsDisposed,
                 Is.True,
                 "Already completed component cleanup must permit final lifecycle disposal."
+            );
+        }
+
+        /// <summary>Retains failed deactivation cleanup for retry through the same lifecycle owner.</summary>
+        [Test]
+        public void FailedDisableRecoversThroughTheOwningLifecycle(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool disposeOnRetry
+        )
+        {
+            Bus inner = new();
+            CallbackBus bus = new(inner);
+            using LeakWatcher leaks = new(bus: inner, label: scenario.Kind.ToString());
+            MessagingComponent component = Create(bus, out ManualListenerComponent listener);
+            MessagingLifecycle lifecycle = component.CreateLifecycleBound(listener);
+            MessageRegistrationToken token = lifecycle.Token;
+            int calls = 0;
+            Register(scenario, token, () => ++calls);
+            lifecycle.Enable();
+            bus.FailCleanup = true;
+            try
+            {
+                Assert.Throws<InvalidOperationException>(
+                    () => lifecycle.Disable(),
+                    "Failed deactivation must report the bus cleanup exception."
+                );
+                Assert.That(
+                    lifecycle.IsDisposed,
+                    Is.False,
+                    "Disable failure must preserve the owning lifecycle."
+                );
+                Assert.That(
+                    lifecycle.Token,
+                    Is.SameAs(token),
+                    "Retry must preserve the captured token."
+                );
+                Assert.That(
+                    token._metadata.Count,
+                    Is.EqualTo(1),
+                    "Failed deactivation must retain staged handlers for retry."
+                );
+                bus.FailCleanup = false;
+                if (disposeOnRetry)
+                {
+                    lifecycle.Dispose();
+                    Assert.That(
+                        lifecycle.IsDisposed,
+                        Is.True,
+                        "Final disposal must recover from a failed disable."
+                    );
+                    Assert.That(
+                        token._metadata.Count,
+                        Is.Zero,
+                        "Final retry must release all metadata."
+                    );
+                }
+                else
+                {
+                    lifecycle.Disable();
+                    lifecycle.Enable();
+                    Emit(scenario, bus);
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(1),
+                        $"[{scenario.Kind}] Retried disable and enable must deliver exactly once."
+                    );
+                }
+            }
+            finally
+            {
+                bus.FailCleanup = false;
+                lifecycle.Dispose();
+            }
+        }
+
+        /// <summary>Rejects activation after managed owner destruction starts but before Unity deletes its native object.</summary>
+        /// <remarks>2026-11-11: Unity's native object stays alive during OnDestroy. Repeat consecutive owners to check cleanup state reuse.</remarks>
+        [Test]
+        [Repeat(10)]
+        public void DestructionRejectsReentrantLifecycleActivation(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            Bus inner = new();
+            CallbackBus bus = new(inner);
+            using LeakWatcher leaks = new(bus: inner, label: scenario.Kind.ToString());
+            MessagingComponent component = Create(bus, out ManualListenerComponent listener);
+            using MessagingLifecycle lifecycle = component.CreateLifecycleBound(listener);
+            Register(scenario, lifecycle.Token, () => { });
+            lifecycle.Enable();
+            Exception observed = null;
+            bus.OnCleanup = () =>
+            {
+                try
+                {
+                    lifecycle.Enable();
+                }
+                catch (Exception error)
+                {
+                    observed = error;
+                }
+            };
+            Object.DestroyImmediate(component);
+            Assert.That(
+                observed,
+                Is.TypeOf<ObjectDisposedException>(),
+                $"[{scenario.Kind}] Destruction must reject callback reactivation before native deletion completes."
+            );
+            lifecycle.Dispose();
+            Assert.That(
+                lifecycle.IsDisposed,
+                Is.True,
+                "Destroyed managed owners must still allow final cleanup."
             );
         }
 

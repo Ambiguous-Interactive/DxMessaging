@@ -46,7 +46,7 @@ namespace DxMessaging.Unity
         public void Enable()
         {
             MessageRegistrationToken token = Token;
-            if (_component == null || _listener == null)
+            if (_component == null || _listener == null || _component.DestructionStarted)
             {
                 throw new ObjectDisposedException(nameof(MessagingLifecycle));
             }

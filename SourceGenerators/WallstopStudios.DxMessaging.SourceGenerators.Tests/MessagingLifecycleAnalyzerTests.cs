@@ -229,6 +229,23 @@ public class Listener : UnityEngine.MonoBehaviour
         );
     }
 
+    /// <summary>Preserves field identity through a closed generic singleton base and its overrides.</summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void GenericBaseForwardingPreservesTheOwnedField(bool broken)
+    {
+        string source =
+            Listener.Replace("class Listener :", "class Listener<T> :", StringComparison.Ordinal)
+            + "public sealed class Singleton : Listener<int> { protected override void Awake() { base.Awake(); } protected override void OnEnable() { base.OnEnable(); } protected override void OnDisable() { base.OnDisable(); } protected override void OnDestroy() { "
+            + (broken ? "" : "base.OnDestroy();")
+            + " } }";
+        Assert.That(
+            Analyze(source).Select(d => d.Id),
+            broken ? Is.EqualTo(ExpectedMissing) : Is.Empty,
+            "A generic base must preserve forwarding and diagnose a broken derived callback."
+        );
+    }
+
     /// <summary>Compiles an isolated consumer and executes every registered production diagnostic analyzer.</summary>
     private static ImmutableArray<Diagnostic> Analyze(string source)
     {

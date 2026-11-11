@@ -169,7 +169,8 @@ conditional reachability, aliases, interface dispatch, or behavior in referenced
 Configure the `MessagingComponent` bus or provider before creating the helper. Existing
 `Configure` calls and active bus migration also apply to its captured token. Disabling keeps
 staged handlers for pooling; successful disposal removes them and releases the listener cache.
-A released or replaced token cannot be re-enabled through a stale helper, and stale disposal
+Activation stops when component destruction begins. A released or replaced token cannot be
+re-enabled through a stale helper, and stale disposal
 never releases its replacement. Calls for the same listener capture the same cached token.
 
 A custom bus can throw during cleanup. Retain the helper and retry `Dispose` after the bus
