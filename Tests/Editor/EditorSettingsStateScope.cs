@@ -348,8 +348,7 @@ try {
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                     };
-                    System.Diagnostics.Process child =
-                        System.Diagnostics.Process.Start(start)
+                    System.Diagnostics.Process child = System.Diagnostics.Process.Start(start)
                         ?? throw new InvalidOperationException("Owned holder did not start.");
                     _children.Add(child);
                     System.Threading.Tasks.Task<string> ready =

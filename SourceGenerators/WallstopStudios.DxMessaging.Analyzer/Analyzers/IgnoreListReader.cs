@@ -65,13 +65,12 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Analyzers
                 file, so dropping cancellation here is acceptable; the outer `cancellationToken`
                 parameter still flows through symbol-side lookups in the analyzer call sites.
             */
-            Lazy<ImmutableHashSet<string>> lazy = Cache.GetValue(
-                options,
-                key => new Lazy<ImmutableHashSet<string>>(
-                    () => Parse(key, CancellationToken.None),
-                    System.Threading.LazyThreadSafetyMode.ExecutionAndPublication
-                )
-            );
+            Lazy<ImmutableHashSet<string>> lazy = Cache.GetValue(options, key => new Lazy<
+                ImmutableHashSet<string>
+            >(
+                () => Parse(key, CancellationToken.None),
+                System.Threading.LazyThreadSafetyMode.ExecutionAndPublication
+            ));
 
             return lazy.Value;
         }

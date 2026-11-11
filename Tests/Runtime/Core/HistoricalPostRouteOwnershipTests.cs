@@ -113,163 +113,138 @@ namespace DxMessaging.Tests.Runtime.Core
 
             void RegisterChildInterceptor(MessageRegistrationToken owner)
             {
-                RegisterInterceptor(
-                    owner,
-                    kind,
-                    (ref InstanceId route, ref ProbeMessage message) =>
+                RegisterInterceptor(owner, kind, (ref InstanceId route, ref ProbeMessage message) =>
+                {
+                    route = destination;
+                    if (phase == "child" && !childAdded)
                     {
-                        route = destination;
-                        if (phase == "child" && !childAdded)
-                        {
-                            childAdded = true;
-                            _ = RegisterPost(owner, kind, fast, destination, () => Record("D"));
-                        }
-                        return true;
+                        childAdded = true;
+                        _ = RegisterPost(owner, kind, fast, destination, () => Record("D"));
                     }
-                );
+                    return true;
+                });
             }
 
-            _ = RegisterPost(
-                token,
-                kind,
-                fast,
-                destination,
-                () =>
+            _ = RegisterPost(token, kind, fast, destination, () =>
+            {
+                Record("A");
+                if (!armed || phase != "outer")
                 {
-                    Record("A");
-                    if (!armed || phase != "outer")
-                    {
-                        return;
-                    }
-
-                    armed = false;
-                    IList history = History(bus);
-                    beforeChildHistory = history?.Count ?? 0;
-                    oldSnapshot = Field(history[0], "snapshot");
-                    oldFlat = Field(oldSnapshot, "flat");
-                    oldEntries = (Array)Field(oldFlat, "entries");
-                    oldEntryCount = (int)Field(oldFlat, "count");
-                    _ = bus.Trim(force: true);
-                    activeTrimBeforePreserved =
-                        History(bus).Count == beforeChildHistory
-                        && ReferenceEquals(oldFlat, Field(oldSnapshot, "flat"))
-                        && ReferencesPresent(oldEntries, oldEntryCount);
-
-                    if (reset == 1)
-                    {
-                        bus.BumpResetGeneration();
-                    }
-                    else if (reset == 2)
-                    {
-                        bus.ResetState();
-                        fresh = MessageRegistrationToken.Create(handler, bus);
-                        state.Fresh = fresh;
-                        fresh.Enable();
-                        for (int index = 0; index < count; ++index)
-                        {
-                            int capturedIndex = index;
-                            _ = RegisterPost(
-                                fresh,
-                                kind,
-                                fast,
-                                destination,
-                                () => Record("X" + capturedIndex)
-                            );
-                        }
-                        RegisterWithout(fresh, kind, fast, () => Record("fresh-without"));
-                        RegisterChildInterceptor(fresh);
-                    }
-
-                    phase = "child";
-                    try
-                    {
-                        Emit(bus, kind, origin);
-                    }
-                    finally
-                    {
-                        phase = "outer";
-                    }
-
-                    afterChildHistory = History(bus)?.Count ?? 0;
-                    parentOwnershipCorrect =
-                        reset == 0
-                            ? ReferenceEquals(oldFlat, Field(oldSnapshot, "flat"))
-                            : Field(oldSnapshot, "flat") == null;
-                    parentArrayStateCorrect =
-                        reset == 0
-                            ? ReferencesPresent(oldEntries, oldEntryCount)
-                            : ReferencesCleared(oldEntries, oldEntryCount);
-                    object retainedSnapshot =
-                        afterChildHistory == 1 ? Field(History(bus)[0], "snapshot") : null;
-                    object retainedFlat =
-                        retainedSnapshot == null ? null : Field(retainedSnapshot, "flat");
-                    if (retainedSnapshot != null)
-                    {
-                        object empty = typeof(MessageBus)
-                            .GetNestedType("DispatchSnapshot", BindingFlags.NonPublic)
-                            .GetField("Empty", BindingFlags.Static | BindingFlags.Public)
-                            .GetValue(null);
-                        retainedIsEmpty = ReferenceEquals(empty, retainedSnapshot);
-                        retainedEntryCount = (int)Field(retainedSnapshot, "entryCount");
-                        retainedHasRegistrations = (bool)Field(
-                            retainedSnapshot,
-                            "hasRegistrations"
-                        );
-                        retainedSnapshotStateCorrect =
-                            reset == 2
-                                ? retainedIsEmpty
-                                    && retainedFlat == null
-                                    && retainedEntryCount == 0
-                                    && !retainedHasRegistrations
-                                : !retainedIsEmpty
-                                    && retainedFlat != null
-                                    && retainedEntryCount == count
-                                    && retainedHasRegistrations;
-                    }
-                    _ = bus.Trim(force: true);
-                    activeTrimAfterPreserved =
-                        afterChildHistory == 1
-                        && retainedSnapshot != null
-                        && History(bus).Count == 1
-                        && ReferenceEquals(retainedSnapshot, Field(History(bus)[0], "snapshot"))
-                        && ReferenceEquals(retainedFlat, Field(retainedSnapshot, "flat"));
-                    if (throwing)
-                    {
-                        throw sentinel;
-                    }
+                    return;
                 }
-            );
+
+                armed = false;
+                IList history = History(bus);
+                beforeChildHistory = history?.Count ?? 0;
+                oldSnapshot = Field(history[0], "snapshot");
+                oldFlat = Field(oldSnapshot, "flat");
+                oldEntries = (Array)Field(oldFlat, "entries");
+                oldEntryCount = (int)Field(oldFlat, "count");
+                _ = bus.Trim(force: true);
+                activeTrimBeforePreserved =
+                    History(bus).Count == beforeChildHistory
+                    && ReferenceEquals(oldFlat, Field(oldSnapshot, "flat"))
+                    && ReferencesPresent(oldEntries, oldEntryCount);
+
+                if (reset == 1)
+                {
+                    bus.BumpResetGeneration();
+                }
+                else if (reset == 2)
+                {
+                    bus.ResetState();
+                    fresh = MessageRegistrationToken.Create(handler, bus);
+                    state.Fresh = fresh;
+                    fresh.Enable();
+                    for (int index = 0; index < count; ++index)
+                    {
+                        int capturedIndex = index;
+                        _ = RegisterPost(fresh, kind, fast, destination, () =>
+                            Record("X" + capturedIndex)
+                        );
+                    }
+                    RegisterWithout(fresh, kind, fast, () => Record("fresh-without"));
+                    RegisterChildInterceptor(fresh);
+                }
+
+                phase = "child";
+                try
+                {
+                    Emit(bus, kind, origin);
+                }
+                finally
+                {
+                    phase = "outer";
+                }
+
+                afterChildHistory = History(bus)?.Count ?? 0;
+                parentOwnershipCorrect =
+                    reset == 0
+                        ? ReferenceEquals(oldFlat, Field(oldSnapshot, "flat"))
+                        : Field(oldSnapshot, "flat") == null;
+                parentArrayStateCorrect =
+                    reset == 0
+                        ? ReferencesPresent(oldEntries, oldEntryCount)
+                        : ReferencesCleared(oldEntries, oldEntryCount);
+                object retainedSnapshot =
+                    afterChildHistory == 1 ? Field(History(bus)[0], "snapshot") : null;
+                object retainedFlat =
+                    retainedSnapshot == null ? null : Field(retainedSnapshot, "flat");
+                if (retainedSnapshot != null)
+                {
+                    object empty = typeof(MessageBus)
+                        .GetNestedType("DispatchSnapshot", BindingFlags.NonPublic)
+                        .GetField("Empty", BindingFlags.Static | BindingFlags.Public)
+                        .GetValue(null);
+                    retainedIsEmpty = ReferenceEquals(empty, retainedSnapshot);
+                    retainedEntryCount = (int)Field(retainedSnapshot, "entryCount");
+                    retainedHasRegistrations = (bool)Field(retainedSnapshot, "hasRegistrations");
+                    retainedSnapshotStateCorrect =
+                        reset == 2
+                            ? retainedIsEmpty
+                                && retainedFlat == null
+                                && retainedEntryCount == 0
+                                && !retainedHasRegistrations
+                            : !retainedIsEmpty
+                                && retainedFlat != null
+                                && retainedEntryCount == count
+                                && retainedHasRegistrations;
+                }
+                _ = bus.Trim(force: true);
+                activeTrimAfterPreserved =
+                    afterChildHistory == 1
+                    && retainedSnapshot != null
+                    && History(bus).Count == 1
+                    && ReferenceEquals(retainedSnapshot, Field(History(bus)[0], "snapshot"))
+                    && ReferenceEquals(retainedFlat, Field(retainedSnapshot, "flat"));
+                if (throwing)
+                {
+                    throw sentinel;
+                }
+            });
             for (int index = 1; index < count; ++index)
             {
                 int capturedIndex = index;
-                last = RegisterPost(
-                    token,
-                    kind,
-                    fast,
-                    destination,
-                    () => Record("tail" + capturedIndex)
+                last = RegisterPost(token, kind, fast, destination, () =>
+                    Record("tail" + capturedIndex)
                 );
             }
             RegisterWithout(token, kind, fast, () => Record("W"));
-            RegisterInterceptor(
-                token,
-                kind,
-                (ref InstanceId route, ref ProbeMessage message) =>
+            RegisterInterceptor(token, kind, (ref InstanceId route, ref ProbeMessage message) =>
+            {
+                route = destination;
+                if (phase == "outer" && armed)
                 {
-                    route = destination;
-                    if (phase == "outer" && armed)
-                    {
-                        token.RemoveRegistration(last);
-                        _ = RegisterPost(token, kind, fast, destination, () => Record("C"));
-                    }
-                    else if (phase == "child" && !childAdded)
-                    {
-                        childAdded = true;
-                        _ = RegisterPost(token, kind, fast, destination, () => Record("D"));
-                    }
-                    return true;
+                    token.RemoveRegistration(last);
+                    _ = RegisterPost(token, kind, fast, destination, () => Record("C"));
                 }
-            );
+                else if (phase == "child" && !childAdded)
+                {
+                    childAdded = true;
+                    _ = RegisterPost(token, kind, fast, destination, () => Record("D"));
+                }
+                return true;
+            });
 
             List<string> expectedFirst = new List<string> { "outer:A" };
             if (reset == 2)

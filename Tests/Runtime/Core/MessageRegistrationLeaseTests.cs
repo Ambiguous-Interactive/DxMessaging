@@ -246,11 +246,8 @@ namespace DxMessaging.Tests.Runtime.Core
                         (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
-                Lifecycle = new MessageRegistrationLifecycle(
-                    null,
-                    null,
-                    null,
-                    _ => throw new InvalidOperationException("OnDispose failure")
+                Lifecycle = new MessageRegistrationLifecycle(null, null, null, _ =>
+                    throw new InvalidOperationException("OnDispose failure")
                 ),
             };
 
@@ -454,11 +451,8 @@ namespace DxMessaging.Tests.Runtime.Core
                         (in SimpleUntargetedMessage _) => ++handled
                     );
                 },
-                Lifecycle = new MessageRegistrationLifecycle(
-                    null,
-                    null,
-                    null,
-                    _ => throw new InvalidOperationException("OnDispose failure")
+                Lifecycle = new MessageRegistrationLifecycle(null, null, null, _ =>
+                    throw new InvalidOperationException("OnDispose failure")
                 ),
             };
 

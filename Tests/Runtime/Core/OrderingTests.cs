@@ -116,13 +116,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => stages.Add("G"), (_, _) => { });
 
-            _ = token.RegisterGameObjectTargeted(
-                go,
-                (in SimpleTargetedMessage _) => stages.Add("H")
+            _ = token.RegisterGameObjectTargeted(go, (in SimpleTargetedMessage _) =>
+                stages.Add("H")
             );
-            _ = token.RegisterGameObjectTargetedPostProcessor(
-                go,
-                (in SimpleTargetedMessage _) => stages.Add("P")
+            _ = token.RegisterGameObjectTargetedPostProcessor(go, (in SimpleTargetedMessage _) =>
+                stages.Add("P")
             );
 
             SimpleTargetedMessage msg = new();
@@ -166,13 +164,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => { }, (_, _) => stages.Add("G"));
 
-            _ = token.RegisterGameObjectBroadcast(
-                go,
-                (in SimpleBroadcastMessage _) => stages.Add("H")
+            _ = token.RegisterGameObjectBroadcast(go, (in SimpleBroadcastMessage _) =>
+                stages.Add("H")
             );
-            _ = token.RegisterGameObjectBroadcastPostProcessor(
-                go,
-                (in SimpleBroadcastMessage _) => stages.Add("P")
+            _ = token.RegisterGameObjectBroadcastPostProcessor(go, (in SimpleBroadcastMessage _) =>
+                stages.Add("P")
             );
 
             SimpleBroadcastMessage msg = new();
@@ -554,16 +550,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 0
             );
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => stages.Add("G"), (_, _) => { });
-            _ = token.RegisterGameObjectTargeted(
-                go,
-                (in SimpleTargetedMessage _) => stages.Add("Hspec")
+            _ = token.RegisterGameObjectTargeted(go, (in SimpleTargetedMessage _) =>
+                stages.Add("Hspec")
             );
             _ = token.RegisterTargetedWithoutTargeting(
                 (InstanceId _, SimpleTargetedMessage _) => stages.Add("Hall")
             );
-            _ = token.RegisterGameObjectTargetedPostProcessor(
-                go,
-                (in SimpleTargetedMessage _) => stages.Add("Pspec")
+            _ = token.RegisterGameObjectTargetedPostProcessor(go, (in SimpleTargetedMessage _) =>
+                stages.Add("Pspec")
             );
             _ = token.RegisterTargetedWithoutTargetingPostProcessor(
                 (InstanceId _, SimpleTargetedMessage _) => stages.Add("Pall")
@@ -599,16 +593,14 @@ namespace DxMessaging.Tests.Runtime.Core
                 0
             );
             _ = token.RegisterGlobalAcceptAll(_ => { }, (_, _) => { }, (_, _) => stages.Add("G"));
-            _ = token.RegisterGameObjectBroadcast(
-                go,
-                (in SimpleBroadcastMessage _) => stages.Add("Hspec")
+            _ = token.RegisterGameObjectBroadcast(go, (in SimpleBroadcastMessage _) =>
+                stages.Add("Hspec")
             );
             _ = token.RegisterBroadcastWithoutSource(
                 (InstanceId _, SimpleBroadcastMessage _) => stages.Add("Hall")
             );
-            _ = token.RegisterGameObjectBroadcastPostProcessor(
-                go,
-                (in SimpleBroadcastMessage _) => stages.Add("Pspec")
+            _ = token.RegisterGameObjectBroadcastPostProcessor(go, (in SimpleBroadcastMessage _) =>
+                stages.Add("Pspec")
             );
             _ = token.RegisterBroadcastWithoutSourcePostProcessor(
                 (InstanceId _, SimpleBroadcastMessage _) => stages.Add("Pall")

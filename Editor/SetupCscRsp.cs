@@ -581,24 +581,19 @@ namespace DxMessaging.Editor
             foundStaleEntries = false;
             foreach (string line in lines ?? Array.Empty<string>())
             {
-                string rewritten = RewriteResponseFileLine(
-                    line,
-                    argument =>
+                string rewritten = RewriteResponseFileLine(line, argument =>
+                {
+                    if (
+                        !TryGetCompilerOptionValue(argument, "a", out string value)
+                        && !TryGetCompilerOptionValue(argument, "analyzer", out value)
+                    )
                     {
-                        if (
-                            !TryGetCompilerOptionValue(argument, "a", out string value)
-                            && !TryGetCompilerOptionValue(argument, "analyzer", out value)
-                        )
-                        {
-                            return argument;
-                        }
-                        return FilterCompilerPaths(
-                            argument,
-                            value,
-                            path => !IsDxMessagingAnalyzerPath(DecodeCompilerPath(path))
-                        );
+                        return argument;
                     }
-                );
+                    return FilterCompilerPaths(argument, value, path =>
+                        !IsDxMessagingAnalyzerPath(DecodeCompilerPath(path))
+                    );
+                });
                 foundStaleEntries |= !string.Equals(line, rewritten, StringComparison.Ordinal);
                 if (rewritten != null)
                 {
@@ -622,60 +617,51 @@ namespace DxMessaging.Editor
             modified = false;
             foreach (string line in lines ?? Array.Empty<string>())
             {
-                string rewritten = RewriteResponseFileLine(
-                    line,
-                    argument =>
+                string rewritten = RewriteResponseFileLine(line, argument =>
+                {
+                    if (!TryGetCompilerOptionValue(argument, "additionalfile", out string value))
                     {
+                        return argument;
+                    }
+                    bool insertDesired = false;
+                    string retained = FilterCompilerPaths(argument, value, path =>
+                    {
+                        string decoded = DecodeCompilerPath(path).Replace("\\", "/");
+                        string fileName = GetLegacyAnalyzerCopyEntryName(decoded);
                         if (
-                            !TryGetCompilerOptionValue(argument, "additionalfile", out string value)
+                            !string.Equals(
+                                fileName,
+                                "DxMessaging.BaseCallIgnore.txt",
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                            && !string.Equals(
+                                fileName,
+                                "DxMessaging.BaseCallIgnore.generated.txt",
+                                StringComparison.OrdinalIgnoreCase
+                            )
                         )
                         {
-                            return argument;
+                            return true;
                         }
-                        bool insertDesired = false;
-                        string retained = FilterCompilerPaths(
-                            argument,
-                            value,
-                            path =>
-                            {
-                                string decoded = DecodeCompilerPath(path).Replace("\\", "/");
-                                string fileName = GetLegacyAnalyzerCopyEntryName(decoded);
-                                if (
-                                    !string.Equals(
-                                        fileName,
-                                        "DxMessaging.BaseCallIgnore.txt",
-                                        StringComparison.OrdinalIgnoreCase
-                                    )
-                                    && !string.Equals(
-                                        fileName,
-                                        "DxMessaging.BaseCallIgnore.generated.txt",
-                                        StringComparison.OrdinalIgnoreCase
-                                    )
-                                )
-                                {
-                                    return true;
-                                }
-                                if (
-                                    sidecarExists
-                                    && !foundDesired
-                                    && string.Equals(
-                                        decoded,
-                                        sidecarRelativePath,
-                                        StringComparison.OrdinalIgnoreCase
-                                    )
-                                )
-                                {
-                                    foundDesired = true;
-                                    insertDesired = true;
-                                }
-                                return false;
-                            }
-                        );
-                        return insertDesired
-                            ? (retained == null ? desired : retained + " " + desired)
-                            : retained;
-                    }
-                );
+                        if (
+                            sidecarExists
+                            && !foundDesired
+                            && string.Equals(
+                                decoded,
+                                sidecarRelativePath,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        )
+                        {
+                            foundDesired = true;
+                            insertDesired = true;
+                        }
+                        return false;
+                    });
+                    return insertDesired
+                        ? (retained == null ? desired : retained + " " + desired)
+                        : retained;
+                });
                 modified |= !string.Equals(line, rewritten, StringComparison.Ordinal);
                 if (rewritten != null)
                 {

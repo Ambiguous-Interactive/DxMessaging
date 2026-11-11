@@ -32,28 +32,20 @@ namespace DxMessaging.Tests.Runtime.Core
             int second = 0;
             MessageRegistrationHandle? secondHandle = null;
 
-            MessageRegistrationHandle firstHandle = RegisterInterceptor(
-                scenario,
-                token,
-                () =>
+            MessageRegistrationHandle firstHandle = RegisterInterceptor(scenario, token, () =>
+            {
+                first++;
+                if (secondHandle == null)
                 {
-                    first++;
-                    if (secondHandle == null)
+                    secondHandle = RegisterInterceptor(scenario, token, () =>
                     {
-                        secondHandle = RegisterInterceptor(
-                            scenario,
-                            token,
-                            () =>
-                            {
-                                second++;
-                                return true;
-                            }
-                        );
-                    }
-
-                    return false; // block pipeline
+                        second++;
+                        return true;
+                    });
                 }
-            );
+
+                return false; // block pipeline
+            });
 
             EmitForScenario(scenario, hostId);
             Assert.AreEqual(1, first);
@@ -123,11 +115,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 },
                 priority: 0
             );
-            _ = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () => ++handlerCount
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
+                ++handlerCount
             );
 
             Assert.DoesNotThrow(
@@ -206,11 +195,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken rebornToken = GetToken(rebornComponent);
             InstanceId rebornId = rebornHost;
             int rebornCount = 0;
-            _ = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                rebornToken,
-                rebornId,
-                () => ++rebornCount
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, rebornToken, rebornId, () =>
+                ++rebornCount
             );
 
             EmitForScenario(scenario, rebornId);

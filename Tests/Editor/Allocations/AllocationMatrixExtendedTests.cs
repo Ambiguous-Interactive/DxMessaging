@@ -81,85 +81,79 @@ namespace DxMessaging.Tests.Editor.Allocations
             bool featured
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                string label = scenario + ",fast=" + fast + ",featured=" + featured;
+                int primaryCalls = 0;
+                int variantCalls = 0;
+                switch (scenario.Kind)
                 {
-                    string label = scenario + ",fast=" + fast + ",featured=" + featured;
-                    int primaryCalls = 0;
-                    int variantCalls = 0;
-                    switch (scenario.Kind)
+                    case MessageKind.Targeted:
                     {
-                        case MessageKind.Targeted:
+                        if (fast)
                         {
-                            if (fast)
-                            {
-                                _ = token.RegisterTargeted<SimpleTargetedMessage>(
-                                    StableTarget,
-                                    (in SimpleTargetedMessage _) => ++primaryCalls
-                                );
-                                _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                                    (in InstanceId _, in SimpleTargetedMessage __) => ++variantCalls
-                                );
-                            }
-                            else
-                            {
-                                _ = token.RegisterTargeted<SimpleTargetedMessage>(
-                                    StableTarget,
-                                    _ => ++primaryCalls
-                                );
-                                _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
-                                    (_, __) => ++variantCalls
-                                );
-                            }
-                            break;
-                        }
-                        case MessageKind.Broadcast:
-                        {
-                            if (fast)
-                            {
-                                _ = token.RegisterBroadcast<SimpleBroadcastMessage>(
-                                    StableSource,
-                                    (in SimpleBroadcastMessage _) => ++primaryCalls
-                                );
-                                _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                                    (in InstanceId _, in SimpleBroadcastMessage __) =>
-                                        ++variantCalls
-                                );
-                            }
-                            else
-                            {
-                                _ = token.RegisterBroadcast<SimpleBroadcastMessage>(
-                                    StableSource,
-                                    _ => ++primaryCalls
-                                );
-                                _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
-                                    (_, __) => ++variantCalls
-                                );
-                            }
-                            break;
-                        }
-                        default:
-                        {
-                            throw new InvalidOperationException(
-                                $"Unhandled MessageKind {scenario.Kind}."
+                            _ = token.RegisterTargeted<SimpleTargetedMessage>(
+                                StableTarget,
+                                (in SimpleTargetedMessage _) => ++primaryCalls
+                            );
+                            _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
+                                (in InstanceId _, in SimpleTargetedMessage __) => ++variantCalls
                             );
                         }
+                        else
+                        {
+                            _ = token.RegisterTargeted<SimpleTargetedMessage>(StableTarget, _ =>
+                                ++primaryCalls
+                            );
+                            _ = token.RegisterTargetedWithoutTargeting<SimpleTargetedMessage>(
+                                (_, __) => ++variantCalls
+                            );
+                        }
+                        break;
                     }
-                    if (featured)
+                    case MessageKind.Broadcast:
                     {
-                        _ = RegisterAllowingInterceptor(scenario.WithInterceptor(true), token);
+                        if (fast)
+                        {
+                            _ = token.RegisterBroadcast<SimpleBroadcastMessage>(
+                                StableSource,
+                                (in SimpleBroadcastMessage _) => ++primaryCalls
+                            );
+                            _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
+                                (in InstanceId _, in SimpleBroadcastMessage __) => ++variantCalls
+                            );
+                        }
+                        else
+                        {
+                            _ = token.RegisterBroadcast<SimpleBroadcastMessage>(StableSource, _ =>
+                                ++primaryCalls
+                            );
+                            _ = token.RegisterBroadcastWithoutSource<SimpleBroadcastMessage>(
+                                (_, __) => ++variantCalls
+                            );
+                        }
+                        break;
                     }
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    AllocationAssertions.AssertNoAllocations("TypedWithoutContext-" + label, emit);
-                    Assert.That(0 < primaryCalls, Is.True, label + ": keyed callbacks ran");
-                    Assert.That(
-                        variantCalls,
-                        Is.EqualTo(primaryCalls),
-                        label + ": both handle phases must deliver once per emission"
-                    );
+                    default:
+                    {
+                        throw new InvalidOperationException(
+                            $"Unhandled MessageKind {scenario.Kind}."
+                        );
+                    }
                 }
-            );
+                if (featured)
+                {
+                    _ = RegisterAllowingInterceptor(scenario.WithInterceptor(true), token);
+                }
+                Action emit = BuildEmitClosure(scenario, bus);
+                AllocationAssertions.AssertNoAllocations("TypedWithoutContext-" + label, emit);
+                Assert.That(0 < primaryCalls, Is.True, label + ": keyed callbacks ran");
+                Assert.That(
+                    variantCalls,
+                    Is.EqualTo(primaryCalls),
+                    label + ": both handle phases must deliver once per emission"
+                );
+            });
         }
 
         /// <summary>
@@ -175,15 +169,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
-                {
-                    Action emit = BuildClassEmitClosure(scenario, bus);
-                    RegisterClassHandler(scenario, token);
-                    AllocationAssertions.AssertNoAllocations($"EmitClass-{scenario.Kind}", emit);
-                }
-            );
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildClassEmitClosure(scenario, bus);
+                RegisterClassHandler(scenario, token);
+                AllocationAssertions.AssertNoAllocations($"EmitClass-{scenario.Kind}", emit);
+            });
         }
 
         /// <summary>
@@ -207,29 +198,26 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                RegisterStructHandler(scenario, token);
+                if (scenario.UseInterceptor)
                 {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    RegisterStructHandler(scenario, token);
-                    if (scenario.UseInterceptor)
-                    {
-                        RegisterAllowingInterceptor(scenario, token);
-                    }
-                    if (scenario.UsePostProcessor)
-                    {
-                        RegisterPostProcessor(scenario, token);
-                    }
-
-                    string interceptorTag = scenario.UseInterceptor ? "I+" : "I-";
-                    string postProcessorTag = scenario.UsePostProcessor ? "P+" : "P-";
-                    AllocationAssertions.AssertNoAllocations(
-                        $"EmitInterceptorPostProcessor-{interceptorTag}{postProcessorTag}-{scenario.Kind}",
-                        emit
-                    );
+                    RegisterAllowingInterceptor(scenario, token);
                 }
-            );
+                if (scenario.UsePostProcessor)
+                {
+                    RegisterPostProcessor(scenario, token);
+                }
+
+                string interceptorTag = scenario.UseInterceptor ? "I+" : "I-";
+                string postProcessorTag = scenario.UsePostProcessor ? "P+" : "P-";
+                AllocationAssertions.AssertNoAllocations(
+                    $"EmitInterceptorPostProcessor-{interceptorTag}{postProcessorTag}-{scenario.Kind}",
+                    emit
+                );
+            });
         }
 
         /// <summary>
@@ -268,64 +256,61 @@ namespace DxMessaging.Tests.Editor.Allocations
             */
             long totalCountBudget = (totalBudget + 15L) / 16L;
 
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+
+                // Warm: a few cycles to settle dictionary capacity.
+                for (int i = 0; i < 32; ++i)
                 {
-                    Action emit = BuildEmitClosure(scenario, bus);
+                    MessageRegistrationHandle warm = RegisterStructHandler(scenario, token);
+                    emit();
+                    token.RemoveRegistration(warm);
+                }
 
-                    // Warm: a few cycles to settle dictionary capacity.
-                    for (int i = 0; i < 32; ++i)
-                    {
-                        MessageRegistrationHandle warm = RegisterStructHandler(scenario, token);
-                        emit();
-                        token.RemoveRegistration(warm);
-                    }
+                AllocationProbe.SettleHeapForMeasurement();
+                using AllocationProbe.Window window = AllocationProbe.BeginWindow();
 
-                    AllocationProbe.SettleHeapForMeasurement();
-                    using AllocationProbe.Window window = AllocationProbe.BeginWindow();
+                for (int i = 0; i < RegistrationChurnCycles; ++i)
+                {
+                    MessageRegistrationHandle handle = RegisterStructHandler(scenario, token);
+                    emit();
+                    token.RemoveRegistration(handle);
+                }
 
-                    for (int i = 0; i < RegistrationChurnCycles; ++i)
-                    {
-                        MessageRegistrationHandle handle = RegisterStructHandler(scenario, token);
-                        emit();
-                        token.RemoveRegistration(handle);
-                    }
-
-                    long gcAllocations = window.Sample();
-                    if (gcAllocations == AllocationProbe.Unmeasured)
-                    {
-                        Assert.Ignore(
-                            $"RegistrationChurn-{scenario.Kind}: the GC.Alloc allocation "
-                                + "probe is non-functional on this backend, so the churn "
-                                + "allocation budget cannot be evaluated."
-                        );
-                    }
-
-                    /*
-                        Always log the per-cycle average so a passing run still
-                        surfaces the baseline (useful when tightening the budget
-                        later). On failure the per-cycle figure is the actionable
-                        signal a maintainer needs to decide whether the regression
-                        is per-cycle or a one-off resize.
-                    */
-                    long perCycleAvg = gcAllocations / RegistrationChurnCycles;
-                    UnityEngine.Debug.Log(
-                        $"RegistrationChurn-{scenario.Kind}: {gcAllocations} GC allocations / "
-                            + $"{RegistrationChurnCycles} cycles = {perCycleAvg} avg/cycle "
-                            + $"(count budget total {totalCountBudget})."
-                    );
-
-                    Assert.That(
-                        gcAllocations,
-                        Is.LessThanOrEqualTo(totalCountBudget),
-                        $"RegistrationChurn-{scenario.Kind} allocated {gcAllocations} GC "
-                            + $"allocations across {RegistrationChurnCycles} cycles "
-                            + $"({perCycleAvg} avg/cycle), "
-                            + $"exceeding the count budget of {totalCountBudget}."
+                long gcAllocations = window.Sample();
+                if (gcAllocations == AllocationProbe.Unmeasured)
+                {
+                    Assert.Ignore(
+                        $"RegistrationChurn-{scenario.Kind}: the GC.Alloc allocation "
+                            + "probe is non-functional on this backend, so the churn "
+                            + "allocation budget cannot be evaluated."
                     );
                 }
-            );
+
+                /*
+                    Always log the per-cycle average so a passing run still
+                    surfaces the baseline (useful when tightening the budget
+                    later). On failure the per-cycle figure is the actionable
+                    signal a maintainer needs to decide whether the regression
+                    is per-cycle or a one-off resize.
+                */
+                long perCycleAvg = gcAllocations / RegistrationChurnCycles;
+                UnityEngine.Debug.Log(
+                    $"RegistrationChurn-{scenario.Kind}: {gcAllocations} GC allocations / "
+                        + $"{RegistrationChurnCycles} cycles = {perCycleAvg} avg/cycle "
+                        + $"(count budget total {totalCountBudget})."
+                );
+
+                Assert.That(
+                    gcAllocations,
+                    Is.LessThanOrEqualTo(totalCountBudget),
+                    $"RegistrationChurn-{scenario.Kind} allocated {gcAllocations} GC "
+                        + $"allocations across {RegistrationChurnCycles} cycles "
+                        + $"({perCycleAvg} avg/cycle), "
+                        + $"exceeding the count budget of {totalCountBudget}."
+                );
+            });
         }
 
         /// <summary>
@@ -351,29 +336,26 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
-                {
-                    /*
-                        Class messages are reference types, so the dispatch
-                        path's <c>IUntargetedMessage</c>/<c>ITargetedMessage</c>/
-                        <c>IBroadcastMessage</c> interface upcast is a pointer
-                        copy rather than a box. See the docstring above.
-                    */
-                    Action emit = BuildClassEmitClosure(scenario, bus);
-                    RegisterClassHandler(scenario, token);
-                    _ = token.RegisterGlobalAcceptAll(
-                        AcceptAllUntargeted,
-                        AcceptAllTargeted,
-                        AcceptAllBroadcast
-                    );
-                    AllocationAssertions.AssertNoAllocations(
-                        $"EmitGlobalAcceptAll-{scenario.Kind}",
-                        emit
-                    );
-                }
-            );
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                /*
+                    Class messages are reference types, so the dispatch
+                    path's <c>IUntargetedMessage</c>/<c>ITargetedMessage</c>/
+                    <c>IBroadcastMessage</c> interface upcast is a pointer
+                    copy rather than a box. See the docstring above.
+                */
+                Action emit = BuildClassEmitClosure(scenario, bus);
+                RegisterClassHandler(scenario, token);
+                _ = token.RegisterGlobalAcceptAll(
+                    AcceptAllUntargeted,
+                    AcceptAllTargeted,
+                    AcceptAllBroadcast
+                );
+                AllocationAssertions.AssertNoAllocations(
+                    $"EmitGlobalAcceptAll-{scenario.Kind}",
+                    emit
+                );
+            });
         }
 
         /// <summary>Checks steady global dispatch after nested mutation has displaced a snapshot.</summary>
@@ -386,64 +368,55 @@ namespace DxMessaging.Tests.Editor.Allocations
             [Values(3, 8)] int count
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                string label = scenario + ",shape=" + shape + ",count=" + count;
+                Action emit = BuildClassEmitClosure(scenario, bus);
+                RegisterClassHandler(scenario, token);
+                bool mutated = false;
+                int callbacks = 0;
+                MessageRegistrationHandle removed = default;
+                MessageRegistrationHandle RegisterSnapshotCallback(bool fast, Action callback)
                 {
-                    string label = scenario + ",shape=" + shape + ",count=" + count;
-                    Action emit = BuildClassEmitClosure(scenario, bus);
-                    RegisterClassHandler(scenario, token);
-                    bool mutated = false;
-                    int callbacks = 0;
-                    MessageRegistrationHandle removed = default;
-                    MessageRegistrationHandle RegisterSnapshotCallback(bool fast, Action callback)
+                    if (fast)
                     {
-                        if (fast)
-                        {
-                            return token.RegisterGlobalAcceptAll(
-                                (in IUntargetedMessage _) => callback(),
-                                (in InstanceId _, in ITargetedMessage __) => callback(),
-                                (in InstanceId _, in IBroadcastMessage __) => callback()
-                            );
-                        }
                         return token.RegisterGlobalAcceptAll(
-                            _ => callback(),
-                            (_, _) => callback(),
-                            (_, _) => callback()
+                            (in IUntargetedMessage _) => callback(),
+                            (in InstanceId _, in ITargetedMessage __) => callback(),
+                            (in InstanceId _, in IBroadcastMessage __) => callback()
                         );
                     }
-                    RegisterSnapshotCallback(
-                        shape != 0,
-                        () =>
-                        {
-                            if (mutated)
-                            {
-                                return;
-                            }
-                            mutated = true;
-                            token.RemoveRegistration(removed);
-                            RegisterSnapshotCallback(shape == 1, () => ++callbacks);
-                            emit();
-                        }
-                    );
-                    for (int index = 0; index < count - 1; ++index)
-                    {
-                        int captured = index;
-                        removed = RegisterSnapshotCallback(
-                            shape == 1,
-                            () => callbacks += captured + 1
-                        );
-                    }
-                    emit();
-                    int before = callbacks;
-                    AllocationAssertions.AssertNoAllocations("GlobalSnapshots-" + label, emit);
-                    Assert.That(
-                        before < callbacks,
-                        Is.True,
-                        label + ": measured dispatch delivered peers"
+                    return token.RegisterGlobalAcceptAll(
+                        _ => callback(),
+                        (_, _) => callback(),
+                        (_, _) => callback()
                     );
                 }
-            );
+                RegisterSnapshotCallback(shape != 0, () =>
+                {
+                    if (mutated)
+                    {
+                        return;
+                    }
+                    mutated = true;
+                    token.RemoveRegistration(removed);
+                    RegisterSnapshotCallback(shape == 1, () => ++callbacks);
+                    emit();
+                });
+                for (int index = 0; index < count - 1; ++index)
+                {
+                    int captured = index;
+                    removed = RegisterSnapshotCallback(shape == 1, () => callbacks += captured + 1);
+                }
+                emit();
+                int before = callbacks;
+                AllocationAssertions.AssertNoAllocations("GlobalSnapshots-" + label, emit);
+                Assert.That(
+                    before < callbacks,
+                    Is.True,
+                    label + ": measured dispatch delivered peers"
+                );
+            });
         }
 
         /// <summary>
@@ -484,77 +457,70 @@ namespace DxMessaging.Tests.Editor.Allocations
             */
             long totalCountBudget = (totalBudget + 15L) / 16L;
 
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
-                {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    RegisterStructHandler(scenario, token);
-                    _ = token.RegisterGlobalAcceptAll(
-                        AcceptAllUntargeted,
-                        AcceptAllTargeted,
-                        AcceptAllBroadcast
-                    );
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                RegisterStructHandler(scenario, token);
+                _ = token.RegisterGlobalAcceptAll(
+                    AcceptAllUntargeted,
+                    AcceptAllTargeted,
+                    AcceptAllBroadcast
+                );
 
-                    /*
-                        Warm: settle any one-shot allocations (delegate caches,
-                        dictionary capacity) before measurement.
-                    */
+                /*
+                    Warm: settle any one-shot allocations (delegate caches,
+                    dictionary capacity) before measurement.
+                */
+                for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
+                {
+                    emit();
+                }
+
+                /*
+                    Take the minimum allocation over several attempts: the boxing count
+                    per emit is real, but a single warm-editor window intermittently
+                    spikes above it (see AllocationProbe.MeasureMin). 8 attempts read the
+                    boxing floor reliably; the operation just re-runs the measured emit
+                    batch.
+                */
+                long gcAllocations = AllocationProbe.MeasureMin(8, prepare: null, operation: () =>
+                {
                     for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                     {
                         emit();
                     }
-
-                    /*
-                        Take the minimum allocation over several attempts: the boxing count
-                        per emit is real, but a single warm-editor window intermittently
-                        spikes above it (see AllocationProbe.MeasureMin). 8 attempts read the
-                        boxing floor reliably; the operation just re-runs the measured emit
-                        batch.
-                    */
-                    long gcAllocations = AllocationProbe.MeasureMin(
-                        8,
-                        prepare: null,
-                        operation: () =>
-                        {
-                            for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
-                            {
-                                emit();
-                            }
-                        }
-                    );
-                    if (gcAllocations == AllocationProbe.Unmeasured)
-                    {
-                        Assert.Ignore(
-                            $"GlobalAcceptAllStruct-{scenario.Kind}: the GC.Alloc "
-                                + "allocation probe is non-functional on this backend, so "
-                                + "the boxing budget cannot be evaluated."
-                        );
-                    }
-                    long perEmit = gcAllocations / AllocationAssertions.DefaultMeasuredIterations;
-
-                    /*
-                        Always log the measured per-emit cost so a passing run
-                        still surfaces the baseline. Future maintainers can use
-                        the printed figure to decide whether the budget can be
-                        tightened.
-                    */
-                    UnityEngine.Debug.Log(
-                        $"GlobalAcceptAllStruct-{scenario.Kind}: {gcAllocations} GC allocations / "
-                            + $"{AllocationAssertions.DefaultMeasuredIterations} emissions = "
-                            + $"{perEmit} avg/emit (count budget total {totalCountBudget})."
-                    );
-
-                    Assert.That(
-                        gcAllocations,
-                        Is.LessThanOrEqualTo(totalCountBudget),
-                        $"GlobalAcceptAllStruct-{scenario.Kind} allocated {gcAllocations} GC "
-                            + $"allocations ({perEmit} avg/emit) across "
-                            + $"{AllocationAssertions.DefaultMeasuredIterations} emissions, "
-                            + $"exceeding the count budget of {totalCountBudget}."
+                });
+                if (gcAllocations == AllocationProbe.Unmeasured)
+                {
+                    Assert.Ignore(
+                        $"GlobalAcceptAllStruct-{scenario.Kind}: the GC.Alloc "
+                            + "allocation probe is non-functional on this backend, so "
+                            + "the boxing budget cannot be evaluated."
                     );
                 }
-            );
+                long perEmit = gcAllocations / AllocationAssertions.DefaultMeasuredIterations;
+
+                /*
+                    Always log the measured per-emit cost so a passing run
+                    still surfaces the baseline. Future maintainers can use
+                    the printed figure to decide whether the budget can be
+                    tightened.
+                */
+                UnityEngine.Debug.Log(
+                    $"GlobalAcceptAllStruct-{scenario.Kind}: {gcAllocations} GC allocations / "
+                        + $"{AllocationAssertions.DefaultMeasuredIterations} emissions = "
+                        + $"{perEmit} avg/emit (count budget total {totalCountBudget})."
+                );
+
+                Assert.That(
+                    gcAllocations,
+                    Is.LessThanOrEqualTo(totalCountBudget),
+                    $"GlobalAcceptAllStruct-{scenario.Kind} allocated {gcAllocations} GC "
+                        + $"allocations ({perEmit} avg/emit) across "
+                        + $"{AllocationAssertions.DefaultMeasuredIterations} emissions, "
+                        + $"exceeding the count budget of {totalCountBudget}."
+                );
+            });
         }
 
         private void RunWithFreshHarness(

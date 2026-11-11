@@ -127,21 +127,16 @@ namespace DxMessaging.Tests.Runtime.Core
             int newPpCount = 0;
             bool added = false;
 
-            _ = RegisterHandler(
-                variant,
-                token,
-                hostId,
-                () =>
+            _ = RegisterHandler(variant, token, hostId, () =>
+            {
+                if (added)
                 {
-                    if (added)
-                    {
-                        return;
-                    }
-
-                    added = true;
-                    _ = RegisterPostProcessor(variant, token, hostId, () => ++newPpCount);
+                    return;
                 }
-            );
+
+                added = true;
+                _ = RegisterPostProcessor(variant, token, hostId, () => ++newPpCount);
+            });
             _ = RegisterPostProcessor(variant, token, hostId, () => ++originalPpCount);
 
             Emit(variant, host);
@@ -210,28 +205,22 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: variant + "/" + delegateShape))
             {
-                handles.Add(
-                    RegisterInterceptor(
-                        variant,
-                        token,
-                        () =>
+                handles.Add(RegisterInterceptor(variant, token, () =>
+                    {
+                        if (!added)
                         {
-                            if (!added)
-                            {
-                                added = true;
-                                handles.Add(
-                                    RegisterPostProcessor(
-                                        variant,
-                                        token,
-                                        hostId,
-                                        () => ++latePostCount,
-                                        delegateShape: delegateShape
-                                    )
-                                );
-                            }
+                            added = true;
+                            handles.Add(
+                                RegisterPostProcessor(
+                                    variant,
+                                    token,
+                                    hostId,
+                                    () => ++latePostCount,
+                                    delegateShape: delegateShape
+                                )
+                            );
                         }
-                    )
-                );
+                    }));
                 handles.Add(RegisterHandler(variant, token, hostId, () => { }));
 
                 Emit(variant, host);
@@ -286,27 +275,16 @@ namespace DxMessaging.Tests.Runtime.Core
             int newPpCount = 0;
             bool added = false;
 
-            _ = RegisterHandler(
-                variant,
-                token,
-                hostId,
-                () =>
+            _ = RegisterHandler(variant, token, hostId, () =>
+            {
+                if (added)
                 {
-                    if (added)
-                    {
-                        return;
-                    }
-
-                    added = true;
-                    _ = RegisterPostProcessor(
-                        variant,
-                        token,
-                        hostId,
-                        () => ++newPpCount,
-                        priority: 7
-                    );
+                    return;
                 }
-            );
+
+                added = true;
+                _ = RegisterPostProcessor(variant, token, hostId, () => ++newPpCount, priority: 7);
+            });
             _ = RegisterPostProcessor(variant, token, hostId, () => ++originalPpCount, priority: 0);
 
             Emit(variant, host);
@@ -372,25 +350,20 @@ namespace DxMessaging.Tests.Runtime.Core
             int[] newCounts = new int[NewCount];
             bool added = false;
 
-            _ = RegisterHandler(
-                variant,
-                token,
-                hostId,
-                () =>
+            _ = RegisterHandler(variant, token, hostId, () =>
+            {
+                if (added)
                 {
-                    if (added)
-                    {
-                        return;
-                    }
-
-                    added = true;
-                    for (int i = 0; i < NewCount; i++)
-                    {
-                        int idx = i;
-                        _ = RegisterPostProcessor(variant, token, hostId, () => ++newCounts[idx]);
-                    }
+                    return;
                 }
-            );
+
+                added = true;
+                for (int i = 0; i < NewCount; i++)
+                {
+                    int idx = i;
+                    _ = RegisterPostProcessor(variant, token, hostId, () => ++newCounts[idx]);
+                }
+            });
             _ = RegisterPostProcessor(variant, token, hostId, () => ++originalPpCount);
 
             Emit(variant, host);
@@ -471,21 +444,16 @@ namespace DxMessaging.Tests.Runtime.Core
 
             _ = RegisterPostProcessor(variant, tokenA, hostId, () => ++existingPpCount);
 
-            _ = RegisterHandler(
-                variant,
-                tokenA,
-                hostId,
-                () =>
+            _ = RegisterHandler(variant, tokenA, hostId, () =>
+            {
+                if (added)
                 {
-                    if (added)
-                    {
-                        return;
-                    }
-
-                    added = true;
-                    _ = RegisterPostProcessor(variant, tokenB, hostId, () => ++newPpCount);
+                    return;
                 }
-            );
+
+                added = true;
+                _ = RegisterPostProcessor(variant, tokenB, hostId, () => ++newPpCount);
+            });
 
             Emit(variant, hostA);
 

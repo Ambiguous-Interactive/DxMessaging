@@ -166,8 +166,8 @@ namespace DxMessaging.Core
         private MessageRegistrationToken(MessageHandler messageHandler, IMessageBus messageBus)
         {
             _enabled = false;
-            _messageHandler =
-                messageHandler ?? throw new ArgumentNullException(nameof(messageHandler));
+            _messageHandler = messageHandler
+                ?? throw new ArgumentNullException(nameof(messageHandler));
             _messageBus = messageBus;
         }
 
@@ -1543,8 +1543,8 @@ namespace DxMessaging.Core
             {
                 if (rebindActiveRegistrations)
                 {
-                    activeRetargetHandles =
-                        _activeRetargetHandles ?? new List<MessageRegistrationHandle>();
+                    activeRetargetHandles = _activeRetargetHandles
+                        ?? new List<MessageRegistrationHandle>();
                     // A nested retarget or arena clear must not alter this call's snapshot.
                     _activeRetargetHandles = null;
                     activeRetargetHandles.Clear();
@@ -2199,8 +2199,8 @@ namespace DxMessaging.Core
         private void InvokeRegistrationQueueWithRollback(out bool cleanupCompletedDuringLogging)
         {
             cleanupCompletedDuringLogging = false;
-            HashSet<TeardownIdentity> rollbackBaseline =
-                _rollbackBaseline ?? new HashSet<TeardownIdentity>();
+            HashSet<TeardownIdentity> rollbackBaseline = _rollbackBaseline
+                ?? new HashSet<TeardownIdentity>();
             _rollbackBaseline = null;
             try
             {

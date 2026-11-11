@@ -558,11 +558,8 @@ namespace DxMessaging.Tests.Runtime.Core
                                         ++disposals;
                                         token.Enable();
                                         scope.Bus.OnDeregister = () =>
-                                            Register(
-                                                token,
-                                                scenario,
-                                                carrier,
-                                                () => ++replacementCalls
+                                            Register(token, scenario, carrier, () =>
+                                                ++replacementCalls
                                             );
                                     }
                                 ),

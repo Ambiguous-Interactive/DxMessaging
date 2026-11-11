@@ -491,23 +491,18 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             int calls = 0;
             int inDispatchTargetEvictions = -1;
             MessageRegistrationHandle handle = default;
-            handle = RegisterCountingFirst(
-                scenario,
-                token,
-                DefaultContext,
-                () =>
-                {
-                    calls++;
-                    token.RemoveRegistration(handle);
-                    /*
-                        This trim runs INSIDE active dispatch and must short-circuit the dirty
-                        target eviction (HasActiveDispatchSnapshot guard). Capture the eviction
-                        count to assert the in-dispatch contract directly.
-                    */
-                    IMessageBus.TrimResult inDispatch = bus.Trim(force: false);
-                    inDispatchTargetEvictions = inDispatch.TargetSlotsEvicted;
-                }
-            );
+            handle = RegisterCountingFirst(scenario, token, DefaultContext, () =>
+            {
+                calls++;
+                token.RemoveRegistration(handle);
+                /*
+                    This trim runs INSIDE active dispatch and must short-circuit the dirty
+                    target eviction (HasActiveDispatchSnapshot guard). Capture the eviction
+                    count to assert the in-dispatch contract directly.
+                */
+                IMessageBus.TrimResult inDispatch = bus.Trim(force: false);
+                inDispatchTargetEvictions = inDispatch.TargetSlotsEvicted;
+            });
 
             EmitFirst(scenario, bus, DefaultContext);
 
@@ -1254,12 +1249,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     scenario.Kind
                 );
 
-                currentDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => currentCalls++
+                currentDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
+                    currentCalls++
                 );
                 CollectionPoolDiagnostics afterRent =
                     MessageBusInspection.ContextMapPoolDiagnostics();
@@ -1575,12 +1566,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 staleDeregister();
                 _ = bus.Trim(force: true);
 
-                currentDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => currentCalls++
+                currentDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
+                    currentCalls++
                 );
                 MessagingDebug.enabled = true;
                 MessagingDebug.LogFunction = (_, message) => logs.Add(message);
@@ -1684,12 +1671,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     "[{0}] one used bus must allocate one cache regardless of earlier bus indices.",
                     scenario.Kind
                 );
-                firstDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    firstBus,
-                    DefaultContext,
-                    () => firstCalls++
+                firstDeregister = RegisterDirect(scenario, handler, firstBus, DefaultContext, () =>
+                    firstCalls++
                 );
                 Assert.AreEqual(
                     2,
@@ -1805,30 +1788,24 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             int replacementCalls = 0;
             try
             {
-                staleDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () =>
-                    {
-                        originalCalls++;
-                        bus.ResetState();
-                        Assert.AreEqual(
-                            0,
-                            handler._handlersByTypeByMessageBus.Count,
-                            "[{0}] resetting during dispatch must release the old bus cache.",
-                            scenario.Kind
-                        );
-                        replacementDeregister = RegisterDirect(
-                            scenario,
-                            handler,
-                            bus,
-                            DefaultContext,
-                            () => replacementCalls++
-                        );
-                    }
-                );
+                staleDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
+                {
+                    originalCalls++;
+                    bus.ResetState();
+                    Assert.AreEqual(
+                        0,
+                        handler._handlersByTypeByMessageBus.Count,
+                        "[{0}] resetting during dispatch must release the old bus cache.",
+                        scenario.Kind
+                    );
+                    replacementDeregister = RegisterDirect(
+                        scenario,
+                        handler,
+                        bus,
+                        DefaultContext,
+                        () => replacementCalls++
+                    );
+                });
 
                 EmitFirst(scenario, bus, DefaultContext);
                 Assert.AreEqual(
@@ -1910,42 +1887,28 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                 int firstCalls = 0;
                 int trailingCalls = 0;
                 int replacementCalls = 0;
-                anchorDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    anchorContext,
-                    () => anchorCalls++
+                anchorDeregister = RegisterDirect(scenario, handler, bus, anchorContext, () =>
+                    anchorCalls++
                 );
-                firstDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () =>
+                firstDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
+                {
+                    firstCalls++;
+                    firstDeregister();
+                    trailingDeregister();
+                    Assert.IsTrue(
+                        handler.HasPendingContextCleanup(bus),
+                        "[{0}] removing the last context handlers during dispatch must queue cleanup.",
+                        scenario.DisplayName
+                    );
+                    if (ageDuringDispatch)
                     {
-                        firstCalls++;
-                        firstDeregister();
-                        trailingDeregister();
-                        Assert.IsTrue(
-                            handler.HasPendingContextCleanup(bus),
-                            "[{0}] removing the last context handlers during dispatch must queue cleanup.",
-                            scenario.DisplayName
-                        );
-                        if (ageDuringDispatch)
-                        {
-                            EmitSweepProbe(bus);
-                        }
-                        _ = bus.Trim(forceDuringDispatch);
-                        EmitFirst(scenario, bus, anchorContext);
+                        EmitSweepProbe(bus);
                     }
-                );
-                trailingDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => trailingCalls++
+                    _ = bus.Trim(forceDuringDispatch);
+                    EmitFirst(scenario, bus, anchorContext);
+                });
+                trailingDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
+                    trailingCalls++
                 );
                 Dictionary<InstanceId, Dictionary<int, IHandlerActionCache>> contexts =
                     ReadContextHandlers(scenario, handler, bus);
@@ -1996,12 +1959,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     scenario.DisplayName
                 );
 
-                replacementDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => replacementCalls++
+                replacementDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
+                    replacementCalls++
                 );
                 Assert.AreSame(
                     retiredPriorities,
@@ -2265,12 +2224,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             );
             try
             {
-                staleDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => staleCalls++
+                staleDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
+                    staleCalls++
                 );
 
                 EmitFirst(scenario, bus, DefaultContext);
@@ -2292,12 +2247,8 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     trimResult
                 );
 
-                currentDeregister = RegisterDirect(
-                    scenario,
-                    handler,
-                    bus,
-                    DefaultContext,
-                    () => currentCalls++
+                currentDeregister = RegisterDirect(scenario, handler, bus, DefaultContext, () =>
+                    currentCalls++
                 );
 
                 EmitFirst(scenario, bus, DefaultContext);

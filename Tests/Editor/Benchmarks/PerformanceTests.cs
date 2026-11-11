@@ -25,77 +25,70 @@ namespace DxMessaging.Tests.Editor.Benchmarks
             string operatingSystemSection = BenchmarkDocumentation.GetOperatingSystemSection();
             BenchmarkSession session = new(operatingSystemSection, "## ");
 
-            RunWithSession(
-                session,
-                () =>
-                {
-                    TimeSpan timeout = TimeSpan.FromSeconds(5);
-                    Stopwatch timer = Stopwatch.StartNew();
+            RunWithSession(session, () =>
+            {
+                TimeSpan timeout = TimeSpan.FromSeconds(5);
+                Stopwatch timer = Stopwatch.StartNew();
 
-                    ComplexTargetedMessage message = new(Guid.NewGuid());
-                    ReflexiveMessage reflexiveMessage = new(
-                        nameof(SimpleMessageAwareComponent.HandleSlowComplexTargetedMessage),
-                        ReflexiveSendMode.Flat,
-                        message
-                    );
+                ComplexTargetedMessage message = new(Guid.NewGuid());
+                ReflexiveMessage reflexiveMessage = new(
+                    nameof(SimpleMessageAwareComponent.HandleSlowComplexTargetedMessage),
+                    ReflexiveSendMode.Flat,
+                    message
+                );
 
-                    RunWithComponent(component =>
-                        Unity(timer, timeout, component.gameObject, message)
-                    );
+                RunWithComponent(component => Unity(timer, timeout, component.gameObject, message));
 
-                    RunWithComponent(
-                        (component, token) =>
-                            NormalGameObject(timer, timeout, component, token, message)
-                    );
-                    RunWithComponent(
-                        (component, token) =>
-                            NormalComponent(timer, timeout, component, token, message)
-                    );
-                    RunWithComponent(
-                        (component, token) =>
-                            NoCopyGameObject(timer, timeout, component, token, message)
-                    );
-                    RunWithComponent(
-                        (component, token) =>
-                            NoCopyComponent(timer, timeout, component, token, message)
-                    );
+                RunWithComponent(
+                    (component, token) =>
+                        NormalGameObject(timer, timeout, component, token, message)
+                );
+                RunWithComponent(
+                    (component, token) => NormalComponent(timer, timeout, component, token, message)
+                );
+                RunWithComponent(
+                    (component, token) =>
+                        NoCopyGameObject(timer, timeout, component, token, message)
+                );
+                RunWithComponent(
+                    (component, token) => NoCopyComponent(timer, timeout, component, token, message)
+                );
 
-                    SimpleUntargetedMessage untargetedMessage = new();
-                    RunWithComponent(
-                        (component, token) =>
-                            NoCopyUntargeted(timer, timeout, component, token, untargetedMessage)
-                    );
-                    RunWithComponent(
-                        (component, token) =>
-                            InterceptorHeavyUntargeted(
-                                timer,
-                                timeout,
-                                component,
-                                token,
-                                untargetedMessage
-                            )
-                    );
-                    RunWithComponent(
-                        (component, token) =>
-                            PostProcessorHeavyUntargeted(
-                                timer,
-                                timeout,
-                                component,
-                                token,
-                                untargetedMessage
-                            )
-                    );
-                    RunWithComponent(component =>
-                        ReflexiveOneArgument(timer, timeout, component.gameObject, reflexiveMessage)
-                    );
-                    RunWithComponent(component =>
-                        ReflexiveTwoArguments(timer, timeout, component.gameObject)
-                    );
-                    RunWithComponent(component =>
-                        ReflexiveThreeArguments(timer, timeout, component.gameObject)
-                    );
-                }
-            );
+                SimpleUntargetedMessage untargetedMessage = new();
+                RunWithComponent(
+                    (component, token) =>
+                        NoCopyUntargeted(timer, timeout, component, token, untargetedMessage)
+                );
+                RunWithComponent(
+                    (component, token) =>
+                        InterceptorHeavyUntargeted(
+                            timer,
+                            timeout,
+                            component,
+                            token,
+                            untargetedMessage
+                        )
+                );
+                RunWithComponent(
+                    (component, token) =>
+                        PostProcessorHeavyUntargeted(
+                            timer,
+                            timeout,
+                            component,
+                            token,
+                            untargetedMessage
+                        )
+                );
+                RunWithComponent(component =>
+                    ReflexiveOneArgument(timer, timeout, component.gameObject, reflexiveMessage)
+                );
+                RunWithComponent(component =>
+                    ReflexiveTwoArguments(timer, timeout, component.gameObject)
+                );
+                RunWithComponent(component =>
+                    ReflexiveThreeArguments(timer, timeout, component.gameObject)
+                );
+            });
         }
 
         private void DisplayCount(string testName, int count, TimeSpan duration, bool allocating)

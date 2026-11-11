@@ -73,8 +73,8 @@ namespace DxMessaging.Tests.Editor
                         File.WriteAllBytes(saved.Key, saved.Value);
                     }
                 }
-                Delegate[] callbacks =
-                    EditorApplication.delayCall?.GetInvocationList() ?? Array.Empty<Delegate>();
+                Delegate[] callbacks = EditorApplication.delayCall?.GetInvocationList()
+                    ?? Array.Empty<Delegate>();
                 object sidecarPending = MessageBusInspection.ReadField(
                     typeof(DxMessagingBaseCallIgnoreSync),
                     "SidecarImportPending"

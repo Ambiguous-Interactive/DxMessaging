@@ -574,10 +574,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new InvalidOperationException(ThrowingHandlerMessage);
                 }
             );
-            RegisterWithoutContextCountingHandler(
-                scenario,
-                token,
-                onInvoked: () => ++withoutContextCount
+            RegisterWithoutContextCountingHandler(scenario, token, onInvoked: () =>
+                ++withoutContextCount
             );
 
             InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>
@@ -642,15 +640,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 priority: 0,
                 onInvoked: () => ++specificCount
             );
-            RegisterWithoutContextCountingHandler(
-                scenario,
-                token,
-                onInvoked: () =>
-                {
-                    ++withoutContextCount;
-                    throw new InvalidOperationException(ThrowingWithoutContextMessage);
-                }
-            );
+            RegisterWithoutContextCountingHandler(scenario, token, onInvoked: () =>
+            {
+                ++withoutContextCount;
+                throw new InvalidOperationException(ThrowingWithoutContextMessage);
+            });
             ScenarioCallbacks.RegisterCountingPostProcessor(
                 scenario,
                 token,
@@ -658,10 +652,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 priority: 0,
                 onInvoked: () => ++specificPostProcessorCount
             );
-            RegisterWithoutContextCountingPostProcessor(
-                scenario,
-                token,
-                onInvoked: () => ++withoutContextPostProcessorCount
+            RegisterWithoutContextCountingPostProcessor(scenario, token, onInvoked: () =>
+                ++withoutContextPostProcessorCount
             );
 
             InvalidOperationException captured = Assert.Throws<InvalidOperationException>(() =>

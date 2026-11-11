@@ -33,23 +33,18 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token = GetToken(comp);
 
             int[] counts = new int[2];
-            MessageRegistrationHandle adder = RegisterCounter(
-                scenario,
-                token,
-                host,
-                () =>
+            MessageRegistrationHandle adder = RegisterCounter(scenario, token, host, () =>
+            {
+                if (counts[1] == 0)
                 {
-                    if (counts[1] == 0)
-                    {
-                        token.RegisterGlobalAcceptAll(
-                            (in IUntargetedMessage _) => counts[1]++,
-                            (in InstanceId _, in ITargetedMessage _) => counts[1]++,
-                            (in InstanceId _, in IBroadcastMessage _) => counts[1]++
-                        );
-                    }
-                    counts[0]++;
+                    token.RegisterGlobalAcceptAll(
+                        (in IUntargetedMessage _) => counts[1]++,
+                        (in InstanceId _, in ITargetedMessage _) => counts[1]++,
+                        (in InstanceId _, in IBroadcastMessage _) => counts[1]++
+                    );
                 }
-            );
+                counts[0]++;
+            });
 
             EmitForScenario(scenario, host);
             Assert.AreEqual(

@@ -148,14 +148,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 MessagingDebug.enabled = false;
                 MessagingDebug.LogFunction = null;
                 IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Off;
-                _old = CreateToken(
-                    1001,
-                    () =>
-                    {
-                        ++_oldCalls;
-                        _trace.Add("old");
-                    }
-                );
+                _old = CreateToken(1001, () =>
+                {
+                    ++_oldCalls;
+                    _trace.Add("old");
+                });
                 MessagingDebug.enabled = _debug;
                 MessagingDebug.LogFunction = ReceiveLog;
                 _armed = true;
@@ -250,14 +247,11 @@ namespace DxMessaging.Tests.Runtime.Core
                         break;
                     case "ResetFresh":
                         _bus.ResetState();
-                        _fresh = CreateToken(
-                            1002,
-                            () =>
-                            {
-                                ++_freshCalls;
-                                _trace.Add("fresh");
-                            }
-                        );
+                        _fresh = CreateToken(1002, () =>
+                        {
+                            ++_freshCalls;
+                            _trace.Add("fresh");
+                        });
                         break;
                     default:
                         throw new ArgumentOutOfRangeException(nameof(_action));

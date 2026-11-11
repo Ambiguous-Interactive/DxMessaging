@@ -22,8 +22,7 @@ internal sealed class NUnitResultWriterTests
     public void CompileActualWriterAgainstNUnit35()
     {
         string framework = Path.Combine(AppContext.BaseDirectory, "NUnit35", "nunit.framework.dll");
-        string platform =
-            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+        string platform = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
             ?? throw new InvalidOperationException("Runtime reference assemblies are unavailable.");
         MetadataReference[] references = platform
             .Split(Path.PathSeparator)

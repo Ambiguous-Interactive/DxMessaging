@@ -350,8 +350,7 @@ internal sealed class GeneratedMessageDocumentationTests
             "using System;\nusing DxMessaging.Core;\nusing DxMessaging.Core.Attributes;\nusing DxMessaging.Core.Messages;\n"
             + string.Join("\n", declarations.Select(declaration => declaration.ToFullString()));
         trees.Add(CSharpSyntaxTree.ParseText(source, options, "PublishedExample.cs"));
-        string references =
-            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
             ?? throw new InvalidOperationException("Runtime references are unavailable.");
         return CSharpCompilation.Create(
             "PublishedMessageExample",

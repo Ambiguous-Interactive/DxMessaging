@@ -24,9 +24,8 @@ namespace DxMessaging.Testing
         public static MessageRecorder<TMessage> Untargeted<TMessage>(IMessageBus bus)
             where TMessage : IUntargetedMessage
         {
-            return new MessageRecorder<TMessage>(
-                bus,
-                static (token, handler) => token.RegisterUntargeted(handler)
+            return new MessageRecorder<TMessage>(bus, static (token, handler) =>
+                token.RegisterUntargeted(handler)
             );
         }
 
@@ -43,9 +42,8 @@ namespace DxMessaging.Testing
         )
             where TMessage : ITargetedMessage
         {
-            return new MessageRecorder<TMessage>(
-                bus,
-                (token, handler) => token.RegisterTargeted(target, handler)
+            return new MessageRecorder<TMessage>(bus, (token, handler) =>
+                token.RegisterTargeted(target, handler)
             );
         }
 
@@ -62,9 +60,8 @@ namespace DxMessaging.Testing
         )
             where TMessage : IBroadcastMessage
         {
-            return new MessageRecorder<TMessage>(
-                bus,
-                (token, handler) => token.RegisterBroadcast(source, handler)
+            return new MessageRecorder<TMessage>(bus, (token, handler) =>
+                token.RegisterBroadcast(source, handler)
             );
         }
     }

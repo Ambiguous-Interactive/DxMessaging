@@ -221,26 +221,22 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             bool started = false;
             MessageRegistrationHandle removed = default;
             InvalidOperationException failure = new InvalidOperationException(label);
-            Register(
-                token,
-                shape != 0,
-                () =>
+            Register(token, shape != 0, () =>
+            {
+                calls.Add("A");
+                if (started)
                 {
-                    calls.Add("A");
-                    if (started)
-                    {
-                        return;
-                    }
-                    started = true;
-                    token.RemoveRegistration(removed);
-                    Register(token, shape == 1, () => calls.Add("replacement"));
-                    Emit(scenario.Kind, bus);
-                    if (throwing)
-                    {
-                        throw failure;
-                    }
+                    return;
                 }
-            );
+                started = true;
+                token.RemoveRegistration(removed);
+                Register(token, shape == 1, () => calls.Add("replacement"));
+                Emit(scenario.Kind, bus);
+                if (throwing)
+                {
+                    throw failure;
+                }
+            });
             CapturedReceiver live = new CapturedReceiver(calls, "live");
             Register(token, shape == 1, live.Invoke);
             for (int index = 0; index < count - 3; ++index)

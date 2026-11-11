@@ -579,7 +579,7 @@ RUN rm -rf /tmp/tools
 # ------------------------------------------------------------------------------
 USER vscode
 # Discard build-time scratch ownership before the runtime user UID can change.
-RUN dotnet tool install --global csharpier --version 1.3.0 \
+RUN dotnet tool install --global csharpier --version 1.4.0 \
     && rm -rf /tmp/NuGetScratchvscode
 
 # Add dotnet tools to PATH for vscode user

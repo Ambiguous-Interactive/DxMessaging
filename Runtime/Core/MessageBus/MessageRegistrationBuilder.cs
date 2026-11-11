@@ -223,8 +223,8 @@ namespace DxMessaging.Core.MessageBus
         )
         {
             _token = token ?? throw new ArgumentNullException(nameof(token));
-            _messageHandler =
-                messageHandler ?? throw new ArgumentNullException(nameof(messageHandler));
+            _messageHandler = messageHandler
+                ?? throw new ArgumentNullException(nameof(messageHandler));
             _messageBus = messageBus;
             _lifecycle = lifecycle;
             _isActive = false;

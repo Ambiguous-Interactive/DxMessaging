@@ -104,9 +104,8 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 try
                 {
-                    _ = token.RegisterTargeted<ReflexiveMessage>(
-                        target,
-                        (in ReflexiveMessage _) => ++busHandlerCalls
+                    _ = token.RegisterTargeted<ReflexiveMessage>(target, (in ReflexiveMessage _) =>
+                        ++busHandlerCalls
                     );
                     token.Enable();
 

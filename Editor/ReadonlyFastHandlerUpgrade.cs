@@ -2503,10 +2503,10 @@ namespace DxMessaging.Editor
             public PendingFileUpgrade(string fullPath, byte[] originalBytes, byte[] upgradedBytes)
             {
                 FullPath = fullPath ?? throw new ArgumentNullException(nameof(fullPath));
-                OriginalBytes =
-                    originalBytes ?? throw new ArgumentNullException(nameof(originalBytes));
-                UpgradedBytes =
-                    upgradedBytes ?? throw new ArgumentNullException(nameof(upgradedBytes));
+                OriginalBytes = originalBytes
+                    ?? throw new ArgumentNullException(nameof(originalBytes));
+                UpgradedBytes = upgradedBytes
+                    ?? throw new ArgumentNullException(nameof(upgradedBytes));
             }
 
             public string FullPath { get; }

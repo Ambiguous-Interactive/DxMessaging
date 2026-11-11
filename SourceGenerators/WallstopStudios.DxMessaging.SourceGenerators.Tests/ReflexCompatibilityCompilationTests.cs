@@ -82,9 +82,9 @@ internal sealed class ReflexCompatibilityCompilationTests
 
     private static string LocateAdapterSource()
     {
-        string? current =
-            Path.GetDirectoryName(typeof(ReflexCompatibilityCompilationTests).Assembly.Location)
-            ?? Directory.GetCurrentDirectory();
+        string? current = Path.GetDirectoryName(
+            typeof(ReflexCompatibilityCompilationTests).Assembly.Location
+        ) ?? Directory.GetCurrentDirectory();
         for (int hop = 0; hop < 10 && current is not null; hop++)
         {
             string candidate = Path.Combine(
@@ -115,9 +115,9 @@ internal sealed class ReflexCompatibilityCompilationTests
 
     private static string LocateProviderSource()
     {
-        string? current =
-            Path.GetDirectoryName(typeof(ReflexCompatibilityCompilationTests).Assembly.Location)
-            ?? Directory.GetCurrentDirectory();
+        string? current = Path.GetDirectoryName(
+            typeof(ReflexCompatibilityCompilationTests).Assembly.Location
+        ) ?? Directory.GetCurrentDirectory();
         for (int hop = 0; hop < 10 && current is not null; hop++)
         {
             string candidate = Path.Combine(

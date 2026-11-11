@@ -254,9 +254,8 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 explicitBus
             );
             int explicitCount = 0;
-            _ = explicitToken.RegisterBroadcast(
-                source,
-                (in TestBroadcastMessage _) => explicitCount++
+            _ = explicitToken.RegisterBroadcast(source, (in TestBroadcastMessage _) =>
+                explicitCount++
             );
             explicitToken.Enable();
 
@@ -269,9 +268,8 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 providerBus
             );
             int providerCount = 0;
-            _ = providerToken.RegisterBroadcast(
-                source,
-                (in TestBroadcastMessage _) => providerCount++
+            _ = providerToken.RegisterBroadcast(source, (in TestBroadcastMessage _) =>
+                providerCount++
             );
             providerToken.Enable();
 
@@ -304,9 +302,8 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 MessageHandler.MessageBus
             );
             string globalReceived = null;
-            _ = globalToken.RegisterTargeted(
-                target,
-                (in StringMessage m) => globalReceived = m.message
+            _ = globalToken.RegisterTargeted(target, (in StringMessage m) =>
+                globalReceived = m.message
             );
             globalToken.Enable();
 
@@ -329,9 +326,8 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             MessageHandler handler = new(new InstanceId(603), providerBus) { active = true };
             MessageRegistrationToken token = MessageRegistrationToken.Create(handler, providerBus);
             string received = null;
-            _ = token.RegisterBroadcast(
-                source,
-                (in SourcedStringMessage m) => received = m.message
+            _ = token.RegisterBroadcast(source, (in SourcedStringMessage m) =>
+                received = m.message
             );
             token.Enable();
 
@@ -341,9 +337,8 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 MessageHandler.MessageBus
             );
             string globalReceived = null;
-            _ = globalToken.RegisterBroadcast(
-                source,
-                (in SourcedStringMessage m) => globalReceived = m.message
+            _ = globalToken.RegisterBroadcast(source, (in SourcedStringMessage m) =>
+                globalReceived = m.message
             );
             globalToken.Enable();
 

@@ -352,8 +352,8 @@ internal static class GeneratorTestUtilities
         SyntaxTree stubs = CSharpSyntaxTree.ParseText(SharedStubs, ParseOptions);
         SyntaxTree userTree = CSharpSyntaxTree.ParseText(userSource, ParseOptions);
 
-        CSharpCompilationOptions effectiveOptions =
-            compilationOptions ?? new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
+        CSharpCompilationOptions effectiveOptions = compilationOptions
+            ?? new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary);
 
         List<SyntaxTree> syntaxTrees = new(extraStubSources?.Length + 2 ?? 2);
         if (compiledParent is null)

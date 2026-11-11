@@ -104,18 +104,14 @@ namespace DxMessaging.Tests.Editor.Allocations
                 message.EmitUntargeted(bus);
             }
 
-            long measured = AllocationProbe.MeasureMin(
-                MinAttempts,
-                prepare: null,
-                operation: () =>
+            long measured = AllocationProbe.MeasureMin(MinAttempts, prepare: null, operation: () =>
+            {
+                SimpleUntargetedMessage emitted = new();
+                for (int i = 0; i < MeasuredEmits; ++i)
                 {
-                    SimpleUntargetedMessage emitted = new();
-                    for (int i = 0; i < MeasuredEmits; ++i)
-                    {
-                        emitted.EmitUntargeted(bus);
-                    }
+                    emitted.EmitUntargeted(bus);
                 }
-            );
+            });
 
             token.UnregisterAll();
             token.Dispose();

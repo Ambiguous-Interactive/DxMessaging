@@ -60,9 +60,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
             int customTargetedCount = 0;
             MessageRegistrationHandle customTargetedHandle =
-                customToken.RegisterGameObjectTargeted<SimpleTargetedMessage>(
-                    customObject,
-                    _ => ++customTargetedCount
+                customToken.RegisterGameObjectTargeted<SimpleTargetedMessage>(customObject, _ =>
+                    ++customTargetedCount
                 );
             SimpleTargetedMessage targetedMessage = new();
             targetedMessage.EmitGameObjectTargeted(customObject, customBus);
@@ -115,32 +114,22 @@ namespace DxMessaging.Tests.Runtime.Core
                 first invocation so the chain terminates deterministically:
                 emit(A) -> countA=1 -> emit(B) -> countB=1 -> emit(A) -> countA=2.
             */
-            _ = RegisterReentrantHandler(
-                scenario,
-                tokenA,
-                context,
-                () =>
+            _ = RegisterReentrantHandler(scenario, tokenA, context, () =>
+            {
+                ++countA;
+                if (countA == 1)
                 {
-                    ++countA;
-                    if (countA == 1)
-                    {
-                        EmitOnBus(scenario, context, busB);
-                    }
+                    EmitOnBus(scenario, context, busB);
                 }
-            );
-            _ = RegisterReentrantHandler(
-                scenario,
-                tokenB,
-                context,
-                () =>
+            });
+            _ = RegisterReentrantHandler(scenario, tokenB, context, () =>
+            {
+                ++countB;
+                if (countB == 1)
                 {
-                    ++countB;
-                    if (countB == 1)
-                    {
-                        EmitOnBus(scenario, context, busA);
-                    }
+                    EmitOnBus(scenario, context, busA);
                 }
-            );
+            });
 
             EmitOnBus(scenario, context, busA);
             Assert.AreEqual(

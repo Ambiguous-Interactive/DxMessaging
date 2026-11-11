@@ -645,8 +645,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                             defaultExpr = "null";
                             if (!CanUseNullDefault(field.Type))
                             {
-                                Location reportLoc =
-                                    attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+                                Location reportLoc = attr.ApplicationSyntaxReference?.GetSyntax()
+                                    ?.GetLocation()
                                     ?? field.Locations.FirstOrDefault()
                                     ?? Location.None;
                                 spc.ReportDiagnostic(
@@ -677,8 +677,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                                 )
                             )
                             {
-                                Location reportLoc =
-                                    attr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+                                Location reportLoc = attr.ApplicationSyntaxReference?.GetSyntax()
+                                    ?.GetLocation()
                                     ?? field.Locations.FirstOrDefault()
                                     ?? Location.None;
                                 spc.ReportDiagnostic(

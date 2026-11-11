@@ -904,11 +904,8 @@ namespace DxMessaging.Tests.Runtime.Core
                         }
                     }
                 );
-                _ = ScenarioCallbacks.RegisterCountingPostProcessor(
-                    scenario,
-                    token,
-                    hostId,
-                    () => ppCounts[idx]++
+                _ = ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, () =>
+                    ppCounts[idx]++
                 );
             }
 

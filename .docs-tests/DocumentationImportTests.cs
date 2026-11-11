@@ -128,8 +128,7 @@ internal sealed class DocumentationImportTests
             ProviderOptions,
             "DocumentedBridgeMessage.cs"
         );
-        string references =
-            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
             ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "BridgeAttributeImports",
@@ -341,8 +340,7 @@ internal sealed class DocumentationImportTests
                 "ExternalUnityTypes.cs"
             )
         );
-        string references =
-            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
             ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "ProviderImports",
@@ -458,8 +456,7 @@ internal sealed class DocumentationImportTests
             + signature.NormalizeWhitespace().ToFullString()
             + " }";
         SyntaxTree tree = CSharpSyntaxTree.ParseText(source, options, "DocumentedCallback.cs");
-        string references =
-            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
             ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "DocumentationImports",

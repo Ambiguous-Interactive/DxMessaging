@@ -375,11 +375,8 @@ namespace DxMessaging.Tests.Runtime.Core
             try
             {
                 MessageRegistrationHandle transient = default;
-                transient = RegisterCountingHandler(
-                    scenario,
-                    token,
-                    transientContext,
-                    () => token.RemoveRegistration(transient)
+                transient = RegisterCountingHandler(scenario, token, transientContext, () =>
+                    token.RemoveRegistration(transient)
                 );
                 EmitCountingMessage(scenario, bus, transientContext);
                 Assert.AreEqual(

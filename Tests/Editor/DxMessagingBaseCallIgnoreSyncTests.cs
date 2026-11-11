@@ -756,10 +756,8 @@ namespace DxMessaging.Tests.Editor
             Assert.That(_scheduled.Count, Is.EqualTo(1));
             bool idle = false;
             List<Action> ticks = new();
-            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(
-                _scheduled[0],
-                ticks.Add,
-                () => idle
+            DxMessagingEditorIdle.ScheduleAssetDatabaseMutation(_scheduled[0], ticks.Add, () =>
+                idle
             );
             ticks[0]();
             CollectionAssert.AreEqual(before, CurrentSidecar());

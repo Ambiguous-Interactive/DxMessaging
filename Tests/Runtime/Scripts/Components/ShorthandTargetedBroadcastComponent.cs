@@ -18,25 +18,21 @@ namespace DxMessaging.Tests.Runtime.Scripts.Components
         {
             base.RegisterMessageHandlers();
 
-            _ = Token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
-                gameObject,
-                _ => gameObjectTargetedCount++
+            _ = Token.RegisterGameObjectTargeted<SimpleTargetedMessage>(gameObject, _ =>
+                gameObjectTargetedCount++
             );
-            _ = Token.RegisterComponentTargeted<SimpleTargetedMessage>(
-                this,
-                _ => componentTargetedCount++
+            _ = Token.RegisterComponentTargeted<SimpleTargetedMessage>(this, _ =>
+                componentTargetedCount++
             );
             _ = Token.RegisterTargetedWithoutTargeting(
                 (in InstanceId _, in SimpleTargetedMessage _) => targetedWithoutTargetingCount++
             );
 
-            _ = Token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
-                gameObject,
-                _ => gameObjectBroadcastCount++
+            _ = Token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(gameObject, _ =>
+                gameObjectBroadcastCount++
             );
-            _ = Token.RegisterComponentBroadcast<SimpleBroadcastMessage>(
-                this,
-                _ => componentBroadcastCount++
+            _ = Token.RegisterComponentBroadcast<SimpleBroadcastMessage>(this, _ =>
+                componentBroadcastCount++
             );
             _ = Token.RegisterBroadcastWithoutSource(
                 (in InstanceId _, in SimpleBroadcastMessage _) => broadcastWithoutSourceCount++

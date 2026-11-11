@@ -6012,8 +6012,8 @@ namespace DxMessaging.Core
                 }
 
                 ref TU typedMessage = ref DxUnsafe.As<TMessage, TU>(ref message);
-                List<FastHandler<TU>> handlers =
-                    globalSnapshot ?? GetOrAddNewHandlerStack(cache, emissionId);
+                List<FastHandler<TU>> handlers = globalSnapshot
+                    ?? GetOrAddNewHandlerStack(cache, emissionId);
                 int handlersCount = handlers.Count;
                 if (handlersCount == 0)
                 {
@@ -6192,8 +6192,8 @@ namespace DxMessaging.Core
                 }
 
                 ref TU typedMessage = ref DxUnsafe.As<TMessage, TU>(ref message);
-                List<FastHandlerWithContext<TU>> handlers =
-                    globalSnapshot ?? GetOrAddNewHandlerStack(cache, emissionId);
+                List<FastHandlerWithContext<TU>> handlers = globalSnapshot
+                    ?? GetOrAddNewHandlerStack(cache, emissionId);
                 int handlersCount = handlers.Count;
                 if (handlersCount == 0)
                 {

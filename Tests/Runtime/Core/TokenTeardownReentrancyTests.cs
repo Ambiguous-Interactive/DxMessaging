@@ -404,12 +404,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle added = default;
             state.Bus.OnFirstDeregistration = () =>
             {
-                added = Register(
-                    state.Token,
-                    scenario,
-                    action,
-                    family,
-                    () => state.Calls.Add("added")
+                added = Register(state.Token, scenario, action, family, () =>
+                    state.Calls.Add("added")
                 );
             };
             if (outerClear)
@@ -472,12 +468,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 + ",reject="
                 + reject;
             using CaseState state = new CaseState(diagnostics);
-            MessageRegistrationHandle handle = Register(
-                state.Token,
-                scenario,
-                action,
-                family,
-                () => state.Calls.Add("live")
+            MessageRegistrationHandle handle = Register(state.Token, scenario, action, family, () =>
+                state.Calls.Add("live")
             );
             state.Token.Enable();
             state.Bus.RejectNext = reject;
@@ -582,12 +574,8 @@ namespace DxMessaging.Tests.Runtime.Core
             state.Bus.OnFirstDeregistration = () =>
             {
                 state.Token.UnregisterAll();
-                replacement = Register(
-                    state.Token,
-                    scenario,
-                    action,
-                    family,
-                    () => state.Calls.Add("replacement")
+                replacement = Register(state.Token, scenario, action, family, () =>
+                    state.Calls.Add("replacement")
                 );
                 state.Token.Enable();
             };
@@ -687,12 +675,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 + ",diagnostics="
                 + diagnostics;
             using CaseState state = new CaseState(diagnostics);
-            MessageRegistrationHandle handle = Register(
-                state.Token,
-                scenario,
-                action,
-                family,
-                () => state.Calls.Add("retained")
+            MessageRegistrationHandle handle = Register(state.Token, scenario, action, family, () =>
+                state.Calls.Add("retained")
             );
             state.Token.Enable();
             for (int attempt = 0; attempt < 2; ++attempt)
@@ -1021,12 +1005,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 ++mutations;
                 if (add)
                 {
-                    added = Register(
-                        state.Token,
-                        scenario,
-                        action,
-                        family,
-                        () => state.Calls.Add("added")
+                    added = Register(state.Token, scenario, action, family, () =>
+                        state.Calls.Add("added")
                     );
                 }
             };

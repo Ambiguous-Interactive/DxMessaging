@@ -124,13 +124,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 DestroyerPriority
             );
 
-            _ = tokenB.RegisterComponentTargeted(
-                targetComp,
-                (in SimpleTargetedMessage _) =>
-                {
-                    secondCount++;
-                }
-            );
+            _ = tokenB.RegisterComponentTargeted(targetComp, (in SimpleTargetedMessage _) =>
+            {
+                secondCount++;
+            });
 
             SimpleTargetedMessage msg = new();
             msg.EmitComponentTargeted(targetComp);
@@ -239,13 +236,10 @@ namespace DxMessaging.Tests.Runtime.Core
                 DestroyerPriority
             );
 
-            _ = tokenB.RegisterComponentBroadcast(
-                sourceComp,
-                (in SimpleBroadcastMessage _) =>
-                {
-                    secondCount++;
-                }
-            );
+            _ = tokenB.RegisterComponentBroadcast(sourceComp, (in SimpleBroadcastMessage _) =>
+            {
+                secondCount++;
+            });
 
             SimpleBroadcastMessage msg = new();
             msg.EmitComponentBroadcast(sourceComp);

@@ -347,12 +347,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                             independent,
                             MessageBusRebindMode.PreserveRegistrations
                         );
-                        RegisterReleaseProbe(
-                            scenario,
-                            peerToken,
-                            probe.Route,
-                            interceptor,
-                            () => ++independentCalls
+                        RegisterReleaseProbe(scenario, peerToken, probe.Route, interceptor, () =>
+                            ++independentCalls
                         );
                         peerToken.Enable();
                         if (replaceOwner)
@@ -526,12 +522,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                 FirstToken = Owner.Create(FirstListener);
                 SecondToken = Owner.Create(SecondListener);
                 RegisterReleaseProbe(scenario, FirstToken, Route, interceptor, () => ++_firstCalls);
-                RegisterReleaseProbe(
-                    scenario,
-                    SecondToken,
-                    Route,
-                    interceptor,
-                    () => ++_secondCalls
+                RegisterReleaseProbe(scenario, SecondToken, Route, interceptor, () =>
+                    ++_secondCalls
                 );
                 FirstToken.Enable();
                 SecondToken.Enable();
@@ -700,19 +692,11 @@ namespace DxMessaging.Tests.Runtime.Unity
                     int[] registrationsByBus = new int[observedBuses.Length];
                     try
                     {
-                        RegisterReleaseProbe(
-                            scenario,
-                            firstToken,
-                            route,
-                            interceptor,
-                            () => ++firstCalls
+                        RegisterReleaseProbe(scenario, firstToken, route, interceptor, () =>
+                            ++firstCalls
                         );
-                        RegisterReleaseProbe(
-                            scenario,
-                            secondToken,
-                            route,
-                            interceptor,
-                            () => ++secondCalls
+                        RegisterReleaseProbe(scenario, secondToken, route, interceptor, () =>
+                            ++secondCalls
                         );
                         firstToken.Enable();
                         secondToken.Enable();
@@ -852,12 +836,8 @@ namespace DxMessaging.Tests.Runtime.Unity
             {
                 try
                 {
-                    RegisterReleaseProbe(
-                        scenario,
-                        original,
-                        route,
-                        interceptor,
-                        () => ++originalCalls
+                    RegisterReleaseProbe(scenario, original, route, interceptor, () =>
+                        ++originalCalls
                     );
                     original.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
@@ -878,12 +858,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                         if (replace)
                         {
                             replacement = messaging.Create(listener);
-                            RegisterReleaseProbe(
-                                scenario,
-                                replacement,
-                                route,
-                                interceptor,
-                                () => ++replacementCalls
+                            RegisterReleaseProbe(scenario, replacement, route, interceptor, () =>
+                                ++replacementCalls
                             );
                             replacement.Enable();
                         }
@@ -955,12 +931,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                     );
 
                     recovery = messaging.Create(listener);
-                    RegisterReleaseProbe(
-                        scenario,
-                        recovery,
-                        route,
-                        interceptor,
-                        () => ++recoveryCalls
+                    RegisterReleaseProbe(scenario, recovery, route, interceptor, () =>
+                        ++recoveryCalls
                     );
                     recovery.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
@@ -1140,19 +1112,11 @@ namespace DxMessaging.Tests.Runtime.Unity
                     InvalidOperationException failure = new("configuration cleanup failure");
                     try
                     {
-                        RegisterReleaseProbe(
-                            scenario,
-                            firstToken,
-                            route,
-                            interceptor,
-                            () => ++firstCalls
+                        RegisterReleaseProbe(scenario, firstToken, route, interceptor, () =>
+                            ++firstCalls
                         );
-                        RegisterReleaseProbe(
-                            scenario,
-                            secondToken,
-                            route,
-                            interceptor,
-                            () => ++secondCalls
+                        RegisterReleaseProbe(scenario, secondToken, route, interceptor, () =>
+                            ++secondCalls
                         );
                         firstToken.Enable();
                         secondToken.Enable();
@@ -1174,12 +1138,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                                 independent,
                                 MessageBusRebindMode.PreserveRegistrations
                             );
-                            RegisterReleaseProbe(
-                                scenario,
-                                peerToken,
-                                route,
-                                interceptor,
-                                () => ++independentCalls
+                            RegisterReleaseProbe(scenario, peerToken, route, interceptor, () =>
+                                ++independentCalls
                             );
                             peerToken.Enable();
                             if (replaceOwner)
@@ -1384,19 +1344,11 @@ namespace DxMessaging.Tests.Runtime.Unity
                     MessageRegistrationToken peerToken = firstSurvives ? secondToken : firstToken;
                     try
                     {
-                        RegisterReleaseProbe(
-                            scenario,
-                            firstToken,
-                            route,
-                            interceptor,
-                            () => ++firstCalls
+                        RegisterReleaseProbe(scenario, firstToken, route, interceptor, () =>
+                            ++firstCalls
                         );
-                        RegisterReleaseProbe(
-                            scenario,
-                            secondToken,
-                            route,
-                            interceptor,
-                            () => ++secondCalls
+                        RegisterReleaseProbe(scenario, secondToken, route, interceptor, () =>
+                            ++secondCalls
                         );
                         firstToken.Enable();
                         secondToken.Enable();
@@ -1524,19 +1476,11 @@ namespace DxMessaging.Tests.Runtime.Unity
             {
                 try
                 {
-                    RegisterReleaseProbe(
-                        scenario,
-                        firstToken,
-                        route,
-                        interceptor,
-                        () => ++firstCalls
+                    RegisterReleaseProbe(scenario, firstToken, route, interceptor, () =>
+                        ++firstCalls
                     );
-                    RegisterReleaseProbe(
-                        scenario,
-                        secondToken,
-                        route,
-                        interceptor,
-                        () => ++secondCalls
+                    RegisterReleaseProbe(scenario, secondToken, route, interceptor, () =>
+                        ++secondCalls
                     );
                     firstToken.Enable();
                     secondToken.Enable();
@@ -1549,12 +1493,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                         bus.OnDeregister = () =>
                         {
                             firstNestedReleased = messaging.Release(first);
-                            RegisterReleaseProbe(
-                                scenario,
-                                firstToken,
-                                route,
-                                interceptor,
-                                () => ++replacementCalls
+                            RegisterReleaseProbe(scenario, firstToken, route, interceptor, () =>
+                                ++replacementCalls
                             );
                             firstToken.Enable();
                         };
@@ -1638,12 +1578,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                     bool callbackCompleted = false;
                     try
                     {
-                        RegisterReleaseProbe(
-                            scenario,
-                            token,
-                            route,
-                            interceptor,
-                            () => ++originalCalls
+                        RegisterReleaseProbe(scenario, token, route, interceptor, () =>
+                            ++originalCalls
                         );
                         token.Enable();
                         ScenarioCallbacks.EmitForKind(scenario, bus, route);
@@ -1666,12 +1602,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                             }
                             if (stageReplacement)
                             {
-                                RegisterReleaseProbe(
-                                    scenario,
-                                    token,
-                                    route,
-                                    interceptor,
-                                    () => ++replacementCalls
+                                RegisterReleaseProbe(scenario, token, route, interceptor, () =>
+                                    ++replacementCalls
                                 );
                                 token.Enable();
                             }
@@ -1835,11 +1767,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                 try
                 {
                     int calls = 0;
-                    _ = ScenarioCallbacks.RegisterCountingHandler(
-                        scenario,
-                        token,
-                        route,
-                        () => ++calls
+                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () =>
+                        ++calls
                     );
                     token.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
@@ -1939,11 +1868,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                     int calls = 0;
                     firstToken.DiagnosticMode = true;
                     siblingToken.DiagnosticMode = true;
-                    _ = ScenarioCallbacks.RegisterCountingHandler(
-                        scenario,
-                        firstToken,
-                        route,
-                        () => ++calls
+                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, firstToken, route, () =>
+                        ++calls
                     );
                     _ = ScenarioCallbacks.RegisterCountingHandler(
                         scenario,
@@ -2107,11 +2033,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                 try
                 {
                     int calls = 0;
-                    _ = ScenarioCallbacks.RegisterCountingHandler(
-                        scenario,
-                        token,
-                        route,
-                        () => ++calls
+                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () =>
+                        ++calls
                     );
                     token.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);
@@ -2186,11 +2109,8 @@ namespace DxMessaging.Tests.Runtime.Unity
                 try
                 {
                     int calls = 0;
-                    _ = ScenarioCallbacks.RegisterCountingHandler(
-                        scenario,
-                        token,
-                        route,
-                        () => ++calls
+                    _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () =>
+                        ++calls
                     );
                     token.Enable();
                     ScenarioCallbacks.EmitForKind(scenario, bus, route);

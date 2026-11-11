@@ -42,41 +42,35 @@ internal sealed class OptionalStructDocumentationTests
                 }
                 public static class DocProbe { public static object Read() => {{creation}}; }
                 """;
-            WithCompiledCaller(
-                source,
-                assembly =>
+            WithCompiledCaller(source, assembly =>
+            {
+                object? value = assembly.GetType("DocProbe")!.GetMethod("Read")!.Invoke(null, null);
+                string context =
+                    $"referenceType={referenceType}; generated={generated}; creation={creation}";
+                if (referenceType && creation == "default(Packet)")
                 {
-                    object? value = assembly
-                        .GetType("DocProbe")!
-                        .GetMethod("Read")!
-                        .Invoke(null, null);
-                    string context =
-                        $"referenceType={referenceType}; generated={generated}; creation={creation}";
-                    if (referenceType && creation == "default(Packet)")
-                    {
-                        Assert.That(value, Is.Null, context);
-                        return;
-                    }
-                    Assert.That(value, Is.Not.Null, context);
-                    bool zero = !referenceType && creation is "new Packet()" or "default(Packet)";
-                    AssertField(
-                        value!,
-                        "Value",
-                        zero ? 0f
-                            : creation == "new Packet(2f)" ? 2f
-                            : 1.25f,
-                        context
-                    );
-                    AssertField(
-                        value!,
-                        "Label",
-                        zero ? null
-                            : creation.Contains("custom", StringComparison.Ordinal) ? "custom"
-                            : "ready",
-                        context
-                    );
+                    Assert.That(value, Is.Null, context);
+                    return;
                 }
-            );
+                Assert.That(value, Is.Not.Null, context);
+                bool zero = !referenceType && creation is "new Packet()" or "default(Packet)";
+                AssertField(
+                    value!,
+                    "Value",
+                    zero ? 0f
+                        : creation == "new Packet(2f)" ? 2f
+                        : 1.25f,
+                    context
+                );
+                AssertField(
+                    value!,
+                    "Label",
+                    zero ? null
+                        : creation.Contains("custom", StringComparison.Ordinal) ? "custom"
+                        : "ready",
+                    context
+                );
+            });
         }
     }
 
@@ -135,59 +129,51 @@ internal sealed class OptionalStructDocumentationTests
             + result
             + "\n} }\n"
             + Fixtures;
-        WithCompiledCaller(
-            source,
-            assembly =>
+        WithCompiledCaller(source, assembly =>
+        {
+            object[] values = (object[])
+                assembly.GetType("DocProbe")!.GetMethod("Read")!.Invoke(null, null)!;
+            if (typeName == "SpawnEffect")
             {
-                object[] values = (object[])
-                    assembly.GetType("DocProbe")!.GetMethod("Read")!.Invoke(null, null)!;
-                if (typeName == "SpawnEffect")
-                {
-                    Assert.That(values, Has.Length.EqualTo(4));
-                    AssertField(values[0], "scale", 1f, typeName + " documented defaults");
-                    AssertField(values[0], "duration", 5f, typeName + " documented defaults");
-                    AssertField(values[0], "looping", false, typeName + " documented defaults");
-                    AssertField(values[1], "scale", 2.5f, typeName + " positional argument");
-                    AssertField(values[1], "duration", 5f, typeName + " omitted argument");
-                    AssertField(
-                        values[2],
-                        "color",
-                        assembly.GetType("UnityEngine.Color")!.GetProperty("red")!.GetValue(null),
-                        typeName + " custom color"
-                    );
-                    AssertField(values[3], "duration", 10f, typeName + " explicit arguments");
-                    AssertField(values[3], "looping", true, typeName + " explicit arguments");
-                }
-                else
-                {
-                    Assert.That(values, Has.Length.EqualTo(3));
-                    AssertField(values[0], "masterVolume", 1f, typeName + " documented defaults");
-                    AssertField(values[0], "musicVolume", 0.8f, typeName + " documented defaults");
-                    AssertField(values[0], "sfxVolume", 1f, typeName + " documented defaults");
-                    AssertField(
-                        values[0],
-                        "muteWhenUnfocused",
-                        true,
-                        typeName + " documented defaults"
-                    );
-                    AssertField(values[1], "masterVolume", 1f, typeName + " named argument");
-                    AssertField(values[1], "musicVolume", 0.5f, typeName + " named argument");
-                    AssertField(
-                        values[1],
-                        "muteWhenUnfocused",
-                        true,
-                        typeName + " omitted argument"
-                    );
-                    AssertField(values[2], "masterVolume", 0.7f, typeName + " explicit arguments");
-                    AssertField(
-                        values[2],
-                        "muteWhenUnfocused",
-                        false,
-                        typeName + " explicit arguments"
-                    );
-                }
+                Assert.That(values, Has.Length.EqualTo(4));
+                AssertField(values[0], "scale", 1f, typeName + " documented defaults");
+                AssertField(values[0], "duration", 5f, typeName + " documented defaults");
+                AssertField(values[0], "looping", false, typeName + " documented defaults");
+                AssertField(values[1], "scale", 2.5f, typeName + " positional argument");
+                AssertField(values[1], "duration", 5f, typeName + " omitted argument");
+                AssertField(
+                    values[2],
+                    "color",
+                    assembly.GetType("UnityEngine.Color")!.GetProperty("red")!.GetValue(null),
+                    typeName + " custom color"
+                );
+                AssertField(values[3], "duration", 10f, typeName + " explicit arguments");
+                AssertField(values[3], "looping", true, typeName + " explicit arguments");
             }
-        );
+            else
+            {
+                Assert.That(values, Has.Length.EqualTo(3));
+                AssertField(values[0], "masterVolume", 1f, typeName + " documented defaults");
+                AssertField(values[0], "musicVolume", 0.8f, typeName + " documented defaults");
+                AssertField(values[0], "sfxVolume", 1f, typeName + " documented defaults");
+                AssertField(
+                    values[0],
+                    "muteWhenUnfocused",
+                    true,
+                    typeName + " documented defaults"
+                );
+                AssertField(values[1], "masterVolume", 1f, typeName + " named argument");
+                AssertField(values[1], "musicVolume", 0.5f, typeName + " named argument");
+                AssertField(values[1], "muteWhenUnfocused", true, typeName + " omitted argument");
+                AssertField(values[2], "masterVolume", 0.7f, typeName + " explicit arguments");
+                AssertField(
+                    values[2],
+                    "muteWhenUnfocused",
+                    false,
+                    typeName + " explicit arguments"
+                );
+            }
+        });
     }
 
     private static void AssertField(object instance, string name, object? expected, string context)
@@ -220,8 +206,7 @@ internal sealed class OptionalStructDocumentationTests
             string path = Path.Combine(root, "Runtime", "Core", "Attributes", file);
             trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(path), parseOptions, path));
         }
-        string paths =
-            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+        string paths = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
             ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "OptionalStructDocs_" + Guid.NewGuid().ToString("N"),

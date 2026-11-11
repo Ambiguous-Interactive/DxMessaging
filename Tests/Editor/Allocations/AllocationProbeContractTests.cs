@@ -66,21 +66,15 @@ namespace DxMessaging.Tests.Editor.Allocations
             };
 
             AssertionException failure = Assert.Throws<AssertionException>(() =>
-                AllocationAssertions.AssertNoAllocations(
-                    label,
-                    allocate,
-                    0,
-                    iterations,
-                    () =>
-                    {
-                        ++reports;
-                        Assert.IsFalse(
-                            RecorderEnabled,
-                            $"iterations={iterations}: context is outside measurement."
-                        );
-                        return $"calls={calls}; reporting complete";
-                    }
-                )
+                AllocationAssertions.AssertNoAllocations(label, allocate, 0, iterations, () =>
+                {
+                    ++reports;
+                    Assert.IsFalse(
+                        RecorderEnabled,
+                        $"iterations={iterations}: context is outside measurement."
+                    );
+                    return $"calls={calls}; reporting complete";
+                })
             );
             StringAssert.Contains(label, failure.Message, $"iterations={iterations}");
             Assert.AreEqual(1, reports, $"iterations={iterations}: report once on failure.");
@@ -480,19 +474,15 @@ namespace DxMessaging.Tests.Editor.Allocations
             */
             int attempt = 0;
             object sink = null;
-            long min = AllocationProbe.MeasureMin(
-                8,
-                prepare: null,
-                operation: () =>
+            long min = AllocationProbe.MeasureMin(8, prepare: null, operation: () =>
+            {
+                int allocations = (8 - attempt) * 100;
+                ++attempt;
+                for (int i = 0; i < allocations; ++i)
                 {
-                    int allocations = (8 - attempt) * 100;
-                    ++attempt;
-                    for (int i = 0; i < allocations; ++i)
-                    {
-                        sink = new byte[16];
-                    }
+                    sink = new byte[16];
                 }
-            );
+            });
             Assert.That(
                 min,
                 Is.GreaterThanOrEqualTo(100),
@@ -526,24 +516,20 @@ namespace DxMessaging.Tests.Editor.Allocations
             int attempt = 0;
             object sink = null;
             AllocationProbe.MinimumMeasurement<int> measurement =
-                AllocationProbe.MeasureMinWithDiagnostics(
-                    2,
-                    prepare: null,
-                    operation: () =>
+                AllocationProbe.MeasureMinWithDiagnostics(2, prepare: null, operation: () =>
+                {
+                    int currentAttempt = attempt;
+                    ++attempt;
+                    if (currentAttempt == 0)
                     {
-                        int currentAttempt = attempt;
-                        ++attempt;
-                        if (currentAttempt == 0)
+                        for (int i = 0; i < allocationsInFirstAttempt; ++i)
                         {
-                            for (int i = 0; i < allocationsInFirstAttempt; ++i)
-                            {
-                                sink = new byte[16];
-                            }
+                            sink = new byte[16];
                         }
-
-                        return currentAttempt;
                     }
-                );
+
+                    return currentAttempt;
+                });
 
             Assert.That(
                 measurement.GcAllocations,

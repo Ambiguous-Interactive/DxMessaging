@@ -68,109 +68,105 @@ namespace DxMessaging.Tests.Runtime.Core
         [Test]
         public void SuccessfulReflexiveMethodsShareOneLeastRecentlyUsedBound()
         {
-            WithReflexiveRetentionLimit(
-                2,
-                (bus, settings) =>
-                {
-                    GameObject host = CreateReflexiveHost("Lru");
-                    SimpleMessageAwareComponent receiver =
-                        host.GetComponent<SimpleMessageAwareComponent>();
-                    ReflexiveReceiverComponent other =
-                        host.AddComponent<ReflexiveReceiverComponent>();
-                    int calls = 0;
-                    receiver.reflexiveTwoArgumentHandler = () => ++calls;
-                    receiver.reflexiveThreeArgumentHandler = () => ++calls;
-                    ReflexiveMessage first = TwoArgumentReflexiveMessage();
-                    ReflexiveMessage second = new(
-                        nameof(SimpleMessageAwareComponent.HandleReflexiveMessageThreeArguments),
-                        ReflexiveSendMode.Flat,
-                        1,
-                        2,
-                        3
-                    );
-                    ReflexiveMessage third = new(
-                        nameof(ReflexiveReceiverComponent.OnReflexive),
-                        ReflexiveSendMode.Flat | ReflexiveSendMode.OnlyIncludeActive
-                    );
-                    InstanceId target = host;
-                    first.EmitTargeted(target, bus);
-                    second.EmitTargeted(target, bus);
-                    Assert.That(
-                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                        Is.EqualTo(2),
-                        "Only successful lookups may occupy the two-entry cache."
-                    );
-                    first.EmitTargeted(target, bus);
-                    third.EmitTargeted(target, bus);
-                    Assert.That(
-                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                        Is.EqualTo(2),
-                        "Different component types must share the same global bound."
-                    );
-                    Assert.That(
-                        bus.IsReflexiveMethodCached(
-                            typeof(SimpleMessageAwareComponent),
-                            first.signatureKey
-                        ),
-                        Is.True,
-                        "A cache hit must refresh recency."
-                    );
-                    Assert.That(
-                        bus.IsReflexiveMethodCached(
-                            typeof(SimpleMessageAwareComponent),
-                            second.signatureKey
-                        ),
-                        Is.False,
-                        "The least recently used method must be evicted."
-                    );
-                    Assert.That(
-                        bus.IsReflexiveMethodCached(
-                            typeof(ReflexiveReceiverComponent),
-                            third.signatureKey
-                        ),
-                        Is.True,
-                        "The newest method must be retained."
-                    );
-                    Assert.That(calls, Is.EqualTo(3), "All three matching sends must invoke once.");
-                    Assert.That(
-                        other.InvocationCount,
-                        Is.EqualTo(1),
-                        "The other component type must receive its matching method."
-                    );
-                    settings._bufferMaxDistinctEntries = 1;
-                    DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
-                    Assert.That(
-                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                        Is.EqualTo(1),
-                        "Hot reload must immediately shrink the cache."
-                    );
-                    Assert.That(
-                        bus.IsReflexiveMethodCached(
-                            typeof(ReflexiveReceiverComponent),
-                            third.signatureKey
-                        ),
-                        Is.True,
-                        "Shrinking must preserve the most recently used method."
-                    );
-                    bus.Trim(force: true);
-                    Assert.That(
-                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                        Is.Zero,
-                        "Forced trim must release method lookups."
-                    );
-                    first.EmitTargeted(target, bus);
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(4),
-                        "A trimmed method must resolve and invoke again."
-                    );
-                    Assert.That(
-                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                        Is.EqualTo(1),
-                        "Repopulation must respect the new capacity."
-                    );
-                }
-            );
+            WithReflexiveRetentionLimit(2, (bus, settings) =>
+            {
+                GameObject host = CreateReflexiveHost("Lru");
+                SimpleMessageAwareComponent receiver =
+                    host.GetComponent<SimpleMessageAwareComponent>();
+                ReflexiveReceiverComponent other = host.AddComponent<ReflexiveReceiverComponent>();
+                int calls = 0;
+                receiver.reflexiveTwoArgumentHandler = () => ++calls;
+                receiver.reflexiveThreeArgumentHandler = () => ++calls;
+                ReflexiveMessage first = TwoArgumentReflexiveMessage();
+                ReflexiveMessage second = new(
+                    nameof(SimpleMessageAwareComponent.HandleReflexiveMessageThreeArguments),
+                    ReflexiveSendMode.Flat,
+                    1,
+                    2,
+                    3
+                );
+                ReflexiveMessage third = new(
+                    nameof(ReflexiveReceiverComponent.OnReflexive),
+                    ReflexiveSendMode.Flat | ReflexiveSendMode.OnlyIncludeActive
+                );
+                InstanceId target = host;
+                first.EmitTargeted(target, bus);
+                second.EmitTargeted(target, bus);
+                Assert.That(
+                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                    Is.EqualTo(2),
+                    "Only successful lookups may occupy the two-entry cache."
+                );
+                first.EmitTargeted(target, bus);
+                third.EmitTargeted(target, bus);
+                Assert.That(
+                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                    Is.EqualTo(2),
+                    "Different component types must share the same global bound."
+                );
+                Assert.That(
+                    bus.IsReflexiveMethodCached(
+                        typeof(SimpleMessageAwareComponent),
+                        first.signatureKey
+                    ),
+                    Is.True,
+                    "A cache hit must refresh recency."
+                );
+                Assert.That(
+                    bus.IsReflexiveMethodCached(
+                        typeof(SimpleMessageAwareComponent),
+                        second.signatureKey
+                    ),
+                    Is.False,
+                    "The least recently used method must be evicted."
+                );
+                Assert.That(
+                    bus.IsReflexiveMethodCached(
+                        typeof(ReflexiveReceiverComponent),
+                        third.signatureKey
+                    ),
+                    Is.True,
+                    "The newest method must be retained."
+                );
+                Assert.That(calls, Is.EqualTo(3), "All three matching sends must invoke once.");
+                Assert.That(
+                    other.InvocationCount,
+                    Is.EqualTo(1),
+                    "The other component type must receive its matching method."
+                );
+                settings._bufferMaxDistinctEntries = 1;
+                DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
+                Assert.That(
+                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                    Is.EqualTo(1),
+                    "Hot reload must immediately shrink the cache."
+                );
+                Assert.That(
+                    bus.IsReflexiveMethodCached(
+                        typeof(ReflexiveReceiverComponent),
+                        third.signatureKey
+                    ),
+                    Is.True,
+                    "Shrinking must preserve the most recently used method."
+                );
+                bus.Trim(force: true);
+                Assert.That(
+                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                    Is.Zero,
+                    "Forced trim must release method lookups."
+                );
+                first.EmitTargeted(target, bus);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(4),
+                    "A trimmed method must resolve and invoke again."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                    Is.EqualTo(1),
+                    "Repopulation must respect the new capacity."
+                );
+            });
         }
 
         [TestCase("Force")]
@@ -178,159 +174,148 @@ namespace DxMessaging.Tests.Runtime.Core
         [TestCase("Reset")]
         public void ColdReflexiveCacheReclamationReleasesHistoricalBackingCapacity(string operation)
         {
-            WithReflexiveRetentionLimit(
-                32,
-                (bus, settings) =>
+            WithReflexiveRetentionLimit(32, (bus, settings) =>
+            {
+                GameObject host = CreateReflexiveHost("Backing");
+                InstanceId target = host;
+                object[] values =
                 {
-                    GameObject host = CreateReflexiveHost("Backing");
-                    InstanceId target = host;
-                    object[] values =
-                    {
-                        1,
-                        "text",
-                        1L,
-                        true,
-                        1f,
-                        1d,
-                        (byte)1,
-                        (short)1,
-                        'a',
-                        1m,
-                        1u,
-                        1ul,
-                        (ushort)1,
-                        (sbyte)1,
-                        Vector2.zero,
-                        Vector3.zero,
-                    };
-                    foreach (object value in values)
-                    {
-                        ReflexiveMessage message = new(
-                            nameof(
-                                SimpleMessageAwareComponent.HandleReflexiveMessageObjectArgument
-                            ),
-                            ReflexiveSendMode.Flat | ReflexiveSendMode.OnlyIncludeActive,
-                            value
-                        );
-                        message.EmitTargeted(target, bus);
-                    }
-                    Assert.That(
-                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                        Is.EqualTo(values.Length),
-                        "Each successful object-argument signature must occupy one lookup entry."
+                    1,
+                    "text",
+                    1L,
+                    true,
+                    1f,
+                    1d,
+                    (byte)1,
+                    (short)1,
+                    'a',
+                    1m,
+                    1u,
+                    1ul,
+                    (ushort)1,
+                    (sbyte)1,
+                    Vector2.zero,
+                    Vector3.zero,
+                };
+                foreach (object value in values)
+                {
+                    ReflexiveMessage message = new(
+                        nameof(SimpleMessageAwareComponent.HandleReflexiveMessageObjectArgument),
+                        ReflexiveSendMode.Flat | ReflexiveSendMode.OnlyIncludeActive,
+                        value
                     );
-                    int beforeCapacity = MessageBusInspection.ReflexiveMethodCacheCapacity(bus);
-                    if (operation == "Force")
-                    {
-                        bus.Trim(force: true);
-                    }
-                    else if (operation == "Reset")
-                    {
-                        bus.ResetState();
-                    }
-                    else
-                    {
-                        settings._bufferMaxDistinctEntries = 2;
-                        DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
-                    }
-                    Assert.That(
-                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                        Is.EqualTo(operation == "Shrink" ? 2 : 0),
-                        $"operation={operation}: cold reclamation must remove obsolete lookup references."
-                    );
-                    Assert.That(
-                        MessageBusInspection.ReflexiveMethodCacheCapacity(bus),
-                        Is.LessThan(beforeCapacity),
-                        $"operation={operation}: cold reclamation must release the historical bucket-array peak."
-                    );
+                    message.EmitTargeted(target, bus);
                 }
-            );
+                Assert.That(
+                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                    Is.EqualTo(values.Length),
+                    "Each successful object-argument signature must occupy one lookup entry."
+                );
+                int beforeCapacity = MessageBusInspection.ReflexiveMethodCacheCapacity(bus);
+                if (operation == "Force")
+                {
+                    bus.Trim(force: true);
+                }
+                else if (operation == "Reset")
+                {
+                    bus.ResetState();
+                }
+                else
+                {
+                    settings._bufferMaxDistinctEntries = 2;
+                    DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
+                }
+                Assert.That(
+                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                    Is.EqualTo(operation == "Shrink" ? 2 : 0),
+                    $"operation={operation}: cold reclamation must remove obsolete lookup references."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveMethodCacheCapacity(bus),
+                    Is.LessThan(beforeCapacity),
+                    $"operation={operation}: cold reclamation must release the historical bucket-array peak."
+                );
+            });
         }
 
         [Test]
         public void AmbiguousReflexiveLookupsWithoutExactOverloadAreNotRetained()
         {
-            WithReflexiveRetentionLimit(
-                2,
-                (bus, settings) =>
-                {
-                    GameObject host = new("AmbiguousLookup", typeof(ReflexiveReceiverComponent));
-                    _spawned.Add(host);
-                    ReflexiveReceiverComponent receiver =
-                        host.GetComponent<ReflexiveReceiverComponent>();
-                    Assert.Throws<System.Reflection.AmbiguousMatchException>(
-                        () =>
-                            typeof(ReflexiveReceiverComponent).GetMethod(
-                                nameof(ReflexiveReceiverComponent.OnAmbiguous),
-                                new[] { typeof(string) }
-                            ),
-                        "The input must match two unrelated interface overloads without an exact match."
-                    );
-                    ReflexiveMessage message = new(
-                        nameof(ReflexiveReceiverComponent.OnAmbiguous),
-                        ReflexiveSendMode.Flat | ReflexiveSendMode.OnlyIncludeActive,
-                        "text"
-                    );
-                    InstanceId target = host;
-                    message.EmitTargeted(target, bus);
-                    message.EmitTargeted(target, bus);
-                    Assert.That(
-                        receiver.InvocationCount,
-                        Is.Zero,
-                        "An ambiguous lookup without an exact overload must not invoke either method."
-                    );
-                    Assert.That(
-                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                        Is.Zero,
-                        "Ambiguous misses must not occupy the successful-lookup cache."
-                    );
-                }
-            );
+            WithReflexiveRetentionLimit(2, (bus, settings) =>
+            {
+                GameObject host = new("AmbiguousLookup", typeof(ReflexiveReceiverComponent));
+                _spawned.Add(host);
+                ReflexiveReceiverComponent receiver =
+                    host.GetComponent<ReflexiveReceiverComponent>();
+                Assert.Throws<System.Reflection.AmbiguousMatchException>(
+                    () =>
+                        typeof(ReflexiveReceiverComponent).GetMethod(
+                            nameof(ReflexiveReceiverComponent.OnAmbiguous),
+                            new[] { typeof(string) }
+                        ),
+                    "The input must match two unrelated interface overloads without an exact match."
+                );
+                ReflexiveMessage message = new(
+                    nameof(ReflexiveReceiverComponent.OnAmbiguous),
+                    ReflexiveSendMode.Flat | ReflexiveSendMode.OnlyIncludeActive,
+                    "text"
+                );
+                InstanceId target = host;
+                message.EmitTargeted(target, bus);
+                message.EmitTargeted(target, bus);
+                Assert.That(
+                    receiver.InvocationCount,
+                    Is.Zero,
+                    "An ambiguous lookup without an exact overload must not invoke either method."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                    Is.Zero,
+                    "Ambiguous misses must not occupy the successful-lookup cache."
+                );
+            });
         }
 
         [TestCase(0)]
         [TestCase(2)]
         public void MissingReflexiveMethodsAreNeverRetained(int capacity)
         {
-            WithReflexiveRetentionLimit(
-                capacity,
-                (bus, settings) =>
+            WithReflexiveRetentionLimit(capacity, (bus, settings) =>
+            {
+                GameObject host = CreateReflexiveHost("Misses");
+                InstanceId target = host;
+                for (int index = 0; index < 24; ++index)
                 {
-                    GameObject host = CreateReflexiveHost("Misses");
-                    InstanceId target = host;
-                    for (int index = 0; index < 24; ++index)
-                    {
-                        ReflexiveMessage missing = new(
-                            "MissingReflexiveMethod" + index,
-                            ReflexiveSendMode.Flat,
-                            1,
-                            2
-                        );
-                        missing.EmitTargeted(target, bus);
-                        Assert.That(
-                            MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                            Is.Zero,
-                            $"capacity={capacity}, miss={index}: failed lookups must not be retained."
-                        );
-                    }
-                    int calls = 0;
-                    host.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
-                        () => ++calls;
-                    ReflexiveMessage valid = TwoArgumentReflexiveMessage();
-                    valid.EmitTargeted(target, bus);
-                    valid.EmitTargeted(target, bus);
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(2),
-                        $"capacity={capacity}: disabling caching must not disable dispatch."
+                    ReflexiveMessage missing = new(
+                        "MissingReflexiveMethod" + index,
+                        ReflexiveSendMode.Flat,
+                        1,
+                        2
                     );
+                    missing.EmitTargeted(target, bus);
                     Assert.That(
                         MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                        Is.EqualTo(capacity == 0 ? 0 : 1),
-                        $"capacity={capacity}: only successful lookups may be retained."
+                        Is.Zero,
+                        $"capacity={capacity}, miss={index}: failed lookups must not be retained."
                     );
                 }
-            );
+                int calls = 0;
+                host.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler = () =>
+                    ++calls;
+                ReflexiveMessage valid = TwoArgumentReflexiveMessage();
+                valid.EmitTargeted(target, bus);
+                valid.EmitTargeted(target, bus);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(2),
+                    $"capacity={capacity}: disabling caching must not disable dispatch."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                    Is.EqualTo(capacity == 0 ? 0 : 1),
+                    $"capacity={capacity}: only successful lookups may be retained."
+                );
+            });
         }
 
         [TestCase(false, false)]
@@ -342,74 +327,67 @@ namespace DxMessaging.Tests.Runtime.Core
             bool componentBurst
         )
         {
-            WithReflexiveRetentionLimit(
-                8,
-                (bus, settings) =>
+            WithReflexiveRetentionLimit(8, (bus, settings) =>
+            {
+                GameObject burst = CreateReflexiveHost("Burst");
+                for (int index = 0; index < 16; ++index)
                 {
-                    GameObject burst = CreateReflexiveHost("Burst");
-                    for (int index = 0; index < 16; ++index)
+                    if (componentBurst)
                     {
-                        if (componentBurst)
-                        {
-                            burst.AddComponent<ReflexiveReceiverComponent>();
-                        }
-                        GameObject child = new("EmptyChild" + index);
-                        _spawned.Add(child);
-                        child.transform.SetParent(burst.transform);
+                        burst.AddComponent<ReflexiveReceiverComponent>();
                     }
-                    int calls = 0;
-                    burst.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
-                        () => ++calls;
-                    ReflexiveMessage burstMessage = TwoArgumentReflexiveMessage(
-                        ReflexiveSendMode.Downwards
-                    );
-                    InstanceId burstTarget = burst;
-                    GameObject outer = nested ? CreateReflexiveHost("Outer") : burst;
-                    if (nested)
-                    {
-                        outer
-                            .GetComponent<SimpleMessageAwareComponent>()
-                            .reflexiveTwoArgumentHandler = () =>
-                            burstMessage.EmitTargeted(burstTarget, bus);
-                    }
-                    ReflexiveMessage message = nested
-                        ? TwoArgumentReflexiveMessage()
-                        : burstMessage;
-                    InstanceId target = outer;
-                    message.EmitTargeted(target, bus);
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(1),
-                        $"nested={nested}, componentBurst={componentBurst}: the burst must still invoke its receiver."
-                    );
-                    Assert.That(
-                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
-                        Is.Zero,
-                        $"nested={nested}, componentBurst={componentBurst}: oversized nested scratch must not enter the pool."
-                    );
-                    Assert.That(
-                        MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
-                        Is.EqualTo(nested),
-                        $"nested={nested}, componentBurst={componentBurst}: only small outer scratch may survive."
-                    );
-                    Assert.That(
-                        MessageBusInspection.ReflexiveDispatchRetainedCapacity(bus),
-                        Is.LessThanOrEqualTo(8),
-                        $"nested={nested}, componentBurst={componentBurst}: retained capacity must be bounded after clearing."
-                    );
-                    message.EmitTargeted(target, bus);
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(2),
-                        $"nested={nested}, componentBurst={componentBurst}: discarded state must be safely rebuilt."
-                    );
-                    Assert.That(
-                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
-                        Is.Zero,
-                        "Repeated oversized sends must not populate the nested pool."
-                    );
+                    GameObject child = new("EmptyChild" + index);
+                    _spawned.Add(child);
+                    child.transform.SetParent(burst.transform);
                 }
-            );
+                int calls = 0;
+                burst.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
+                    () => ++calls;
+                ReflexiveMessage burstMessage = TwoArgumentReflexiveMessage(
+                    ReflexiveSendMode.Downwards
+                );
+                InstanceId burstTarget = burst;
+                GameObject outer = nested ? CreateReflexiveHost("Outer") : burst;
+                if (nested)
+                {
+                    outer.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
+                        () => burstMessage.EmitTargeted(burstTarget, bus);
+                }
+                ReflexiveMessage message = nested ? TwoArgumentReflexiveMessage() : burstMessage;
+                InstanceId target = outer;
+                message.EmitTargeted(target, bus);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(1),
+                    $"nested={nested}, componentBurst={componentBurst}: the burst must still invoke its receiver."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
+                    Is.Zero,
+                    $"nested={nested}, componentBurst={componentBurst}: oversized nested scratch must not enter the pool."
+                );
+                Assert.That(
+                    MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
+                    Is.EqualTo(nested),
+                    $"nested={nested}, componentBurst={componentBurst}: only small outer scratch may survive."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveDispatchRetainedCapacity(bus),
+                    Is.LessThanOrEqualTo(8),
+                    $"nested={nested}, componentBurst={componentBurst}: retained capacity must be bounded after clearing."
+                );
+                message.EmitTargeted(target, bus);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(2),
+                    $"nested={nested}, componentBurst={componentBurst}: discarded state must be safely rebuilt."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
+                    Is.Zero,
+                    "Repeated oversized sends must not populate the nested pool."
+                );
+            });
         }
 
         [TestCase(false)]
@@ -418,62 +396,55 @@ namespace DxMessaging.Tests.Runtime.Core
             bool nested
         )
         {
-            WithReflexiveRetentionLimit(
-                32,
-                (bus, settings) =>
+            WithReflexiveRetentionLimit(32, (bus, settings) =>
+            {
+                GameObject root = CreateReflexiveHost("TrimRoot");
+                GameObject child = CreateReflexiveHost("TrimChild");
+                child.transform.SetParent(root.transform);
+                GameObject nestedHost = CreateReflexiveHost("TrimNested");
+                InstanceId nestedTarget = nestedHost;
+                int childCalls = 0;
+                child.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
+                    () => ++childCalls;
+                nestedHost.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
+                    () => bus.Trim(force: true);
+                root.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler = () =>
                 {
-                    GameObject root = CreateReflexiveHost("TrimRoot");
-                    GameObject child = CreateReflexiveHost("TrimChild");
-                    child.transform.SetParent(root.transform);
-                    GameObject nestedHost = CreateReflexiveHost("TrimNested");
-                    InstanceId nestedTarget = nestedHost;
-                    int childCalls = 0;
-                    child.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
-                        () => ++childCalls;
-                    nestedHost
-                        .GetComponent<SimpleMessageAwareComponent>()
-                        .reflexiveTwoArgumentHandler = () => bus.Trim(force: true);
-                    root.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
-                        () =>
-                        {
-                            if (nested)
-                            {
-                                ReflexiveMessage inner = TwoArgumentReflexiveMessage();
-                                inner.EmitTargeted(nestedTarget, bus);
-                            }
-                            else
-                            {
-                                bus.Trim(force: true);
-                            }
-                        };
-                    ReflexiveMessage outer = TwoArgumentReflexiveMessage(
-                        ReflexiveSendMode.Downwards
-                    );
-                    InstanceId target = root;
-                    outer.EmitTargeted(target, bus);
-                    Assert.That(
-                        childCalls,
-                        Is.EqualTo(1),
-                        $"nested={nested}: trim must not clear active traversal."
-                    );
-                    Assert.That(
-                        MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
-                        Is.False,
-                        $"nested={nested}: the active root must be discarded when its lease ends."
-                    );
-                    Assert.That(
-                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
-                        Is.Zero,
-                        $"nested={nested}: a lease predating trim must not re-enter its pool."
-                    );
-                    outer.EmitTargeted(target, bus);
-                    Assert.That(
-                        childCalls,
-                        Is.EqualTo(2),
-                        $"nested={nested}: subsequent dispatch must rebuild discarded state."
-                    );
-                }
-            );
+                    if (nested)
+                    {
+                        ReflexiveMessage inner = TwoArgumentReflexiveMessage();
+                        inner.EmitTargeted(nestedTarget, bus);
+                    }
+                    else
+                    {
+                        bus.Trim(force: true);
+                    }
+                };
+                ReflexiveMessage outer = TwoArgumentReflexiveMessage(ReflexiveSendMode.Downwards);
+                InstanceId target = root;
+                outer.EmitTargeted(target, bus);
+                Assert.That(
+                    childCalls,
+                    Is.EqualTo(1),
+                    $"nested={nested}: trim must not clear active traversal."
+                );
+                Assert.That(
+                    MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
+                    Is.False,
+                    $"nested={nested}: the active root must be discarded when its lease ends."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
+                    Is.Zero,
+                    $"nested={nested}: a lease predating trim must not re-enter its pool."
+                );
+                outer.EmitTargeted(target, bus);
+                Assert.That(
+                    childCalls,
+                    Is.EqualTo(2),
+                    $"nested={nested}: subsequent dispatch must rebuild discarded state."
+                );
+            });
         }
 
         [TestCase(false)]
@@ -482,121 +453,115 @@ namespace DxMessaging.Tests.Runtime.Core
             bool throws
         )
         {
-            WithReflexiveRetentionLimit(
-                32,
-                (bus, settings) =>
+            WithReflexiveRetentionLimit(32, (bus, settings) =>
+            {
+                GameObject outer = CreateReflexiveHost("DisableOuter");
+                GameObject inner = CreateReflexiveHost("DisableInner");
+                InstanceId innerTarget = inner;
+                int calls = 0;
+                inner.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
+                    () =>
+                    {
+                        ++calls;
+                        settings._bufferMaxDistinctEntries = 0;
+                        DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
+                        if (throws)
+                        {
+                            throw new System.InvalidOperationException(
+                                "Expected reflexive failure"
+                            );
+                        }
+                    };
+                outer.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
+                    () =>
+                    {
+                        ReflexiveMessage nested = TwoArgumentReflexiveMessage();
+                        nested.EmitTargeted(innerTarget, bus);
+                    };
+                ReflexiveMessage message = TwoArgumentReflexiveMessage();
+                InstanceId target = outer;
+                if (throws)
                 {
-                    GameObject outer = CreateReflexiveHost("DisableOuter");
-                    GameObject inner = CreateReflexiveHost("DisableInner");
-                    InstanceId innerTarget = inner;
-                    int calls = 0;
-                    inner.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
-                        () =>
-                        {
-                            ++calls;
-                            settings._bufferMaxDistinctEntries = 0;
-                            DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
-                            if (throws)
-                            {
-                                throw new System.InvalidOperationException(
-                                    "Expected reflexive failure"
-                                );
-                            }
-                        };
-                    outer.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
-                        () =>
-                        {
-                            ReflexiveMessage nested = TwoArgumentReflexiveMessage();
-                            nested.EmitTargeted(innerTarget, bus);
-                        };
-                    ReflexiveMessage message = TwoArgumentReflexiveMessage();
-                    InstanceId target = outer;
-                    if (throws)
-                    {
-                        Assert.Throws<System.InvalidOperationException>(
-                            () => message.EmitTargeted(target, bus),
-                            "The original handler exception must propagate through both leases."
-                        );
-                    }
-                    else
-                    {
-                        message.EmitTargeted(target, bus);
-                    }
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(1),
-                        $"throws={throws}: the nested callback must execute."
-                    );
-                    Assert.That(
-                        MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
-                        Is.False,
-                        $"throws={throws}: a zero cap must discard root scratch on unwind."
-                    );
-                    Assert.That(
-                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
-                        Is.Zero,
-                        $"throws={throws}: a zero cap must discard nested scratch on unwind."
-                    );
-                    Assert.That(
-                        MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                        Is.Zero,
-                        $"throws={throws}: hot reload must release successful lookups."
-                    );
-                    inner.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
-                        () => ++calls;
-                    message.EmitTargeted(target, bus);
-                    Assert.That(
-                        calls,
-                        Is.EqualTo(2),
-                        $"throws={throws}: the next dispatch must succeed with caching disabled."
+                    Assert.Throws<System.InvalidOperationException>(
+                        () => message.EmitTargeted(target, bus),
+                        "The original handler exception must propagate through both leases."
                     );
                 }
-            );
+                else
+                {
+                    message.EmitTargeted(target, bus);
+                }
+                Assert.That(
+                    calls,
+                    Is.EqualTo(1),
+                    $"throws={throws}: the nested callback must execute."
+                );
+                Assert.That(
+                    MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
+                    Is.False,
+                    $"throws={throws}: a zero cap must discard root scratch on unwind."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
+                    Is.Zero,
+                    $"throws={throws}: a zero cap must discard nested scratch on unwind."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                    Is.Zero,
+                    $"throws={throws}: hot reload must release successful lookups."
+                );
+                inner.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
+                    () => ++calls;
+                message.EmitTargeted(target, bus);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(2),
+                    $"throws={throws}: the next dispatch must succeed with caching disabled."
+                );
+            });
         }
 
         [Test]
         public void LoweringReflexiveRetentionLimitReleasesIdleRootAndNestedPool()
         {
-            WithReflexiveRetentionLimit(
-                32,
-                (bus, settings) =>
-                {
-                    GameObject outer = CreateReflexiveHost("IdleOuter");
-                    GameObject inner = CreateReflexiveHost("IdleInner");
-                    InstanceId innerTarget = inner;
-                    outer.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
-                        () =>
-                        {
-                            ReflexiveMessage nested = TwoArgumentReflexiveMessage();
-                            nested.EmitTargeted(innerTarget, bus);
-                        };
-                    ReflexiveMessage message = TwoArgumentReflexiveMessage();
-                    InstanceId target = outer;
-                    message.EmitTargeted(target, bus);
-                    Assert.That(
-                        MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
-                        Is.True,
-                        "Small root scratch must be retained before the cap falls."
-                    );
-                    Assert.That(
-                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
-                        Is.EqualTo(1),
-                        "Warm nested state must be retained before the cap falls."
-                    );
-                    settings._bufferMaxDistinctEntries = 1;
-                    DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
-                    Assert.That(
-                        MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
-                        Is.False,
-                        "A smaller nonzero cap must release oversized idle root scratch."
-                    );
-                    Assert.That(
-                        MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
-                        Is.Zero,
-                        "A lower cap must drain retained nested states before reuse."
-                    );
-                }
-            );
+            WithReflexiveRetentionLimit(32, (bus, settings) =>
+            {
+                GameObject outer = CreateReflexiveHost("IdleOuter");
+                GameObject inner = CreateReflexiveHost("IdleInner");
+                InstanceId innerTarget = inner;
+                outer.GetComponent<SimpleMessageAwareComponent>().reflexiveTwoArgumentHandler =
+                    () =>
+                    {
+                        ReflexiveMessage nested = TwoArgumentReflexiveMessage();
+                        nested.EmitTargeted(innerTarget, bus);
+                    };
+                ReflexiveMessage message = TwoArgumentReflexiveMessage();
+                InstanceId target = outer;
+                message.EmitTargeted(target, bus);
+                Assert.That(
+                    MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
+                    Is.True,
+                    "Small root scratch must be retained before the cap falls."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
+                    Is.EqualTo(1),
+                    "Warm nested state must be retained before the cap falls."
+                );
+                settings._bufferMaxDistinctEntries = 1;
+                DxMessagingRuntimeSettings.RaiseSettingsChanged(settings);
+                Assert.That(
+                    MessageBusInspection.HasRetainedReflexiveDispatchState(bus),
+                    Is.False,
+                    "A smaller nonzero cap must release oversized idle root scratch."
+                );
+                Assert.That(
+                    MessageBusInspection.ReflexiveDispatchPoolDiagnostics(bus).Cached,
+                    Is.Zero,
+                    "A lower cap must drain retained nested states before reuse."
+                );
+            });
         }
 
         public enum MetadataResetAction
@@ -641,164 +606,146 @@ namespace DxMessaging.Tests.Runtime.Core
             MetadataResetAction action
         )
         {
-            WithReflexiveRetentionLimit(
-                4,
-                (bus, _) =>
+            WithReflexiveRetentionLimit(4, (bus, _) =>
+            {
+                try
                 {
-                    try
+                    for (int cycle = 0; cycle < 10; ++cycle)
                     {
-                        for (int cycle = 0; cycle < 10; ++cycle)
+                        string context =
+                            $"warmCache={warmCache}, metadataSlot={metadataSlot}, action={action}, cycle={cycle}";
+                        bus.ResetState();
+                        GameObject host = new(
+                            "ReflexiveMetadata" + cycle,
+                            typeof(ReflexiveMetadataReceiver)
+                        );
+                        _spawned.Add(host);
+                        ReflexiveMetadataReceiver receiver =
+                            host.GetComponent<ReflexiveMetadataReceiver>();
+                        MonoBehaviour[] components = host.GetComponents<MonoBehaviour>();
+                        Assert.That(components, Has.Length.EqualTo(1), context);
+                        Assert.That(components[0], Is.SameAs(receiver), context);
+                        int deliveries = 0;
+                        receiver.OnMessage = (first, second) =>
                         {
-                            string context =
-                                $"warmCache={warmCache}, metadataSlot={metadataSlot}, action={action}, cycle={cycle}";
-                            bus.ResetState();
-                            GameObject host = new(
-                                "ReflexiveMetadata" + cycle,
-                                typeof(ReflexiveMetadataReceiver)
-                            );
-                            _spawned.Add(host);
-                            ReflexiveMetadataReceiver receiver =
-                                host.GetComponent<ReflexiveMetadataReceiver>();
-                            MonoBehaviour[] components = host.GetComponents<MonoBehaviour>();
-                            Assert.That(components, Has.Length.EqualTo(1), context);
-                            Assert.That(components[0], Is.SameAs(receiver), context);
-                            int deliveries = 0;
-                            receiver.OnMessage = (first, second) =>
+                            Assert.That(first, Is.EqualTo(1), context);
+                            Assert.That(second, Is.EqualTo(2), context);
+                            ++deliveries;
+                        };
+                        bool armed = false;
+                        int callbacks = 0;
+                        MetadataCallbackType metadata = new(typeof(int), () =>
+                        {
+                            if (!armed)
                             {
-                                Assert.That(first, Is.EqualTo(1), context);
-                                Assert.That(second, Is.EqualTo(2), context);
-                                ++deliveries;
-                            };
-                            bool armed = false;
-                            int callbacks = 0;
-                            MetadataCallbackType metadata = new(
-                                typeof(int),
-                                () =>
-                                {
-                                    if (!armed)
-                                    {
-                                        return;
-                                    }
-                                    armed = false;
-                                    ++callbacks;
-                                    if (action == MetadataResetAction.Bump)
-                                    {
-                                        bus.BumpResetGeneration();
-                                    }
-                                    else if (action == MetadataResetAction.Reset)
-                                    {
-                                        bus.ResetState();
-                                    }
-                                }
+                                return;
+                            }
+                            armed = false;
+                            ++callbacks;
+                            if (action == MetadataResetAction.Bump)
+                            {
+                                bus.BumpResetGeneration();
+                            }
+                            else if (action == MetadataResetAction.Reset)
+                            {
+                                bus.ResetState();
+                            }
+                        });
+                        System.Type[] types = { typeof(int), typeof(int) };
+                        types[metadataSlot] = metadata;
+                        ReflexiveMessage message = new(
+                            nameof(ReflexiveMetadataReceiver.Receive),
+                            ReflexiveSendMode.Flat,
+                            new object[] { 1, 2 },
+                            types
+                        );
+                        InstanceId target = host;
+                        Assert.That(
+                            metadata.Reads,
+                            Is.Zero,
+                            context + " Construction must not consult custom metadata."
+                        );
+                        Assert.That(callbacks, Is.Zero, context);
+                        if (warmCache)
+                        {
+                            message.EmitTargeted(target, bus);
+                            Assert.That(
+                                deliveries,
+                                Is.EqualTo(1),
+                                context + " Ordinary overload selection control."
                             );
-                            System.Type[] types = { typeof(int), typeof(int) };
-                            types[metadataSlot] = metadata;
-                            ReflexiveMessage message = new(
-                                nameof(ReflexiveMetadataReceiver.Receive),
-                                ReflexiveSendMode.Flat,
-                                new object[] { 1, 2 },
-                                types
-                            );
-                            InstanceId target = host;
                             Assert.That(
                                 metadata.Reads,
-                                Is.Zero,
-                                context + " Construction must not consult custom metadata."
-                            );
-                            Assert.That(callbacks, Is.Zero, context);
-                            if (warmCache)
-                            {
-                                message.EmitTargeted(target, bus);
-                                Assert.That(
-                                    deliveries,
-                                    Is.EqualTo(1),
-                                    context + " Ordinary overload selection control."
-                                );
-                                Assert.That(
-                                    metadata.Reads,
-                                    Is.GreaterThan(0),
-                                    context
-                                        + " The cold warmup must exercise the real metadata getter."
-                                );
-                                Assert.That(
-                                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                                    Is.EqualTo(1),
-                                    context + " Prove a warm production cache."
-                                );
-                            }
-                            else
-                            {
-                                Assert.That(
-                                    MessageBusInspection.ReflexiveMethodCacheCount(bus),
-                                    Is.Zero,
-                                    context + " Prove a cold production cache."
-                                );
-                            }
-                            deliveries = 0;
-                            int readsBefore = metadata.Reads;
-                            long generationBefore = MessageBus.GetResetGeneration(bus);
-                            armed = true;
-                            message.EmitTargeted(target, bus);
-                            long generationAfter = MessageBus.GetResetGeneration(bus);
-                            int firstDeliveries = deliveries;
-                            int callbackDeliveries = callbacks;
-                            int readsAfter = metadata.Reads - readsBefore;
-                            int firstCacheCount = MessageBusInspection.ReflexiveMethodCacheCount(
-                                bus
-                            );
-                            armed = false;
-                            deliveries = 0;
-                            message.EmitTargeted(target, bus);
-                            int nextDeliveries = deliveries;
-                            TestContext.Out.WriteLine(
-                                $"DXM_REFLEXIVE_METADATA {context}; metadataReads={readsAfter}; callbacks={callbackDeliveries}; firstDeliveries={firstDeliveries}; nextDeliveries={nextDeliveries}; firstCacheCount={firstCacheCount}; generationBefore={generationBefore}; generationAfter={generationAfter}"
+                                Is.GreaterThan(0),
+                                context + " The cold warmup must exercise the real metadata getter."
                             );
                             Assert.That(
-                                callbackDeliveries,
-                                Is.EqualTo(warmCache ? 0 : 1),
-                                context
-                                    + " Cold setup requires an actual one-shot metadata callback; a missing callback is not an attributed defect."
-                            );
-                            Assert.That(
-                                readsAfter,
-                                warmCache ? Is.Zero : Is.GreaterThan(0),
-                                context
-                            );
-                            Assert.That(
-                                generationAfter == generationBefore,
-                                Is.EqualTo(warmCache || action == MetadataResetAction.Observe),
-                                context
-                                    + " Confirm the actual entering generation changed only in a cold mutation row."
-                            );
-                            Assert.That(
-                                firstDeliveries,
-                                Is.EqualTo(
-                                    !warmCache && action != MetadataResetAction.Observe ? 0 : 1
-                                ),
-                                context
-                                    + " A generation change during method resolution must cancel the invalidated receiver delivery."
-                            );
-                            Assert.That(
-                                firstCacheCount,
-                                Is.EqualTo(
-                                    !warmCache && action != MetadataResetAction.Observe ? 0 : 1
-                                ),
-                                context
-                                    + " A canceled resolution must not repopulate the method cache."
-                            );
-                            Assert.That(
-                                nextDeliveries,
+                                MessageBusInspection.ReflexiveMethodCacheCount(bus),
                                 Is.EqualTo(1),
-                                context + " Preserve a subsequent fresh emission."
+                                context + " Prove a warm production cache."
                             );
                         }
-                    }
-                    finally
-                    {
-                        bus.ResetState();
+                        else
+                        {
+                            Assert.That(
+                                MessageBusInspection.ReflexiveMethodCacheCount(bus),
+                                Is.Zero,
+                                context + " Prove a cold production cache."
+                            );
+                        }
+                        deliveries = 0;
+                        int readsBefore = metadata.Reads;
+                        long generationBefore = MessageBus.GetResetGeneration(bus);
+                        armed = true;
+                        message.EmitTargeted(target, bus);
+                        long generationAfter = MessageBus.GetResetGeneration(bus);
+                        int firstDeliveries = deliveries;
+                        int callbackDeliveries = callbacks;
+                        int readsAfter = metadata.Reads - readsBefore;
+                        int firstCacheCount = MessageBusInspection.ReflexiveMethodCacheCount(bus);
+                        armed = false;
+                        deliveries = 0;
+                        message.EmitTargeted(target, bus);
+                        int nextDeliveries = deliveries;
+                        TestContext.Out.WriteLine(
+                            $"DXM_REFLEXIVE_METADATA {context}; metadataReads={readsAfter}; callbacks={callbackDeliveries}; firstDeliveries={firstDeliveries}; nextDeliveries={nextDeliveries}; firstCacheCount={firstCacheCount}; generationBefore={generationBefore}; generationAfter={generationAfter}"
+                        );
+                        Assert.That(
+                            callbackDeliveries,
+                            Is.EqualTo(warmCache ? 0 : 1),
+                            context
+                                + " Cold setup requires an actual one-shot metadata callback; a missing callback is not an attributed defect."
+                        );
+                        Assert.That(readsAfter, warmCache ? Is.Zero : Is.GreaterThan(0), context);
+                        Assert.That(
+                            generationAfter == generationBefore,
+                            Is.EqualTo(warmCache || action == MetadataResetAction.Observe),
+                            context
+                                + " Confirm the actual entering generation changed only in a cold mutation row."
+                        );
+                        Assert.That(
+                            firstDeliveries,
+                            Is.EqualTo(!warmCache && action != MetadataResetAction.Observe ? 0 : 1),
+                            context
+                                + " A generation change during method resolution must cancel the invalidated receiver delivery."
+                        );
+                        Assert.That(
+                            firstCacheCount,
+                            Is.EqualTo(!warmCache && action != MetadataResetAction.Observe ? 0 : 1),
+                            context + " A canceled resolution must not repopulate the method cache."
+                        );
+                        Assert.That(
+                            nextDeliveries,
+                            Is.EqualTo(1),
+                            context + " Preserve a subsequent fresh emission."
+                        );
                     }
                 }
-            );
+                finally
+                {
+                    bus.ResetState();
+                }
+            });
         }
 
         private sealed class MetadataCallbackType : System.Reflection.TypeDelegator

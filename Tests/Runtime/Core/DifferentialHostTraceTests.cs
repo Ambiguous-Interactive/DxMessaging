@@ -543,22 +543,19 @@ namespace DxMessaging.Tests.Runtime.Core
             Scene lifecycleScene,
             bool ignoreHostDestroy = false
         ) =>
-            DifferentialBusTrace.Replay(
-                sequence,
-                kind =>
-                    CreateAdapter(
-                        kind,
-                        lifecycleScene: lifecycleScene,
-                        ignoreHostDestroy: ignoreHostDestroy
-                    )
+            DifferentialBusTrace.Replay(sequence, kind =>
+                CreateAdapter(
+                    kind,
+                    lifecycleScene: lifecycleScene,
+                    ignoreHostDestroy: ignoreHostDestroy
+                )
             );
 
         private BusTraceMismatch EvaluateMutation(BusTraceSequence sequence) =>
             DifferentialBusTrace.Compare(
                 Replay(sequence),
-                DifferentialBusTrace.Replay(
-                    sequence,
-                    kind => CreateAdapter(kind, ignoreDisable: true)
+                DifferentialBusTrace.Replay(sequence, kind =>
+                    CreateAdapter(kind, ignoreDisable: true)
                 )
             );
 

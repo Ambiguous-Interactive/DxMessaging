@@ -125,8 +125,7 @@ namespace DxMessaging.Editor.CustomEditors
         )
         {
             GlobalDiagnosticsEnabled = globalDiagnosticsEnabled;
-            GlobalEmissionHistory =
-                globalEmissionHistory
+            GlobalEmissionHistory = globalEmissionHistory
                 ?? throw new ArgumentNullException(nameof(globalEmissionHistory));
             Listeners = listeners ?? throw new ArgumentNullException(nameof(listeners));
             ProviderDiagnostics = providerDiagnostics;
@@ -155,8 +154,8 @@ namespace DxMessaging.Editor.CustomEditors
             DiagnosticsEnabled = diagnosticsEnabled;
             TokenEnabled = tokenEnabled;
             Registrations = registrations ?? throw new ArgumentNullException(nameof(registrations));
-            EmissionHistory =
-                emissionHistory ?? throw new ArgumentNullException(nameof(emissionHistory));
+            EmissionHistory = emissionHistory
+                ?? throw new ArgumentNullException(nameof(emissionHistory));
         }
 
         internal MonoBehaviour Listener { get; }

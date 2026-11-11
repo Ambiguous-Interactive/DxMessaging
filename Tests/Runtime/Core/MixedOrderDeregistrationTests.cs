@@ -174,11 +174,8 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 6; i < 8; i++)
             {
                 int label = i;
-                _ = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => order.Add(label)
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
+                    order.Add(label)
                 );
                 live.Add(i);
             }
