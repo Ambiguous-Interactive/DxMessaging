@@ -98,7 +98,7 @@
     "markdownlint-cli2": {
       "js-yaml": "5.5.0",
       "markdownlint": {
-        "re2js": "2.9.1"
+        "re2js": "2.10.0"
       },
       "smol-toml": "$smol-toml"
     }
