@@ -498,10 +498,10 @@ namespace DxMessaging.Tests.Editor
 
         private static Regex ForPattern(string pattern)
         {
-            return InterpolatedPatterns.GetOrAdd(
-                pattern,
-                key => new Regex(key, RegexOptions.Compiled)
-            );
+            return InterpolatedPatterns.GetOrAdd(pattern, key => new Regex(
+                key,
+                RegexOptions.Compiled
+            ));
         }
 
         internal static IReadOnlyList<EditModeGameObjectConstruction> Find(

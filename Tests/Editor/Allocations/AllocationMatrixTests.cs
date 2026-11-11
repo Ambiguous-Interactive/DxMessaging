@@ -231,14 +231,11 @@ namespace DxMessaging.Tests.Editor.Allocations
                 {
                     IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
                 }
-                fixture.RunWithFreshHarness(
-                    scenario,
-                    (token, bus) =>
-                    {
-                        Assert.That(bus.DiagnosticsMode, Is.EqualTo(enableDiagnostics), report);
-                        Assert.That(token.DiagnosticMode, Is.EqualTo(enableDiagnostics), report);
-                    }
-                );
+                fixture.RunWithFreshHarness(scenario, (token, bus) =>
+                {
+                    Assert.That(bus.DiagnosticsMode, Is.EqualTo(enableDiagnostics), report);
+                    Assert.That(token.DiagnosticMode, Is.EqualTo(enableDiagnostics), report);
+                });
             }
             finally
             {
@@ -261,6 +258,141 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
+        /// <summary>Measures explicit reference and value state without a captured user callback.</summary>
+        [Test]
+        public void EmitWithExplicitStateIsZeroAlloc(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
+            )]
+                MessageScenario scenario,
+            [Values(false, true)] bool valueState
+        )
+        {
+            ExplicitStateCounter counter = new ExplicitStateCounter();
+            if (valueState)
+            {
+                VerifyExplicitState(scenario, new ExplicitValueState(counter));
+            }
+            else
+            {
+                VerifyExplicitState(scenario, counter);
+            }
+        }
+
+        private void VerifyExplicitState<TState>(MessageScenario scenario, TState state)
+            where TState : IExplicitStateProbe
+        {
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                token.DiagnosticMode = false;
+                switch (scenario.Kind)
+                {
+                    case MessageKind.Untargeted:
+                    {
+                        MessageRegistrationToken.StateHandler<
+                            SimpleUntargetedMessage,
+                            TState
+                        > callback = static (TState value, in SimpleUntargetedMessage __) =>
+                            value.Record();
+                        _ = scenario.UsePostProcessor
+                            ? token.RegisterUntargetedPostProcessor(state, callback)
+                            : token.RegisterUntargeted(state, callback);
+                        break;
+                    }
+                    case MessageKind.Targeted:
+                    {
+                        MessageRegistrationToken.StateHandler<
+                            SimpleTargetedMessage,
+                            TState
+                        > callback = static (TState value, in SimpleTargetedMessage __) =>
+                            value.Record();
+                        _ = scenario.UsePostProcessor
+                            ? token.RegisterTargetedPostProcessor(StableTarget, state, callback)
+                            : token.RegisterTargeted(StableTarget, state, callback);
+                        break;
+                    }
+                    case MessageKind.Broadcast:
+                    {
+                        MessageRegistrationToken.StateHandler<
+                            SimpleBroadcastMessage,
+                            TState
+                        > callback = static (TState value, in SimpleBroadcastMessage __) =>
+                            value.Record();
+                        _ = scenario.UsePostProcessor
+                            ? token.RegisterBroadcastPostProcessor(StableSource, state, callback)
+                            : token.RegisterBroadcast(StableSource, state, callback);
+                        break;
+                    }
+                    case MessageKind.TargetedWithoutTargeting:
+                    {
+                        MessageRegistrationToken.StateHandlerWithContext<
+                            SimpleTargetedMessage,
+                            TState
+                        > callback = static (
+                            TState value,
+                            in InstanceId _,
+                            in SimpleTargetedMessage __
+                        ) => value.Record();
+                        _ = scenario.UsePostProcessor
+                            ? token.RegisterTargetedWithoutTargetingPostProcessor(state, callback)
+                            : token.RegisterTargetedWithoutTargeting(state, callback);
+                        break;
+                    }
+                    case MessageKind.BroadcastWithoutSource:
+                    {
+                        MessageRegistrationToken.StateHandlerWithContext<
+                            SimpleBroadcastMessage,
+                            TState
+                        > callback = static (
+                            TState value,
+                            in InstanceId _,
+                            in SimpleBroadcastMessage __
+                        ) => value.Record();
+                        _ = scenario.UsePostProcessor
+                            ? token.RegisterBroadcastWithoutSourcePostProcessor(state, callback)
+                            : token.RegisterBroadcastWithoutSource(state, callback);
+                        break;
+                    }
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(scenario));
+                }
+                Action emit = BuildEmitClosure(scenario, bus);
+                AllocationAssertions.AssertNoAllocations(
+                    $"ExplicitState-{scenario}-{typeof(TState).Name}",
+                    emit
+                );
+                Assert.That(
+                    state.Count,
+                    Is.GreaterThan(0),
+                    $"[{scenario}, {typeof(TState).Name}] Allocation window must execute the actual state callback."
+                );
+            });
+        }
+
+        private interface IExplicitStateProbe
+        {
+            int Count { get; }
+            void Record();
+        }
+
+        private sealed class ExplicitStateCounter : IExplicitStateProbe
+        {
+            public int Count { get; private set; }
+
+            public void Record() => ++Count;
+        }
+
+        private readonly struct ExplicitValueState : IExplicitStateProbe
+        {
+            private readonly ExplicitStateCounter _counter;
+            public int Count => _counter.Count;
+
+            internal ExplicitValueState(ExplicitStateCounter counter) => _counter = counter;
+
+            public void Record() => _counter.Record();
+        }
+
         /// <summary>
         /// Pins zero-allocation emission for the bare register-one-handler-then-emit
         /// path across every dispatch surface. Closure under measurement is built
@@ -276,15 +408,12 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
-                {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    RegisterHandler(scenario, token);
-                    AllocationAssertions.AssertNoAllocations($"Emit-{scenario.Kind}", emit);
-                }
-            );
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                RegisterHandler(scenario, token);
+                AllocationAssertions.AssertNoAllocations($"Emit-{scenario.Kind}", emit);
+            });
         }
 
         /// <summary>
@@ -302,82 +431,75 @@ namespace DxMessaging.Tests.Editor.Allocations
             bool global
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, original) =>
+            RunWithFreshHarness(scenario, (token, original) =>
+            {
+                MessageBus replacement = MessageBus.CreateForInternalUse(
+                    StopwatchClock.Instance,
+                    idleEvictionTicks: 0,
+                    evictionTickIntervalSeconds: double.PositiveInfinity,
+                    idleEvictionEnabled: false,
+                    trimApiEnabled: true
+                );
+                replacement.DiagnosticsMode = false;
+                original.DiagnosticsMode = false;
+                token.DiagnosticMode = false;
+                int calls = 0;
+                Action receive = () => calls++;
+                Action oldEmit = DiagnosticOriginAfterDisableTests.CreateReboundAllocationEmit(
+                    original,
+                    scenario,
+                    global
+                );
+                Action emit = DiagnosticOriginAfterDisableTests.CreateReboundAllocationEmit(
+                    replacement,
+                    scenario,
+                    global
+                );
+                try
                 {
-                    MessageBus replacement = MessageBus.CreateForInternalUse(
-                        StopwatchClock.Instance,
-                        idleEvictionTicks: 0,
-                        evictionTickIntervalSeconds: double.PositiveInfinity,
-                        idleEvictionEnabled: false,
-                        trimApiEnabled: true
+                    _ = global
+                        ? DiagnosticOriginAfterDisableTests.RegisterGlobal(token, action, receive)
+                        : DiagnosticOriginAfterDisableTests.RegisterHandler(
+                            token,
+                            scenario,
+                            action,
+                            receive
+                        );
+                    oldEmit();
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(1),
+                        "Original binding must actually deliver before rebinding."
                     );
-                    replacement.DiagnosticsMode = false;
-                    original.DiagnosticsMode = false;
-                    token.DiagnosticMode = false;
-                    int calls = 0;
-                    Action receive = () => calls++;
-                    Action oldEmit = DiagnosticOriginAfterDisableTests.CreateReboundAllocationEmit(
-                        original,
-                        scenario,
-                        global
-                    );
-                    Action emit = DiagnosticOriginAfterDisableTests.CreateReboundAllocationEmit(
+                    token.Disable();
+                    token.RetargetMessageBus(
                         replacement,
-                        scenario,
-                        global
+                        MessageBusRebindMode.PreserveRegistrations
                     );
-                    try
-                    {
-                        _ = global
-                            ? DiagnosticOriginAfterDisableTests.RegisterGlobal(
-                                token,
-                                action,
-                                receive
-                            )
-                            : DiagnosticOriginAfterDisableTests.RegisterHandler(
-                                token,
-                                scenario,
-                                action,
-                                receive
-                            );
-                        oldEmit();
-                        Assert.That(
-                            calls,
-                            Is.EqualTo(1),
-                            "Original binding must actually deliver before rebinding."
-                        );
-                        token.Disable();
-                        token.RetargetMessageBus(
-                            replacement,
-                            MessageBusRebindMode.PreserveRegistrations
-                        );
-                        token.Enable();
-                        emit();
-                        Assert.That(
-                            calls,
-                            Is.EqualTo(2),
-                            "Rebound binding must actually deliver before measurement."
-                        );
-                        AllocationAssertions.AssertNoAllocations(
-                            $"Rebound-{scenario.Kind}-Action{action}-Global{global}",
-                            emit
-                        );
-                        Assert.That(
-                            calls,
-                            Is.GreaterThan(2),
-                            "Measured emissions must invoke the live rebound binding."
-                        );
-                    }
-                    finally
-                    {
-                        token.Dispose();
-                        _ = original.Trim(force: true);
-                        _ = replacement.Trim(force: true);
-                    }
+                    token.Enable();
+                    emit();
+                    Assert.That(
+                        calls,
+                        Is.EqualTo(2),
+                        "Rebound binding must actually deliver before measurement."
+                    );
+                    AllocationAssertions.AssertNoAllocations(
+                        $"Rebound-{scenario.Kind}-Action{action}-Global{global}",
+                        emit
+                    );
+                    Assert.That(
+                        calls,
+                        Is.GreaterThan(2),
+                        "Measured emissions must invoke the live rebound binding."
+                    );
                 }
-            );
+                finally
+                {
+                    token.Dispose();
+                    _ = original.Trim(force: true);
+                    _ = replacement.Trim(force: true);
+                }
+            });
         }
 
         [Test]
@@ -386,70 +508,67 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                UntypedAllocationMessage payload = new(173);
+                object boxed = payload;
+                int received = 0;
+                void Receive(in UntypedAllocationMessage message)
                 {
-                    UntypedAllocationMessage payload = new(173);
-                    object boxed = payload;
-                    int received = 0;
-                    void Receive(in UntypedAllocationMessage message)
-                    {
-                        received = message.value;
-                    }
-                    Action emit;
-                    InstanceId context = StableTarget;
-                    switch (scenario.Kind)
-                    {
-                        case MessageKind.Untargeted:
-                            ScenarioHarness.RegisterUntargeted<UntypedAllocationMessage>(
-                                scenario,
-                                token,
-                                Receive
-                            );
-                            bus.UntargetedBroadcast(ref payload);
-                            DxMessaging.Core.Messages.IUntargetedMessage untargeted =
-                                (DxMessaging.Core.Messages.IUntargetedMessage)boxed;
-                            emit = () => bus.UntypedUntargetedBroadcast(untargeted);
-                            break;
-                        case MessageKind.Targeted:
-                            ScenarioHarness.RegisterTargeted<UntypedAllocationMessage>(
-                                scenario,
-                                token,
-                                context,
-                                Receive
-                            );
-                            bus.TargetedBroadcast(ref context, ref payload);
-                            DxMessaging.Core.Messages.ITargetedMessage targeted =
-                                (DxMessaging.Core.Messages.ITargetedMessage)boxed;
-                            emit = () => bus.UntypedTargetedBroadcast(context, targeted);
-                            break;
-                        case MessageKind.Broadcast:
-                            ScenarioHarness.RegisterBroadcast<UntypedAllocationMessage>(
-                                scenario,
-                                token,
-                                context,
-                                Receive
-                            );
-                            bus.SourcedBroadcast(ref context, ref payload);
-                            DxMessaging.Core.Messages.IBroadcastMessage broadcast =
-                                (DxMessaging.Core.Messages.IBroadcastMessage)boxed;
-                            emit = () => bus.UntypedSourcedBroadcast(context, broadcast);
-                            break;
-                        default:
-                            throw new ArgumentOutOfRangeException(nameof(scenario));
-                    }
-                    received = 0;
-                    emit();
-                    Assert.That(
-                        received,
-                        Is.EqualTo(173),
-                        "[{0}] Preboxed dispatch must preserve the payload.",
-                        scenario.Kind
-                    );
-                    AllocationAssertions.AssertNoAllocations($"Preboxed-{scenario.Kind}", emit);
+                    received = message.value;
                 }
-            );
+                Action emit;
+                InstanceId context = StableTarget;
+                switch (scenario.Kind)
+                {
+                    case MessageKind.Untargeted:
+                        ScenarioHarness.RegisterUntargeted<UntypedAllocationMessage>(
+                            scenario,
+                            token,
+                            Receive
+                        );
+                        bus.UntargetedBroadcast(ref payload);
+                        DxMessaging.Core.Messages.IUntargetedMessage untargeted =
+                            (DxMessaging.Core.Messages.IUntargetedMessage)boxed;
+                        emit = () => bus.UntypedUntargetedBroadcast(untargeted);
+                        break;
+                    case MessageKind.Targeted:
+                        ScenarioHarness.RegisterTargeted<UntypedAllocationMessage>(
+                            scenario,
+                            token,
+                            context,
+                            Receive
+                        );
+                        bus.TargetedBroadcast(ref context, ref payload);
+                        DxMessaging.Core.Messages.ITargetedMessage targeted =
+                            (DxMessaging.Core.Messages.ITargetedMessage)boxed;
+                        emit = () => bus.UntypedTargetedBroadcast(context, targeted);
+                        break;
+                    case MessageKind.Broadcast:
+                        ScenarioHarness.RegisterBroadcast<UntypedAllocationMessage>(
+                            scenario,
+                            token,
+                            context,
+                            Receive
+                        );
+                        bus.SourcedBroadcast(ref context, ref payload);
+                        DxMessaging.Core.Messages.IBroadcastMessage broadcast =
+                            (DxMessaging.Core.Messages.IBroadcastMessage)boxed;
+                        emit = () => bus.UntypedSourcedBroadcast(context, broadcast);
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(scenario));
+                }
+                received = 0;
+                emit();
+                Assert.That(
+                    received,
+                    Is.EqualTo(173),
+                    "[{0}] Preboxed dispatch must preserve the payload.",
+                    scenario.Kind
+                );
+                AllocationAssertions.AssertNoAllocations($"Preboxed-{scenario.Kind}", emit);
+            });
         }
 
         private readonly struct UntypedAllocationMessage
@@ -479,60 +598,57 @@ namespace DxMessaging.Tests.Editor.Allocations
         public void UntargetedEmitIsZeroAllocAfterUnrelatedPlanInvalidation()
         {
             MessageScenario scenario = MessageScenario.Untargeted();
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                int invocationCount = 0;
+                MessageHandler.FastHandler<SimpleUntargetedMessage> measuredHandler = (
+                    in SimpleUntargetedMessage _
+                ) => invocationCount++;
+                _ = ScenarioHarness.RegisterUntargeted(scenario, token, measuredHandler);
+                MessageHandler.FastHandler<ComplexUntargetedMessage> churnHandler = (
+                    in ComplexUntargetedMessage _
+                ) => { };
+
+                void InvalidatePlan()
                 {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    int invocationCount = 0;
-                    MessageHandler.FastHandler<SimpleUntargetedMessage> measuredHandler = (
-                        in SimpleUntargetedMessage _
-                    ) => invocationCount++;
-                    _ = ScenarioHarness.RegisterUntargeted(scenario, token, measuredHandler);
-                    MessageHandler.FastHandler<ComplexUntargetedMessage> churnHandler = (
-                        in ComplexUntargetedMessage _
-                    ) => { };
+                    MessageRegistrationHandle churnHandle =
+                        token.RegisterUntargeted<ComplexUntargetedMessage>(churnHandler);
+                    token.RemoveRegistration(churnHandle);
+                }
 
-                    void InvalidatePlan()
-                    {
-                        MessageRegistrationHandle churnHandle =
-                            token.RegisterUntargeted<ComplexUntargetedMessage>(churnHandler);
-                        token.RemoveRegistration(churnHandle);
-                    }
+                for (int i = 0; i < 8; ++i)
+                {
+                    InvalidatePlan();
+                    emit();
+                }
 
-                    for (int i = 0; i < 8; ++i)
-                    {
-                        InvalidatePlan();
-                        emit();
-                    }
-
-                    int invocationCountBeforeMeasurement = invocationCount;
-                    long delta = AllocationProbe.MeasureMin(
-                        AllocationMeasurementAttempts,
-                        prepare: InvalidatePlan,
-                        operation: emit
-                    );
-                    Assert.AreEqual(
-                        AllocationMeasurementAttempts,
-                        invocationCount - invocationCountBeforeMeasurement,
-                        "Every measured first emit after unrelated invalidation must still "
-                            + "deliver exactly once to the registered untargeted handler."
-                    );
-                    if (delta == AllocationProbe.Unmeasured)
-                    {
-                        Assert.Ignore(
-                            "The GC.Alloc allocation probe is non-functional on this backend."
-                        );
-                    }
-
-                    Assert.AreEqual(
-                        0,
-                        delta,
-                        "The first untargeted no-feature emit after an unrelated plan "
-                            + "invalidation must reacquire and cache its route without allocating."
+                int invocationCountBeforeMeasurement = invocationCount;
+                long delta = AllocationProbe.MeasureMin(
+                    AllocationMeasurementAttempts,
+                    prepare: InvalidatePlan,
+                    operation: emit
+                );
+                Assert.AreEqual(
+                    AllocationMeasurementAttempts,
+                    invocationCount - invocationCountBeforeMeasurement,
+                    "Every measured first emit after unrelated invalidation must still "
+                        + "deliver exactly once to the registered untargeted handler."
+                );
+                if (delta == AllocationProbe.Unmeasured)
+                {
+                    Assert.Ignore(
+                        "The GC.Alloc allocation probe is non-functional on this backend."
                     );
                 }
-            );
+
+                Assert.AreEqual(
+                    0,
+                    delta,
+                    "The first untargeted no-feature emit after an unrelated plan "
+                        + "invalidation must reacquire and cache its route without allocating."
+                );
+            });
         }
 
         [Test]
@@ -748,23 +864,20 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                RegisterHandler(scenario, token);
+                if (scenario.UseInterceptor)
                 {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    RegisterHandler(scenario, token);
-                    if (scenario.UseInterceptor)
-                    {
-                        RegisterAllowingInterceptor(scenario, token);
-                    }
-                    string suffix = scenario.UseInterceptor ? "On" : "Off";
-                    AllocationAssertions.AssertNoAllocations(
-                        $"Emit+Interceptor{suffix}-{scenario.Kind}",
-                        emit
-                    );
+                    RegisterAllowingInterceptor(scenario, token);
                 }
-            );
+                string suffix = scenario.UseInterceptor ? "On" : "Off";
+                AllocationAssertions.AssertNoAllocations(
+                    $"Emit+Interceptor{suffix}-{scenario.Kind}",
+                    emit
+                );
+            });
         }
 
         /// <summary>
@@ -789,65 +902,62 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                RegisterHandler(scenario, token);
+                RegisterAllowingInterceptor(scenario, token);
+
+                /*
+                    A registration for a message type NO scenario emits, so it
+                    cannot touch the sink under measurement -- SimpleUntargetedMessage
+                    would be the emitted type on the Untargeted row and would
+                    legitimately rebuild that sink's own dispatch snapshot. It
+                    touches no interceptor store either, but it does bump the
+                    bus-wide dispatch-plan stamp, which is what used to discard
+                    the flattened interceptor view.
+                */
+                MessageHandler.FastHandler<ComplexUntargetedMessage> churnHandler = (
+                    in ComplexUntargetedMessage _
+                ) => { };
+
+                void InvalidateThePlan()
                 {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    RegisterHandler(scenario, token);
-                    RegisterAllowingInterceptor(scenario, token);
+                    MessageRegistrationHandle churnHandle =
+                        token.RegisterUntargeted<ComplexUntargetedMessage>(churnHandler);
+                    token.RemoveRegistration(churnHandle);
+                }
 
-                    /*
-                        A registration for a message type NO scenario emits, so it
-                        cannot touch the sink under measurement -- SimpleUntargetedMessage
-                        would be the emitted type on the Untargeted row and would
-                        legitimately rebuild that sink's own dispatch snapshot. It
-                        touches no interceptor store either, but it does bump the
-                        bus-wide dispatch-plan stamp, which is what used to discard
-                        the flattened interceptor view.
-                    */
-                    MessageHandler.FastHandler<ComplexUntargetedMessage> churnHandler = (
-                        in ComplexUntargetedMessage _
-                    ) => { };
+                // Warm both the emit path and the churn path.
+                for (int i = 0; i < 8; ++i)
+                {
+                    InvalidateThePlan();
+                    emit();
+                }
 
-                    void InvalidateThePlan()
-                    {
-                        MessageRegistrationHandle churnHandle =
-                            token.RegisterUntargeted<ComplexUntargetedMessage>(churnHandler);
-                        token.RemoveRegistration(churnHandle);
-                    }
-
-                    // Warm both the emit path and the churn path.
-                    for (int i = 0; i < 8; ++i)
-                    {
-                        InvalidateThePlan();
-                        emit();
-                    }
-
-                    long delta = AllocationProbe.MeasureMin(
-                        AllocationMeasurementAttempts,
-                        prepare: InvalidateThePlan,
-                        operation: emit
-                    );
-                    if (delta == AllocationProbe.Unmeasured)
-                    {
-                        Assert.Ignore(
-                            "The GC.Alloc allocation probe is non-functional on this backend."
-                        );
-                    }
-
-                    Assert.AreEqual(
-                        0,
-                        delta,
-                        "[{0}] Emitting with an interceptor registered must allocate nothing even "
-                            + "when an unrelated registration invalidated the dispatch plan first. "
-                            + "A non-zero count means the flattened interceptor view is keyed to "
-                            + "the bus-wide plan stamp again, so ordinary spawn/despawn churn "
-                            + "reallocates it on every emit.",
-                        scenario.Kind
+                long delta = AllocationProbe.MeasureMin(
+                    AllocationMeasurementAttempts,
+                    prepare: InvalidateThePlan,
+                    operation: emit
+                );
+                if (delta == AllocationProbe.Unmeasured)
+                {
+                    Assert.Ignore(
+                        "The GC.Alloc allocation probe is non-functional on this backend."
                     );
                 }
-            );
+
+                Assert.AreEqual(
+                    0,
+                    delta,
+                    "[{0}] Emitting with an interceptor registered must allocate nothing even "
+                        + "when an unrelated registration invalidated the dispatch plan first. "
+                        + "A non-zero count means the flattened interceptor view is keyed to "
+                        + "the bus-wide plan stamp again, so ordinary spawn/despawn churn "
+                        + "reallocates it on every emit.",
+                    scenario.Kind
+                );
+            });
         }
 
         /// <summary>
@@ -867,69 +977,66 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                switch (scenario.Kind)
                 {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    switch (scenario.Kind)
+                    case MessageKind.Targeted:
                     {
-                        case MessageKind.Targeted:
-                        {
-                            ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
-                                scenario,
-                                token,
-                                RewrittenTarget,
-                                NoOpTargeted
-                            );
-                            ScenarioHarness.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
-                                scenario,
-                                token,
-                                RewrittenTarget,
-                                NoOpTargeted
-                            );
-                            ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
-                                scenario,
-                                token,
-                                RewriteTarget
-                            );
-                            break;
-                        }
-                        case MessageKind.Broadcast:
-                        {
-                            ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
-                                scenario,
-                                token,
-                                RewrittenSource,
-                                NoOpBroadcast
-                            );
-                            ScenarioHarness.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
-                                scenario,
-                                token,
-                                RewrittenSource,
-                                NoOpBroadcast
-                            );
-                            ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
-                                scenario,
-                                token,
-                                RewriteSource
-                            );
-                            break;
-                        }
-                        default:
-                        {
-                            throw new InvalidOperationException(
-                                $"Unhandled MessageKind {scenario.Kind}."
-                            );
-                        }
+                        ScenarioHarness.RegisterTargeted<SimpleTargetedMessage>(
+                            scenario,
+                            token,
+                            RewrittenTarget,
+                            NoOpTargeted
+                        );
+                        ScenarioHarness.RegisterTargetedPostProcessor<SimpleTargetedMessage>(
+                            scenario,
+                            token,
+                            RewrittenTarget,
+                            NoOpTargeted
+                        );
+                        ScenarioHarness.RegisterTargetedInterceptor<SimpleTargetedMessage>(
+                            scenario,
+                            token,
+                            RewriteTarget
+                        );
+                        break;
                     }
-
-                    AllocationAssertions.AssertNoAllocations(
-                        $"Emit+RewrittenContextPost-{scenario.Kind}",
-                        emit
-                    );
+                    case MessageKind.Broadcast:
+                    {
+                        ScenarioHarness.RegisterBroadcast<SimpleBroadcastMessage>(
+                            scenario,
+                            token,
+                            RewrittenSource,
+                            NoOpBroadcast
+                        );
+                        ScenarioHarness.RegisterBroadcastPostProcessor<SimpleBroadcastMessage>(
+                            scenario,
+                            token,
+                            RewrittenSource,
+                            NoOpBroadcast
+                        );
+                        ScenarioHarness.RegisterBroadcastInterceptor<SimpleBroadcastMessage>(
+                            scenario,
+                            token,
+                            RewriteSource
+                        );
+                        break;
+                    }
+                    default:
+                    {
+                        throw new InvalidOperationException(
+                            $"Unhandled MessageKind {scenario.Kind}."
+                        );
+                    }
                 }
-            );
+
+                AllocationAssertions.AssertNoAllocations(
+                    $"Emit+RewrittenContextPost-{scenario.Kind}",
+                    emit
+                );
+            });
         }
 
         /// <summary>
@@ -948,23 +1055,20 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                RegisterHandler(scenario, token);
+                if (scenario.UsePostProcessor)
                 {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    RegisterHandler(scenario, token);
-                    if (scenario.UsePostProcessor)
-                    {
-                        RegisterPostProcessor(scenario, token);
-                    }
-                    string suffix = scenario.UsePostProcessor ? "On" : "Off";
-                    AllocationAssertions.AssertNoAllocations(
-                        $"Emit+PostProcessor{suffix}-{scenario.Kind}",
-                        emit
-                    );
+                    RegisterPostProcessor(scenario, token);
                 }
-            );
+                string suffix = scenario.UsePostProcessor ? "On" : "Off";
+                AllocationAssertions.AssertNoAllocations(
+                    $"Emit+PostProcessor{suffix}-{scenario.Kind}",
+                    emit
+                );
+            });
         }
 
         /// <summary>
@@ -995,73 +1099,70 @@ namespace DxMessaging.Tests.Editor.Allocations
         )
         {
             IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.All;
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                RegisterHandler(scenario, token);
+
+                /*
+                    Pre-warm the cyclic emission buffer to its capacity so
+                    the underlying List<T> stops growing. After this loop
+                    every subsequent Add overwrites a slot in place. The
+                    2x multiplier is defensive in case capacity changes in
+                    future or another path also needs to flush.
+                */
+                int prewarmCycles =
+                    IMessageBus.GlobalMessageBufferSize * DiagnosticsEmitWarmupMultiplier;
+                if (prewarmCycles < 1)
                 {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    RegisterHandler(scenario, token);
+                    prewarmCycles = 1;
+                }
+                for (int i = 0; i < prewarmCycles; ++i)
+                {
+                    emit();
+                }
 
-                    /*
-                        Pre-warm the cyclic emission buffer to its capacity so
-                        the underlying List<T> stops growing. After this loop
-                        every subsequent Add overwrites a slot in place. The
-                        2x multiplier is defensive in case capacity changes in
-                        future or another path also needs to flush.
-                    */
-                    int prewarmCycles =
-                        IMessageBus.GlobalMessageBufferSize * DiagnosticsEmitWarmupMultiplier;
-                    if (prewarmCycles < 1)
+                /*
+                    We count managed allocation CALLS, not bytes:
+                    GC.GetAllocatedBytesForCurrentThread() returns 0 for every
+                    allocation under Unity's Boehm GC (editor Mono and IL2CPP),
+                    so a byte delta is vacuously zero and cannot catch a
+                    regression. The GC.Alloc profiler recorder behind
+                    AllocationProbe counts allocation calls precisely and is
+                    immune to GC timing, so a Gen-0 collection mid-loop cannot
+                    erase the signal the way a live-heap delta could.
+                    A warm editor can inject a one-window allocation spike unrelated to
+                    this fixed batch. MeasureMin repeats these exact same 32 emissions and
+                    selects the stable floor without changing the established budget.
+                */
+                long gcAllocations = AllocationProbe.MeasureMin(
+                    AllocationMeasurementAttempts,
+                    prepare: null,
+                    operation: () =>
                     {
-                        prewarmCycles = 1;
-                    }
-                    for (int i = 0; i < prewarmCycles; ++i)
-                    {
-                        emit();
-                    }
-
-                    /*
-                        We count managed allocation CALLS, not bytes:
-                        GC.GetAllocatedBytesForCurrentThread() returns 0 for every
-                        allocation under Unity's Boehm GC (editor Mono and IL2CPP),
-                        so a byte delta is vacuously zero and cannot catch a
-                        regression. The GC.Alloc profiler recorder behind
-                        AllocationProbe counts allocation calls precisely and is
-                        immune to GC timing, so a Gen-0 collection mid-loop cannot
-                        erase the signal the way a live-heap delta could.
-                        A warm editor can inject a one-window allocation spike unrelated to
-                        this fixed batch. MeasureMin repeats these exact same 32 emissions and
-                        selects the stable floor without changing the established budget.
-                    */
-                    long gcAllocations = AllocationProbe.MeasureMin(
-                        AllocationMeasurementAttempts,
-                        prepare: null,
-                        operation: () =>
+                        for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                         {
-                            for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
-                            {
-                                emit();
-                            }
+                            emit();
                         }
-                    );
-                    if (gcAllocations == AllocationProbe.Unmeasured)
-                    {
-                        Assert.Ignore(
-                            $"EmitDiagnostics-{scenario.Kind}: the GC.Alloc allocation "
-                                + "probe is non-functional on this backend, so the "
-                                + "diagnostics allocation budget cannot be evaluated."
-                        );
                     }
-                    Assert.That(
-                        gcAllocations,
-                        Is.LessThanOrEqualTo(PerEmitDiagnosticsCountBudget),
-                        $"EmitDiagnostics-{scenario.Kind} allocated {gcAllocations} GC "
-                            + $"allocations across "
-                            + $"{AllocationAssertions.DefaultMeasuredIterations} emissions, "
-                            + $"exceeding the count budget of {PerEmitDiagnosticsCountBudget}."
+                );
+                if (gcAllocations == AllocationProbe.Unmeasured)
+                {
+                    Assert.Ignore(
+                        $"EmitDiagnostics-{scenario.Kind}: the GC.Alloc allocation "
+                            + "probe is non-functional on this backend, so the "
+                            + "diagnostics allocation budget cannot be evaluated."
                     );
                 }
-            );
+                Assert.That(
+                    gcAllocations,
+                    Is.LessThanOrEqualTo(PerEmitDiagnosticsCountBudget),
+                    $"EmitDiagnostics-{scenario.Kind} allocated {gcAllocations} GC "
+                        + $"allocations across "
+                        + $"{AllocationAssertions.DefaultMeasuredIterations} emissions, "
+                        + $"exceeding the count budget of {PerEmitDiagnosticsCountBudget}."
+                );
+            });
         }
 
         /// <summary>
@@ -1078,20 +1179,14 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
-                {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    RegisterHandler(scenario, token, priority: 0);
-                    RegisterHandler(scenario, token, priority: 5);
-                    RegisterHandler(scenario, token, priority: 10);
-                    AllocationAssertions.AssertNoAllocations(
-                        $"Emit+Priorities-{scenario.Kind}",
-                        emit
-                    );
-                }
-            );
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                RegisterHandler(scenario, token, priority: 0);
+                RegisterHandler(scenario, token, priority: 5);
+                RegisterHandler(scenario, token, priority: 10);
+                AllocationAssertions.AssertNoAllocations($"Emit+Priorities-{scenario.Kind}", emit);
+            });
         }
 
         /// <summary>
@@ -1120,35 +1215,32 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
-                {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    RegisterHandler(scenario, token, priority: 0);
-                    RegisterHandler(scenario, token, priority: 5);
-                    RegisterHandler(scenario, token, priority: 10);
-                    RegisterAllowingInterceptor(scenario, token);
-                    RegisterPostProcessor(scenario, token, priority: 0);
-                    RegisterPostProcessor(scenario, token, priority: 5);
-                    Assert.That(
-                        bus.RegisteredPostProcessors,
-                        Is.EqualTo(2),
-                        $"[{scenario.Kind}] Full-stack allocation coverage requires two distinct post-processor priorities."
-                    );
-                    AllocationAssertions.AssertNoAllocations(
-                        $"EmitFullStack-{scenario.Kind}",
-                        emit,
-                        failureContext: () =>
-                            $"kind={scenario.Kind}; emissionId={bus.EmissionId}; tokenEnabled={token.Enabled}; "
-                            + $"diagnostics={IMessageBus.GlobalDiagnosticsTargets}; stackTraces={IMessageBus.GlobalDiagnosticsStackTraces}; "
-                            + $"busDiagnostics={bus.DiagnosticsMode}; tokenDiagnostics={token.DiagnosticMode}; "
-                            + $"registrations=[untargeted={bus.RegisteredUntargeted}, targeted={bus.RegisteredTargeted}, "
-                            + $"broadcast={bus.RegisteredBroadcast}, interceptors={bus.RegisteredInterceptors}, "
-                            + $"posts={bus.RegisteredPostProcessors}, global={bus.RegisteredGlobalAcceptAll}]"
-                    );
-                }
-            );
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                RegisterHandler(scenario, token, priority: 0);
+                RegisterHandler(scenario, token, priority: 5);
+                RegisterHandler(scenario, token, priority: 10);
+                RegisterAllowingInterceptor(scenario, token);
+                RegisterPostProcessor(scenario, token, priority: 0);
+                RegisterPostProcessor(scenario, token, priority: 5);
+                Assert.That(
+                    bus.RegisteredPostProcessors,
+                    Is.EqualTo(2),
+                    $"[{scenario.Kind}] Full-stack allocation coverage requires two distinct post-processor priorities."
+                );
+                AllocationAssertions.AssertNoAllocations(
+                    $"EmitFullStack-{scenario.Kind}",
+                    emit,
+                    failureContext: () =>
+                        $"kind={scenario.Kind}; emissionId={bus.EmissionId}; tokenEnabled={token.Enabled}; "
+                        + $"diagnostics={IMessageBus.GlobalDiagnosticsTargets}; stackTraces={IMessageBus.GlobalDiagnosticsStackTraces}; "
+                        + $"busDiagnostics={bus.DiagnosticsMode}; tokenDiagnostics={token.DiagnosticMode}; "
+                        + $"registrations=[untargeted={bus.RegisteredUntargeted}, targeted={bus.RegisteredTargeted}, "
+                        + $"broadcast={bus.RegisteredBroadcast}, interceptors={bus.RegisteredInterceptors}, "
+                        + $"posts={bus.RegisteredPostProcessors}, global={bus.RegisteredGlobalAcceptAll}]"
+                );
+            });
         }
 
         /// <summary>
@@ -1235,49 +1327,46 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                for (int i = 0; i < WarmupRegistrationCycles; ++i)
                 {
-                    for (int i = 0; i < WarmupRegistrationCycles; ++i)
-                    {
-                        MessageRegistrationHandle warm = RegisterHandler(scenario, token);
-                        token.RemoveRegistration(warm);
-                    }
+                    MessageRegistrationHandle warm = RegisterHandler(scenario, token);
+                    token.RemoveRegistration(warm);
+                }
 
-                    /*
-                        Measure the marginal cost of an ADDITIONAL registration (the
-                        realistic steady state for a component that registers several
-                        handlers): each attempt registers one more handler that reuses the
-                        type's already-built dispatch structures. We deliberately do NOT
-                        remove between attempts -- removing the sole handler tears down and
-                        rebuilds those structures, whose cost depends on warm DxPools state
-                        and is not stable run-to-run. The few accumulated handles are
-                        released when the harness disposes the token. The budget is per-kind
-                        because the fan-out kinds (TargetedWithoutTargeting) legitimately
-                        cost more than the scalar kinds.
-                    */
-                    long delta = AllocationProbe.MeasureMin(
-                        AllocationMeasurementAttempts,
-                        prepare: null,
-                        operation: () => _ = RegisterHandler(scenario, token)
-                    );
-                    if (delta == AllocationProbe.Unmeasured)
-                    {
-                        Assert.Ignore(
-                            $"Register-{scenario.Kind}: the GC.Alloc allocation probe is "
-                                + "non-functional on this backend."
-                        );
-                    }
-
-                    Assert.That(
-                        delta,
-                        Is.LessThanOrEqualTo(PerRegistrationCountBudget),
-                        $"Register-{scenario.Kind} allocated {delta} managed objects after "
-                            + $"warm-up; budget is {PerRegistrationCountBudget}."
+                /*
+                    Measure the marginal cost of an ADDITIONAL registration (the
+                    realistic steady state for a component that registers several
+                    handlers): each attempt registers one more handler that reuses the
+                    type's already-built dispatch structures. We deliberately do NOT
+                    remove between attempts -- removing the sole handler tears down and
+                    rebuilds those structures, whose cost depends on warm DxPools state
+                    and is not stable run-to-run. The few accumulated handles are
+                    released when the harness disposes the token. The budget is per-kind
+                    because the fan-out kinds (TargetedWithoutTargeting) legitimately
+                    cost more than the scalar kinds.
+                */
+                long delta = AllocationProbe.MeasureMin(
+                    AllocationMeasurementAttempts,
+                    prepare: null,
+                    operation: () => _ = RegisterHandler(scenario, token)
+                );
+                if (delta == AllocationProbe.Unmeasured)
+                {
+                    Assert.Ignore(
+                        $"Register-{scenario.Kind}: the GC.Alloc allocation probe is "
+                            + "non-functional on this backend."
                     );
                 }
-            );
+
+                Assert.That(
+                    delta,
+                    Is.LessThanOrEqualTo(PerRegistrationCountBudget),
+                    $"Register-{scenario.Kind} allocated {delta} managed objects after "
+                        + $"warm-up; budget is {PerRegistrationCountBudget}."
+                );
+            });
         }
 
         /// <summary>
@@ -1298,38 +1387,35 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                for (int i = 0; i < WarmupRegistrationCycles; ++i)
                 {
-                    for (int i = 0; i < WarmupRegistrationCycles; ++i)
-                    {
-                        MessageRegistrationHandle warm = RegisterHandler(scenario, token);
-                        token.RemoveRegistration(warm);
-                    }
+                    MessageRegistrationHandle warm = RegisterHandler(scenario, token);
+                    token.RemoveRegistration(warm);
+                }
 
-                    MessageRegistrationHandle pending = default;
-                    long delta = AllocationProbe.MeasureMin(
-                        AllocationMeasurementAttempts,
-                        prepare: () => pending = RegisterHandler(scenario, token),
-                        operation: () => token.RemoveRegistration(pending)
-                    );
-                    if (delta == AllocationProbe.Unmeasured)
-                    {
-                        Assert.Ignore(
-                            $"Deregister-{scenario.Kind}: the GC.Alloc allocation probe is "
-                                + "non-functional on this backend."
-                        );
-                    }
-
-                    Assert.That(
-                        delta,
-                        Is.LessThanOrEqualTo(PerDeregistrationCountBudget),
-                        $"Deregister-{scenario.Kind} allocated {delta} managed objects after "
-                            + $"warm-up; budget is {PerDeregistrationCountBudget}."
+                MessageRegistrationHandle pending = default;
+                long delta = AllocationProbe.MeasureMin(
+                    AllocationMeasurementAttempts,
+                    prepare: () => pending = RegisterHandler(scenario, token),
+                    operation: () => token.RemoveRegistration(pending)
+                );
+                if (delta == AllocationProbe.Unmeasured)
+                {
+                    Assert.Ignore(
+                        $"Deregister-{scenario.Kind}: the GC.Alloc allocation probe is "
+                            + "non-functional on this backend."
                     );
                 }
-            );
+
+                Assert.That(
+                    delta,
+                    Is.LessThanOrEqualTo(PerDeregistrationCountBudget),
+                    $"Deregister-{scenario.Kind} allocated {delta} managed objects after "
+                        + $"warm-up; budget is {PerDeregistrationCountBudget}."
+                );
+            });
         }
 
         /// <summary>
@@ -1369,82 +1455,79 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+
+                /*
+                    Start from a clean bus, then create exactly one fresh dirty candidate
+                    (register, emit, remove) for the selected kind so the first forced
+                    trim has a slot to reclaim.
+                */
+                _ = bus.Trim(force: true);
+                CreateFreshTrimCandidate(scenario, token, emit);
+
+                IMessageBus.TrimResult first = bus.Trim(force: true);
+                Assert.Greater(
+                    first.TypeSlotsEvicted + first.TargetSlotsEvicted,
+                    0,
+                    $"Trim-{scenario.Kind}: the first forced trim must reclaim the fresh "
+                        + "dirty candidate slot."
+                );
+
+                int stableLiveTypeSlots = first.LiveTypeSlotsRemaining;
+
+                /*
+                    Snapshot the DxPools rental counter AFTER reclaim. Repeated forced
+                    trims on a now-clean bus must rent NOTHING fresh from the shared pools
+                    (a sweep returns/evicts collections, it never rents), so the total
+                    Misses must stay flat across the loop. This deterministically pins the
+                    "no per-call allocation" half of the bounded-work contract for EVERY
+                    kind -- including the scalar and without-context kinds that
+                    DirtyTargetTrimReturnsInstanceIdCollectionsToPools (keyed-only) does not
+                    cover -- with no allocation probe, so it never flakes.
+                */
+                long poolMissesAfterReclaim = TotalPoolMisses();
+
+                /*
+                    Every subsequent forced trim is a deterministic no-op: nothing is
+                    dirty, so it evicts zero type/target slots and leaves the live
+                    type-slot count unchanged. A regression that made repeated forced
+                    trims do per-call work (the unbounded behavior the former GC.Alloc
+                    budget guarded against) would evict again or drift the live count.
+                */
+                for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
                 {
-                    Action emit = BuildEmitClosure(scenario, bus);
-
-                    /*
-                        Start from a clean bus, then create exactly one fresh dirty candidate
-                        (register, emit, remove) for the selected kind so the first forced
-                        trim has a slot to reclaim.
-                    */
-                    _ = bus.Trim(force: true);
-                    CreateFreshTrimCandidate(scenario, token, emit);
-
-                    IMessageBus.TrimResult first = bus.Trim(force: true);
-                    Assert.Greater(
-                        first.TypeSlotsEvicted + first.TargetSlotsEvicted,
-                        0,
-                        $"Trim-{scenario.Kind}: the first forced trim must reclaim the fresh "
-                            + "dirty candidate slot."
-                    );
-
-                    int stableLiveTypeSlots = first.LiveTypeSlotsRemaining;
-
-                    /*
-                        Snapshot the DxPools rental counter AFTER reclaim. Repeated forced
-                        trims on a now-clean bus must rent NOTHING fresh from the shared pools
-                        (a sweep returns/evicts collections, it never rents), so the total
-                        Misses must stay flat across the loop. This deterministically pins the
-                        "no per-call allocation" half of the bounded-work contract for EVERY
-                        kind -- including the scalar and without-context kinds that
-                        DirtyTargetTrimReturnsInstanceIdCollectionsToPools (keyed-only) does not
-                        cover -- with no allocation probe, so it never flakes.
-                    */
-                    long poolMissesAfterReclaim = TotalPoolMisses();
-
-                    /*
-                        Every subsequent forced trim is a deterministic no-op: nothing is
-                        dirty, so it evicts zero type/target slots and leaves the live
-                        type-slot count unchanged. A regression that made repeated forced
-                        trims do per-call work (the unbounded behavior the former GC.Alloc
-                        budget guarded against) would evict again or drift the live count.
-                    */
-                    for (int i = 0; i < AllocationAssertions.DefaultMeasuredIterations; ++i)
-                    {
-                        IMessageBus.TrimResult repeat = bus.Trim(force: true);
-                        Assert.AreEqual(
-                            0,
-                            repeat.TypeSlotsEvicted,
-                            $"Trim-{scenario.Kind}: forced trim #{i + 2} must evict no type "
-                                + "slots after the candidate was reclaimed (idempotent)."
-                        );
-                        Assert.AreEqual(
-                            0,
-                            repeat.TargetSlotsEvicted,
-                            $"Trim-{scenario.Kind}: forced trim #{i + 2} must evict no target "
-                                + "slots after the candidate was reclaimed (idempotent)."
-                        );
-                        Assert.AreEqual(
-                            stableLiveTypeSlots,
-                            repeat.LiveTypeSlotsRemaining,
-                            $"Trim-{scenario.Kind}: forced trim #{i + 2} must leave the live "
-                                + "type-slot count stable after reclaim (idempotent)."
-                        );
-                    }
-
+                    IMessageBus.TrimResult repeat = bus.Trim(force: true);
                     Assert.AreEqual(
-                        poolMissesAfterReclaim,
-                        TotalPoolMisses(),
-                        $"Trim-{scenario.Kind}: the {AllocationAssertions.DefaultMeasuredIterations} "
-                            + "repeated forced trims on a clean bus must rent no fresh pooled "
-                            + "collection (DxPools total Misses stays flat) -- a no-op forced trim "
-                            + "allocates nothing."
+                        0,
+                        repeat.TypeSlotsEvicted,
+                        $"Trim-{scenario.Kind}: forced trim #{i + 2} must evict no type "
+                            + "slots after the candidate was reclaimed (idempotent)."
+                    );
+                    Assert.AreEqual(
+                        0,
+                        repeat.TargetSlotsEvicted,
+                        $"Trim-{scenario.Kind}: forced trim #{i + 2} must evict no target "
+                            + "slots after the candidate was reclaimed (idempotent)."
+                    );
+                    Assert.AreEqual(
+                        stableLiveTypeSlots,
+                        repeat.LiveTypeSlotsRemaining,
+                        $"Trim-{scenario.Kind}: forced trim #{i + 2} must leave the live "
+                            + "type-slot count stable after reclaim (idempotent)."
                     );
                 }
-            );
+
+                Assert.AreEqual(
+                    poolMissesAfterReclaim,
+                    TotalPoolMisses(),
+                    $"Trim-{scenario.Kind}: the {AllocationAssertions.DefaultMeasuredIterations} "
+                        + "repeated forced trims on a clean bus must rent no fresh pooled "
+                        + "collection (DxPools total Misses stays flat) -- a no-op forced trim "
+                        + "allocates nothing."
+                );
+            });
         }
 
         /*
@@ -1483,29 +1566,26 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                Action emit = BuildEmitClosure(scenario, bus);
+                List<MessageRegistrationHandle> handles = RegisterManyHandlers(
+                    scenario,
+                    token,
+                    count: 8
+                );
+                for (int i = 0; i < handles.Count / 2; ++i)
                 {
-                    Action emit = BuildEmitClosure(scenario, bus);
-                    List<MessageRegistrationHandle> handles = RegisterManyHandlers(
-                        scenario,
-                        token,
-                        count: 8
-                    );
-                    for (int i = 0; i < handles.Count / 2; ++i)
-                    {
-                        token.RemoveRegistration(handles[i]);
-                    }
-
-                    _ = bus.Trim(force: false);
-
-                    AllocationAssertions.AssertNoAllocations(
-                        $"EmitAfterPartialTrim-{scenario.Kind}",
-                        emit
-                    );
+                    token.RemoveRegistration(handles[i]);
                 }
-            );
+
+                _ = bus.Trim(force: false);
+
+                AllocationAssertions.AssertNoAllocations(
+                    $"EmitAfterPartialTrim-{scenario.Kind}",
+                    emit
+                );
+            });
         }
 
         [Test]
@@ -1518,74 +1598,71 @@ namespace DxMessaging.Tests.Editor.Allocations
                 MessageScenario scenario
         )
         {
-            RunWithFreshHarness(
-                scenario,
-                (token, bus) =>
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                int previousListCap = DxPools.InstanceIdLists.MaxRetained;
+                int previousSetCap = DxPools.InstanceIdSets.MaxRetained;
+                bool previousListLru = DxPools.InstanceIdLists.UseLru;
+                bool previousSetLru = DxPools.InstanceIdSets.UseLru;
+                try
                 {
-                    int previousListCap = DxPools.InstanceIdLists.MaxRetained;
-                    int previousSetCap = DxPools.InstanceIdSets.MaxRetained;
-                    bool previousListLru = DxPools.InstanceIdLists.UseLru;
-                    bool previousSetLru = DxPools.InstanceIdSets.UseLru;
-                    try
-                    {
-                        _ = DxPools.TrimAll(force: true);
-                        DxPools.InstanceIdLists.UseLru = true;
-                        DxPools.InstanceIdSets.UseLru = true;
-                        DxPools.InstanceIdLists.MaxRetained = DirtyTargetPoolRetainedEntryCount;
-                        DxPools.InstanceIdSets.MaxRetained = DirtyTargetPoolRetainedEntryCount;
-                        Action emit = BuildEmitClosure(scenario, bus);
-                        MessageRegistrationHandle handle = RegisterHandler(scenario, token);
-                        emit();
-                        token.RemoveRegistration(handle);
-                        emit();
-                        int listsBefore = DxPools.DescribeAll().InstanceIdLists.Cached;
-                        int setsBefore = DxPools.DescribeAll().InstanceIdSets.Cached;
+                    _ = DxPools.TrimAll(force: true);
+                    DxPools.InstanceIdLists.UseLru = true;
+                    DxPools.InstanceIdSets.UseLru = true;
+                    DxPools.InstanceIdLists.MaxRetained = DirtyTargetPoolRetainedEntryCount;
+                    DxPools.InstanceIdSets.MaxRetained = DirtyTargetPoolRetainedEntryCount;
+                    Action emit = BuildEmitClosure(scenario, bus);
+                    MessageRegistrationHandle handle = RegisterHandler(scenario, token);
+                    emit();
+                    token.RemoveRegistration(handle);
+                    emit();
+                    int listsBefore = DxPools.DescribeAll().InstanceIdLists.Cached;
+                    int setsBefore = DxPools.DescribeAll().InstanceIdSets.Cached;
 
-                        IMessageBus.TrimResult result = bus.Trim(force: false);
+                    IMessageBus.TrimResult result = bus.Trim(force: false);
 
-                        Assert.Greater(
-                            result.TargetSlotsEvicted,
-                            0,
-                            $"Trim-{scenario.Kind} must reclaim a dirty target slot."
-                        );
-                        Assert.Greater(
-                            DxPools.DescribeAll().InstanceIdLists.Cached,
-                            listsBefore,
-                            $"Trim-{scenario.Kind} must return the dirty-target list to the pool."
-                        );
-                        Assert.Greater(
-                            DxPools.DescribeAll().InstanceIdSets.Cached,
-                            setsBefore,
-                            $"Trim-{scenario.Kind} must return the dirty-target set to the pool."
-                        );
+                    Assert.Greater(
+                        result.TargetSlotsEvicted,
+                        0,
+                        $"Trim-{scenario.Kind} must reclaim a dirty target slot."
+                    );
+                    Assert.Greater(
+                        DxPools.DescribeAll().InstanceIdLists.Cached,
+                        listsBefore,
+                        $"Trim-{scenario.Kind} must return the dirty-target list to the pool."
+                    );
+                    Assert.Greater(
+                        DxPools.DescribeAll().InstanceIdSets.Cached,
+                        setsBefore,
+                        $"Trim-{scenario.Kind} must return the dirty-target set to the pool."
+                    );
 
-                        long listHitsBeforeReuse = DxPools.DescribeAll().InstanceIdLists.Hits;
-                        long setHitsBeforeReuse = DxPools.DescribeAll().InstanceIdSets.Hits;
-                        MessageRegistrationHandle reused = RegisterHandler(scenario, token);
-                        emit();
-                        token.RemoveRegistration(reused);
+                    long listHitsBeforeReuse = DxPools.DescribeAll().InstanceIdLists.Hits;
+                    long setHitsBeforeReuse = DxPools.DescribeAll().InstanceIdSets.Hits;
+                    MessageRegistrationHandle reused = RegisterHandler(scenario, token);
+                    emit();
+                    token.RemoveRegistration(reused);
 
-                        Assert.Greater(
-                            DxPools.DescribeAll().InstanceIdLists.Hits,
-                            listHitsBeforeReuse,
-                            $"Register-{scenario.Kind} must rent a pooled dirty-target list."
-                        );
-                        Assert.Greater(
-                            DxPools.DescribeAll().InstanceIdSets.Hits,
-                            setHitsBeforeReuse,
-                            $"Register-{scenario.Kind} must rent a pooled dirty-target set."
-                        );
-                    }
-                    finally
-                    {
-                        _ = DxPools.TrimAll(force: true);
-                        DxPools.InstanceIdLists.UseLru = previousListLru;
-                        DxPools.InstanceIdSets.UseLru = previousSetLru;
-                        DxPools.InstanceIdLists.MaxRetained = previousListCap;
-                        DxPools.InstanceIdSets.MaxRetained = previousSetCap;
-                    }
+                    Assert.Greater(
+                        DxPools.DescribeAll().InstanceIdLists.Hits,
+                        listHitsBeforeReuse,
+                        $"Register-{scenario.Kind} must rent a pooled dirty-target list."
+                    );
+                    Assert.Greater(
+                        DxPools.DescribeAll().InstanceIdSets.Hits,
+                        setHitsBeforeReuse,
+                        $"Register-{scenario.Kind} must rent a pooled dirty-target set."
+                    );
                 }
-            );
+                finally
+                {
+                    _ = DxPools.TrimAll(force: true);
+                    DxPools.InstanceIdLists.UseLru = previousListLru;
+                    DxPools.InstanceIdSets.UseLru = previousSetLru;
+                    DxPools.InstanceIdLists.MaxRetained = previousListCap;
+                    DxPools.InstanceIdSets.MaxRetained = previousSetCap;
+                }
+            });
         }
 
         public static IEnumerable<int> RetainedDirtyTargetWarmupCounts

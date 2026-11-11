@@ -684,6 +684,9 @@ namespace DxMessaging.Core
         /// </summary>
         internal abstract class HandlerDeregistration
         {
+            /// <summary>Gets the bus owned by this retained teardown, when it is a typed registration.</summary>
+            internal virtual IMessageBus CapturedMessageBus => null;
+
             internal abstract void Deregister();
         }
 
@@ -3282,6 +3285,8 @@ namespace DxMessaging.Core
             /// </summary>
             internal readonly struct TypedHandlerDeregistrationState
             {
+                internal IMessageBus CapturedMessageBus => _messageBus;
+
                 // Captured state (was the closure's captures).
                 private readonly IMessageBus _messageBus;
                 private readonly long _resetGeneration;
@@ -3465,6 +3470,8 @@ namespace DxMessaging.Core
             internal sealed class TypedHandlerDeregistration : HandlerDeregistration
             {
                 private readonly TypedHandlerDeregistrationState _state;
+
+                internal override IMessageBus CapturedMessageBus => _state.CapturedMessageBus;
 
                 internal TypedHandlerDeregistration(TypedHandlerDeregistrationState state)
                 {
@@ -6012,8 +6019,8 @@ namespace DxMessaging.Core
                 }
 
                 ref TU typedMessage = ref DxUnsafe.As<TMessage, TU>(ref message);
-                List<FastHandler<TU>> handlers =
-                    globalSnapshot ?? GetOrAddNewHandlerStack(cache, emissionId);
+                List<FastHandler<TU>> handlers = globalSnapshot
+                    ?? GetOrAddNewHandlerStack(cache, emissionId);
                 int handlersCount = handlers.Count;
                 if (handlersCount == 0)
                 {
@@ -6192,8 +6199,8 @@ namespace DxMessaging.Core
                 }
 
                 ref TU typedMessage = ref DxUnsafe.As<TMessage, TU>(ref message);
-                List<FastHandlerWithContext<TU>> handlers =
-                    globalSnapshot ?? GetOrAddNewHandlerStack(cache, emissionId);
+                List<FastHandlerWithContext<TU>> handlers = globalSnapshot
+                    ?? GetOrAddNewHandlerStack(cache, emissionId);
                 int handlersCount = handlers.Count;
                 if (handlersCount == 0)
                 {

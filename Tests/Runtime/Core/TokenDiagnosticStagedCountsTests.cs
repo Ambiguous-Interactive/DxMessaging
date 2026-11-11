@@ -239,67 +239,56 @@ namespace DxMessaging.Tests.Runtime.Core
             InvalidOperationException sentinel = new InvalidOperationException(
                 "Expected outer callback failure."
             );
-            first = Register(
-                scope.Token,
-                scenario,
-                carrier,
-                () =>
+            first = Register(scope.Token, scenario, carrier, () =>
+            {
+                delivery.Add(inNested ? "nested:A" : "outer:A");
+                if (!outer)
                 {
-                    delivery.Add(inNested ? "nested:A" : "outer:A");
-                    if (!outer)
+                    nestedTrace = scope.Bus.EmissionId;
+                    return;
+                }
+                outer = false;
+                outerTrace = scope.Bus.EmissionId;
+                if (remove)
+                {
+                    scope.Token.RemoveRegistration(peer);
+                    replacement = Register(scope.Token, scenario, carrier, () =>
+                        delivery.Add(inNested ? "nested:C" : "outer:C")
+                    );
+                    Assert.That(
+                        replacement.Slot,
+                        Is.EqualTo(peer.Slot),
+                        label + ": peer slot is reused"
+                    );
+                    Assert.That(
+                        replacement,
+                        Is.Not.EqualTo(peer),
+                        label + ": replacement identity is distinct"
+                    );
+                }
+                if (0 <= toggle)
+                {
+                    scope.Token.DiagnosticMode = toggle == 1;
+                }
+                if (nested)
+                {
+                    inNested = true;
+                    try
                     {
-                        nestedTrace = scope.Bus.EmissionId;
-                        return;
+                        Emit(scope.Bus, scenario);
                     }
-                    outer = false;
-                    outerTrace = scope.Bus.EmissionId;
-                    if (remove)
+                    finally
                     {
-                        scope.Token.RemoveRegistration(peer);
-                        replacement = Register(
-                            scope.Token,
-                            scenario,
-                            carrier,
-                            () => delivery.Add(inNested ? "nested:C" : "outer:C")
-                        );
-                        Assert.That(
-                            replacement.Slot,
-                            Is.EqualTo(peer.Slot),
-                            label + ": peer slot is reused"
-                        );
-                        Assert.That(
-                            replacement,
-                            Is.Not.EqualTo(peer),
-                            label + ": replacement identity is distinct"
-                        );
-                    }
-                    if (0 <= toggle)
-                    {
-                        scope.Token.DiagnosticMode = toggle == 1;
-                    }
-                    if (nested)
-                    {
-                        inNested = true;
-                        try
-                        {
-                            Emit(scope.Bus, scenario);
-                        }
-                        finally
-                        {
-                            inNested = false;
-                        }
-                    }
-                    if (throws)
-                    {
-                        throw sentinel;
+                        inNested = false;
                     }
                 }
-            );
-            peer = Register(
-                scope.Token,
-                scenario,
-                carrier,
-                () => delivery.Add(inNested ? "nested:B" : "outer:B")
+                if (throws)
+                {
+                    throw sentinel;
+                }
+            });
+            peer = Register(scope.Token, scenario, carrier, () =>
+                delivery.Add(inNested ? "nested:B" : "outer:B")
             );
             scope.Token.Enable();
             Exception caught = null;

@@ -131,18 +131,16 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterTargetedPostProcessor(
-                    target,
-                    (in SimpleTargetedMessage _) => fastOrder.Add(index)
+                _ = token.RegisterTargetedPostProcessor(target, (in SimpleTargetedMessage _) =>
+                    fastOrder.Add(index)
                 );
             }
 
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterTargetedPostProcessor(
-                    target,
-                    (SimpleTargetedMessage _) => actionOrder.Add(index)
+                _ = token.RegisterTargetedPostProcessor(target, (SimpleTargetedMessage _) =>
+                    actionOrder.Add(index)
                 );
             }
 
@@ -264,18 +262,16 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterBroadcastPostProcessor(
-                    source,
-                    (in SimpleBroadcastMessage _) => fastOrder.Add(index)
+                _ = token.RegisterBroadcastPostProcessor(source, (in SimpleBroadcastMessage _) =>
+                    fastOrder.Add(index)
                 );
             }
 
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = token.RegisterBroadcastPostProcessor(
-                    source,
-                    (SimpleBroadcastMessage _) => actionOrder.Add(index)
+                _ = token.RegisterBroadcastPostProcessor(source, (SimpleBroadcastMessage _) =>
+                    actionOrder.Add(index)
                 );
             }
 
@@ -494,15 +490,11 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int i = 0; i < ManyRegistrationCount; i++)
             {
                 int index = i;
-                _ = RegisterInterceptor(
-                    scenario,
-                    token,
-                    () =>
-                    {
-                        order.Add(index);
-                        return true;
-                    }
-                );
+                _ = RegisterInterceptor(scenario, token, () =>
+                {
+                    order.Add(index);
+                    return true;
+                });
             }
 
             EmitForScenario(scenario, targetId);

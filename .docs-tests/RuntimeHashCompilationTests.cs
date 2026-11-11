@@ -31,6 +31,67 @@ internal sealed class RuntimeHashCompilationTests
         Assembly.Load(CompilePortableRuntimeImage(true))
     );
 
+    /// <summary>Preserves ordinary non-token handle rejection and cleanup no-ops under checked consumer compilation.</summary>
+    /// <remarks>2026-11-11: converting the opaque handle's negative slot to uint overflowed before ownership validation.</remarks>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void NonTokenHandlesRemainHarmlessWithCheckedCompilation(bool checkOverflow)
+    {
+        Assembly runtime = GetPortableRuntime(checkOverflow);
+        Type busType = runtime.GetType("DxMessaging.Core.MessageBus.MessageBus", true)!;
+        Type busContract = runtime.GetType("DxMessaging.Core.MessageBus.IMessageBus", true)!;
+        Type idType = runtime.GetType("DxMessaging.Core.InstanceId", true)!;
+        Type handlerType = runtime.GetType("DxMessaging.Core.MessageHandler", true)!;
+        Type tokenType = runtime.GetType("DxMessaging.Core.MessageRegistrationToken", true)!;
+        Type handleType = runtime.GetType("DxMessaging.Core.MessageRegistrationHandle", true)!;
+        object bus = Activator.CreateInstance(busType)!;
+        object id = Activator.CreateInstance(idType)!;
+        object handler = handlerType
+            .GetConstructor(new[] { idType, busContract })!
+            .Invoke(new[] { id, bus });
+        object token = tokenType
+            .GetMethod("Create", new[] { handlerType, busContract })!
+            .Invoke(null, new[] { handler, bus })!;
+        object group = tokenType.GetMethod("CreateGroup")!.Invoke(token, null)!;
+        object handle = handleType
+            .GetMethod("CreateMessageRegistrationHandle", Type.EmptyTypes)!
+            .Invoke(null, null)!;
+        string label = $"checked={checkOverflow}: non-token handle";
+        try
+        {
+            TargetInvocationException error = Assert.Throws<TargetInvocationException>(
+                () => group.GetType().GetMethod("Add")!.Invoke(group, new[] { handle }),
+                label + " rejects enrollment"
+            );
+            Assert.That(
+                error.InnerException,
+                Is.InstanceOf<ArgumentException>(),
+                label + ": rejected enrollment must not overflow"
+            );
+            Assert.That(
+                tokenType
+                    .GetMethod("RetargetSource", new[] { handleType, idType })!
+                    .Invoke(token, new[] { handle, id }),
+                Is.False,
+                label + ": unsupported source move is a no-op"
+            );
+            Assert.DoesNotThrow(
+                () => tokenType.GetMethod("RemoveRegistration")!.Invoke(token, new[] { handle }),
+                label + ": missing registration cleanup is a no-op"
+            );
+            Assert.That(
+                group.GetType().GetProperty("Count")!.GetValue(group),
+                Is.EqualTo(0),
+                label + ": invalid handle leaves the group empty"
+            );
+        }
+        finally
+        {
+            ((IDisposable)group).Dispose();
+            ((IDisposable)token).Dispose();
+        }
+    }
+
     private static IEnumerable<TestCaseData> RegistrationCases()
     {
         foreach (bool checkOverflow in new[] { false, true })

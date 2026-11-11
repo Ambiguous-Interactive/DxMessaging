@@ -50,21 +50,13 @@ namespace DxMessaging.Tests.Runtime.Core
             int resettingCount = 0;
             int postCount = 0;
 
-            _ = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () =>
-                {
-                    ++resettingCount;
-                    DxMessagingStaticState.Reset();
-                }
-            );
-            _ = ScenarioCallbacks.RegisterCountingPostProcessor(
-                scenario,
-                token,
-                hostId,
-                () => ++postCount
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
+            {
+                ++resettingCount;
+                DxMessagingStaticState.Reset();
+            });
+            _ = ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, () =>
+                ++postCount
             );
 
             Assert.DoesNotThrow(() => ScenarioCallbacks.EmitForKind(scenario, hostId));
@@ -105,16 +97,11 @@ namespace DxMessaging.Tests.Runtime.Core
             int keyedPostCount = 0;
             int withoutContextPostCount = 0;
 
-            _ = ScenarioCallbacks.RegisterCountingPostProcessor(
-                scenario,
-                token,
-                hostId,
-                () =>
-                {
-                    ++keyedPostCount;
-                    DxMessagingStaticState.Reset();
-                }
-            );
+            _ = ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, () =>
+            {
+                ++keyedPostCount;
+                DxMessagingStaticState.Reset();
+            });
             switch (scenario.Kind)
             {
                 case MessageKind.Targeted:

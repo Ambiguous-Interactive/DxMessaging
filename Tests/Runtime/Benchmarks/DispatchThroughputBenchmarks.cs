@@ -2385,14 +2385,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 (in ColdDispatchUntargetedMessage<TMarker> message) => { }
             );
             MessageBus bus = scope.Bus;
-            return new ColdTrialState(
-                scope,
-                () =>
-                {
-                    ColdDispatchUntargetedMessage<TMarker> message = new();
-                    bus.UntargetedBroadcast(ref message);
-                }
-            );
+            return new ColdTrialState(scope, () =>
+            {
+                ColdDispatchUntargetedMessage<TMarker> message = new();
+                bus.UntargetedBroadcast(ref message);
+            });
         }
 
         private static ColdTrialState SetUpColdTargetedTrial<TMarker>()
@@ -2404,15 +2401,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 (in ColdDispatchTargetedMessage<TMarker> message) => { }
             );
             MessageBus bus = scope.Bus;
-            return new ColdTrialState(
-                scope,
-                () =>
-                {
-                    ColdDispatchTargetedMessage<TMarker> message = new();
-                    InstanceId localTarget = target;
-                    bus.TargetedBroadcast(ref localTarget, ref message);
-                }
-            );
+            return new ColdTrialState(scope, () =>
+            {
+                ColdDispatchTargetedMessage<TMarker> message = new();
+                InstanceId localTarget = target;
+                bus.TargetedBroadcast(ref localTarget, ref message);
+            });
         }
 
         private static ColdTrialState SetUpColdBroadcastTrial<TMarker>()
@@ -2424,15 +2418,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 (in ColdDispatchBroadcastMessage<TMarker> message) => { }
             );
             MessageBus bus = scope.Bus;
-            return new ColdTrialState(
-                scope,
-                () =>
-                {
-                    ColdDispatchBroadcastMessage<TMarker> message = new();
-                    InstanceId localSource = source;
-                    bus.SourcedBroadcast(ref localSource, ref message);
-                }
-            );
+            return new ColdTrialState(scope, () =>
+            {
+                ColdDispatchBroadcastMessage<TMarker> message = new();
+                InstanceId localSource = source;
+                bus.SourcedBroadcast(ref localSource, ref message);
+            });
         }
 
         private readonly struct ColdDispatchUntargetedMessage<TMarker>
@@ -2964,8 +2955,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
 
             string refName = head.Substring(RefPrefix.Length).Trim();
-            string commit =
-                ReadGitRefCommit(gitPath, refName) ?? ReadGitRefCommit(commonGitPath, refName);
+            string commit = ReadGitRefCommit(gitPath, refName)
+                ?? ReadGitRefCommit(commonGitPath, refName);
             return string.IsNullOrWhiteSpace(commit) ? null : commit;
         }
 

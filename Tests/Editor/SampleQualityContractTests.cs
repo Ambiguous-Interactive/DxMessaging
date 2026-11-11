@@ -92,15 +92,18 @@ namespace DxMessaging.Tests.Editor
                 Type bootType = FindSceneComponent(isolatedScene.Scene, "Boot").GetType();
                 host = isolatedScene.CreateGameObject("Mini Combat fallback owner");
                 Component boot = host.AddComponent(bootType);
-                FieldInfo playerField =
-                    bootType.GetField("player", BindingFlags.Instance | BindingFlags.NonPublic)
-                    ?? throw new AssertionException("Boot must retain its fallback Player.");
-                FieldInfo enemyField =
-                    bootType.GetField("enemy", BindingFlags.Instance | BindingFlags.NonPublic)
-                    ?? throw new AssertionException("Boot must retain its fallback Enemy.");
-                FieldInfo overlayField =
-                    bootType.GetField("uiOverlay", BindingFlags.Instance | BindingFlags.NonPublic)
-                    ?? throw new AssertionException("Boot must retain its fallback UI Overlay.");
+                FieldInfo playerField = bootType.GetField(
+                    "player",
+                    BindingFlags.Instance | BindingFlags.NonPublic
+                ) ?? throw new AssertionException("Boot must retain its fallback Player.");
+                FieldInfo enemyField = bootType.GetField(
+                    "enemy",
+                    BindingFlags.Instance | BindingFlags.NonPublic
+                ) ?? throw new AssertionException("Boot must retain its fallback Enemy.");
+                FieldInfo overlayField = bootType.GetField(
+                    "uiOverlay",
+                    BindingFlags.Instance | BindingFlags.NonPublic
+                ) ?? throw new AssertionException("Boot must retain its fallback UI Overlay.");
 
                 if (playerField.GetValue(boot) == null)
                 {
@@ -771,10 +774,9 @@ namespace DxMessaging.Tests.Editor
 
         private static void InvokePublic(Component component, string methodName)
         {
-            MethodInfo method =
-                component
-                    .GetType()
-                    .GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public)
+            MethodInfo method = component
+                .GetType()
+                .GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public)
                 ?? throw new AssertionException(
                     $"{component.GetType().Name} must expose {methodName}()."
                 );
@@ -820,10 +822,9 @@ namespace DxMessaging.Tests.Editor
 
         private static void InvokeRequired(Component component, string methodName)
         {
-            MethodInfo method =
-                component
-                    .GetType()
-                    .GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
+            MethodInfo method = component
+                .GetType()
+                .GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new AssertionException(
                     $"{component.GetType().Name} must declare {methodName}()."
                 );

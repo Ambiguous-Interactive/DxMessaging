@@ -43,27 +43,17 @@ namespace DxMessaging.Tests.Runtime.Core
                 () => { }
             );
 
-            pp[0] = RegisterPostProcessor(
-                scenario,
-                tokens[0],
-                emissionTarget,
-                () =>
-                {
-                    counts[0]++;
-                    order.Add(0);
-                    tokens[1].RemoveRegistration(pp[1]);
-                }
-            );
-            pp[1] = RegisterPostProcessor(
-                scenario,
-                tokens[1],
-                emissionTarget,
-                () =>
-                {
-                    counts[1]++;
-                    order.Add(1);
-                }
-            );
+            pp[0] = RegisterPostProcessor(scenario, tokens[0], emissionTarget, () =>
+            {
+                counts[0]++;
+                order.Add(0);
+                tokens[1].RemoveRegistration(pp[1]);
+            });
+            pp[1] = RegisterPostProcessor(scenario, tokens[1], emissionTarget, () =>
+            {
+                counts[1]++;
+                order.Add(1);
+            });
 
             EmitForScenario(scenario, components[0]);
             Assert.AreEqual(
@@ -136,16 +126,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 () => { }
             );
 
-            pp[0] = RegisterPostProcessor(
-                scenario,
-                tokens[0],
-                emissionTarget,
-                () =>
-                {
-                    counts[0]++;
-                    tokens[0].RemoveRegistration(pp[0]);
-                }
-            );
+            pp[0] = RegisterPostProcessor(scenario, tokens[0], emissionTarget, () =>
+            {
+                counts[0]++;
+                tokens[0].RemoveRegistration(pp[0]);
+            });
             pp[1] = RegisterPostProcessor(scenario, tokens[1], emissionTarget, () => counts[1]++);
 
             EmitForScenario(scenario, components[0]);
@@ -213,17 +198,12 @@ namespace DxMessaging.Tests.Runtime.Core
                 () => { }
             );
 
-            pp[0] = RegisterPostProcessor(
-                scenario,
-                tokens[0],
-                emissionTarget,
-                () =>
-                {
-                    counts[0]++;
-                    tokens[0].RemoveRegistration(pp[0]);
-                    tokens[1].RemoveRegistration(pp[1]);
-                }
-            );
+            pp[0] = RegisterPostProcessor(scenario, tokens[0], emissionTarget, () =>
+            {
+                counts[0]++;
+                tokens[0].RemoveRegistration(pp[0]);
+                tokens[1].RemoveRegistration(pp[1]);
+            });
             pp[1] = RegisterPostProcessor(scenario, tokens[1], emissionTarget, () => counts[1]++);
 
             EmitForScenario(scenario, components[0]);
@@ -292,25 +272,17 @@ namespace DxMessaging.Tests.Runtime.Core
                 emissionTarget,
                 () => { }
             );
-            existingHandle = RegisterPostProcessor(
-                scenario,
-                tokens[0],
-                emissionTarget,
-                () =>
+            existingHandle = RegisterPostProcessor(scenario, tokens[0], emissionTarget, () =>
+            {
+                existingCount++;
+                if (!added)
                 {
-                    existingCount++;
-                    if (!added)
-                    {
-                        added = true;
-                        addedHandle = RegisterPostProcessor(
-                            scenario,
-                            tokens[1],
-                            emissionTarget,
-                            () => addedCount++
-                        );
-                    }
+                    added = true;
+                    addedHandle = RegisterPostProcessor(scenario, tokens[1], emissionTarget, () =>
+                        addedCount++
+                    );
                 }
-            );
+            });
 
             EmitForScenario(scenario, components[0]);
             Assert.AreEqual(
@@ -371,16 +343,11 @@ namespace DxMessaging.Tests.Runtime.Core
             int[] counts = new int[2];
             InstanceId emissionTarget = ResolveEmissionTarget(scenario, components);
 
-            handlers[0] = RegisterHandler(
-                scenario,
-                tokens[0],
-                emissionTarget,
-                () =>
-                {
-                    counts[0]++;
-                    tokens[1].RemoveRegistration(handlers[1]);
-                }
-            );
+            handlers[0] = RegisterHandler(scenario, tokens[0], emissionTarget, () =>
+            {
+                counts[0]++;
+                tokens[1].RemoveRegistration(handlers[1]);
+            });
             handlers[1] = RegisterHandler(scenario, tokens[1], emissionTarget, () => counts[1]++);
 
             EmitForScenario(scenario, components[0]);

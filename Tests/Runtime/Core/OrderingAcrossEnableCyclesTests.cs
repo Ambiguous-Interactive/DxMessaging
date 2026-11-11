@@ -338,11 +338,8 @@ namespace DxMessaging.Tests.Runtime.Core
             string label
         )
         {
-            return ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                context,
-                () => order.Add(label)
+            return ScenarioCallbacks.RegisterCountingHandler(scenario, token, context, () =>
+                order.Add(label)
             );
         }
     }

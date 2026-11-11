@@ -11267,8 +11267,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
 
             return root.Q<VisualElement>(DxMessagingFlowGraphWindow.VisibleFlowCorridorsName)
-                    ?.Q<Label>(DxMessagingFlowGraphWindow.VisibleFlowCorridorsSummaryLabelName)
-                    ?.text
+                ?.Q<Label>(DxMessagingFlowGraphWindow.VisibleFlowCorridorsSummaryLabelName)
+                ?.text
                 ?? string.Empty;
         }
 
@@ -11288,8 +11288,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
 
             return root.Q<VisualElement>(ContextLanesName)
-                    ?.Q<Label>(ContextLanesSummaryLabelName)
-                    ?.text
+                ?.Q<Label>(ContextLanesSummaryLabelName)
+                ?.text
                 ?? string.Empty;
         }
 
@@ -11309,8 +11309,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
 
             return root.Q<VisualElement>(TraceMessageLanesName)
-                    ?.Q<Label>(TraceMessageLanesSummaryLabelName)
-                    ?.text
+                ?.Q<Label>(TraceMessageLanesSummaryLabelName)
+                ?.text
                 ?? string.Empty;
         }
 
@@ -11330,8 +11330,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
 
             return root.Q<VisualElement>(TraceTargetLanesName)
-                    ?.Q<Label>(TraceTargetLanesSummaryLabelName)
-                    ?.text
+                ?.Q<Label>(TraceTargetLanesSummaryLabelName)
+                ?.text
                 ?? string.Empty;
         }
 
@@ -11351,8 +11351,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
 
             return root.Q<VisualElement>(TraceRouteKindLanesName)
-                    ?.Q<Label>(TraceRouteKindLanesSummaryLabelName)
-                    ?.text
+                ?.Q<Label>(TraceRouteKindLanesSummaryLabelName)
+                ?.text
                 ?? string.Empty;
         }
 
@@ -11372,8 +11372,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
 
             return root.Q<VisualElement>(TraceIdLanesName)
-                    ?.Q<Label>(TraceIdLanesSummaryLabelName)
-                    ?.text
+                ?.Q<Label>(TraceIdLanesSummaryLabelName)
+                ?.text
                 ?? string.Empty;
         }
 
@@ -11390,8 +11390,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
 
             return root.Q<VisualElement>(MessageLanesName)
-                    ?.Q<Label>(MessageLanesSummaryLabelName)
-                    ?.text
+                ?.Q<Label>(MessageLanesSummaryLabelName)
+                ?.text
                 ?? string.Empty;
         }
 
@@ -11408,8 +11408,8 @@ namespace DxMessaging.Tests.Editor
             DxMessagingFlowGraphWindow.BuildGraphUi(root, snapshot);
 
             return root.Q<VisualElement>(TargetLanesName)
-                    ?.Q<Label>(TargetLanesSummaryLabelName)
-                    ?.text
+                ?.Q<Label>(TargetLanesSummaryLabelName)
+                ?.text
                 ?? string.Empty;
         }
 

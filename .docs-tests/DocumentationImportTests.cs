@@ -12,16 +12,396 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class DocumentationImportTests
 {
+    private static readonly int[] NoOwnedCallbacks = { 0, 0 };
     private static readonly CSharpParseOptions ProviderOptions = new(
         LanguageVersion.CSharp9,
         preprocessorSymbols: new[] { "UNITY_2021_3_OR_NEWER" }
     );
 
-    private static readonly Lazy<MetadataReference> PortableRuntime = new(() =>
-        MetadataReference.CreateFromImage(
-            RuntimeHashCompilationTests.CompilePortableRuntimeImage(false)
-        )
+    private static readonly Lazy<byte[]> PortableRuntimeImage = new(() =>
+        RuntimeHashCompilationTests.CompilePortableRuntimeImage(false)
     );
+    private static readonly Lazy<MetadataReference> PortableRuntime = new(() =>
+        MetadataReference.CreateFromImage(PortableRuntimeImage.Value)
+    );
+
+    /// <summary>Compiles the full ownership guide against real APIs and rejects broken group, move, and state calls.</summary>
+    [TestCase("published", true)]
+    [TestCase("group", false)]
+    [TestCase("source", false)]
+    [TestCase("state", false)]
+    public void SubscriptionOwnershipGuideUsesActualRuntimeContracts(
+        string shape,
+        bool expectedSuccess
+    )
+    {
+        DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
+        {
+            root = root.Parent;
+        }
+        Assert.That(root, Is.Not.Null, "Locate the subscription ownership guide.");
+        string path = Path.Combine(root!.FullName, "docs", "guides", "subscription-ownership.md");
+        Match[] examples = Regex
+            .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
+            .ToArray();
+        Assert.That(examples, Has.Length.EqualTo(1), path + ": one complete ownership example");
+        string source = examples[0].Groups["code"].Value;
+        string marker = string.Empty;
+        if (shape == "group")
+        {
+            source = source.Replace(
+                ".CreateGroup()",
+                ".CreateMissingGroup()",
+                StringComparison.Ordinal
+            );
+            marker = "CreateMissingGroup";
+        }
+        else if (shape == "source")
+        {
+            source = source.Replace(
+                ".RetargetSource(",
+                ".RetargetMissingSource(",
+                StringComparison.Ordinal
+            );
+            marker = "RetargetMissingSource";
+        }
+        else if (shape == "state")
+        {
+            source = source.Replace(
+                "RegisterBroadcast<ParentChanged, ParentSubscriptions>",
+                "RegisterBroadcast<ParentChanged, ParentSubscriptions, int>",
+                StringComparison.Ordinal
+            );
+            marker = "RegisterBroadcast";
+        }
+        else
+        {
+            Assert.That(shape, Is.EqualTo("published"), path + ": known control shape");
+        }
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        SyntaxTree tree = CSharpSyntaxTree.ParseText(
+            source,
+            new CSharpParseOptions(LanguageVersion.CSharp9),
+            path
+        );
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "SubscriptionOwnershipGuide",
+            new[] { tree },
+            references
+                .Split(Path.PathSeparator)
+                .Select(file => MetadataReference.CreateFromFile(file))
+                .Append(PortableRuntime.Value),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
+        Assert.That(
+            emitted.Success,
+            Is.EqualTo(expectedSuccess),
+            $"{path}; shape={shape}:\n" + string.Join("\n", emitted.Diagnostics)
+        );
+        if (!expectedSuccess)
+        {
+            Assert.That(
+                emitted.Diagnostics.Any(diagnostic =>
+                    diagnostic.Severity == DiagnosticSeverity.Error
+                    && diagnostic
+                        .GetMessage(System.Globalization.CultureInfo.InvariantCulture)
+                        .Contains(marker, StringComparison.Ordinal)
+                ),
+                Is.True,
+                $"{path}; shape={shape}: actual API binding must reject {marker}"
+            );
+        }
+    }
+
+    /// <summary>Executes the published owner against callbacks during first and later registration.</summary>
+    /// <remarks>2026-11-11: registration and group enrollment must finish before a reentrant owner disposal can release their cleanup.</remarks>
+    [TestCase(1, false)]
+    [TestCase(2, false)]
+    [TestCase(1, true)]
+    [TestCase(2, true)]
+    public void SubscriptionOwnershipGuideDefersDisposalUntilEnrollmentCompletes(
+        int disposeAt,
+        bool cleanupFailure
+    )
+    {
+        string probe = """
+            namespace SubscriptionOwnershipExample
+            {
+                using System;
+                using DxMessaging.Core;
+                using DxMessaging.Core.MessageBus;
+                using DxMessaging.Core.Messages;
+                using DxMessaging.Tests.Runtime;
+
+                public static class ReentryProbe
+                {
+                    public static int[] Run(int disposeAt, bool cleanupFailure)
+                    {
+                        MessageBus inner = new MessageBus();
+                        using LeakWatcher leaks = new LeakWatcher(inner);
+                        EnrollmentBus bus = new EnrollmentBus(inner) { DisposeAt = disposeAt };
+                        MessageHandler handler = new MessageHandler(new InstanceId(982), bus) { active = true };
+                        using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+                        token.DiagnosticMode = false;
+                        token.Enable();
+                        using ParentSubscriptions owner = new ParentSubscriptions(token);
+                        bus.OnAcceptance = () =>
+                        {
+                            bus.CleanupFailures = cleanupFailure ? 1 : 0;
+                            owner.Dispose();
+                        };
+                        Exception failure = null;
+                        InstanceId parent = new InstanceId(983);
+                        try
+                        {
+                            owner.BindParent(parent);
+                        }
+                        catch (Exception exception)
+                        {
+                            failure = exception;
+                        }
+                        finally
+                        {
+                            bus.CleanupFailures = 0;
+                        }
+                        owner.Dispose();
+                        if (cleanupFailure ? !ReferenceEquals(failure, bus.Failure) : failure != null)
+                        {
+                            throw new InvalidOperationException("Owner disposal must defer through enrollment and preserve the original retryable cleanup failure.", failure);
+                        }
+                        ParentChanged changed = new ParentChanged(9);
+                        ParentHidden hidden = default;
+                        bus.SourcedBroadcast(ref parent, ref changed);
+                        bus.SourcedBroadcast(ref parent, ref hidden);
+                        token.Disable();
+                        token.Enable();
+                        bus.SourcedBroadcast(ref parent, ref changed);
+                        bus.SourcedBroadcast(ref parent, ref hidden);
+                        return new[] { owner.Revision, owner.HiddenCount };
+                    }
+
+                    private sealed class EnrollmentBus : DelegatingMessageBus
+                    {
+                        internal readonly InvalidOperationException Failure = new InvalidOperationException("Rejected guide cleanup before forwarding.");
+                        internal int DisposeAt;
+                        internal int CleanupFailures;
+                        internal Action OnAcceptance;
+                        private int _registrations;
+
+                        internal EnrollmentBus(IMessageBus inner) : base(inner) { }
+
+                        public override MessageBusRegistration RegisterSourcedBroadcast<T>(InstanceId source, MessageHandler handler, int priority = 0)
+                        {
+                            if (++_registrations == DisposeAt)
+                            {
+                                OnAcceptance();
+                            }
+                            return base.RegisterSourcedBroadcast<T>(source, handler, priority);
+                        }
+
+                        public override void Deregister<T>(in MessageBusRegistration registration)
+                        {
+                            if (0 < CleanupFailures)
+                            {
+                                --CleanupFailures;
+                                throw Failure;
+                            }
+                            base.Deregister<T>(in registration);
+                        }
+                    }
+                }
+            }
+            """;
+        AssertOwnershipGuideProbe(
+            probe,
+            new object[] { disposeAt, cleanupFailure },
+            $"registration={disposeAt}, cleanupFailure={cleanupFailure}"
+        );
+    }
+
+    /// <summary>Executes persistent owner-disposal callbacks while cleanup succeeds or needs a retry.</summary>
+    /// <remarks>2026-11-11: Nested owner disposal must let the outer group finish before inspecting its retained Count.</remarks>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void SubscriptionOwnershipGuideAllowsReentrantDisposalDuringCleanup(bool cleanupFailure)
+    {
+        string probe = """
+            namespace SubscriptionOwnershipExample
+            {
+                using System;
+                using DxMessaging.Core;
+                using DxMessaging.Core.MessageBus;
+                using DxMessaging.Tests.Runtime;
+
+                public static class ReentryProbe
+                {
+                    public static int[] Run(bool cleanupFailure)
+                    {
+                        MessageBus inner = new MessageBus();
+                        using LeakWatcher leaks = new LeakWatcher(inner);
+                        CleanupBus bus = new CleanupBus(inner);
+                        MessageHandler handler = new MessageHandler(new InstanceId(984), bus) { active = true };
+                        using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+                        token.DiagnosticMode = false;
+                        token.Enable();
+                        using ParentSubscriptions owner = new ParentSubscriptions(token);
+                        InstanceId parent = new InstanceId(985);
+                        owner.BindParent(parent);
+                        bus.OnCleanup = owner.Dispose;
+                        bus.CleanupFailures = cleanupFailure ? 1 : 0;
+                        Exception first = null;
+                        Exception retry = null;
+                        try
+                        {
+                            try { owner.Dispose(); } catch (Exception exception) { first = exception; }
+                            bus.CleanupFailures = 0;
+                            try { owner.Dispose(); } catch (Exception exception) { retry = exception; }
+                            if (cleanupFailure ? !ReferenceEquals(first, bus.Failure) : first != null)
+                            {
+                                throw new InvalidOperationException("Nested disposal changed the outer cleanup outcome; callbacks=" + bus.Callbacks + ", first=" + first?.GetType().Name + ", retry=" + retry?.GetType().Name, first);
+                            }
+                            if (retry != null || bus.Callbacks < 2)
+                            {
+                                throw new InvalidOperationException("The persistent callback must run for both registrations and retry successfully.", retry);
+                            }
+                            ParentChanged changed = new ParentChanged(9);
+                            ParentHidden hidden = default;
+                            bus.SourcedBroadcast(ref parent, ref changed);
+                            bus.SourcedBroadcast(ref parent, ref hidden);
+                            token.Disable();
+                            token.Enable();
+                            bus.SourcedBroadcast(ref parent, ref changed);
+                            bus.SourcedBroadcast(ref parent, ref hidden);
+                            return new[] { owner.Revision, owner.HiddenCount };
+                        }
+                        finally
+                        {
+                            bus.OnCleanup = null;
+                            bus.CleanupFailures = 0;
+                            owner.Dispose();
+                        }
+                    }
+
+                    private sealed class CleanupBus : DelegatingMessageBus
+                    {
+                        internal readonly InvalidOperationException Failure = new InvalidOperationException("Rejected cleanup after nested owner disposal.");
+                        internal Action OnCleanup;
+                        internal int CleanupFailures;
+                        internal int Callbacks;
+                        internal CleanupBus(IMessageBus inner) : base(inner) { }
+                        public override void Deregister<T>(in MessageBusRegistration registration)
+                        {
+                            if (OnCleanup != null) { ++Callbacks; OnCleanup(); }
+                            if (0 < CleanupFailures) { --CleanupFailures; throw Failure; }
+                            base.Deregister<T>(in registration);
+                        }
+                    }
+                }
+            }
+            """;
+        AssertOwnershipGuideProbe(
+            probe,
+            new object[] { cleanupFailure },
+            $"persistent disposal callback, cleanupFailure={cleanupFailure}"
+        );
+    }
+
+    /// <summary>Runs an unchanged published guide fence against the real runtime and cleanup helpers.</summary>
+    private static void AssertOwnershipGuideProbe(string probe, object[] arguments, string label)
+    {
+        DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
+        {
+            root = root.Parent;
+        }
+        Assert.That(root, Is.Not.Null, "Locate the actual ownership guide and bus helpers.");
+        string path = Path.Combine(root!.FullName, "docs", "guides", "subscription-ownership.md");
+        Match[] examples = Regex
+            .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
+            .ToArray();
+        Assert.That(examples, Has.Length.EqualTo(1));
+
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        string helperRoot = Path.Combine(root.FullName, "Tests", "Runtime", "TestUtilities");
+        CSharpParseOptions options = new(LanguageVersion.CSharp9);
+        SyntaxTree[] trees =
+        {
+            CSharpSyntaxTree.ParseText(examples[0].Groups["code"].Value, options, path),
+            CSharpSyntaxTree.ParseText(
+                File.ReadAllText(Path.Combine(helperRoot, "DelegatingMessageBus.cs")),
+                options,
+                "ActualDelegatingMessageBus.cs"
+            ),
+            CSharpSyntaxTree.ParseText(
+                File.ReadAllText(Path.Combine(helperRoot, "LeakWatcher.cs")),
+                options,
+                "ActualLeakWatcher.cs"
+            ),
+            CSharpSyntaxTree.ParseText(
+                File.ReadAllText(Path.Combine(helperRoot, "EntryStorageInspection.cs")),
+                options,
+                "ActualEntryStorageInspection.cs"
+            ),
+            CSharpSyntaxTree.ParseText(
+                File.ReadAllText(Path.Combine(helperRoot, "MessageBusInspection.cs")),
+                options,
+                "ActualMessageBusInspection.cs"
+            ),
+            CSharpSyntaxTree.ParseText(probe, options, "GuideReentryProbe.cs"),
+        };
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "WallstopStudios.DxMessaging.Tests.Runtime",
+            trees,
+            references
+                .Split(Path.PathSeparator)
+                .Select(file => MetadataReference.CreateFromFile(file))
+                .Append(PortableRuntime.Value),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
+        Assert.That(
+            emitted.Success,
+            Is.True,
+            "Compile the actual guide and actual bus helpers:\n"
+                + string.Join("\n", emitted.Diagnostics)
+        );
+        System.Runtime.Loader.AssemblyLoadContext context = new(
+            "GuideOwnership_" + Guid.NewGuid().ToString("N"),
+            isCollectible: true
+        );
+        try
+        {
+            using MemoryStream runtime = new(PortableRuntimeImage.Value);
+            _ = context.LoadFromStream(runtime);
+            image.Position = 0;
+            System.Reflection.Assembly assembly = context.LoadFromStream(image);
+            object? result = assembly
+                .GetType("SubscriptionOwnershipExample.ReentryProbe", throwOnError: true)!
+                .GetMethod("Run")!
+                .Invoke(null, arguments);
+            Assert.That(
+                result,
+                Is.EqualTo(NoOwnedCallbacks),
+                label + ": disposed subscriptions must never deliver or replay."
+            );
+        }
+        finally
+        {
+            context.Unload();
+        }
+    }
 
     /// <summary>Check the inherited bus configuration call against the production declaration.</summary>
     /// <remarks>2026-11-03: ZenjectAwareComponent called Configure instead of its inherited API.</remarks>
@@ -128,8 +508,7 @@ internal sealed class DocumentationImportTests
             ProviderOptions,
             "DocumentedBridgeMessage.cs"
         );
-        string references =
-            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
             ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "BridgeAttributeImports",
@@ -213,6 +592,7 @@ internal sealed class DocumentationImportTests
         );
     }
 
+    /// <summary>Compiles documented message calls using only the imports shown with each sample.</summary>
     [TestCase("VContainerInitializer", false)]
     [TestCase("VContainerInitializer", true)]
     [TestCase("ScoreReporter", false)]
@@ -341,8 +721,7 @@ internal sealed class DocumentationImportTests
                 "ExternalUnityTypes.cs"
             )
         );
-        string references =
-            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
             ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "ProviderImports",
@@ -392,6 +771,7 @@ internal sealed class DocumentationImportTests
         );
     }
 
+    /// <summary>Compiles the documented fluent callback signature with its printed imports.</summary>
     [TestCase(false)]
     [TestCase(true)]
     public void BuilderCallbackSignatureResolvesFromDocumentedImports(bool qualifyParameter)
@@ -458,8 +838,7 @@ internal sealed class DocumentationImportTests
             + signature.NormalizeWhitespace().ToFullString()
             + " }";
         SyntaxTree tree = CSharpSyntaxTree.ParseText(source, options, "DocumentedCallback.cs");
-        string references =
-            (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
             ?? throw new InvalidOperationException("Runtime references are unavailable.");
         CSharpCompilation compilation = CSharpCompilation.Create(
             "DocumentationImports",

@@ -40,64 +40,61 @@ namespace DxMessaging.Tests.Editor.Allocations
             string section = BenchmarkDocumentation.GetOperatingSystemSection();
             BenchmarkSession session = new(section, "### ");
 
-            RunWithSession(
-                session,
-                () =>
+            RunWithSession(session, () =>
+            {
+                TimeSpan timeout = TimeSpan.FromSeconds(SampleSeconds);
+
+                _ = RunBenchmark(TimeSpan.FromMilliseconds(100), useProvider: false);
+                _ = RunBenchmark(TimeSpan.FromMilliseconds(100), useProvider: true);
+
+                List<PairedBenchmarkSample> samples = new(SampleCount);
+                for (int i = 0; i < SampleCount; i++)
                 {
-                    TimeSpan timeout = TimeSpan.FromSeconds(SampleSeconds);
-
-                    _ = RunBenchmark(TimeSpan.FromMilliseconds(100), useProvider: false);
-                    _ = RunBenchmark(TimeSpan.FromMilliseconds(100), useProvider: true);
-
-                    List<PairedBenchmarkSample> samples = new(SampleCount);
-                    for (int i = 0; i < SampleCount; i++)
+                    bool providerFirst = (i % 2) == 1;
+                    BenchmarkResult direct;
+                    BenchmarkResult provider;
+                    if (providerFirst)
                     {
-                        bool providerFirst = (i % 2) == 1;
-                        BenchmarkResult direct;
-                        BenchmarkResult provider;
-                        if (providerFirst)
-                        {
-                            provider = RunBenchmark(timeout, useProvider: true);
-                            direct = RunBenchmark(timeout, useProvider: false);
-                        }
-                        else
-                        {
-                            direct = RunBenchmark(timeout, useProvider: false);
-                            provider = RunBenchmark(timeout, useProvider: true);
-                        }
-
-                        Assert.That(
-                            direct.Count,
-                            Is.GreaterThan(0),
-                            "Direct benchmark produced no operations."
-                        );
-                        Assert.That(
-                            provider.Count,
-                            Is.GreaterThan(0),
-                            "Provider benchmark produced no operations."
-                        );
-                        samples.Add(new PairedBenchmarkSample(i + 1, direct, provider));
+                        provider = RunBenchmark(timeout, useProvider: true);
+                        direct = RunBenchmark(timeout, useProvider: false);
+                    }
+                    else
+                    {
+                        direct = RunBenchmark(timeout, useProvider: false);
+                        provider = RunBenchmark(timeout, useProvider: true);
                     }
 
-                    BenchmarkResult aggregateDirect = Aggregate(samples, useProvider: false);
-                    BenchmarkResult aggregateProvider = Aggregate(samples, useProvider: true);
-
-                    RecordBenchmark(
-                        "DxMessaging (Untargeted) - Direct Bus",
-                        aggregateDirect.Count,
-                        aggregateDirect.Duration,
-                        allocating: false
+                    Assert.That(
+                        direct.Count,
+                        Is.GreaterThan(0),
+                        "Direct benchmark produced no operations."
                     );
-                    RecordBenchmark(
-                        "DxMessaging (Untargeted) - Provider",
-                        aggregateProvider.Count,
-                        aggregateProvider.Duration,
-                        allocating: false
+                    Assert.That(
+                        provider.Count,
+                        Is.GreaterThan(0),
+                        "Provider benchmark produced no operations."
                     );
-
-                    WriteSampleDiagnostics(samples);
+                    samples.Add(new PairedBenchmarkSample(i + 1, direct, provider));
                 }
-            );
+
+                BenchmarkResult aggregateDirect = Aggregate(samples, useProvider: false);
+                BenchmarkResult aggregateProvider = Aggregate(samples, useProvider: true);
+
+                RecordBenchmark(
+                    "DxMessaging (Untargeted) - Direct Bus",
+                    aggregateDirect.Count,
+                    aggregateDirect.Duration,
+                    allocating: false
+                );
+                RecordBenchmark(
+                    "DxMessaging (Untargeted) - Provider",
+                    aggregateProvider.Count,
+                    aggregateProvider.Duration,
+                    allocating: false
+                );
+
+                WriteSampleDiagnostics(samples);
+            });
         }
 
         private BenchmarkResult RunBenchmark(TimeSpan timeout, bool useProvider)

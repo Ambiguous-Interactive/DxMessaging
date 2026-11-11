@@ -4,7 +4,7 @@ babel==2.18.0
     # via
     #   mkdocs-git-revision-date-localized-plugin
     #   mkdocs-material
-backrefs==8.2
+backrefs==8.2.1
     # via mkdocs-material
 certifi==2026.10.23
     # via requests
@@ -89,7 +89,7 @@ pymdown-extensions==12.3 ; python_full_version < '3.11.5'
     # via
     #   -r requirements-docs.in
     #   mkdocs-material
-pymdown-extensions==13.0 ; python_full_version >= '3.11.5'
+pymdown-extensions==13.1 ; python_full_version >= '3.11.5'
     # via
     #   -r requirements-docs.in
     #   mkdocs-material

@@ -676,11 +676,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 Register a handler whose callback would bump handlerCount; we
                 never want to see it fire after the reset.
             */
-            _ = ScenarioCallbacks.RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () => ++handlerCount
+            _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
+                ++handlerCount
             );
 
             /*
@@ -806,11 +803,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     route,
                     () => ++persistentCalls
                 );
-                _ = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    ordinaryToken,
-                    route,
-                    () => ++ordinaryCalls
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, ordinaryToken, route, () =>
+                    ++ordinaryCalls
                 );
                 ScenarioCallbacks.EmitForKind(scenario, route);
                 Assert.That(

@@ -47,13 +47,11 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token1 = GetToken(component1);
             MessageRegistrationToken token2 = GetToken(component2);
 
-            _ = token1.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
-                test1,
-                _ => ++test1ReceiveCount
+            _ = token1.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test1, _ =>
+                ++test1ReceiveCount
             );
-            _ = token2.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
-                test2,
-                _ => ++test2ReceiveCount
+            _ = token2.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test2, _ =>
+                ++test2ReceiveCount
             );
 
             SimpleBroadcastMessage message = new();
@@ -188,9 +186,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle handle =
                 token1.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test1, Test1Receive);
             _ = handles.Add(handle);
-            _ = token1.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
-                test1,
-                _ => ++test1ReceiveCount
+            _ = token1.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test1, _ =>
+                ++test1ReceiveCount
             );
             handle = token2.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
                 test2,
@@ -265,13 +262,11 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token1 = GetToken(component1);
             MessageRegistrationToken token2 = GetToken(component2);
 
-            _ = token1.RegisterComponentBroadcast<SimpleBroadcastMessage>(
-                component1,
-                _ => ++test1ReceiveCount
+            _ = token1.RegisterComponentBroadcast<SimpleBroadcastMessage>(component1, _ =>
+                ++test1ReceiveCount
             );
-            _ = token2.RegisterComponentBroadcast<SimpleBroadcastMessage>(
-                component2,
-                _ => ++test2ReceiveCount
+            _ = token2.RegisterComponentBroadcast<SimpleBroadcastMessage>(component2, _ =>
+                ++test2ReceiveCount
             );
 
             SimpleBroadcastMessage message = new();
@@ -406,9 +401,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token2 = GetToken(component2);
 
             _ = token1.RegisterComponentBroadcast<SimpleBroadcastMessage>(component1, Test1Receive);
-            _ = token1.RegisterComponentBroadcast<SimpleBroadcastMessage>(
-                component1,
-                _ => ++test1ReceiveCount
+            _ = token1.RegisterComponentBroadcast<SimpleBroadcastMessage>(component1, _ =>
+                ++test1ReceiveCount
             );
             _ = token2.RegisterComponentBroadcast<SimpleBroadcastMessage>(component2, Test2Receive);
 

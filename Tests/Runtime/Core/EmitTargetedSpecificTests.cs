@@ -46,13 +46,11 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token1 = GetToken(component1);
             MessageRegistrationToken token2 = GetToken(component2);
 
-            _ = token1.RegisterGameObjectTargeted<SimpleTargetedMessage>(
-                test1,
-                _ => ++test1TargetedCount
+            _ = token1.RegisterGameObjectTargeted<SimpleTargetedMessage>(test1, _ =>
+                ++test1TargetedCount
             );
-            _ = token2.RegisterGameObjectTargeted<SimpleTargetedMessage>(
-                test2,
-                _ => ++test2TargetedCount
+            _ = token2.RegisterGameObjectTargeted<SimpleTargetedMessage>(test2, _ =>
+                ++test2TargetedCount
             );
 
             SimpleTargetedMessage message = new();
@@ -184,9 +182,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token2 = GetToken(component2);
 
             _ = token1.RegisterGameObjectTargeted<SimpleTargetedMessage>(test1, Test1Receive);
-            _ = token1.RegisterGameObjectTargeted<SimpleTargetedMessage>(
-                test1,
-                _ => ++test1ReceiveCount
+            _ = token1.RegisterGameObjectTargeted<SimpleTargetedMessage>(test1, _ =>
+                ++test1ReceiveCount
             );
             _ = token2.RegisterGameObjectTargeted<SimpleTargetedMessage>(test2, Test2Receive);
 
@@ -257,13 +254,11 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token1 = GetToken(component1);
             MessageRegistrationToken token2 = GetToken(component2);
 
-            _ = token1.RegisterComponentTargeted<SimpleTargetedMessage>(
-                component1,
-                _ => ++test1ReceiveCount
+            _ = token1.RegisterComponentTargeted<SimpleTargetedMessage>(component1, _ =>
+                ++test1ReceiveCount
             );
-            _ = token2.RegisterComponentTargeted<SimpleTargetedMessage>(
-                component2,
-                _ => ++test2ReceiveCount
+            _ = token2.RegisterComponentTargeted<SimpleTargetedMessage>(component2, _ =>
+                ++test2ReceiveCount
             );
 
             SimpleTargetedMessage message = new();
@@ -398,9 +393,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationToken token2 = GetToken(component2);
 
             _ = token1.RegisterComponentTargeted<SimpleTargetedMessage>(component1, Test1Receive);
-            _ = token1.RegisterComponentTargeted<SimpleTargetedMessage>(
-                component1,
-                _ => ++test1ReceiveCount
+            _ = token1.RegisterComponentTargeted<SimpleTargetedMessage>(component1, _ =>
+                ++test1ReceiveCount
             );
             _ = token2.RegisterComponentTargeted<SimpleTargetedMessage>(component2, Test2Receive);
 

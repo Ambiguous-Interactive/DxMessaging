@@ -103,16 +103,11 @@ namespace DxMessaging.Tests.Runtime.Core
             int innerCount = 0;
             List<string> trace = new List<string>(4);
 
-            _ = RegisterCountingHandler(
-                innerScenario,
-                token,
-                hostId,
-                () =>
-                {
-                    trace.Add("inner");
-                    ++innerCount;
-                }
-            );
+            _ = RegisterCountingHandler(innerScenario, token, hostId, () =>
+            {
+                trace.Add("inner");
+                ++innerCount;
+            });
             MessageRegistrationHandle outerHandle = RegisterCountingHandler(
                 scenario,
                 token,
@@ -200,16 +195,11 @@ namespace DxMessaging.Tests.Runtime.Core
             try
             {
                 _ = RegisterCountingHandler(outerScenario, token, hostId, () => { });
-                _ = RegisterCountingHandler(
-                    innerScenario,
-                    token,
-                    hostId,
-                    () =>
-                    {
-                        trace.Add("nested-handler");
-                        nested = bus.EmissionId;
-                    }
-                );
+                _ = RegisterCountingHandler(innerScenario, token, hostId, () =>
+                {
+                    trace.Add("nested-handler");
+                    nested = bus.EmissionId;
+                });
                 _ = ScenarioCallbacks.RegisterCountingPostProcessor(
                     outerScenario,
                     token,
@@ -487,27 +477,19 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle firstHandle = default;
             MessageRegistrationHandle? respawnedHandle = null;
 
-            firstHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                () =>
+            firstHandle = RegisterCountingHandler(scenario, token, hostId, () =>
+            {
+                ++firstHandlerCount;
+                if (firstHandle != default)
                 {
-                    ++firstHandlerCount;
-                    if (firstHandle != default)
-                    {
-                        token.RemoveRegistration(firstHandle);
-                        firstHandle = default;
-                    }
-
-                    respawnedHandle ??= RegisterCountingHandler(
-                        scenario,
-                        token,
-                        hostId,
-                        () => ++respawnedHandlerCount
-                    );
+                    token.RemoveRegistration(firstHandle);
+                    firstHandle = default;
                 }
-            );
+
+                respawnedHandle ??= RegisterCountingHandler(scenario, token, hostId, () =>
+                    ++respawnedHandlerCount
+                );
+            });
 
             EmitForScenario(scenario, hostId);
             Assert.AreEqual(

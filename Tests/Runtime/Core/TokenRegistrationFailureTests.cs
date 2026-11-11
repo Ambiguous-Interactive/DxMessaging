@@ -166,11 +166,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 {
                     int captured = index;
                     nested.Add(
-                        RegisterHandler(
-                            state.Token,
-                            scenario,
-                            false,
-                            () => state.Calls.Add(captured.ToString())
+                        RegisterHandler(state.Token, scenario, false, () =>
+                            state.Calls.Add(captured.ToString())
                         )
                     );
                 }

@@ -173,14 +173,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             int count = 0;
             MessageRegistrationHandle handle = default;
-            handle = token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
-                test,
-                _ =>
-                {
-                    ++count;
-                    token.RemoveRegistration(handle);
-                }
-            );
+            handle = token.RegisterGameObjectTargeted<SimpleTargetedMessage>(test, _ =>
+            {
+                ++count;
+                token.RemoveRegistration(handle);
+            });
 
             SimpleTargetedMessage message = new();
             message.EmitGameObjectTargeted(test);
@@ -203,14 +200,11 @@ namespace DxMessaging.Tests.Runtime.Core
 
             int count = 0;
             MessageRegistrationHandle handle = default;
-            handle = token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
-                test,
-                _ =>
-                {
-                    ++count;
-                    token.RemoveRegistration(handle);
-                }
-            );
+            handle = token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test, _ =>
+            {
+                ++count;
+                token.RemoveRegistration(handle);
+            });
 
             SimpleBroadcastMessage message = new();
             message.EmitGameObjectBroadcast(test);
@@ -380,17 +374,14 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle? secondaryHandle = null;
 
             MessageRegistrationHandle primaryHandle =
-                token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
-                    test,
-                    _ =>
-                    {
-                        ++primaryCount;
-                        secondaryHandle ??= token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
-                            test,
-                            _ => ++secondaryCount
-                        );
-                    }
-                );
+                token.RegisterGameObjectTargeted<SimpleTargetedMessage>(test, _ =>
+                {
+                    ++primaryCount;
+                    secondaryHandle ??= token.RegisterGameObjectTargeted<SimpleTargetedMessage>(
+                        test,
+                        _ => ++secondaryCount
+                    );
+                });
 
             SimpleTargetedMessage message = new();
             message.EmitGameObjectTargeted(test);
@@ -428,18 +419,14 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageRegistrationHandle? secondaryHandle = null;
 
             MessageRegistrationHandle primaryHandle =
-                token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
-                    test,
-                    _ =>
-                    {
-                        ++primaryCount;
-                        secondaryHandle ??=
-                            token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
-                                test,
-                                _ => ++secondaryCount
-                            );
-                    }
-                );
+                token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test, _ =>
+                {
+                    ++primaryCount;
+                    secondaryHandle ??= token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
+                        test,
+                        _ => ++secondaryCount
+                    );
+                });
 
             SimpleBroadcastMessage message = new();
             message.EmitGameObjectBroadcast(test);

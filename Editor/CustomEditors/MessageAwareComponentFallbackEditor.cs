@@ -90,9 +90,8 @@ namespace DxMessaging.Editor.CustomEditors
 
         public override VisualElement CreateInspectorGUI()
         {
-            return BuildInspectorGUI(
-                this,
-                () => MessageAwareComponentInspectorOverlay.ResolveInspectorState(target)
+            return BuildInspectorGUI(this, () =>
+                MessageAwareComponentInspectorOverlay.ResolveInspectorState(target)
             );
         }
 
@@ -254,8 +253,8 @@ namespace DxMessaging.Editor.CustomEditors
             )
             {
                 _warningHost = warningHost ?? throw new ArgumentNullException(nameof(warningHost));
-                _resolveState =
-                    resolveState ?? throw new ArgumentNullException(nameof(resolveState));
+                _resolveState = resolveState
+                    ?? throw new ArgumentNullException(nameof(resolveState));
             }
 
             internal void Connect()

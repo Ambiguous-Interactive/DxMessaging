@@ -298,15 +298,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 throw new ArgumentNullException(nameof(operation));
             }
 
-            return MeasureMinCore(
-                attempts,
-                prepare,
-                () =>
-                {
-                    operation();
-                    return default(NoDiagnostics);
-                }
-            ).GcAllocations;
+            return MeasureMinCore(attempts, prepare, () =>
+            {
+                operation();
+                return default(NoDiagnostics);
+            }).GcAllocations;
         }
 
         /// <summary>

@@ -995,9 +995,8 @@ namespace DxMessaging.Tests.Editor
             MessageAwareComponentInspectorState currentState =
                 MessageAwareComponentInspectorState.None;
 
-            VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(
-                editor,
-                () => currentState
+            VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(editor, () =>
+                currentState
             );
             AttachToShownWindow(root);
 
@@ -1070,9 +1069,8 @@ namespace DxMessaging.Tests.Editor
             string fullName = GetOverlayTypeName(component);
             MessageAwareComponentInspectorState currentState =
                 MessageAwareComponentInspectorState.None;
-            VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(
-                editor,
-                () => currentState
+            VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(editor, () =>
+                currentState
             );
 
             currentState = MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
@@ -1100,9 +1098,8 @@ namespace DxMessaging.Tests.Editor
             );
             MessageAwareComponentFallbackEditor editor = CreateFallbackEditor(component);
             MessageAwareComponentInspectorState current = MessageAwareComponentInspectorState.None;
-            VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(
-                editor,
-                () => current
+            VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(editor, () =>
+                current
             );
             AttachToShownWindow(root);
             object binding = root.userData;
@@ -1174,23 +1171,21 @@ namespace DxMessaging.Tests.Editor
             using EditorDelayCallScope scheduledMutations = new(
                 typeof(MessageAwareComponentInspectorOverlay)
             );
-            VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(
-                editor,
-                () =>
-                    settings._baseCallIgnoredTypes.Contains(fullName)
-                        ? MessageAwareComponentInspectorState.ForIgnoredType(
-                            component,
-                            settings,
-                            fullName,
-                            isFreshThisSession: true
-                        )
-                        : MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
-                            component,
-                            settings,
-                            fullName,
-                            entry,
-                            isFreshThisSession: true
-                        )
+            VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(editor, () =>
+                settings._baseCallIgnoredTypes.Contains(fullName)
+                    ? MessageAwareComponentInspectorState.ForIgnoredType(
+                        component,
+                        settings,
+                        fullName,
+                        isFreshThisSession: true
+                    )
+                    : MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
+                        component,
+                        settings,
+                        fullName,
+                        entry,
+                        isFreshThisSession: true
+                    )
             );
             AttachToShownWindow(root);
             Button ignoreType = root.Q<Button>(
@@ -1236,23 +1231,21 @@ namespace DxMessaging.Tests.Editor
             using EditorDelayCallScope scheduledMutations = new(
                 typeof(MessageAwareComponentInspectorOverlay)
             );
-            VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(
-                editor,
-                () =>
-                    settings._baseCallIgnoredTypes.Contains(fullName)
-                        ? MessageAwareComponentInspectorState.ForIgnoredType(
-                            component,
-                            settings,
-                            fullName,
-                            isFreshThisSession: true
-                        )
-                        : MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
-                            component,
-                            settings,
-                            fullName,
-                            entry,
-                            isFreshThisSession: true
-                        )
+            VisualElement root = MessageAwareComponentFallbackEditor.BuildInspectorGUI(editor, () =>
+                settings._baseCallIgnoredTypes.Contains(fullName)
+                    ? MessageAwareComponentInspectorState.ForIgnoredType(
+                        component,
+                        settings,
+                        fullName,
+                        isFreshThisSession: true
+                    )
+                    : MessageAwareComponentInspectorState.ForMissingBaseCallWarning(
+                        component,
+                        settings,
+                        fullName,
+                        entry,
+                        isFreshThisSession: true
+                    )
             );
             AttachToShownWindow(root);
             Button stopIgnoring = root.Q<Button>(

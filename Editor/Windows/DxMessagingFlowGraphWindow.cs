@@ -3006,25 +3006,21 @@ namespace DxMessaging.Editor.Windows
             for (int sweep = 0; sweep < sweepCount; sweep++)
             {
                 Dictionary<string, int> messageIndexes = CreateGraphOrderIndexes(messageNames);
-                receiverIds = OrderGraphLayer(
-                    receiverIds,
-                    receiverId =>
-                        messagesByReceiver
-                            .GetValueOrDefault(receiverId, Array.Empty<string>())
-                            .Select(messageName =>
-                                messageIndexes.GetValueOrDefault(messageName, int.MaxValue)
-                            )
+                receiverIds = OrderGraphLayer(receiverIds, receiverId =>
+                    messagesByReceiver
+                        .GetValueOrDefault(receiverId, Array.Empty<string>())
+                        .Select(messageName =>
+                            messageIndexes.GetValueOrDefault(messageName, int.MaxValue)
+                        )
                 );
 
                 Dictionary<string, int> receiverIndexes = CreateGraphOrderIndexes(receiverIds);
-                messageNames = OrderGraphLayer(
-                    messageNames,
-                    messageName =>
-                        receiversByMessage
-                            .GetValueOrDefault(messageName, Array.Empty<string>())
-                            .Select(receiverId =>
-                                receiverIndexes.GetValueOrDefault(receiverId, int.MaxValue)
-                            )
+                messageNames = OrderGraphLayer(messageNames, messageName =>
+                    receiversByMessage
+                        .GetValueOrDefault(messageName, Array.Empty<string>())
+                        .Select(receiverId =>
+                            receiverIndexes.GetValueOrDefault(receiverId, int.MaxValue)
+                        )
                 );
             }
         }
@@ -3572,15 +3568,15 @@ namespace DxMessaging.Editor.Windows
             }
 
             return connections
-                    .Where(connection =>
-                        string.Equals(
-                            connection.TargetComponentId,
-                            componentId,
-                            StringComparison.Ordinal
-                        )
+                .Where(connection =>
+                    string.Equals(
+                        connection.TargetComponentId,
+                        componentId,
+                        StringComparison.Ordinal
                     )
-                    .Select(connection => connection.TargetComponentPath)
-                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
+                )
+                .Select(connection => connection.TargetComponentPath)
+                .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path))
                 ?? componentId;
         }
 
@@ -9765,10 +9761,10 @@ namespace DxMessaging.Editor.Windows
                 IReadOnlyList<string> warnings
             )
             {
-                ComponentNodes =
-                    componentNodes ?? throw new ArgumentNullException(nameof(componentNodes));
-                MessageNodes =
-                    messageNodes ?? throw new ArgumentNullException(nameof(messageNodes));
+                ComponentNodes = componentNodes
+                    ?? throw new ArgumentNullException(nameof(componentNodes));
+                MessageNodes = messageNodes
+                    ?? throw new ArgumentNullException(nameof(messageNodes));
                 Edges = edges ?? throw new ArgumentNullException(nameof(edges));
                 TracePaths = tracePaths ?? throw new ArgumentNullException(nameof(tracePaths));
                 Warnings = warnings ?? throw new ArgumentNullException(nameof(warnings));
@@ -9904,8 +9900,8 @@ namespace DxMessaging.Editor.Windows
             IReadOnlyList<string> warnings
         )
         {
-            ComponentNodes =
-                componentNodes ?? throw new ArgumentNullException(nameof(componentNodes));
+            ComponentNodes = componentNodes
+                ?? throw new ArgumentNullException(nameof(componentNodes));
             MessageNodes = messageNodes ?? throw new ArgumentNullException(nameof(messageNodes));
             Edges = edges ?? throw new ArgumentNullException(nameof(edges));
             TracePaths = tracePaths ?? throw new ArgumentNullException(nameof(tracePaths));
@@ -10007,8 +10003,8 @@ namespace DxMessaging.Editor.Windows
                 : messageKindName;
             RecentEmissionSites = recentEmissionSites ?? Array.Empty<string>();
             RecentContexts = recentContexts ?? Array.Empty<string>();
-            RecentContextComponentIds =
-                recentContextComponentIds ?? new Dictionary<string, string>();
+            RecentContextComponentIds = recentContextComponentIds
+                ?? new Dictionary<string, string>();
         }
 
         internal string MessageTypeName { get; }

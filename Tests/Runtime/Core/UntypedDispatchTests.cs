@@ -46,15 +46,13 @@ namespace DxMessaging.Tests.Runtime.Core
                         )
                     );
                     handles.Add(
-                        token.RegisterTargeted<MultiKindMessage>(
-                            target,
-                            (in MultiKindMessage _) => ++targetedCount
+                        token.RegisterTargeted<MultiKindMessage>(target, (in MultiKindMessage _) =>
+                            ++targetedCount
                         )
                     );
                     handles.Add(
-                        token.RegisterBroadcast<MultiKindMessage>(
-                            source,
-                            (in MultiKindMessage _) => ++broadcastCount
+                        token.RegisterBroadcast<MultiKindMessage>(source, (in MultiKindMessage _) =>
+                            ++broadcastCount
                         )
                     );
 

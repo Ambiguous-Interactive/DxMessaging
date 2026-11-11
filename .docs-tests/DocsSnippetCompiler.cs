@@ -527,14 +527,12 @@ internal static class DocsSnippetCompiler
             .SelectMany(field => field.Declaration.Variables)
             .Where(variable => variable.Initializer == null)
             .ToArray();
-        return root.ReplaceNodes(
-            variables,
-            (original, _) =>
-                original.WithInitializer(
-                    SyntaxFactory.EqualsValueClause(
-                        SyntaxFactory.LiteralExpression(SyntaxKind.DefaultLiteralExpression)
-                    )
+        return root.ReplaceNodes(variables, (original, _) =>
+            original.WithInitializer(
+                SyntaxFactory.EqualsValueClause(
+                    SyntaxFactory.LiteralExpression(SyntaxKind.DefaultLiteralExpression)
                 )
+            )
         );
     }
 
@@ -580,13 +578,11 @@ internal static class DocsSnippetCompiler
                 && !constructor.Modifiers.Any(SyntaxKind.ExternKeyword)
             )
             .ToArray();
-        CompilationUnitSyntax normalizedRoot = root.ReplaceNodes(
-            constructors,
-            (original, _) =>
-                original
-                    .WithSemicolonToken(default)
-                    .WithExpressionBody(CreateNotImplementedExpressionBody())
-                    .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
+        CompilationUnitSyntax normalizedRoot = root.ReplaceNodes(constructors, (original, _) =>
+            original
+                .WithSemicolonToken(default)
+                .WithExpressionBody(CreateNotImplementedExpressionBody())
+                .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
         );
         MethodDeclarationSyntax[] methods = normalizedRoot
             .DescendantNodes()
@@ -599,13 +595,11 @@ internal static class DocsSnippetCompiler
                 && type is not InterfaceDeclarationSyntax
             )
             .ToArray();
-        return normalizedRoot.ReplaceNodes(
-            methods,
-            (original, _) =>
-                original
-                    .WithSemicolonToken(default)
-                    .WithExpressionBody(CreateNotImplementedExpressionBody())
-                    .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
+        return normalizedRoot.ReplaceNodes(methods, (original, _) =>
+            original
+                .WithSemicolonToken(default)
+                .WithExpressionBody(CreateNotImplementedExpressionBody())
+                .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
         );
     }
 

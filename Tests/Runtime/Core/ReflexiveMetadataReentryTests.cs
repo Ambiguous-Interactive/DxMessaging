@@ -84,36 +84,33 @@ namespace DxMessaging.Tests.Runtime.Core
                         bool armed = false;
                         int callbacks = 0;
                         int nestedReturns = 0;
-                        MetadataCallbackType metadata = new(
-                            typeof(int),
-                            () =>
+                        MetadataCallbackType metadata = new(typeof(int), () =>
+                        {
+                            if (!armed)
                             {
-                                if (!armed)
-                                {
-                                    return;
-                                }
-                                armed = false;
-                                ++callbacks;
-                                if (action == ReentryAction.SameMessage)
-                                {
-                                    message.EmitTargeted(target, bus);
-                                    ++nestedReturns;
-                                }
-                                else if (action != ReentryAction.Observe)
-                                {
-                                    ReflexiveMessage nested = new(
-                                        action == ReentryAction.DifferentMethod
-                                            ? nameof(ReflexiveReentryReceiver.ReceiveOther)
-                                            : nameof(ReflexiveReentryReceiver.Receive),
-                                        ReflexiveSendMode.Flat,
-                                        new object[] { 1, 2 },
-                                        types
-                                    );
-                                    nested.EmitTargeted(target, bus);
-                                    ++nestedReturns;
-                                }
+                                return;
                             }
-                        );
+                            armed = false;
+                            ++callbacks;
+                            if (action == ReentryAction.SameMessage)
+                            {
+                                message.EmitTargeted(target, bus);
+                                ++nestedReturns;
+                            }
+                            else if (action != ReentryAction.Observe)
+                            {
+                                ReflexiveMessage nested = new(
+                                    action == ReentryAction.DifferentMethod
+                                        ? nameof(ReflexiveReentryReceiver.ReceiveOther)
+                                        : nameof(ReflexiveReentryReceiver.Receive),
+                                    ReflexiveSendMode.Flat,
+                                    new object[] { 1, 2 },
+                                    types
+                                );
+                                nested.EmitTargeted(target, bus);
+                                ++nestedReturns;
+                            }
+                        });
                         types[metadataSlot] = metadata;
                         message = new ReflexiveMessage(
                             nameof(ReflexiveReentryReceiver.Receive),

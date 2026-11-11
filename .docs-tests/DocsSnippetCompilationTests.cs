@@ -512,9 +512,9 @@ internal sealed class DocsSnippetCompilationTests
     {
         // The Unity reference shortens UnityEngine types while retaining their public names.
         return node?.WithoutTrivia()
-                .NormalizeWhitespace()
-                .ToFullString()
-                .Replace("UnityEngine.", string.Empty, StringComparison.Ordinal)
+            .NormalizeWhitespace()
+            .ToFullString()
+            .Replace("UnityEngine.", string.Empty, StringComparison.Ordinal)
             ?? string.Empty;
     }
 
@@ -2779,8 +2779,8 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
                 return docsDirectory;
             }
 
-            string parentDirectoryPath =
-                Path.GetDirectoryName(currentDirectoryPath) ?? string.Empty;
+            string parentDirectoryPath = Path.GetDirectoryName(currentDirectoryPath)
+                ?? string.Empty;
             if (string.IsNullOrEmpty(parentDirectoryPath))
             {
                 break;

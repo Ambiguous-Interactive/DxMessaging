@@ -191,17 +191,13 @@ namespace DxMessaging.Tests.Runtime.Comparisons
                     bridge.EmitOnce();
                 }
 
-                return AllocationProbe.MeasureMin(
-                    Attempts,
-                    prepare: null,
-                    operation: () =>
+                return AllocationProbe.MeasureMin(Attempts, prepare: null, operation: () =>
+                {
+                    for (int i = 0; i < Emits; i++)
                     {
-                        for (int i = 0; i < Emits; i++)
-                        {
-                            bridge.EmitOnce();
-                        }
+                        bridge.EmitOnce();
                     }
-                );
+                });
             }
         }
     }

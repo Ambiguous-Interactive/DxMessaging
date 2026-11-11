@@ -156,9 +156,8 @@ namespace DxMessaging.Tests
                     BindingFlags.Instance | BindingFlags.NonPublic
                 )
                 .Invoke(bus, new object[] { method });
-            MethodInfo lookup = Array.Find(
-                sink.GetType().GetMethods(),
-                candidate => candidate.Name == "TryGetValue" && candidate.IsGenericMethodDefinition
+            MethodInfo lookup = Array.Find(sink.GetType().GetMethods(), candidate =>
+                candidate.Name == "TryGetValue" && candidate.IsGenericMethodDefinition
             );
             object[] arguments = { null };
             if (!(bool)lookup.MakeGenericMethod(typeof(TMessage)).Invoke(sink, arguments))

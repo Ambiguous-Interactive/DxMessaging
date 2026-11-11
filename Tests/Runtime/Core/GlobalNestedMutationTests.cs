@@ -172,69 +172,61 @@ namespace DxMessaging.Tests.Runtime.Core
             int depth = 0;
             bool mutated = false;
             MessageRegistrationHandle removed = default;
-            Register(
-                state.Token,
-                shape != 0,
-                () =>
+            Register(state.Token, shape != 0, () =>
+            {
+                state.Calls.Add("d" + depth + ":A");
+                if (depth == 0)
                 {
-                    state.Calls.Add("d" + depth + ":A");
-                    if (depth == 0)
+                    if (mutated)
                     {
-                        if (mutated)
-                        {
-                            return;
-                        }
-                        mutated = true;
-                        if (mutation == 2 || mutation == 3)
-                        {
-                            state.Token.RemoveRegistration(removed);
-                        }
-                        if (mutation == 1 || mutation == 3)
-                        {
-                            Register(
-                                state.Token,
-                                shape == 1,
-                                () => state.Calls.Add("d" + depth + ":C")
-                            );
-                        }
-                        if (throwing == 1)
-                        {
-                            throw failure;
-                        }
+                        return;
                     }
-                    if (throwing == 2 && depth == nestingDepth)
+                    mutated = true;
+                    if (mutation == 2 || mutation == 3)
                     {
-                        throw failure;
+                        state.Token.RemoveRegistration(removed);
                     }
-                    if (depth < nestingDepth)
+                    if (mutation == 1 || mutation == 3)
                     {
-                        ++depth;
-                        MessageKind nestedKind =
-                            depth % 2 == 0
-                                ? scenario.Kind
-                                : (MessageKind)(((int)scenario.Kind + kindOffset) % 3);
-                        try
-                        {
-                            state.Emit(nestedKind);
-                        }
-                        finally
-                        {
-                            --depth;
-                        }
+                        Register(state.Token, shape == 1, () =>
+                            state.Calls.Add("d" + depth + ":C")
+                        );
                     }
-                    if (throwing == 3 && depth == 0)
+                    if (throwing == 1)
                     {
                         throw failure;
                     }
                 }
-            );
+                if (throwing == 2 && depth == nestingDepth)
+                {
+                    throw failure;
+                }
+                if (depth < nestingDepth)
+                {
+                    ++depth;
+                    MessageKind nestedKind =
+                        depth % 2 == 0
+                            ? scenario.Kind
+                            : (MessageKind)(((int)scenario.Kind + kindOffset) % 3);
+                    try
+                    {
+                        state.Emit(nestedKind);
+                    }
+                    finally
+                    {
+                        --depth;
+                    }
+                }
+                if (throwing == 3 && depth == 0)
+                {
+                    throw failure;
+                }
+            });
             for (int index = 0; index < count - 1; ++index)
             {
                 int captured = index;
-                removed = Register(
-                    state.Token,
-                    shape == 1,
-                    () => state.Calls.Add("d" + depth + ":P" + captured)
+                removed = Register(state.Token, shape == 1, () =>
+                    state.Calls.Add("d" + depth + ":P" + captured)
                 );
             }
 
@@ -354,35 +346,31 @@ namespace DxMessaging.Tests.Runtime.Core
             int depth = 0;
             MessageRegistrationHandle removed = default;
             InvalidOperationException failure = new InvalidOperationException(label);
-            Register(
-                state.Token,
-                shape != 0,
-                () =>
+            Register(state.Token, shape != 0, () =>
+            {
+                state.Calls.Add("d" + depth + ":A");
+                if (depth != 0)
                 {
-                    state.Calls.Add("d" + depth + ":A");
-                    if (depth != 0)
+                    state.Bus.ResetState();
+                    Register(state.Token, shape == 1, () => state.Calls.Add("R"));
+                    if (throwing != 0)
                     {
-                        state.Bus.ResetState();
-                        Register(state.Token, shape == 1, () => state.Calls.Add("R"));
-                        if (throwing != 0)
-                        {
-                            throw failure;
-                        }
-                        return;
+                        throw failure;
                     }
-                    state.Token.RemoveRegistration(removed);
-                    Register(state.Token, shape == 1, () => state.Calls.Add("C"));
-                    ++depth;
-                    try
-                    {
-                        state.Emit(scenario.Kind);
-                    }
-                    finally
-                    {
-                        --depth;
-                    }
+                    return;
                 }
-            );
+                state.Token.RemoveRegistration(removed);
+                Register(state.Token, shape == 1, () => state.Calls.Add("C"));
+                ++depth;
+                try
+                {
+                    state.Emit(scenario.Kind);
+                }
+                finally
+                {
+                    --depth;
+                }
+            });
             for (int index = 0; index < count - 1; ++index)
             {
                 int captured = index;
@@ -421,35 +409,31 @@ namespace DxMessaging.Tests.Runtime.Core
             List<MessageRegistrationHandle> peers = new List<MessageRegistrationHandle>();
             bool mutated = false;
             int depth = 0;
-            Register(
-                state.Token,
-                fast: true,
-                () =>
+            Register(state.Token, fast: true, () =>
+            {
+                state.Calls.Add("d" + depth + ":A");
+                if (mutated)
                 {
-                    state.Calls.Add("d" + depth + ":A");
-                    if (mutated)
+                    return;
+                }
+                mutated = true;
+                foreach (MessageRegistrationHandle peer in peers)
+                {
+                    state.Token.RemoveRegistration(peer);
+                }
+                if (nested != 0)
+                {
+                    ++depth;
+                    try
                     {
-                        return;
+                        state.Emit(scenario.Kind);
                     }
-                    mutated = true;
-                    foreach (MessageRegistrationHandle peer in peers)
+                    finally
                     {
-                        state.Token.RemoveRegistration(peer);
-                    }
-                    if (nested != 0)
-                    {
-                        ++depth;
-                        try
-                        {
-                            state.Emit(scenario.Kind);
-                        }
-                        finally
-                        {
-                            --depth;
-                        }
+                        --depth;
                     }
                 }
-            );
+            });
             for (int index = 0; index < count - 1; ++index)
             {
                 peers.Add(
@@ -493,40 +477,34 @@ namespace DxMessaging.Tests.Runtime.Core
             bool mutated = false;
             int depth = 0;
             MessageRegistrationHandle removed = default;
-            Register(
-                state.Token,
-                shape == 1,
-                () =>
+            Register(state.Token, shape == 1, () =>
+            {
+                state.Calls.Add("d" + depth + ":A");
+                if (mutated)
                 {
-                    state.Calls.Add("d" + depth + ":A");
-                    if (mutated)
+                    return;
+                }
+                mutated = true;
+                peer.RemoveRegistration(removed);
+                Register(peer, shape == 1, () => state.Calls.Add("d" + depth + ":C"));
+                if (nested != 0)
+                {
+                    ++depth;
+                    try
                     {
-                        return;
+                        state.Emit(scenario.Kind);
                     }
-                    mutated = true;
-                    peer.RemoveRegistration(removed);
-                    Register(peer, shape == 1, () => state.Calls.Add("d" + depth + ":C"));
-                    if (nested != 0)
+                    finally
                     {
-                        ++depth;
-                        try
-                        {
-                            state.Emit(scenario.Kind);
-                        }
-                        finally
-                        {
-                            --depth;
-                        }
+                        --depth;
                     }
                 }
-            );
+            });
             for (int index = 0; index < count - 1; ++index)
             {
                 int captured = index;
-                removed = Register(
-                    peer,
-                    shape == 1,
-                    () => state.Calls.Add("d" + depth + ":P" + captured)
+                removed = Register(peer, shape == 1, () =>
+                    state.Calls.Add("d" + depth + ":P" + captured)
                 );
             }
             state.Emit(scenario.Kind);
@@ -565,10 +543,8 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 string name = "P" + index;
                 expected.Add(name);
-                Register(
-                    state.Token,
-                    shape == 1 || (shape == 2 && index == 0),
-                    () => state.Calls.Add(name)
+                Register(state.Token, shape == 1 || (shape == 2 && index == 0), () =>
+                    state.Calls.Add(name)
                 );
             }
             state.Handler.active = false;
@@ -606,49 +582,41 @@ namespace DxMessaging.Tests.Runtime.Core
             int depth = 0;
             bool started = false;
             MessageRegistrationHandle removed = default;
-            Register(
-                state.Token,
-                shape != 0,
-                () =>
+            Register(state.Token, shape != 0, () =>
+            {
+                state.Calls.Add("d" + depth + ":A");
+                if (depth == 0)
                 {
-                    state.Calls.Add("d" + depth + ":A");
-                    if (depth == 0)
-                    {
-                        if (started)
-                        {
-                            return;
-                        }
-                        started = true;
-                    }
-                    if (depth == nestingDepth)
+                    if (started)
                     {
                         return;
                     }
-                    state.Token.RemoveRegistration(removed);
-                    string replacement = "C" + depth;
-                    removed = Register(
-                        state.Token,
-                        shape == 1,
-                        () => state.Calls.Add("d" + depth + ":" + replacement)
-                    );
-                    ++depth;
-                    try
-                    {
-                        state.Emit(scenario.Kind);
-                    }
-                    finally
-                    {
-                        --depth;
-                    }
+                    started = true;
                 }
-            );
+                if (depth == nestingDepth)
+                {
+                    return;
+                }
+                state.Token.RemoveRegistration(removed);
+                string replacement = "C" + depth;
+                removed = Register(state.Token, shape == 1, () =>
+                    state.Calls.Add("d" + depth + ":" + replacement)
+                );
+                ++depth;
+                try
+                {
+                    state.Emit(scenario.Kind);
+                }
+                finally
+                {
+                    --depth;
+                }
+            });
             for (int index = 0; index < count - 1; ++index)
             {
                 int captured = index;
-                removed = Register(
-                    state.Token,
-                    shape == 1,
-                    () => state.Calls.Add("d" + depth + ":P" + captured)
+                removed = Register(state.Token, shape == 1, () =>
+                    state.Calls.Add("d" + depth + ":P" + captured)
                 );
             }
             state.Emit(scenario.Kind);

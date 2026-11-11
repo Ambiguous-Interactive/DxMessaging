@@ -64,11 +64,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
             )
             {
-                _ = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => ++handlerCount
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
+                    ++handlerCount
                 );
 
                 Assert.AreEqual(
@@ -165,11 +162,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 )
             )
             {
-                _ = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => ++handlerCount
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
+                    ++handlerCount
                 );
                 Assert.AreEqual(
                     1,
@@ -260,11 +254,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 LeakWatcher watcher = new(bus: bus, throwOnLeak: true, label: scenario.DisplayName)
             )
             {
-                _ = ScenarioCallbacks.RegisterCountingHandler(
-                    scenario,
-                    token,
-                    hostId,
-                    () => ++handlerCount
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () =>
+                    ++handlerCount
                 );
                 Assert.AreEqual(
                     1,

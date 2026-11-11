@@ -6,6 +6,18 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile
+      Include="../Tests/Runtime/Core/RetargetSourceSpecificTests.cs"
+      Link="RetargetSourceSpecificTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/StatePassingHandlerTests.cs"
+      Link="StatePassingHandlerTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/MessageRegistrationGroupTests.cs"
+      Link="MessageRegistrationGroupTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/MessageRecorderTests.cs"
       Link="MessageRecorderTests.cs"
     />
@@ -111,7 +123,7 @@
       Link="CyclicBufferReentrantRemovalTests.cs"
     />
     <Analyzer Include="../Runtime/Analyzers/*.dll" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageReference Include="NUnit" Version="5.0.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.1" />
     <PackageReference Include="coverlet.collector" Version="10.1.0">

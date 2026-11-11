@@ -583,15 +583,13 @@ namespace DxMessaging.Tests.Runtime.Core
                     );
                     break;
                 case MessageKind.Targeted:
-                    _ = token.RegisterTargeted<ProbeMessage>(
-                        Context,
-                        (in ProbeMessage message) => record()
+                    _ = token.RegisterTargeted<ProbeMessage>(Context, (in ProbeMessage message) =>
+                        record()
                     );
                     break;
                 case MessageKind.Broadcast:
-                    _ = token.RegisterBroadcast<ProbeMessage>(
-                        Context,
-                        (in ProbeMessage message) => record()
+                    _ = token.RegisterBroadcast<ProbeMessage>(Context, (in ProbeMessage message) =>
+                        record()
                     );
                     break;
                 default:

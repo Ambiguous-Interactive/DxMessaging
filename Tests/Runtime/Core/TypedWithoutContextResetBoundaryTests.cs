@@ -155,67 +155,54 @@ namespace DxMessaging.Tests.Runtime.Core
             ProbeFailureException sentinel = new ProbeFailureException();
             Exception actualError = null;
 
-            RegisterPrimary(
-                original,
-                kind,
-                fast,
-                context,
-                () =>
+            RegisterPrimary(original, kind, fast, context, () =>
+            {
+                calls.Add(phase + ":A");
+                if (!armed)
                 {
-                    calls.Add(phase + ":A");
-                    if (!armed)
+                    return;
+                }
+                armed = false;
+                if (reset == 1)
+                {
+                    bus.BumpResetGeneration();
+                }
+                else if (reset == 2)
+                {
+                    bus.ResetState();
+                }
+                if (replacement)
+                {
+                    fresh = MessageRegistrationToken.Create(state.Handler, bus);
+                    state.Fresh = fresh;
+                    fresh.Enable();
+                    if (reset == 2)
                     {
-                        return;
-                    }
-                    armed = false;
-                    if (reset == 1)
-                    {
-                        bus.BumpResetGeneration();
-                    }
-                    else if (reset == 2)
-                    {
-                        bus.ResetState();
-                    }
-                    if (replacement)
-                    {
-                        fresh = MessageRegistrationToken.Create(state.Handler, bus);
-                        state.Fresh = fresh;
-                        fresh.Enable();
-                        if (reset == 2)
-                        {
-                            RegisterPrimary(
-                                fresh,
-                                kind,
-                                fast,
-                                context,
-                                () => calls.Add(phase + ":fresh-primary")
-                            );
-                        }
-                        RegisterWithout(
-                            fresh,
-                            kind,
-                            fast,
-                            () => calls.Add(phase + ":replacement-variant")
+                        RegisterPrimary(fresh, kind, fast, context, () =>
+                            calls.Add(phase + ":fresh-primary")
                         );
                     }
-                    if (nested)
+                    RegisterWithout(fresh, kind, fast, () =>
+                        calls.Add(phase + ":replacement-variant")
+                    );
+                }
+                if (nested)
+                {
+                    phase = "nested";
+                    try
                     {
-                        phase = "nested";
-                        try
-                        {
-                            Emit(bus, kind, context);
-                        }
-                        finally
-                        {
-                            phase = "first";
-                        }
+                        Emit(bus, kind, context);
                     }
-                    if (throwing)
+                    finally
                     {
-                        throw sentinel;
+                        phase = "first";
                     }
                 }
-            );
+                if (throwing)
+                {
+                    throw sentinel;
+                }
+            });
             RegisterPrimary(original, kind, fast, context, () => calls.Add(phase + ":B"));
             if (initial)
             {
@@ -385,18 +372,16 @@ namespace DxMessaging.Tests.Runtime.Core
             if (kind == MessageKind.Targeted)
             {
                 _ = fast
-                    ? token.RegisterTargeted<ProbeMessage>(
-                        context,
-                        (in ProbeMessage _) => callback()
+                    ? token.RegisterTargeted<ProbeMessage>(context, (in ProbeMessage _) =>
+                        callback()
                     )
                     : token.RegisterTargeted<ProbeMessage>(context, _ => callback());
             }
             else
             {
                 _ = fast
-                    ? token.RegisterBroadcast<ProbeMessage>(
-                        context,
-                        (in ProbeMessage _) => callback()
+                    ? token.RegisterBroadcast<ProbeMessage>(context, (in ProbeMessage _) =>
+                        callback()
                     )
                     : token.RegisterBroadcast<ProbeMessage>(context, _ => callback());
             }

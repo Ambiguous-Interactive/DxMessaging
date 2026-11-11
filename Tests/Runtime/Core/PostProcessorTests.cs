@@ -468,9 +468,8 @@ namespace DxMessaging.Tests.Runtime.Core
                             component,
                             PostProcessor
                         ),
-                        token.RegisterComponentTargeted<SimpleTargetedMessage>(
-                            component,
-                            _ => ++count
+                        token.RegisterComponentTargeted<SimpleTargetedMessage>(component, _ =>
+                            ++count
                         ),
                     },
                 () => message.EmitComponentTargeted(component),
@@ -620,9 +619,8 @@ namespace DxMessaging.Tests.Runtime.Core
                         token.RegisterTargetedWithoutTargetingPostProcessor<SimpleTargetedMessage>(
                             PostProcessor
                         ),
-                        token.RegisterComponentTargeted<SimpleTargetedMessage>(
-                            component,
-                            _ => ++count
+                        token.RegisterComponentTargeted<SimpleTargetedMessage>(component, _ =>
+                            ++count
                         ),
                     },
                 () => message.EmitComponentTargeted(component),
@@ -743,9 +741,8 @@ namespace DxMessaging.Tests.Runtime.Core
                             test,
                             PostProcessor
                         ),
-                        token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
-                            test,
-                            _ => ++count
+                        token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test, _ =>
+                            ++count
                         ),
                     },
                 () => message.EmitGameObjectBroadcast(test),
@@ -908,9 +905,8 @@ namespace DxMessaging.Tests.Runtime.Core
                         token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
                             PostProcessor
                         ),
-                        token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
-                            test,
-                            _ => ++count
+                        token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(test, _ =>
+                            ++count
                         ),
                     },
                 () => message.EmitGameObjectBroadcast(test),
@@ -1042,9 +1038,8 @@ namespace DxMessaging.Tests.Runtime.Core
                             component,
                             PostProcessor
                         ),
-                        token.RegisterComponentBroadcast<SimpleBroadcastMessage>(
-                            component,
-                            _ => ++count
+                        token.RegisterComponentBroadcast<SimpleBroadcastMessage>(component, _ =>
+                            ++count
                         ),
                     },
                 () => message.EmitComponentBroadcast(component),
@@ -1194,9 +1189,8 @@ namespace DxMessaging.Tests.Runtime.Core
                         token.RegisterBroadcastWithoutSourcePostProcessor<SimpleBroadcastMessage>(
                             PostProcessor
                         ),
-                        token.RegisterComponentBroadcast<SimpleBroadcastMessage>(
-                            component,
-                            _ => ++count
+                        token.RegisterComponentBroadcast<SimpleBroadcastMessage>(component, _ =>
+                            ++count
                         ),
                     },
                 () => message.EmitComponentBroadcast(component),

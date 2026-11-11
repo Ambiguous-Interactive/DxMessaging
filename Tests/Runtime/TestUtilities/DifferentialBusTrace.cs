@@ -1152,8 +1152,7 @@ namespace DxMessaging.Tests.Runtime
             {
                 throw new ArgumentNullException(nameof(factory));
             }
-            IBusTraceAdapter adapter =
-                factory(sequence.Scenario)
+            IBusTraceAdapter adapter = factory(sequence.Scenario)
                 ?? throw new InvalidOperationException("Adapter factory returned null.");
             Exception replayError = null;
             try
@@ -1279,8 +1278,7 @@ namespace DxMessaging.Tests.Runtime
             {
                 throw new ArgumentNullException(nameof(evaluate));
             }
-            BusTraceMismatch initial =
-                evaluate(original)
+            BusTraceMismatch initial = evaluate(original)
                 ?? throw new ArgumentException("Cannot shrink a passing trace.", nameof(original));
             BusTraceSequence current = original;
             int index = 0;

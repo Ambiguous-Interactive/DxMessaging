@@ -93,9 +93,8 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch
             for (int index = 0; index < expected.Length; index++)
             {
                 KeyValuePair<string, string> pin = expected[index];
-                UnityEditor.PackageManager.PackageInfo package = Array.Find(
-                    registered,
-                    item => item.name == pin.Key
+                UnityEditor.PackageManager.PackageInfo package = Array.Find(registered, item =>
+                    item.name == pin.Key
                 );
                 List<SourceFile> sources = new();
                 if (package != null)

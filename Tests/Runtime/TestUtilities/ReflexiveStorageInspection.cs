@@ -53,8 +53,7 @@ namespace DxMessaging.Tests
 
         internal static bool ReflexiveDispatchPoolUsesLru(MessageBus bus)
         {
-            object pool =
-                ReadField(bus, "_reflexiveDispatchStatePool")
+            object pool = ReadField(bus, "_reflexiveDispatchStatePool")
                 ?? ReadProperty(typeof(MessageBus), "ContextHandlerByTargetDicts");
             return (bool)ReadProperty(pool, "UseLru");
         }

@@ -749,46 +749,37 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             get
             {
-                yield return new NoOpHandleCase(
-                    "Default handle",
-                    () =>
-                    {
-                        using TokenScope scope = TokenScope.Create();
-                        scope.Token.RemoveRegistration(default(MessageRegistrationHandle));
-                    }
-                );
-                yield return new NoOpHandleCase(
-                    "Foreign handle",
-                    () =>
-                    {
-                        using TokenScope scope = TokenScope.Create();
-                        MessageRegistrationHandle foreign =
-                            MessageRegistrationHandle.CreateMessageRegistrationHandle();
-                        scope.Token.RemoveRegistration(foreign);
-                    }
-                );
-                yield return new NoOpHandleCase(
-                    "Double remove of valid handle",
-                    () =>
-                    {
-                        using TokenScope scope = TokenScope.Create();
-                        int invocationCount = 0;
-                        MessageRegistrationHandle handle =
-                            scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
-                                (in SimpleUntargetedMessage _) => ++invocationCount
-                            );
-                        scope.Token.RemoveRegistration(handle);
-                        scope.Token.RemoveRegistration(handle);
-
-                        SimpleUntargetedMessage message = new();
-                        scope.Bus.EmitUntargeted(ref message);
-                        Assert.AreEqual(
-                            0,
-                            invocationCount,
-                            "Doubled removal must not resurrect the handler."
+                yield return new NoOpHandleCase("Default handle", () =>
+                {
+                    using TokenScope scope = TokenScope.Create();
+                    scope.Token.RemoveRegistration(default(MessageRegistrationHandle));
+                });
+                yield return new NoOpHandleCase("Foreign handle", () =>
+                {
+                    using TokenScope scope = TokenScope.Create();
+                    MessageRegistrationHandle foreign =
+                        MessageRegistrationHandle.CreateMessageRegistrationHandle();
+                    scope.Token.RemoveRegistration(foreign);
+                });
+                yield return new NoOpHandleCase("Double remove of valid handle", () =>
+                {
+                    using TokenScope scope = TokenScope.Create();
+                    int invocationCount = 0;
+                    MessageRegistrationHandle handle =
+                        scope.Token.RegisterUntargeted<SimpleUntargetedMessage>(
+                            (in SimpleUntargetedMessage _) => ++invocationCount
                         );
-                    }
-                );
+                    scope.Token.RemoveRegistration(handle);
+                    scope.Token.RemoveRegistration(handle);
+
+                    SimpleUntargetedMessage message = new();
+                    scope.Bus.EmitUntargeted(ref message);
+                    Assert.AreEqual(
+                        0,
+                        invocationCount,
+                        "Doubled removal must not resurrect the handler."
+                    );
+                });
             }
         }
 

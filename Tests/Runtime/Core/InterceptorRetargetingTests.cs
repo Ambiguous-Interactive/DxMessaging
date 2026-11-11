@@ -224,11 +224,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     RegisterRewritingInterceptor(scenario, token, originalId, redirectedId)
                 );
                 handles.Add(
-                    RegisterCountingPostProcessor(
-                        scenario,
-                        token,
-                        redirectedId,
-                        () => redirectedPostCount++
+                    RegisterCountingPostProcessor(scenario, token, redirectedId, () =>
+                        redirectedPostCount++
                     )
                 );
 
@@ -289,11 +286,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     RegisterRewritingInterceptor(scenario, token, originalId, redirectedId)
                 );
                 handles.Add(
-                    RegisterCountingPostProcessor(
-                        scenario,
-                        token,
-                        originalId,
-                        () => originalPostCount++
+                    RegisterCountingPostProcessor(scenario, token, originalId, () =>
+                        originalPostCount++
                     )
                 );
 
@@ -362,19 +356,13 @@ namespace DxMessaging.Tests.Runtime.Core
                     RegisterRewritingInterceptor(scenario, originalToken, originalId, redirectedId)
                 );
                 originalHandles.Add(
-                    RegisterCountingPostProcessor(
-                        scenario,
-                        originalToken,
-                        originalId,
-                        () => originalPostCount++
+                    RegisterCountingPostProcessor(scenario, originalToken, originalId, () =>
+                        originalPostCount++
                     )
                 );
                 redirectedHandles.Add(
-                    RegisterCountingPostProcessor(
-                        scenario,
-                        redirectedToken,
-                        redirectedId,
-                        () => redirectedPostCount++
+                    RegisterCountingPostProcessor(scenario, redirectedToken, redirectedId, () =>
+                        redirectedPostCount++
                     )
                 );
 
@@ -459,28 +447,22 @@ namespace DxMessaging.Tests.Runtime.Core
                     );
                 }
                 handles.Add(
-                    RegisterRewritingInterceptor(
-                        scenario,
-                        token,
-                        originalId,
-                        redirectedId,
-                        () =>
+                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                    {
+                        if (!added)
                         {
-                            if (!added)
-                            {
-                                added = true;
-                                handles.Add(
-                                    RegisterCountingPostProcessor(
-                                        scenario,
-                                        token,
-                                        redirectedId,
-                                        () => ++latePostCount,
-                                        delegateShape
-                                    )
-                                );
-                            }
+                            added = true;
+                            handles.Add(
+                                RegisterCountingPostProcessor(
+                                    scenario,
+                                    token,
+                                    redirectedId,
+                                    () => ++latePostCount,
+                                    delegateShape
+                                )
+                            );
                         }
-                    )
+                    })
                 );
 
                 EmitForScenario(scenario, originalId);
@@ -588,23 +570,17 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
                 handles.Add(postHandle);
                 handles.Add(
-                    RegisterRewritingInterceptor(
-                        scenario,
-                        token,
-                        originalId,
-                        redirectedId,
-                        () =>
+                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                    {
+                        if (removed)
                         {
-                            if (removed)
-                            {
-                                return;
-                            }
-
-                            removed = true;
-                            token.RemoveRegistration(postHandle);
-                            _ = handles.Remove(postHandle);
+                            return;
                         }
-                    )
+
+                        removed = true;
+                        token.RemoveRegistration(postHandle);
+                        _ = handles.Remove(postHandle);
+                    })
                 );
 
                 EmitForScenario(scenario, originalId);
@@ -672,32 +648,26 @@ namespace DxMessaging.Tests.Runtime.Core
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
                 handles.Add(
-                    RegisterRewritingInterceptor(
-                        scenario,
-                        token,
-                        originalId,
-                        redirectedId,
-                        () =>
+                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                    {
+                        if (!inNestedEmission)
                         {
-                            if (!inNestedEmission)
-                            {
-                                nestedPostHandle = RegisterCountingPostProcessor(
-                                    scenario,
-                                    token,
-                                    redirectedId,
-                                    () => ++postCount
-                                );
-                                handles.Add(nestedPostHandle);
-                                inNestedEmission = true;
-                                EmitForScenario(scenario, originalId);
-                                inNestedEmission = false;
-                                return;
-                            }
-
-                            token.RemoveRegistration(nestedPostHandle);
-                            _ = handles.Remove(nestedPostHandle);
+                            nestedPostHandle = RegisterCountingPostProcessor(
+                                scenario,
+                                token,
+                                redirectedId,
+                                () => ++postCount
+                            );
+                            handles.Add(nestedPostHandle);
+                            inNestedEmission = true;
+                            EmitForScenario(scenario, originalId);
+                            inNestedEmission = false;
+                            return;
                         }
-                    )
+
+                        token.RemoveRegistration(nestedPostHandle);
+                        _ = handles.Remove(nestedPostHandle);
+                    })
                 );
 
                 EmitForScenario(scenario, originalId);
@@ -755,40 +725,34 @@ namespace DxMessaging.Tests.Runtime.Core
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
                 handles.Add(
-                    RegisterRewritingInterceptor(
-                        scenario,
-                        token,
-                        originalId,
-                        redirectedId,
-                        () =>
+                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                    {
+                        for (int i = 0; i < sameRouteMutationCount; ++i)
                         {
-                            for (int i = 0; i < sameRouteMutationCount; ++i)
-                            {
-                                handles.Add(
-                                    RegisterCountingPostProcessor(
-                                        scenario,
-                                        token,
-                                        redirectedId,
-                                        () => { }
-                                    )
-                                );
-                            }
-
-                            for (int i = 0; i < distinctRouteCount; ++i)
-                            {
-                                handles.Add(
-                                    RegisterCountingPostProcessor(
-                                        scenario,
-                                        token,
-                                        new InstanceId(0x6000_0000 + i),
-                                        () => { }
-                                    )
-                                );
-                            }
-
-                            historyCountDuringMutation = GetPostRouteSnapshotHistoryCount();
+                            handles.Add(
+                                RegisterCountingPostProcessor(
+                                    scenario,
+                                    token,
+                                    redirectedId,
+                                    () => { }
+                                )
+                            );
                         }
-                    )
+
+                        for (int i = 0; i < distinctRouteCount; ++i)
+                        {
+                            handles.Add(
+                                RegisterCountingPostProcessor(
+                                    scenario,
+                                    token,
+                                    new InstanceId(0x6000_0000 + i),
+                                    () => { }
+                                )
+                            );
+                        }
+
+                        historyCountDuringMutation = GetPostRouteSnapshotHistoryCount();
+                    })
                 );
 
                 EmitForScenario(scenario, originalId);
@@ -859,72 +823,64 @@ namespace DxMessaging.Tests.Runtime.Core
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
                 handles.Add(
-                    RegisterRewritingInterceptor(
-                        scenario,
-                        token,
-                        originalId,
-                        redirectedId,
-                        () =>
+                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                    {
+                        if (emittingNestedSibling)
                         {
-                            if (emittingNestedSibling)
+                            handles.Add(
+                                RegisterCountingPostProcessor(
+                                    scenario,
+                                    token,
+                                    redirectedId,
+                                    () => { }
+                                )
+                            );
+                            maximumHistoryCount = Math.Max(
+                                maximumHistoryCount,
+                                GetPostRouteSnapshotHistoryCount()
+                            );
+                            maximumRetainedEntryCount = Math.Max(
+                                maximumRetainedEntryCount,
+                                GetPostRouteSnapshotHistoryResolvedEntryCount()
+                            );
+                            capturedSnapshots.Add(GetLatestPostRouteSnapshot());
+                            return;
+                        }
+
+                        for (int i = 0; i < siblingCount; ++i)
+                        {
+                            emittingNestedSibling = true;
+                            try
                             {
-                                handles.Add(
-                                    RegisterCountingPostProcessor(
-                                        scenario,
-                                        token,
-                                        redirectedId,
-                                        () => { }
-                                    )
-                                );
-                                maximumHistoryCount = Math.Max(
-                                    maximumHistoryCount,
-                                    GetPostRouteSnapshotHistoryCount()
-                                );
-                                maximumRetainedEntryCount = Math.Max(
-                                    maximumRetainedEntryCount,
-                                    GetPostRouteSnapshotHistoryResolvedEntryCount()
-                                );
-                                capturedSnapshots.Add(GetLatestPostRouteSnapshot());
-                                return;
+                                EmitForScenario(scenario, originalId);
+                            }
+                            finally
+                            {
+                                emittingNestedSibling = false;
                             }
 
-                            for (int i = 0; i < siblingCount; ++i)
+                            if (
+                                0 < i
+                                && (
+                                    capturedSnapshots.Count <= i
+                                    || !IsDispatchSnapshotReleased(capturedSnapshots[i])
+                                )
+                            )
                             {
-                                emittingNestedSibling = true;
-                                try
-                                {
-                                    EmitForScenario(scenario, originalId);
-                                }
-                                finally
-                                {
-                                    emittingNestedSibling = false;
-                                }
+                                supersededSnapshotsReleased = false;
+                            }
 
-                                if (
-                                    0 < i
-                                    && (
-                                        capturedSnapshots.Count <= i
-                                        || !IsDispatchSnapshotReleased(capturedSnapshots[i])
-                                    )
-                                )
-                                {
-                                    supersededSnapshotsReleased = false;
-                                }
-
-                                object currentCompactionIndex = GetPostRouteCompactionIndex();
-                                if (i == 0)
-                                {
-                                    firstCompactionIndex = currentCompactionIndex;
-                                }
-                                else if (
-                                    !ReferenceEquals(firstCompactionIndex, currentCompactionIndex)
-                                )
-                                {
-                                    compactionIndexReused = false;
-                                }
+                            object currentCompactionIndex = GetPostRouteCompactionIndex();
+                            if (i == 0)
+                            {
+                                firstCompactionIndex = currentCompactionIndex;
+                            }
+                            else if (!ReferenceEquals(firstCompactionIndex, currentCompactionIndex))
+                            {
+                                compactionIndexReused = false;
                             }
                         }
-                    )
+                    })
                 );
 
                 try
@@ -1050,60 +1006,51 @@ namespace DxMessaging.Tests.Runtime.Core
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
                 handles.Add(
-                    RegisterRewritingInterceptor(
-                        scenario,
-                        token,
-                        originalId,
-                        redirectedId,
-                        () =>
+                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                    {
+                        if (emittingNested)
                         {
-                            if (emittingNested)
+                            for (int i = 0; i < distinctRouteCount; ++i)
                             {
-                                for (int i = 0; i < distinctRouteCount; ++i)
-                                {
-                                    handles.Add(
-                                        RegisterCountingPostProcessor(
-                                            scenario,
-                                            token,
-                                            new InstanceId(0x7000_0000 + i),
-                                            () => { }
-                                        )
-                                    );
-                                }
-
-                                return;
+                                handles.Add(
+                                    RegisterCountingPostProcessor(
+                                        scenario,
+                                        token,
+                                        new InstanceId(0x7000_0000 + i),
+                                        () => { }
+                                    )
+                                );
                             }
 
-                            for (int sibling = 0; sibling < 2; ++sibling)
-                            {
-                                emittingNested = true;
-                                try
-                                {
-                                    EmitForScenario(scenario, originalId);
-                                }
-                                finally
-                                {
-                                    emittingNested = false;
-                                }
-
-                                object currentCompactionIndex = GetPostRouteCompactionIndex();
-                                if (sibling == 0)
-                                {
-                                    firstCompactionIndex = currentCompactionIndex;
-                                }
-                                else if (
-                                    !ReferenceEquals(firstCompactionIndex, currentCompactionIndex)
-                                )
-                                {
-                                    compactionIndexReused = false;
-                                }
-                            }
-
-                            historyCountAfterNested = GetPostRouteSnapshotHistoryCount();
-                            compactionIndexRetainedAfterNested =
-                                GetPostRouteCompactionIndex() != null;
+                            return;
                         }
-                    )
+
+                        for (int sibling = 0; sibling < 2; ++sibling)
+                        {
+                            emittingNested = true;
+                            try
+                            {
+                                EmitForScenario(scenario, originalId);
+                            }
+                            finally
+                            {
+                                emittingNested = false;
+                            }
+
+                            object currentCompactionIndex = GetPostRouteCompactionIndex();
+                            if (sibling == 0)
+                            {
+                                firstCompactionIndex = currentCompactionIndex;
+                            }
+                            else if (!ReferenceEquals(firstCompactionIndex, currentCompactionIndex))
+                            {
+                                compactionIndexReused = false;
+                            }
+                        }
+
+                        historyCountAfterNested = GetPostRouteSnapshotHistoryCount();
+                        compactionIndexRetainedAfterNested = GetPostRouteCompactionIndex() != null;
+                    })
                 );
 
                 try
@@ -1186,24 +1133,13 @@ namespace DxMessaging.Tests.Runtime.Core
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
                 handles.Add(
-                    RegisterRewritingInterceptor(
-                        scenario,
-                        token,
-                        originalId,
-                        redirectedId,
-                        () =>
-                        {
-                            handles.Add(
-                                RegisterCountingPostProcessor(
-                                    scenario,
-                                    token,
-                                    redirectedId,
-                                    () => { }
-                                )
-                            );
-                            throw new InvalidOperationException("expected route mutation failure");
-                        }
-                    )
+                    RegisterRewritingInterceptor(scenario, token, originalId, redirectedId, () =>
+                    {
+                        handles.Add(
+                            RegisterCountingPostProcessor(scenario, token, redirectedId, () => { })
+                        );
+                        throw new InvalidOperationException("expected route mutation failure");
+                    })
                 );
 
                 try
@@ -1308,11 +1244,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     postResetToken = GetToken(
                         postResetHost.GetComponent<EmptyMessageAwareComponent>()
                     );
-                    _ = RegisterCountingPostProcessor(
-                        scenario,
-                        postResetToken,
-                        redirectedId,
-                        () => ++existingPostCount
+                    _ = RegisterCountingPostProcessor(scenario, postResetToken, redirectedId, () =>
+                        ++existingPostCount
                     );
                     _ = RegisterRewritingInterceptor(
                         scenario,

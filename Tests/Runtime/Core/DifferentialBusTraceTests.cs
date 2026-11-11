@@ -86,9 +86,8 @@ namespace DxMessaging.Tests.Runtime.Core
             List<BusTraceObservation> candidate = new();
             using (MessageBusTraceAdapter adapter = CreateAdapter(scenario, false))
             {
-                ExactSequentialBatchControl.Execute(
-                    sequence.Operations,
-                    operation => candidate.Add(adapter.Execute(operation))
+                ExactSequentialBatchControl.Execute(sequence.Operations, operation =>
+                    candidate.Add(adapter.Execute(operation))
                 );
             }
             Assert.That(candidate.Count, Is.EqualTo(sequence.Operations.Count), report);
@@ -101,17 +100,14 @@ namespace DxMessaging.Tests.Runtime.Core
             InvalidOperationException failure = new("item 2 failed");
             List<int> called = new();
             InvalidOperationException observed = Assert.Throws<InvalidOperationException>(() =>
-                ExactSequentialBatchControl.Execute(
-                    new[] { 1, 2, 3 },
-                    item =>
+                ExactSequentialBatchControl.Execute(new[] { 1, 2, 3 }, item =>
+                {
+                    called.Add(item);
+                    if (item == 2)
                     {
-                        called.Add(item);
-                        if (item == 2)
-                        {
-                            throw failure;
-                        }
+                        throw failure;
                     }
-                )
+                })
             );
             Assert.That(observed, Is.SameAs(failure));
             CollectionAssert.AreEqual(new[] { 1, 2 }, called);
@@ -124,19 +120,16 @@ namespace DxMessaging.Tests.Runtime.Core
             RefBatchMessage[] items = { new(1), new(2), new(3) };
             List<int> called = new();
             InvalidOperationException observed = Assert.Throws<InvalidOperationException>(() =>
-                ExactSequentialBatchControl.Execute(
-                    items,
-                    (ref RefBatchMessage item) =>
+                ExactSequentialBatchControl.Execute(items, (ref RefBatchMessage item) =>
+                {
+                    int original = item.Value;
+                    item.Value += 10;
+                    called.Add(original);
+                    if (original == 2)
                     {
-                        int original = item.Value;
-                        item.Value += 10;
-                        called.Add(original);
-                        if (original == 2)
-                        {
-                            throw failure;
-                        }
+                        throw failure;
                     }
-                )
+                })
             );
             Assert.That(observed, Is.SameAs(failure), "The batch must preserve the thrown object.");
             CollectionAssert.AreEqual(new[] { 1, 2 }, called, "The third item must not execute.");
@@ -248,9 +241,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
             if (batch)
             {
-                ExactSequentialBatchControl.Execute(
-                    items,
-                    (ref RefBatchItem item) => Emit(ref item)
+                ExactSequentialBatchControl.Execute(items, (ref RefBatchItem item) =>
+                    Emit(ref item)
                 );
             }
             else
@@ -686,19 +678,16 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             BusTraceMismatch EvaluateFinal(BusTraceSequence input) =>
                 DifferentialBusTrace.Compare(
-                    DifferentialBusTrace.Replay(
-                        input,
-                        kind => CreateAdapter(kind, false, throwAfterEmit: throwAfterEmit)
+                    DifferentialBusTrace.Replay(input, kind =>
+                        CreateAdapter(kind, false, throwAfterEmit: throwAfterEmit)
                     ),
-                    DifferentialBusTrace.Replay(
-                        input,
-                        kind =>
-                            CreateAdapter(
-                                kind,
-                                false,
-                                observationFault: fault,
-                                throwAfterEmit: throwAfterEmit
-                            )
+                    DifferentialBusTrace.Replay(input, kind =>
+                        CreateAdapter(
+                            kind,
+                            false,
+                            observationFault: fault,
+                            throwAfterEmit: throwAfterEmit
+                        )
                     )
                 );
             BusTraceMismatch mismatch = EvaluateFinal(sequence);
@@ -850,9 +839,8 @@ namespace DxMessaging.Tests.Runtime.Core
             string report = mismatch.BuildReport(sequence);
             Assert.That(mismatch.Category, Is.EqualTo("callbacks"), report);
             Assert.That(mismatch.Index, Is.EqualTo(1), report);
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                sequence,
-                input => EvaluateUntypedFault(input, fault)
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, input =>
+                EvaluateUntypedFault(input, fault)
             );
             CollectionAssert.AreEqual(
                 new[] { BusTraceOperationKind.Register, BusTraceOperationKind.EmitUntyped },
@@ -912,9 +900,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 Is.EqualTo("unmatched-diagnostic"),
                 report
             );
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                sequence,
-                input => Evaluate(input, true)
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, input =>
+                Evaluate(input, true)
             );
             Assert.That(minimal.Operations.Count, Is.EqualTo(1), report);
             Assert.That(minimal.Operations[0].Kind, Is.EqualTo(BusTraceOperationKind.Emit), report);
@@ -1250,10 +1237,10 @@ namespace DxMessaging.Tests.Runtime.Core
             BusTraceMismatch EvaluateOverride(BusTraceSequence input) =>
                 DifferentialBusTrace.Compare(
                     DifferentialBusTrace.Replay(input, kind => CreateAdapter(kind, false)),
-                    DifferentialBusTrace.Replay(
-                        input,
-                        kind => new GlobalOverrideFaultAdapter(kind, wrongAlias: true)
-                    )
+                    DifferentialBusTrace.Replay(input, kind => new GlobalOverrideFaultAdapter(
+                        kind,
+                        wrongAlias: true
+                    ))
                 );
             BusTraceMismatch mismatch = EvaluateOverride(sequence);
             Assert.That(
@@ -1683,9 +1670,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 Is.EqualTo(duplicateAsCopy ? "state" : "callbacks"),
                 report
             );
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                sequence,
-                candidate => EvaluateMutant(candidate, fault)
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, candidate =>
+                EvaluateMutant(candidate, fault)
             );
             Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
             Assert.That(minimal.Operations.Count, Is.EqualTo(duplicateAsCopy ? 2 : 5), report);
@@ -1763,9 +1749,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             BusTraceMismatch mismatch = DifferentialBusTrace.Compare(control, candidate);
             Assert.That(mismatch?.Category, Is.EqualTo("callbacks"), report);
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                sequence,
-                replay => EvaluateMutant(replay, "reused-callback-order")
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, replay =>
+                EvaluateMutant(replay, "reused-callback-order")
             );
             Assert.That(minimal.Operations.Count, Is.EqualTo(5), report);
             Assert.That(
@@ -2126,9 +2111,8 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(Evaluate(sequence, false), Is.Null, report);
             BusTraceMismatch mismatch = EvaluateMutant(sequence, "explicit-callback");
             Assert.That(mismatch, Is.Not.Null, report);
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                sequence,
-                item => EvaluateMutant(item, "explicit-callback")
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, item =>
+                EvaluateMutant(item, "explicit-callback")
             );
             Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
             Assert.That(minimal.Operations.Count, Is.LessThan(sequence.Operations.Count), report);
@@ -2226,9 +2210,8 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(Evaluate(sequence, false), Is.Null, report);
             BusTraceMismatch mismatch = EvaluateMutant(sequence, "explicit-cleanup");
             Assert.That(mismatch, Is.Not.Null, report);
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                sequence,
-                item => EvaluateMutant(item, "explicit-cleanup")
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, item =>
+                EvaluateMutant(item, "explicit-cleanup")
             );
             Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
             Assert.That(minimal.Operations.Count, Is.LessThan(sequence.Operations.Count), report);
@@ -2603,9 +2586,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 Is.EqualTo(fromCallback ? "callbacks" : "state"),
                 report
             );
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                sequence,
-                replay => EvaluateMutant(replay, "handler-active")
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, replay =>
+                EvaluateMutant(replay, "handler-active")
             );
             Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
             Assert.That(
@@ -2962,9 +2944,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 Is.EqualTo(fault == "nested" ? "callbacks" : "state"),
                 report
             );
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                original,
-                sequence => EvaluateMutant(sequence, fault)
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(original, sequence =>
+                EvaluateMutant(sequence, fault)
             );
             BusTraceMismatch replayed = EvaluateMutant(minimal, fault);
             Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
@@ -3260,9 +3241,8 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(mismatch.Candidate.Exception, Is.Null, report);
             Assert.That(mismatch.Control.OccupiedTypeSlots, Is.Zero, report);
             Assert.That(mismatch.Candidate.OccupiedTypeSlots, Is.GreaterThan(0), report);
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                original,
-                sequence => EvaluateMutant(sequence, "trim-force")
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(original, sequence =>
+                EvaluateMutant(sequence, "trim-force")
             );
             CollectionAssert.AreEqual(
                 new[]
@@ -3388,9 +3368,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
             InvalidOperationException error = Assert.Throws<InvalidOperationException>(
                 () =>
-                    DifferentialBusTrace.Shrink(
-                        sequence,
-                        _ => throw new InvalidOperationException("infrastructure failure")
+                    DifferentialBusTrace.Shrink(sequence, _ =>
+                        throw new InvalidOperationException("infrastructure failure")
                     ),
                 "Infrastructure failures must fail closed rather than become shrinkable semantic mismatches."
             );
@@ -3549,9 +3528,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 $"[{scenario.Kind}]: suppressing real dispatch must produce a mismatch."
             );
             Assert.That(mismatch.Category, Is.EqualTo("callbacks"), mismatch.BuildReport(original));
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                original,
-                sequence => Evaluate(sequence, dropEmits: true)
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(original, sequence =>
+                Evaluate(sequence, dropEmits: true)
             );
             Assert.That(
                 DifferentialBusTrace.IsValid(minimal),
@@ -3811,14 +3789,11 @@ namespace DxMessaging.Tests.Runtime.Core
             BusTraceSequence sequence = ResetGenerationBoundarySequence(scenario);
             BusTraceMismatch EvaluateBoundary(BusTraceSequence replay) =>
                 DifferentialBusTrace.Compare(
-                    DifferentialBusTrace.Replay(
-                        replay,
-                        kind => CreateResetGenerationAdapter(kind, initialGeneration)
+                    DifferentialBusTrace.Replay(replay, kind =>
+                        CreateResetGenerationAdapter(kind, initialGeneration)
                     ),
-                    DifferentialBusTrace.Replay(
-                        replay,
-                        kind =>
-                            CreateResetGenerationAdapter(kind, initialGeneration, rejectWrap: true)
+                    DifferentialBusTrace.Replay(replay, kind =>
+                        CreateResetGenerationAdapter(kind, initialGeneration, rejectWrap: true)
                     )
                 );
             BusTraceMismatch mismatch = EvaluateBoundary(sequence);
@@ -3921,23 +3896,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 "The reset boundary fixture must seed the production generation."
             );
             field.SetValue(bus, initialGeneration);
-            return new MessageBusTraceAdapter(
-                scenario,
-                bus,
-                reset: () =>
+            return new MessageBusTraceAdapter(scenario, bus, reset: () =>
+            {
+                /*
+                    Mutation: a boundary guard wrongly rejects signed overflow or zero.
+                    It changes the operation, never the oracle's observations.
+                */
+                if (rejectWrap && MessageBus.GetResetGeneration(bus) == initialGeneration)
                 {
-                    /*
-                        Mutation: a boundary guard wrongly rejects signed overflow or zero.
-                        It changes the operation, never the oracle's observations.
-                    */
-                    if (rejectWrap && MessageBus.GetResetGeneration(bus) == initialGeneration)
-                    {
-                        return;
-                    }
-                    bus.ResetState();
-                    generations?.Add(MessageBus.GetResetGeneration(bus));
+                    return;
                 }
-            );
+                bus.ResetState();
+                generations?.Add(MessageBus.GetResetGeneration(bus));
+            });
         }
 
         [Test]
@@ -3953,15 +3924,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 trimApiEnabled: true
             );
             int resetCalls = 0;
-            using MessageBusTraceAdapter adapter = new(
-                scenario,
-                bus,
-                reset: () =>
-                {
-                    ++resetCalls;
-                    throw new InvalidOperationException("reset action failure");
-                }
-            );
+            using MessageBusTraceAdapter adapter = new(scenario, bus, reset: () =>
+            {
+                ++resetCalls;
+                throw new InvalidOperationException("reset action failure");
+            });
             adapter.Execute(new BusTraceOperation(BusTraceOperationKind.Register));
             BusTraceObservation failed = adapter.Execute(
                 new BusTraceOperation(BusTraceOperationKind.EmitWithReset, value: 13)
@@ -4211,9 +4178,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 StringAssert.Contains("retainedMessages=0,", control[4].State, report);
                 StringAssert.Contains("retainedMessages=1,", candidate[4].State, report);
             }
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                original,
-                sequence => EvaluateMutant(sequence, fault)
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(original, sequence =>
+                EvaluateMutant(sequence, fault)
             );
             BusTraceMismatch replayed = EvaluateMutant(minimal, fault);
             report += "\nMinimized:\n" + replayed?.BuildReport(minimal);
@@ -4393,9 +4359,8 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(mismatch, Is.Not.Null, report);
             Assert.That(mismatch.Index, Is.EqualTo(3), mismatch.BuildReport(sequence));
             Assert.That(mismatch.Category, Is.EqualTo("state"), mismatch.BuildReport(sequence));
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                sequence,
-                replay => EvaluateMutant(replay, "foreign")
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(sequence, replay =>
+                EvaluateMutant(replay, "foreign")
             );
             Assert.That(DifferentialBusTrace.IsValid(minimal), Is.True, report);
             Assert.That(EvaluateMutant(minimal, "foreign")?.Category, Is.EqualTo("state"), report);
@@ -4438,9 +4403,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     new BusTraceOperation(BusTraceOperationKind.Emit),
                 }
             );
-            BusTraceSequence simpleMinimum = DifferentialBusTrace.Shrink(
-                simple,
-                replay => EvaluateMutant(replay, "foreign")
+            BusTraceSequence simpleMinimum = DifferentialBusTrace.Shrink(simple, replay =>
+                EvaluateMutant(replay, "foreign")
             );
             Assert.That(DifferentialBusTrace.IsValid(simpleMinimum), Is.True, report);
             Assert.That(
@@ -4867,9 +4831,8 @@ namespace DxMessaging.Tests.Runtime.Core
         private static BusTraceMismatch EvaluateDeferredReset(BusTraceSequence sequence) =>
             DifferentialBusTrace.Compare(
                 DifferentialBusTrace.Replay(sequence, scenario => CreateAdapter(scenario, false)),
-                DifferentialBusTrace.Replay(
-                    sequence,
-                    scenario => CreateAdapter(scenario, false, deferReset: true)
+                DifferentialBusTrace.Replay(sequence, scenario =>
+                    CreateAdapter(scenario, false, deferReset: true)
                 )
             );
 
@@ -5015,25 +4978,22 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             );
             int invalidEvaluations = 0;
-            BusTraceSequence minimal = DifferentialBusTrace.Shrink(
-                original,
-                sequence =>
+            BusTraceSequence minimal = DifferentialBusTrace.Shrink(original, sequence =>
+            {
+                if (!DifferentialBusTrace.IsValid(sequence))
                 {
-                    if (!DifferentialBusTrace.IsValid(sequence))
-                    {
-                        ++invalidEvaluations;
-                    }
-                    bool removal = sequence.Operations.Any(operation =>
-                        operation.Kind == BusTraceOperationKind.Remove
-                    );
-                    bool emit = sequence.Operations.Any(operation =>
-                        operation.Kind == BusTraceOperationKind.Emit
-                    );
-                    return removal ? new BusTraceMismatch(0, "state", Observation(), Observation())
-                        : emit ? new BusTraceMismatch(0, "exception", Observation(), Observation())
-                        : null;
+                    ++invalidEvaluations;
                 }
-            );
+                bool removal = sequence.Operations.Any(operation =>
+                    operation.Kind == BusTraceOperationKind.Remove
+                );
+                bool emit = sequence.Operations.Any(operation =>
+                    operation.Kind == BusTraceOperationKind.Emit
+                );
+                return removal ? new BusTraceMismatch(0, "state", Observation(), Observation())
+                    : emit ? new BusTraceMismatch(0, "exception", Observation(), Observation())
+                    : null;
+            });
             Assert.That(
                 invalidEvaluations,
                 Is.Zero,
@@ -5092,18 +5052,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 new[] { new BusTraceOperation(BusTraceOperationKind.Remove) }
             );
             bool constructed = false;
-            Assert.Throws<ArgumentException>(
-                () =>
-                    DifferentialBusTrace.Replay(
-                        invalid,
-                        _ =>
-                        {
-                            constructed = true;
-                            return null;
-                        }
-                    ),
-                "Removing a nonexistent handle must fail validation."
-            );
+            Assert.Throws<ArgumentException>(() => DifferentialBusTrace.Replay(invalid, _ =>
+                    {
+                        constructed = true;
+                        return null;
+                    }), "Removing a nonexistent handle must fail validation.");
             Assert.That(
                 constructed,
                 Is.False,
@@ -5142,9 +5095,8 @@ namespace DxMessaging.Tests.Runtime.Core
         private static BusTraceMismatch Evaluate(BusTraceSequence sequence, bool dropEmits) =>
             DifferentialBusTrace.Compare(
                 DifferentialBusTrace.Replay(sequence, scenario => CreateAdapter(scenario, false)),
-                DifferentialBusTrace.Replay(
-                    sequence,
-                    scenario => CreateAdapter(scenario, dropEmits)
+                DifferentialBusTrace.Replay(sequence, scenario =>
+                    CreateAdapter(scenario, dropEmits)
                 )
             );
 
@@ -5154,9 +5106,8 @@ namespace DxMessaging.Tests.Runtime.Core
         ) =>
             DifferentialBusTrace.Compare(
                 DifferentialBusTrace.Replay(sequence, kind => CreateAdapter(kind, false)),
-                DifferentialBusTrace.Replay(
-                    sequence,
-                    kind => CreateUntypedFaultAdapter(kind, fault)
+                DifferentialBusTrace.Replay(sequence, kind =>
+                    CreateUntypedFaultAdapter(kind, fault)
                 )
             );
 

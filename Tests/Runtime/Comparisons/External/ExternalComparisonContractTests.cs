@@ -204,58 +204,52 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
             if (mutation == Mutation.ReuseEarlierSlot)
             {
                 probe.Add("A");
-                probe.Add(
-                    "B",
-                    message =>
+                probe.Add("B", message =>
+                {
+                    if (message == 1)
                     {
-                        if (message == 1)
-                        {
-                            probe.Add("E");
-                        }
+                        probe.Add("E");
                     }
-                );
+                });
                 probe.Add("C");
                 probe.Add("D");
                 probe.Remove("A");
             }
             else
             {
-                probe.Add(
-                    "A",
-                    message =>
+                probe.Add("A", message =>
+                {
+                    if (message != 1)
                     {
-                        if (message != 1)
-                        {
-                            return;
-                        }
-                        switch (mutation)
-                        {
-                            case Mutation.AddWithSpareCapacity:
-                                probe.Add("B");
-                                break;
-                            case Mutation.AddAtFullCapacity:
-                                probe.Add("E");
-                                break;
-                            case Mutation.RemovePending:
-                                probe.Remove("B");
-                                break;
-                            case Mutation.GrowThenRemovePending:
-                                probe.Add("E");
-                                probe.Remove("B");
-                                break;
-                            case Mutation.ReplaceLastSubscriber:
-                                probe.Remove("A");
-                                probe.Add("B");
-                                break;
-                            case Mutation.NestedPublishAfterAdd:
-                                probe.Add("B");
-                                probe.Publish(2);
-                                break;
-                            case Mutation.ThrowThenPublish:
-                                throw new InvalidOperationException("intentional callback failure");
-                        }
+                        return;
                     }
-                );
+                    switch (mutation)
+                    {
+                        case Mutation.AddWithSpareCapacity:
+                            probe.Add("B");
+                            break;
+                        case Mutation.AddAtFullCapacity:
+                            probe.Add("E");
+                            break;
+                        case Mutation.RemovePending:
+                            probe.Remove("B");
+                            break;
+                        case Mutation.GrowThenRemovePending:
+                            probe.Add("E");
+                            probe.Remove("B");
+                            break;
+                        case Mutation.ReplaceLastSubscriber:
+                            probe.Remove("A");
+                            probe.Add("B");
+                            break;
+                        case Mutation.NestedPublishAfterAdd:
+                            probe.Add("B");
+                            probe.Publish(2);
+                            break;
+                        case Mutation.ThrowThenPublish:
+                            throw new InvalidOperationException("intentional callback failure");
+                    }
+                });
                 if (
                     mutation == Mutation.AddAtFullCapacity
                     || mutation == Mutation.GrowThenRemovePending
@@ -473,20 +467,17 @@ namespace DxMessaging.Tests.Runtime.Comparisons.External
         {
             using PipeProbe probe = CreatePipe(keyed, structPayload, "nested middleware throw");
             InvalidOperationException sentinel = new("Intentional nested callback failure.");
-            probe.AddFiltered(
-                "A",
-                value =>
+            probe.AddFiltered("A", value =>
+            {
+                if (value == 1)
                 {
-                    if (value == 1)
-                    {
-                        probe.Publish(2);
-                    }
-                    if (value == 2)
-                    {
-                        throw sentinel;
-                    }
+                    probe.Publish(2);
                 }
-            );
+                if (value == 2)
+                {
+                    throw sentinel;
+                }
+            });
             probe.Add("B");
             Assert.AreEqual(2, probe.SubscribeCount, probe.Context);
             InvalidOperationException caught = Assert.Throws<InvalidOperationException>(

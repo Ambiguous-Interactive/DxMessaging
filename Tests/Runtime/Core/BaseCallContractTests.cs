@@ -171,11 +171,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             int handlerInvocations = 0;
-            MessageRegistrationHandle handle = RegisterCounter(
-                scenario,
-                token,
-                host,
-                () => handlerInvocations++
+            MessageRegistrationHandle handle = RegisterCounter(scenario, token, host, () =>
+                handlerInvocations++
             );
             try
             {
@@ -221,11 +218,8 @@ namespace DxMessaging.Tests.Runtime.Core
             );
 
             int handlerInvocations = 0;
-            MessageRegistrationHandle handle = RegisterCounter(
-                scenario,
-                token,
-                host,
-                () => handlerInvocations++
+            MessageRegistrationHandle handle = RegisterCounter(scenario, token, host, () =>
+                handlerInvocations++
             );
             try
             {
@@ -803,11 +797,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
 
                 int handlerInvocations = 0;
-                MessageRegistrationHandle handle = RegisterCounter(
-                    scenario,
-                    token,
-                    host,
-                    () => handlerInvocations++
+                MessageRegistrationHandle handle = RegisterCounter(scenario, token, host, () =>
+                    handlerInvocations++
                 );
 
                 EmitDirectly(scenario, host);

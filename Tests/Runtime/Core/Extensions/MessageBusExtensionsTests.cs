@@ -203,9 +203,8 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
 
             _ = token.RegisterTargeted(target, (in StringMessage m) => targeted = m.message);
 
-            _ = token.RegisterBroadcast(
-                source,
-                (in SourcedStringMessage m) => broadcast = m.message
+            _ = token.RegisterBroadcast(source, (in SourcedStringMessage m) =>
+                broadcast = m.message
             );
 
             _ = token.RegisterUntargeted((in GlobalStringMessage m) => untargeted = m.message);

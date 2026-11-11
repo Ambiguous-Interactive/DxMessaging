@@ -32,11 +32,8 @@ namespace DxMessaging.Tests.Runtime.Core
             int laterRan = 0;
 
             _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, hostId, () => handled++);
-            _ = ScenarioCallbacks.RegisterCountingPostProcessor(
-                scenario,
-                token,
-                hostId,
-                () => postProcessed++
+            _ = ScenarioCallbacks.RegisterCountingPostProcessor(scenario, token, hostId, () =>
+                postProcessed++
             );
 
             // Register a canceling interceptor (always false)
@@ -95,9 +92,8 @@ namespace DxMessaging.Tests.Runtime.Core
 
             using (LeakWatcher watcher = LeakWatcher.Watch(label: scenario.DisplayName))
             {
-                MessageRegistrationHandle globalHandle = RegisterGlobalCounter(
-                    token,
-                    () => globalCount++
+                MessageRegistrationHandle globalHandle = RegisterGlobalCounter(token, () =>
+                    globalCount++
                 );
                 MessageRegistrationHandle cancelHandle =
                     ScenarioCallbacks.RegisterCountingInterceptor(scenario, token, () => false);

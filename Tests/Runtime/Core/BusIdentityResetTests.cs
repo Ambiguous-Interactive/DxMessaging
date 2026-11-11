@@ -896,37 +896,31 @@ namespace DxMessaging.Tests.Runtime.Core
             int registrationsBeforeReset = -1;
             try
             {
-                RegisterGlobal(
-                    oldToken,
-                    fast,
-                    () =>
+                RegisterGlobal(oldToken, fast, () =>
+                {
+                    events.Add("old");
+                    firstCalls++;
+                    if (firstCalls != 1)
                     {
-                        events.Add("old");
-                        firstCalls++;
-                        if (firstCalls != 1)
-                        {
-                            return;
-                        }
-                        oldToken.Dispose();
-                        registrationsBeforeReset = leaks.Snapshot;
-                        DxMessagingStaticState.Reset();
-                        replacement = MessageRegistrationToken.Create(handler, bus);
-                        RegisterGlobal(replacement, fast, () => events.Add("new"));
-                        replacement.Enable();
-                        Emit(scenario, bus);
-                        if (throwAfterNested)
-                        {
-                            throw failure;
-                        }
+                        return;
                     }
-                );
+                    oldToken.Dispose();
+                    registrationsBeforeReset = leaks.Snapshot;
+                    DxMessagingStaticState.Reset();
+                    replacement = MessageRegistrationToken.Create(handler, bus);
+                    RegisterGlobal(replacement, fast, () => events.Add("new"));
+                    replacement.Enable();
+                    Emit(scenario, bus);
+                    if (throwAfterNested)
+                    {
+                        throw failure;
+                    }
+                });
                 for (int peer = 1; peer < callbackCount; ++peer)
                 {
                     int peerIndex = peer;
-                    RegisterGlobal(
-                        oldToken,
-                        fast,
-                        () => events.Add(callbackCount == 2 ? "peer" : "peer" + peerIndex)
+                    RegisterGlobal(oldToken, fast, () =>
+                        events.Add(callbackCount == 2 ? "peer" : "peer" + peerIndex)
                     );
                 }
                 oldToken.Enable();

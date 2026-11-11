@@ -112,28 +112,24 @@ namespace DxMessaging.Tests.Runtime.Core
             for (int index = 0; index < count; ++index)
             {
                 int captured = index;
-                RegisterGlobal(
-                    state.Tokens[index],
-                    fast,
-                    () =>
+                RegisterGlobal(state.Tokens[index], fast, () =>
+                {
+                    state.Calls.Add("global-" + captured);
+                    if (captured != resetPosition)
                     {
-                        state.Calls.Add("global-" + captured);
-                        if (captured != resetPosition)
-                        {
-                            return;
-                        }
-                        state.Bus.ResetState();
-                        state.RegisterFresh();
-                        if (nested)
-                        {
-                            state.Emit();
-                        }
-                        if (throwing)
-                        {
-                            throw failure;
-                        }
+                        return;
                     }
-                );
+                    state.Bus.ResetState();
+                    state.RegisterFresh();
+                    if (nested)
+                    {
+                        state.Emit();
+                    }
+                    if (throwing)
+                    {
+                        throw failure;
+                    }
+                });
             }
             state.RegisterOriginalTypedPhases(null);
             state.EnableOriginals();
@@ -340,28 +336,24 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 int captured = index;
                 bool fast = style == 1 || style == 2 && index % 2 == 0;
-                RegisterGlobal(
-                    state.Tokens[index],
-                    fast,
-                    () =>
+                RegisterGlobal(state.Tokens[index], fast, () =>
+                {
+                    state.Calls.Add("global-" + captured);
+                    if (captured != resetPosition || reset)
                     {
-                        state.Calls.Add("global-" + captured);
-                        if (captured != resetPosition || reset)
-                        {
-                            return;
-                        }
-                        reset = true;
-                        state.Bus.BumpResetGeneration();
-                        if (nested)
-                        {
-                            state.Emit();
-                        }
-                        if (throwing)
-                        {
-                            throw failure;
-                        }
+                        return;
                     }
-                );
+                    reset = true;
+                    state.Bus.BumpResetGeneration();
+                    if (nested)
+                    {
+                        state.Emit();
+                    }
+                    if (throwing)
+                    {
+                        throw failure;
+                    }
+                });
             }
             state.RegisterOriginalTypedPhases(null);
             state.EnableOriginals();
@@ -458,15 +450,11 @@ namespace DxMessaging.Tests.Runtime.Core
             state.RegisterOriginalTypedPhases(interceptor ? null : reset);
             if (interceptor)
             {
-                RegisterInterceptor(
-                    state.Tokens[0],
-                    scenario,
-                    () =>
-                    {
-                        state.Calls.Add("interceptor");
-                        reset();
-                    }
-                );
+                RegisterInterceptor(state.Tokens[0], scenario, () =>
+                {
+                    state.Calls.Add("interceptor");
+                    reset();
+                });
             }
             state.EnableOriginals();
             state.Emit();
@@ -518,19 +506,15 @@ namespace DxMessaging.Tests.Runtime.Core
             using CaseState state = new CaseState(scenario, fast, false, 2);
             bool changed = false;
             state.Handlers[1].active = !activate;
-            RegisterGlobal(
-                state.Tokens[0],
-                fast,
-                () =>
+            RegisterGlobal(state.Tokens[0], fast, () =>
+            {
+                state.Calls.Add("global-0");
+                if (!changed)
                 {
-                    state.Calls.Add("global-0");
-                    if (!changed)
-                    {
-                        state.Handlers[1].active = activate;
-                        changed = true;
-                    }
+                    state.Handlers[1].active = activate;
+                    changed = true;
                 }
-            );
+            });
             RegisterGlobal(state.Tokens[1], fast, () => state.Calls.Add("global-1"));
             state.EnableOriginals();
             state.Emit();

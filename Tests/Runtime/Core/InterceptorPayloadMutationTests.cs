@@ -313,30 +313,19 @@ namespace DxMessaging.Tests.Runtime.Core
                         replacement: mutatedId
                     )
                 );
+                handles.Add(RegisterRecordingGlobal(token, observed =>
+                    {
+                        observedByGlobal.Add(observed);
+                        stageOrder.Add("global");
+                    }));
                 handles.Add(
-                    RegisterRecordingGlobal(
-                        token,
-                        observed =>
-                        {
-                            observedByGlobal.Add(observed);
-                            stageOrder.Add("global");
-                        }
+                    RegisterRecordingHandler(scenario, token, hostId, _ =>
+                        stageOrder.Add("handler")
                     )
                 );
                 handles.Add(
-                    RegisterRecordingHandler(
-                        scenario,
-                        token,
-                        hostId,
-                        _ => stageOrder.Add("handler")
-                    )
-                );
-                handles.Add(
-                    RegisterRecordingPostProcessor(
-                        scenario,
-                        token,
-                        hostId,
-                        _ => stageOrder.Add("postProcessor")
+                    RegisterRecordingPostProcessor(scenario, token, hostId, _ =>
+                        stageOrder.Add("postProcessor")
                     )
                 );
 

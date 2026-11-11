@@ -817,10 +817,8 @@ namespace DxMessaging.Editor.Windows
                 ui.Status.tooltip = statusText;
             }
             SetExportButtonEnabled(ui, filteredEntries.Count);
-            UpdateActiveFilterSummary(
-                ui.ActiveFilter,
-                ui.State.FilterText,
-                () => ApplyState(ui, ui.State.WithFilterText(string.Empty))
+            UpdateActiveFilterSummary(ui.ActiveFilter, ui.State.FilterText, () =>
+                ApplyState(ui, ui.State.WithFilterText(string.Empty))
             );
             UpdateRouteKindChipText(ui);
 
@@ -1050,11 +1048,8 @@ namespace DxMessaging.Editor.Windows
             {
                 int entryIndex = i;
                 list.Add(
-                    CreateRow(
-                        filteredEntries[i],
-                        i,
-                        i == selectedEntryIndex,
-                        () => ApplyState(ui, ui.State.WithSelectedEntryIndex(entryIndex))
+                    CreateRow(filteredEntries[i], i, i == selectedEntryIndex, () =>
+                        ApplyState(ui, ui.State.WithSelectedEntryIndex(entryIndex))
                     )
                 );
             }
@@ -1884,9 +1879,8 @@ namespace DxMessaging.Editor.Windows
             live.style.flexShrink = 0;
             filterRow.Add(live);
 
-            ui.ActiveFilter = CreateActiveFilterSummary(
-                ui.State.FilterText,
-                () => ApplyState(ui, ui.State.WithFilterText(string.Empty))
+            ui.ActiveFilter = CreateActiveFilterSummary(ui.State.FilterText, () =>
+                ApplyState(ui, ui.State.WithFilterText(string.Empty))
             );
             controls.Add(ui.ActiveFilter);
 

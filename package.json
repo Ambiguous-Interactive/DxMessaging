@@ -89,7 +89,7 @@
     "cspell": "10.4.1",
     "jsonc-parser": "3.3.1",
     "markdownlint-cli2": "0.24.0",
-    "prettier": "3.9.10",
+    "prettier": "3.10.0",
     "smol-toml": "1.9.1",
     "yaml": "2.9.1"
   },
@@ -98,7 +98,7 @@
     "markdownlint-cli2": {
       "js-yaml": "5.5.0",
       "markdownlint": {
-        "re2js": "2.9.1"
+        "re2js": "2.10.0"
       },
       "smol-toml": "$smol-toml"
     }

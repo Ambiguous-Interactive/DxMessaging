@@ -47,30 +47,24 @@ namespace DxMessaging.Tests.Runtime.Core
             int totalInvocations = 0;
             int currentDepth = 0;
 
-            _ = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
+            _ = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++totalInvocations;
+                if (MaxRecursionDepth <= currentDepth)
                 {
-                    ++totalInvocations;
-                    if (MaxRecursionDepth <= currentDepth)
-                    {
-                        return;
-                    }
-
-                    ++currentDepth;
-                    try
-                    {
-                        EmitForScenario(scenario, hostId);
-                    }
-                    finally
-                    {
-                        --currentDepth;
-                    }
+                    return;
                 }
-            );
+
+                ++currentDepth;
+                try
+                {
+                    EmitForScenario(scenario, hostId);
+                }
+                finally
+                {
+                    --currentDepth;
+                }
+            });
 
             EmitForScenario(scenario, hostId);
 
@@ -126,25 +120,19 @@ namespace DxMessaging.Tests.Runtime.Core
                 onInvoked: () => ++interceptorInvocations
             );
 
-            _ = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
+            _ = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++handlerInvocations;
+                ++depth;
+                try
                 {
-                    ++handlerInvocations;
-                    ++depth;
-                    try
-                    {
-                        EmitForScenario(scenario, hostId);
-                    }
-                    finally
-                    {
-                        --depth;
-                    }
+                    EmitForScenario(scenario, hostId);
                 }
-            );
+                finally
+                {
+                    --depth;
+                }
+            });
 
             EmitForScenario(scenario, hostId);
 
@@ -292,21 +280,15 @@ namespace DxMessaging.Tests.Runtime.Core
             int secondCount = 0;
             MessageRegistrationHandle secondHandle = default;
 
-            _ = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
+            _ = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++firstCount;
+                if (secondHandle != default)
                 {
-                    ++firstCount;
-                    if (secondHandle != default)
-                    {
-                        token.RemoveRegistration(secondHandle);
-                        secondHandle = default;
-                    }
+                    token.RemoveRegistration(secondHandle);
+                    secondHandle = default;
                 }
-            );
+            });
 
             secondHandle = RegisterCountingHandler(
                 scenario,
@@ -374,41 +356,35 @@ namespace DxMessaging.Tests.Runtime.Core
             int latecomerInvocations = 0;
             bool latecomerRegistered = false;
 
-            _ = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
+            _ = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++primaryInvocations;
+                if (MaxDepth <= depth)
                 {
-                    ++primaryInvocations;
-                    if (MaxDepth <= depth)
-                    {
-                        return;
-                    }
+                    return;
+                }
 
-                    ++depth;
-                    try
+                ++depth;
+                try
+                {
+                    EmitForScenario(scenario, hostId);
+                    if (!latecomerRegistered)
                     {
-                        EmitForScenario(scenario, hostId);
-                        if (!latecomerRegistered)
-                        {
-                            latecomerRegistered = true;
-                            _ = RegisterCountingHandler(
-                                scenario,
-                                token,
-                                hostId,
-                                priority: 0,
-                                onInvoked: () => ++latecomerInvocations
-                            );
-                        }
-                    }
-                    finally
-                    {
-                        --depth;
+                        latecomerRegistered = true;
+                        _ = RegisterCountingHandler(
+                            scenario,
+                            token,
+                            hostId,
+                            priority: 0,
+                            onInvoked: () => ++latecomerInvocations
+                        );
                     }
                 }
-            );
+                finally
+                {
+                    --depth;
+                }
+            });
 
             EmitForScenario(scenario, hostId);
             Assert.AreEqual(
@@ -481,12 +457,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             );
 
-            bHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () => ++bCount
+            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+                ++bCount
             );
             MessageRegistrationHandle bHandleSnapshot = bHandle;
 
@@ -588,12 +560,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
                 }
             );
-            bHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 1,
-                onInvoked: () => ++bCount
+            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 1, onInvoked: () =>
+                ++bCount
             );
             MessageRegistrationHandle cHandle = RegisterCountingHandler(
                 scenario,
@@ -602,12 +570,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 priority: 2,
                 onInvoked: () => ++cCount
             );
-            dHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 3,
-                onInvoked: () => ++dCount
+            dHandle = RegisterCountingHandler(scenario, token, hostId, priority: 3, onInvoked: () =>
+                ++dCount
             );
 
             EmitForScenario(scenario, hostId);
@@ -756,12 +720,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     }
                 }
             );
-            bHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 2,
-                onInvoked: () => ++bCount
+            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 2, onInvoked: () =>
+                ++bCount
             );
 
             EmitForScenario(scenario, hostId);
@@ -974,21 +934,15 @@ namespace DxMessaging.Tests.Runtime.Core
             int aCount = 0;
             MessageRegistrationHandle aHandle = default;
 
-            aHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 0,
-                onInvoked: () =>
+            aHandle = RegisterCountingHandler(scenario, token, hostId, priority: 0, onInvoked: () =>
+            {
+                ++aCount;
+                if (aHandle != default)
                 {
-                    ++aCount;
-                    if (aHandle != default)
-                    {
-                        token.RemoveRegistration(aHandle);
-                        aHandle = default;
-                    }
+                    token.RemoveRegistration(aHandle);
+                    aHandle = default;
                 }
-            );
+            });
 
             EmitForScenario(scenario, hostId);
             Assert.AreEqual(
@@ -1057,12 +1011,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     throw new InvalidOperationException(ThrowMessage);
                 }
             );
-            bHandle = RegisterCountingHandler(
-                scenario,
-                token,
-                hostId,
-                priority: 1,
-                onInvoked: () => ++bCount
+            bHandle = RegisterCountingHandler(scenario, token, hostId, priority: 1, onInvoked: () =>
+                ++bCount
             );
 
             /*
@@ -1188,19 +1138,15 @@ namespace DxMessaging.Tests.Runtime.Core
                 interceptors run before the snapshot is acquired, the handler is
                 already gone by the time dispatch builds the bucket array.
             */
-            RegisterRemovingInterceptor(
-                scenario,
-                token,
-                () =>
+            RegisterRemovingInterceptor(scenario, token, () =>
+            {
+                ++interceptorCount;
+                if (handlerHandle != default)
                 {
-                    ++interceptorCount;
-                    if (handlerHandle != default)
-                    {
-                        token.RemoveRegistration(handlerHandle);
-                        handlerHandle = default;
-                    }
+                    token.RemoveRegistration(handlerHandle);
+                    handlerHandle = default;
                 }
-            );
+            });
 
             EmitForScenario(scenario, hostId);
             Assert.AreEqual(

@@ -294,16 +294,14 @@ namespace DxMessaging.Editor.Analyzers
         {
             try
             {
-                Type logEntriesType =
-                    Type.GetType("UnityEditor.LogEntries,UnityEditor.dll")
+                Type logEntriesType = Type.GetType("UnityEditor.LogEntries,UnityEditor.dll")
                     /*
                         S9: legacy / future-Unity probe. UnityEditorInternal.LogEntries doesn't
                         exist today, but documenting the fallback as a one-liner keeps us forward-
                         compatible at zero cost.
                     */
                     ?? Type.GetType("UnityEditorInternal.LogEntries,UnityEditor.dll");
-                _logEntryType =
-                    Type.GetType("UnityEditor.LogEntry,UnityEditor.dll")
+                _logEntryType = Type.GetType("UnityEditor.LogEntry,UnityEditor.dll")
                     ?? Type.GetType("UnityEditorInternal.LogEntry,UnityEditor.dll");
 
                 bool logEntriesBound = false;

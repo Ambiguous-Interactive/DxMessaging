@@ -112,12 +112,8 @@ namespace DxMessaging.Tests.Runtime.Core
                     : index == count - 1 ? "removed"
                     : "keep-" + index;
                 all.Add(callback);
-                handles[index] = Register(
-                    state.Token,
-                    scenario,
-                    action,
-                    family,
-                    () => state.Calls.Add(callback)
+                handles[index] = Register(state.Token, scenario, action, family, () =>
+                    state.Calls.Add(callback)
                 );
             }
             MessageRegistrationHandle victim = handles[count - 1];
@@ -143,12 +139,8 @@ namespace DxMessaging.Tests.Runtime.Core
                 state.Token.RemoveRegistration(victim);
                 if (mutation == 2)
                 {
-                    replacement = Register(
-                        state.Token,
-                        scenario,
-                        action,
-                        family,
-                        () => state.Calls.Add("replacement")
+                    replacement = Register(state.Token, scenario, action, family, () =>
+                        state.Calls.Add("replacement")
                     );
                 }
             };

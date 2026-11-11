@@ -3566,10 +3566,9 @@ namespace Sample
     /// </summary>
     private static string LocateRuntimeMessageAwareComponentSource()
     {
-        string? current =
-            Path.GetDirectoryName(
-                typeof(MessageAwareComponentBaseCallAnalyzerTests).Assembly.Location
-            ) ?? Directory.GetCurrentDirectory();
+        string? current = Path.GetDirectoryName(
+            typeof(MessageAwareComponentBaseCallAnalyzerTests).Assembly.Location
+        ) ?? Directory.GetCurrentDirectory();
         for (int hop = 0; hop < 10 && current is not null; hop++)
         {
             string candidate = Path.Combine(
