@@ -144,6 +144,14 @@ The provider caches the resource asset until player subsystem initialization or
 API; configure the resource asset for application behavior and keep fixture
 configuration in test assemblies.
 
+When the resource asset is absent, reset also releases the provider's default
+fallback object. A player completes destruction at the end of the frame; outside
+Play mode, destruction is immediate. Read the provider again after reset rather
+than keeping its old fallback. Reset preserves the resource asset.
+Editor assembly reload also releases the owned fallback. A serialized Editor owner keeps
+track of a fallback created by a later reload callback, so the next read can reuse it and
+the next reset can release it without searching for or destroying unrelated objects.
+
 For the full list of fields, defaults, and tooltip text, see the
 [Runtime Settings reference](../reference/runtime-settings.md).
 

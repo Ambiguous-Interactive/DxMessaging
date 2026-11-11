@@ -15,6 +15,7 @@ namespace DxMessaging.Core.Configuration
     public static class DxMessagingRuntimeSettingsProvider
     {
         private static DxMessagingRuntimeSettings _cached;
+        private static DxMessagingRuntimeSettings _ownedFallback;
         private static readonly object _gate = new();
 
         /// <summary>
@@ -52,13 +53,72 @@ namespace DxMessaging.Core.Configuration
         /// Clears the cached reference, forcing the next <see cref="Current"/>
         /// access to reload from <c>Resources</c>. Called when resetting static state or entering a new player session.
         /// </summary>
+        /// <remarks>
+        /// Releases only the fallback created by this provider. Resource assets and externally
+        /// supplied settings remain alive. A retained provider fallback is invalid after reset;
+        /// player destruction completes at the end of the frame.
+        /// </remarks>
         internal static void ResetCachedSettings()
         {
+            ReleaseOwnedFallbacks(immediate: !Application.isPlaying);
+        }
+
+        private static void ReleaseOwnedFallbacks(bool immediate)
+        {
+            DxMessagingRuntimeSettings ownedFallback;
+#if UNITY_EDITOR
+            DxMessagingRuntimeSettings retainedFallback;
+#endif
             lock (_gate)
             {
                 _cached = null;
+                ownedFallback = _ownedFallback;
+                _ownedFallback = null;
+#if UNITY_EDITOR
+                DxMessagingRuntimeSettingsOwnership ownership =
+                    DxMessagingRuntimeSettingsOwnership.instance;
+                retainedFallback = ownership.Fallback;
+                ownership.Fallback = null;
+#endif
+            }
+            DestroyFallback(ownedFallback, immediate);
+#if UNITY_EDITOR
+            if (!ReferenceEquals(ownedFallback, retainedFallback))
+            {
+                DestroyFallback(retainedFallback, immediate);
+            }
+#endif
+        }
+
+        private static void DestroyFallback(DxMessagingRuntimeSettings fallback, bool immediate)
+        {
+            if (fallback == null)
+            {
+                return;
+            }
+            if (immediate)
+            {
+                Object.DestroyImmediate(fallback);
+            }
+            else
+            {
+                Object.Destroy(fallback);
             }
         }
+
+#if UNITY_EDITOR
+        [UnityEditor.InitializeOnLoadMethod]
+        private static void RegisterReloadCleanup()
+        {
+            UnityEditor.AssemblyReloadEvents.beforeAssemblyReload -= ReleaseBeforeAssemblyReload;
+            UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += ReleaseBeforeAssemblyReload;
+        }
+
+        private static void ReleaseBeforeAssemblyReload()
+        {
+            ReleaseOwnedFallbacks(immediate: true);
+        }
+#endif
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void OnSubsystemRegistration()
@@ -83,11 +143,24 @@ namespace DxMessaging.Core.Configuration
             {
                 return asset;
             }
+#if UNITY_EDITOR
+            DxMessagingRuntimeSettingsOwnership ownership =
+                DxMessagingRuntimeSettingsOwnership.instance;
+            if (ownership.Fallback != null)
+            {
+                _ownedFallback = ownership.Fallback;
+                return _ownedFallback;
+            }
+#endif
             DxMessagingRuntimeSettings fallback =
                 ScriptableObject.CreateInstance<DxMessagingRuntimeSettings>();
             fallback.MarkAsFallbackInstance();
             fallback.hideFlags = HideFlags.HideAndDontSave;
             fallback.name = DxMessagingRuntimeSettings.ResourceName + " (Default)";
+            _ownedFallback = fallback;
+#if UNITY_EDITOR
+            ownership.Fallback = fallback;
+#endif
             return fallback;
         }
     }

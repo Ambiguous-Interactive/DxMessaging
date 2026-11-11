@@ -82,8 +82,12 @@ restore a Unity object reference. Retain or resolve that reference separately wh
 DxMessaging 4.0 removes `DxMessagingRuntimeSettingsProvider.Override`. Configure
 `Assets/Resources/DxMessagingRuntimeSettings.asset` for application settings and read
 `DxMessagingRuntimeSettingsProvider.Current`. Keep any fixture configuration and
-restoration in test assemblies. Resource loading, default settings, player resets,
-and live edits to the asset in the Editor keep their existing behavior.
+restoration in test assemblies.
+
+When no resource asset exists, reset releases the provider-created default instance.
+After `DxMessagingStaticState.Reset()` or an Editor script reload, read `Current` again
+instead of retaining the old fallback. Resource assets remain valid across reset.
+See [settings lifetime](../reference/runtime-settings.md#settings-lifetime).
 
 ### Opt in to inherited string demo handlers
 

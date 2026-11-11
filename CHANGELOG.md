@@ -147,8 +147,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve bus cache and generated lease owner identities across static resets so independent
   buses keep their callbacks separate and new leases on a retained custom bus receive messages
   ([#645](https://github.com/Ambiguous-Interactive/DxMessaging/issues/645), [#646](https://github.com/Ambiguous-Interactive/DxMessaging/issues/646)).
-- Apply runtime memory settings on an idle Editor update and clarify the counter-based idle-age
-  tooltip ([#644](https://github.com/Ambiguous-Interactive/DxMessaging/issues/644),
+- Apply runtime memory settings on an idle Editor update and release provider-created defaults on
+  reset and Editor assembly reload ([#730](https://github.com/Ambiguous-Interactive/DxMessaging/issues/730), [#644](https://github.com/Ambiguous-Interactive/DxMessaging/issues/644),
   [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
 - Preserve token cleanup and retryable failures during custom-bus callbacks, including activation
   that reuses a staged handle while older cleanup runs
