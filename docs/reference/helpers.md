@@ -626,6 +626,14 @@ public readonly partial struct Heal
 }
 ```
 
+### Closed generic messages on IL2CPP
+
+Use an assembly-level `DxAotMessage` attribute for each closed generic message
+that can reach an untyped dispatch API before typed registration or emission.
+The attribute is available in 4.0.0 and accepts one concrete message `Type`.
+See [generic messages on IL2CPP](../concepts/message-types.md#generic-messages-on-il2cpp)
+for the complete setup and visibility requirements.
+
 ### "Do I HAVE to use attributes?"
 
 Technically no -- but without them you must write the constructor, interface implementation, and `MessageType` property yourself (for speed, you can optionally leave this off, but it might box on certain call paths). Leaving the attributes on keeps everything consistent for the whole team.

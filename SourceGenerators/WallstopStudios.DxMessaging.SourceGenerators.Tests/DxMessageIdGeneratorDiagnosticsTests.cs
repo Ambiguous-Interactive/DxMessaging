@@ -12,6 +12,12 @@ namespace WallstopStudios.DxMessaging.SourceGenerators.Tests;
 [TestFixture]
 internal sealed class DxMessageIdGeneratorDiagnosticsTests
 {
+    private static readonly string[] Il2CppPreprocessorSymbols =
+    {
+        "ENABLE_IL2CPP",
+        "UNITY_2021_3_OR_NEWER",
+    };
+
     [Test]
     public void GeneratorsUseUnity2021CompatibleClassicSourceGeneratorApi()
     {
@@ -788,6 +794,274 @@ public readonly partial struct {{secondType}}
         }
 
         return count;
+    }
+
+    public static IEnumerable<TestCaseData> ClosedGenericMessageCases()
+    {
+        foreach (string kind in new[] { "Untargeted", "Targeted", "Broadcast" })
+        {
+            foreach (string shape in new[] { "struct", "class" })
+            {
+                foreach (bool attributed in new[] { false, true })
+                {
+                    yield return new TestCaseData(kind, shape, attributed);
+                }
+            }
+        }
+    }
+
+    /// <summary>Roots the selected closed type before any typed runtime use.</summary>
+    /// <remarks>2026-11-11: Generic definitions previously produced no startup AOT registration.</remarks>
+    [TestCaseSource(nameof(ClosedGenericMessageCases))]
+    public void AssemblySelectionRootsClosedGenericMessages(
+        string kind,
+        string shape,
+        bool attributed
+    )
+    {
+        string marker = attributed ? $"[Dx{kind}Message]" : string.Empty;
+        string contract = attributed ? string.Empty : $": I{kind}Message<ClosedMessage<T>>";
+        string source = $$"""
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Messages;
+[assembly: DxAotMessage(typeof(Sample.ClosedMessage<bool>))]
+namespace Sample
+{
+    {{marker}}
+    public partial {{shape}} ClosedMessage<T> {{contract}} { }
+}
+""";
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        string generated = GetGeneratedSource(result);
+        Assert.That(result.Diagnostics, Is.Empty, $"{kind}/{shape}/attributed={attributed}");
+        Assert.That(generated, Does.Contain("DxMessagingIl2CppMessageRegistrar"), source);
+        Assert.That(generated, Does.Contain("typeof(global::Sample.ClosedMessage<bool>)"), source);
+        string runtimeKind = kind == "Broadcast" ? "Sourced" : kind;
+        Assert.That(generated, Does.Contain($"RegisterAot{runtimeKind}Bridge"), source);
+        AssertGeneratedOutputCompilesForIl2Cpp(source);
+    }
+
+    [Test]
+    public void AssemblySelectionsDeduplicateAndSortClosedNestedMessages()
+    {
+        string source = """
+using DxMessaging.Core.Attributes;
+[assembly: DxAotMessage(typeof(Sample.Container<bool>.Message<int>))]
+[assembly: DxAotMessage(typeof(Sample.Container<bool>.Message<bool>))]
+[assembly: DxAotMessage(typeof(Sample.Container<bool>.Message<int>))]
+namespace Sample
+{
+    public partial class Container<T>
+    {
+        [DxUntargetedMessage]
+        public partial struct Message<U> { }
+    }
+}
+""";
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        string generated = GetGeneratedSource(result);
+        Assert.That(result.Diagnostics, Is.Empty, source);
+        Assert.That(
+            CountOccurrences(generated, "RegisterAotUntargetedBridge"),
+            Is.EqualTo(2),
+            source
+        );
+        Assert.That(
+            generated.IndexOf(
+                "typeof(global::Sample.Container<bool>.Message<bool>)",
+                StringComparison.Ordinal
+            ),
+            Is.LessThan(
+                generated.IndexOf(
+                    "typeof(global::Sample.Container<bool>.Message<int>)",
+                    StringComparison.Ordinal
+                )
+            ),
+            source
+        );
+        string normalizedSource = source.Replace("\r\n", "\n", StringComparison.Ordinal);
+        string reordered = normalizedSource.Replace(
+            "[assembly: DxAotMessage(typeof(Sample.Container<bool>.Message<int>))]\n[assembly: DxAotMessage(typeof(Sample.Container<bool>.Message<bool>))]\n[assembly: DxAotMessage(typeof(Sample.Container<bool>.Message<int>))]",
+            "[assembly: DxAotMessage(typeof(Sample.Container<bool>.Message<bool>))]\n[assembly: DxAotMessage(typeof(Sample.Container<bool>.Message<int>))]",
+            StringComparison.Ordinal
+        );
+        Assert.That(
+            reordered,
+            Is.Not.EqualTo(normalizedSource),
+            "The ordering control must actually change the assembly selections."
+        );
+        Assert.That(
+            GetGeneratedSource(GeneratorTestUtilities.RunDxMessageId(reordered)),
+            Is.EqualTo(generated),
+            "Duplicate multiplicity and assembly attribute order must not change the registrar."
+        );
+        AssertGeneratedOutputCompilesForIl2Cpp(source);
+    }
+
+    [TestCase("typeof(Sample.Message<>)")]
+    [TestCase("typeof(int)")]
+    [TestCase("typeof(Sample.AbstractMessage<int>)")]
+    [TestCase("typeof(Sample.IMessage<int>)")]
+    [TestCase("null")]
+    public void InvalidAssemblySelectionReportsDiagnostic(string expression)
+    {
+        string source = $$"""
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Messages;
+[assembly: DxAotMessage({{expression}})]
+namespace Sample
+{
+    [DxUntargetedMessage] public partial struct Message<T> { }
+    public abstract class AbstractMessage<T> : IUntargetedMessage { }
+    public interface IMessage<T> : IUntargetedMessage { }
+}
+""";
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        Assert.That(
+            result.Diagnostics,
+            Has.Exactly(1).Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG014"),
+            expression
+        );
+        Assert.That(
+            GetGeneratedSource(result),
+            Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"),
+            expression
+        );
+    }
+
+    [Test]
+    public void AssemblySelectionRootsEveryImplementedRouteOnce()
+    {
+        string source = """
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Messages;
+[assembly: DxAotMessage(typeof(Sample.Multi<int[]>))]
+[assembly: DxAotMessage(typeof(Sample.Multi<int[]>))]
+namespace Sample
+{
+    public struct Multi<T> : IUntargetedMessage<Multi<T>>, ITargetedMessage<Multi<T>>, IBroadcastMessage<Multi<T>>
+    { public System.Type MessageType => typeof(Multi<T>); }
+}
+""";
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        string generated = GetGeneratedSource(result);
+        Assert.That(result.Diagnostics, Is.Empty, source);
+        foreach (string kind in new[] { "Untargeted", "Targeted", "Sourced" })
+        {
+            Assert.That(
+                CountOccurrences(generated, $"RegisterAot{kind}Bridge"),
+                Is.EqualTo(1),
+                kind
+            );
+        }
+        AssertGeneratedOutputCompilesForIl2Cpp(source);
+    }
+
+    [Test]
+    public void AssemblySelectionDoesNotDuplicateOrdinaryAttributedBridge()
+    {
+        string source = """
+using DxMessaging.Core.Attributes;
+[assembly: DxAotMessage(typeof(Sample.Ordinary))]
+namespace Sample
+{
+    [DxUntargetedMessage] public partial struct Ordinary { }
+}
+""";
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        string generated = GetGeneratedSource(result);
+        Assert.That(result.Diagnostics, Is.Empty, source);
+        Assert.That(
+            CountOccurrences(generated, "RegisterAotUntargetedBridge"),
+            Is.EqualTo(1),
+            source
+        );
+        Assert.That(generated, Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"), source);
+        AssertGeneratedOutputCompilesForIl2Cpp(source);
+    }
+
+    [TestCase("Sample.Container.PrivateMessage<int>")]
+    [TestCase("Sample.Container.PublicMessage<Sample.Container.PrivateArgument>")]
+    public void InaccessibleAssemblySelectionsReportDiagnostic(string selected)
+    {
+        string source = $$"""
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Messages;
+[assembly: DxAotMessage(typeof({{selected}}))]
+namespace Sample
+{
+    public class Container
+    {
+        private class PrivateArgument { }
+        private struct PrivateMessage<T> : IUntargetedMessage<PrivateMessage<T>> { }
+        public struct PublicMessage<T> : IUntargetedMessage<PublicMessage<T>> { }
+    }
+}
+""";
+        GeneratorDriverRunResult result = GeneratorTestUtilities.RunDxMessageId(source);
+        Assert.That(
+            result.Diagnostics,
+            Has.Exactly(1).Matches<Diagnostic>(d => d is not null && d.Id == "DXMSG014"),
+            selected
+        );
+        Assert.That(
+            GetGeneratedSource(result),
+            Does.Not.Contain("DxMessagingIl2CppMessageRegistrar"),
+            selected
+        );
+    }
+
+    [Test]
+    public void AssemblyOnlyConsumerRootsReferencedGenericMessage()
+    {
+        PortableExecutableReference referencedAssembly =
+            GeneratorTestUtilities.CompileBaseCallAnalyzerParent(
+                """
+namespace External
+{
+    public readonly struct Message<T> : DxMessaging.Core.Messages.IUntargetedMessage<Message<T>> { }
+}
+"""
+            );
+        CSharpParseOptions options = new(
+            LanguageVersion.CSharp9,
+            preprocessorSymbols: Il2CppPreprocessorSymbols
+        );
+        string source =
+            "[assembly: DxMessaging.Core.Attributes.DxAotMessage(typeof(External.Message<bool>))]";
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "AssemblyOnlyConsumer",
+            new[] { CSharpSyntaxTree.ParseText(source, options) },
+            GeneratorTestUtilities.CompilationReferences.Add(referencedAssembly),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new[] { new DxMessageIdGenerator() },
+            parseOptions: options
+        );
+        driver = driver.RunGeneratorsAndUpdateCompilation(
+            compilation,
+            out Compilation output,
+            out System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics
+        );
+        Assert.That(
+            diagnostics,
+            Is.Empty,
+            "A referenced closed message must be accepted without any local type declarations."
+        );
+        Assert.That(
+            output.GetDiagnostics(),
+            Is.Empty,
+            "The cross-assembly startup registrar must compile without warnings."
+        );
+        Assert.That(
+            GetGeneratedSource(driver.GetRunResult()),
+            Does.Contain("typeof(global::External.Message<bool>)"),
+            "The registrar must root the selected external closed type."
+        );
     }
 
     private static void AssertGeneratedOutputCompilesForIl2Cpp(string source)

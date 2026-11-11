@@ -22,6 +22,7 @@ DxMessaging ships source generators and a Roslyn analyzer that report authoring 
 | [`DXMSG011`](#dxmsg011-cannot-preserve-explicit-interface-struct-initializers)   | Error    | Cannot preserve explicit-interface struct initializers                                | `DxAutoConstructorGenerator`            |
 | [`DXMSG012`](#dxmsg012-cannot-infer-primary-constructor-arguments)               | Error    | Cannot infer primary constructor arguments                                            | `DxAutoConstructorGenerator`            |
 | [`DXMSG013`](#dxmsg013-field-constructor-conflicts-with-record-copy-constructor) | Error    | Field constructor conflicts with record copy constructor                              | `DxAutoConstructorGenerator`            |
+| [`DXMSG014`](#dxmsg014-aot-registration-requires-an-accessible-closed-message)   | Error    | AOT registration requires an accessible closed message                                | `DxMessageIdGenerator`                  |
 
 > All diagnostic IDs can be customised per project in `.editorconfig`. For example,
 > `dotnet_diagnostic.DXMSG006.severity = error` makes a missing base call a build error.
@@ -623,6 +624,21 @@ If you are upgrading from a prior version and DXMSG warnings stop appearing on U
 1. After the next compile finishes, refresh the overlay cache via `Tools -> Wallstop Studios -> DxMessaging -> Rescan Base-Call Warnings`.
 
 For Unity 2021, the package-owned `[CustomEditor(typeof(MessageAwareComponent), editorForChildClasses: true)]` path is the primary warning surface because `Editor.finishedDefaultHeaderGUI` does not always fire for plain `MonoBehaviour` subclasses. User-defined custom editors for specific `MessageAwareComponent` subclasses still keep their body; the header hook supplies an IMGUI HelpBox for those editors when Unity fires the callback. See the [Inspector integration](#inspector-integration) section above.
+
+---
+
+## DXMSG014: AOT registration requires an accessible closed message
+
+An assembly-level `DxAotMessage` attribute must select a closed, concrete class
+or struct with a Dx message contract. The type and its generic arguments must be
+accessible from the assembly containing the attribute. A generic definition,
+abstract class, interface, null value, or non-message type cannot produce a bridge.
+
+Replace an open selection with each concrete form used by untyped dispatch.
+Use a public or internal type accessible to the assembly, or perform typed
+registration or emission before untyped dispatch for a private message.
+See [generic messages on IL2CPP](../concepts/message-types.md#generic-messages-on-il2cpp)
+for a complete assembly-attribute example.
 
 ---
 

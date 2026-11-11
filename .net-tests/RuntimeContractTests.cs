@@ -13,6 +13,29 @@ namespace DxMessaging.Tests.Net;
 public sealed class RuntimeContractTests
 {
     [Test]
+    public void AotSelectionAttributeRetainsTheExactClosedType()
+    {
+        Type selected = typeof(AttributeMessage<bool>);
+        DxMessaging.Core.Attributes.DxAotMessageAttribute attribute = new(selected);
+        Assert.That(
+            attribute.MessageType,
+            Is.SameAs(selected),
+            "The attribute must retain the selected closed Type."
+        );
+    }
+
+    [Test]
+    public void AotSelectionAttributeRejectsNullType()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => new DxMessaging.Core.Attributes.DxAotMessageAttribute(null!),
+            "A null type cannot identify a message bridge."
+        );
+    }
+
+    private readonly struct AttributeMessage<T> : IUntargetedMessage<AttributeMessage<T>> { }
+
+    [Test]
     public void RuntimeHasNoUnityAssemblyDependency()
     {
         Assert.That(

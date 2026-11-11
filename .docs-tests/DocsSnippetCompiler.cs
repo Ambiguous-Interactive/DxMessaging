@@ -573,6 +573,13 @@ namespace DxMessaging.Core.Attributes
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
     public sealed class DxUntargetedMessageAttribute : Attribute { }
 
+    // SYNC: Runtime/Core/Attributes/DxAotMessageAttribute.cs assembly opt-in signature.
+    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+    public sealed class DxAotMessageAttribute : Attribute
+    {
+        public DxAotMessageAttribute(Type messageType) { }
+    }
+
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
     public sealed class DxBroadcastMessageAttribute : Attribute { }
 
