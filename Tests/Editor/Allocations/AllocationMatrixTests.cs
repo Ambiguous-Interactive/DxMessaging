@@ -258,6 +258,141 @@ namespace DxMessaging.Tests.Editor.Allocations
             );
         }
 
+        /// <summary>Measures explicit reference and value state without a captured user callback.</summary>
+        [Test]
+        public void EmitWithExplicitStateIsZeroAlloc(
+            [ValueSource(
+                typeof(MessageScenarios),
+                nameof(MessageScenarios.WithAndWithoutPostProcessorIncludingWithoutContext)
+            )]
+                MessageScenario scenario,
+            [Values(false, true)] bool valueState
+        )
+        {
+            ExplicitStateCounter counter = new ExplicitStateCounter();
+            if (valueState)
+            {
+                VerifyExplicitState(scenario, new ExplicitValueState(counter));
+            }
+            else
+            {
+                VerifyExplicitState(scenario, counter);
+            }
+        }
+
+        private void VerifyExplicitState<TState>(MessageScenario scenario, TState state)
+            where TState : IExplicitStateProbe
+        {
+            RunWithFreshHarness(scenario, (token, bus) =>
+            {
+                token.DiagnosticMode = false;
+                switch (scenario.Kind)
+                {
+                    case MessageKind.Untargeted:
+                    {
+                        MessageRegistrationToken.StateHandler<
+                            SimpleUntargetedMessage,
+                            TState
+                        > callback = static (TState value, in SimpleUntargetedMessage __) =>
+                            value.Record();
+                        _ = scenario.UsePostProcessor
+                            ? token.RegisterUntargetedPostProcessor(state, callback)
+                            : token.RegisterUntargeted(state, callback);
+                        break;
+                    }
+                    case MessageKind.Targeted:
+                    {
+                        MessageRegistrationToken.StateHandler<
+                            SimpleTargetedMessage,
+                            TState
+                        > callback = static (TState value, in SimpleTargetedMessage __) =>
+                            value.Record();
+                        _ = scenario.UsePostProcessor
+                            ? token.RegisterTargetedPostProcessor(StableTarget, state, callback)
+                            : token.RegisterTargeted(StableTarget, state, callback);
+                        break;
+                    }
+                    case MessageKind.Broadcast:
+                    {
+                        MessageRegistrationToken.StateHandler<
+                            SimpleBroadcastMessage,
+                            TState
+                        > callback = static (TState value, in SimpleBroadcastMessage __) =>
+                            value.Record();
+                        _ = scenario.UsePostProcessor
+                            ? token.RegisterBroadcastPostProcessor(StableSource, state, callback)
+                            : token.RegisterBroadcast(StableSource, state, callback);
+                        break;
+                    }
+                    case MessageKind.TargetedWithoutTargeting:
+                    {
+                        MessageRegistrationToken.StateHandlerWithContext<
+                            SimpleTargetedMessage,
+                            TState
+                        > callback = static (
+                            TState value,
+                            in InstanceId _,
+                            in SimpleTargetedMessage __
+                        ) => value.Record();
+                        _ = scenario.UsePostProcessor
+                            ? token.RegisterTargetedWithoutTargetingPostProcessor(state, callback)
+                            : token.RegisterTargetedWithoutTargeting(state, callback);
+                        break;
+                    }
+                    case MessageKind.BroadcastWithoutSource:
+                    {
+                        MessageRegistrationToken.StateHandlerWithContext<
+                            SimpleBroadcastMessage,
+                            TState
+                        > callback = static (
+                            TState value,
+                            in InstanceId _,
+                            in SimpleBroadcastMessage __
+                        ) => value.Record();
+                        _ = scenario.UsePostProcessor
+                            ? token.RegisterBroadcastWithoutSourcePostProcessor(state, callback)
+                            : token.RegisterBroadcastWithoutSource(state, callback);
+                        break;
+                    }
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(scenario));
+                }
+                Action emit = BuildEmitClosure(scenario, bus);
+                AllocationAssertions.AssertNoAllocations(
+                    $"ExplicitState-{scenario}-{typeof(TState).Name}",
+                    emit
+                );
+                Assert.That(
+                    state.Count,
+                    Is.GreaterThan(0),
+                    $"[{scenario}, {typeof(TState).Name}] Allocation window must execute the actual state callback."
+                );
+            });
+        }
+
+        private interface IExplicitStateProbe
+        {
+            int Count { get; }
+            void Record();
+        }
+
+        private sealed class ExplicitStateCounter : IExplicitStateProbe
+        {
+            public int Count { get; private set; }
+
+            public void Record() => ++Count;
+        }
+
+        private readonly struct ExplicitValueState : IExplicitStateProbe
+        {
+            private readonly ExplicitStateCounter _counter;
+            public int Count => _counter.Count;
+
+            internal ExplicitValueState(ExplicitStateCounter counter) => _counter = counter;
+
+            public void Record() => _counter.Record();
+        }
+
         /// <summary>
         /// Pins zero-allocation emission for the bare register-one-handler-then-emit
         /// path across every dispatch surface. Closure under measurement is built

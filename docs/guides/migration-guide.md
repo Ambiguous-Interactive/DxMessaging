@@ -4,6 +4,12 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 ## Migrating to 4.0.0
 
+### Replace selected subscription sets
+
+Use [registration groups, source retargeting, and explicit state handlers](subscription-ownership.md)
+to replace application-owned handle lists and capturing registration callbacks. Existing token lifecycle
+calls still control activation. Finish a group's pending cleanup before replacing it.
+
 ### Choose primary constructor arguments explicitly
 
 When `[DxAutoConstructor]` is applied to a type with primary constructor parameters and public

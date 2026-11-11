@@ -811,6 +811,7 @@ Unity messaging tests on the main thread and avoid concurrent access to that sha
 ### Unity Integration
 
 - [Unity Integration](docs/guides/unity-integration.md) -- MessagingComponent deep dive
+- [Subscription Ownership](docs/guides/subscription-ownership.md) -- groups, source moves, and static handlers with explicit state (4.0.0)
 - [Targeting & Context](docs/concepts/targeting-and-context.md) -- GameObject vs Component
 - [Diagnostics](docs/guides/diagnostics.md) -- editor tools, traces, and debugging
 - [Memory Reclamation](docs/guides/memory-reclamation.md) -- idle eviction, explicit Trim, and tuning the runtime settings asset

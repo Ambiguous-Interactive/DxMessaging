@@ -23,6 +23,101 @@ internal sealed class DocumentationImportTests
         )
     );
 
+    /// <summary>Compiles the full ownership guide against real APIs and rejects broken group, move, and state calls.</summary>
+    [TestCase("published", true)]
+    [TestCase("group", false)]
+    [TestCase("source", false)]
+    [TestCase("state", false)]
+    public void SubscriptionOwnershipGuideUsesActualRuntimeContracts(
+        string shape,
+        bool expectedSuccess
+    )
+    {
+        DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
+        {
+            root = root.Parent;
+        }
+        Assert.That(root, Is.Not.Null, "Locate the subscription ownership guide.");
+        string path = Path.Combine(root!.FullName, "docs", "guides", "subscription-ownership.md");
+        Match[] examples = Regex
+            .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
+            .ToArray();
+        Assert.That(examples, Has.Length.EqualTo(1), path + ": one complete ownership example");
+        string source = examples[0].Groups["code"].Value;
+        string marker = string.Empty;
+        if (shape == "group")
+        {
+            source = source.Replace(
+                ".CreateGroup()",
+                ".CreateMissingGroup()",
+                StringComparison.Ordinal
+            );
+            marker = "CreateMissingGroup";
+        }
+        else if (shape == "source")
+        {
+            source = source.Replace(
+                ".RetargetSource(",
+                ".RetargetMissingSource(",
+                StringComparison.Ordinal
+            );
+            marker = "RetargetMissingSource";
+        }
+        else if (shape == "state")
+        {
+            source = source.Replace(
+                "RegisterBroadcast<ParentChanged, ParentSubscriptions>",
+                "RegisterBroadcast<ParentChanged, ParentSubscriptions, int>",
+                StringComparison.Ordinal
+            );
+            marker = "RegisterBroadcast";
+        }
+        else
+        {
+            Assert.That(shape, Is.EqualTo("published"), path + ": known control shape");
+        }
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        SyntaxTree tree = CSharpSyntaxTree.ParseText(
+            source,
+            new CSharpParseOptions(LanguageVersion.CSharp9),
+            path
+        );
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "SubscriptionOwnershipGuide",
+            new[] { tree },
+            references
+                .Split(Path.PathSeparator)
+                .Select(file => MetadataReference.CreateFromFile(file))
+                .Append(PortableRuntime.Value),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
+        Assert.That(
+            emitted.Success,
+            Is.EqualTo(expectedSuccess),
+            $"{path}; shape={shape}:\n" + string.Join("\n", emitted.Diagnostics)
+        );
+        if (!expectedSuccess)
+        {
+            Assert.That(
+                emitted.Diagnostics.Any(diagnostic =>
+                    diagnostic.Severity == DiagnosticSeverity.Error
+                    && diagnostic
+                        .GetMessage(System.Globalization.CultureInfo.InvariantCulture)
+                        .Contains(marker, StringComparison.Ordinal)
+                ),
+                Is.True,
+                $"{path}; shape={shape}: actual API binding must reject {marker}"
+            );
+        }
+    }
+
     /// <summary>Check the inherited bus configuration call against the production declaration.</summary>
     /// <remarks>2026-11-03: ZenjectAwareComponent called Configure instead of its inherited API.</remarks>
     [Test]

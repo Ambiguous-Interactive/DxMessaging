@@ -6,6 +6,18 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile
+      Include="../Tests/Runtime/Core/RetargetSourceSpecificTests.cs"
+      Link="RetargetSourceSpecificTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/StatePassingHandlerTests.cs"
+      Link="StatePassingHandlerTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/MessageRegistrationGroupTests.cs"
+      Link="MessageRegistrationGroupTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/MessageRecorderTests.cs"
       Link="MessageRecorderTests.cs"
     />

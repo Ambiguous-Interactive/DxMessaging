@@ -46,9 +46,12 @@ DxMessaging.Core.MessageHandler
 DxMessaging.Core.MessageHandler+FastHandlerWithContext`1
 DxMessaging.Core.MessageHandler+FastHandler`1
 DxMessaging.Core.MessageHandler+GlobalMessageBusScope
+DxMessaging.Core.MessageRegistrationGroup
 DxMessaging.Core.MessageRegistrationHandle
 DxMessaging.Core.MessageRegistrationToken
 DxMessaging.Core.MessageRegistrationToken+RegistrationDisposable
+DxMessaging.Core.MessageRegistrationToken+StateHandlerWithContext`2
+DxMessaging.Core.MessageRegistrationToken+StateHandler`2
 DxMessaging.Core.Messages.GlobalStringMessage
 DxMessaging.Core.Messages.IBroadcastMessage
 DxMessaging.Core.Messages.IBroadcastMessage`1

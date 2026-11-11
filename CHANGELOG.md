@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add registration groups, source retargeting, and explicit-state handlers so pooled objects can replace subscriptions
+  without application-owned cleanup loops or captured callbacks
+  ([#738](https://github.com/Ambiguous-Interactive/DxMessaging/issues/738)).
 - Add exclusive Unity messaging lifecycle ownership with retryable cleanup, stale-token and destroyed-owner protection,
   and `DXMSG015` callback forwarding diagnostics for classes with another base
   ([#737](https://github.com/Ambiguous-Interactive/DxMessaging/issues/737)).
@@ -57,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix arithmetic overflow when a token receives a handle it does not own in projects with checked arithmetic enabled
+  ([#738](https://github.com/Ambiguous-Interactive/DxMessaging/issues/738)).
 - Accept npm 12 package metadata when validating packages and exporting `.unitypackage` files.
   ([#742](https://github.com/Ambiguous-Interactive/DxMessaging/issues/742)).
 - Keep empty listener storage eligible for later cleanup when ordinary trim runs during dispatch

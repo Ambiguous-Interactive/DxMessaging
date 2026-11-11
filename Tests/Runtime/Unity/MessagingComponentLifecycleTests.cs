@@ -35,6 +35,73 @@ namespace DxMessaging.Tests.Runtime.Unity
     /// </remarks>
     public sealed class MessagingComponentLifecycleTests : MessagingTestBase
     {
+        /// <summary>Moves a group-owned source handle through the GameObject overload.</summary>
+        [Test]
+        public void RetargetGameObjectSourceKeepsTheGroupOwnedHandle(
+            [Values(false, true)] bool emptySource
+        )
+        {
+            GameObject previous = CreateSourceIdentityProbe("previous-source");
+            _spawned.Add(previous);
+            GameObject next = emptySource ? null : CreateSourceIdentityProbe("next-source");
+            if (next != null)
+            {
+                _spawned.Add(next);
+            }
+            MessageBus bus = new MessageBus();
+            using LeakWatcher leaks = new LeakWatcher(bus);
+            MessageHandler handler = new MessageHandler(new InstanceId(974), bus) { active = true };
+            using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            token.Enable();
+            using MessageRegistrationGroup group = token.CreateGroup();
+            int calls = 0;
+            MessageRegistrationHandle handle = group.Add(
+                token.RegisterGameObjectBroadcast<SimpleBroadcastMessage>(
+                    previous,
+                    (in SimpleBroadcastMessage _) => ++calls
+                )
+            );
+            Assert.That(
+                token.RetargetSource(handle, next),
+                Is.True,
+                $"emptySource={emptySource}: GameObject conversion preserves the registration handle."
+            );
+            InstanceId previousId = previous;
+            InstanceId nextId = next;
+            SimpleBroadcastMessage message = new SimpleBroadcastMessage();
+            bus.SourcedBroadcast(ref previousId, ref message);
+            bus.SourcedBroadcast(ref nextId, ref message);
+            Assert.That(
+                calls,
+                Is.EqualTo(1),
+                $"emptySource={emptySource}: only the selected source delivers."
+            );
+            group.Dispose();
+            bus.SourcedBroadcast(ref nextId, ref message);
+            Assert.That(
+                calls,
+                Is.EqualTo(1),
+                $"emptySource={emptySource}: group disposal still removes the moved handle."
+            );
+            Assert.That(
+                group.Count,
+                Is.Zero,
+                $"emptySource={emptySource}: cleanup completes through its original group."
+            );
+        }
+
+        private static GameObject CreateSourceIdentityProbe(string name)
+        {
+#if UNITY_EDITOR
+            return global::UnityEditor.EditorUtility.CreateGameObjectWithHideFlags(
+                name,
+                HideFlags.HideAndDontSave
+            );
+#else
+            return new GameObject(name);
+#endif
+        }
+
         /// <summary>Preserves each accepted configuration's mode and order across foreign cleanup.</summary>
         [Test]
         public void QueuedConfigurationsPreserveRequestOrderAndModes(

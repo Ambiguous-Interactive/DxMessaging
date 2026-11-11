@@ -43,7 +43,7 @@ namespace DxMessaging.Core
     /// }
     /// </code>
     /// </example>
-    public sealed class MessageRegistrationToken : IDisposable
+    public sealed partial class MessageRegistrationToken : IDisposable
     {
         /// <summary>
         /// Whether new registrations activate immediately.
@@ -1387,6 +1387,61 @@ namespace DxMessaging.Core
             return handle;
         }
 
+        private List<Registration> _groupRegistrationsInFlight;
+
+        /// <summary>Creates an owner for a selected set of this token's registrations.</summary>
+        /// <returns>An empty group. Enroll returned registration handles with <see cref="MessageRegistrationGroup.Add"/>.</returns>
+        /// <remarks>Added in 4.0.0. Group disposal removes its members without disabling this token or changing unrelated registrations.</remarks>
+        public MessageRegistrationGroup CreateGroup()
+        {
+            _groupRegistrationsInFlight ??= new List<Registration>();
+            return new MessageRegistrationGroup(this);
+        }
+
+        internal bool OwnsRegistration(MessageRegistrationHandle handle)
+        {
+            if (
+                TryGetSlot(handle.Slot, handle.Id, out _)
+                || (_orphanDeregistrations != null && _orphanDeregistrations.ContainsKey(handle))
+            )
+            {
+                return true;
+            }
+            if (_groupRegistrationsInFlight != null)
+            {
+                foreach (Registration registration in _groupRegistrationsInFlight)
+                {
+                    if (registration.Handle == handle && registration.IsRegistering)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        internal void TrackGroupRegistration(MessageRegistrationHandle handle)
+        {
+            if (
+                TryGetSlot(handle.Slot, handle.Id, out RegistrationSlot slot)
+                && slot.Registration.IsRegistering
+            )
+            {
+                TrackGroupRegistration(slot.Registration);
+            }
+        }
+
+        private void TrackGroupRegistration(Registration registration)
+        {
+            if (
+                _groupRegistrationsInFlight != null
+                && !_groupRegistrationsInFlight.Contains(registration)
+            )
+            {
+                _groupRegistrationsInFlight.Add(registration);
+            }
+        }
+
         /// <summary>
         /// Activates staged registrations in their original registration order.
         /// </summary>
@@ -1451,6 +1506,7 @@ namespace DxMessaging.Core
         /// </example>
         public void Disable()
         {
+            CancelSourceMoves();
             if (!_enabled && _deregistrationCount == 0)
             {
                 return;
@@ -1482,6 +1538,7 @@ namespace DxMessaging.Core
         /// </example>
         public void UnregisterAll()
         {
+            CancelSourceMoves();
             Exception deregistrationException = InvokeDeregistrationQueue();
             if (deregistrationException == null && _deregistrationCount == 0)
             {
@@ -2424,6 +2481,10 @@ namespace DxMessaging.Core
                 _enabled = 0 < _deregistrationCount;
                 ExceptionDispatchInfo.Capture(exception).Throw();
             }
+            if (_registrationCount == 0 && _deregistrationCount == 0)
+            {
+                ClearDiagnosticState();
+            }
         }
 
         private int AllocateSlot()
@@ -2449,7 +2510,8 @@ namespace DxMessaging.Core
 
         private bool TryGetSlot(int slotIndex, long id, out RegistrationSlot slot)
         {
-            if ((uint)slotIndex < (uint)_slots.Length)
+            // Non-token handles use -1 even when consumers enable checked arithmetic.
+            if (unchecked((uint)slotIndex < (uint)_slots.Length))
             {
                 slot = _slots[slotIndex];
                 if (slot.Registration != null && slot.Id == id)
@@ -2988,7 +3050,28 @@ namespace DxMessaging.Core
                 return RegisterValidated();
             }
 
-            internal abstract MessageHandler.HandlerDeregistration RegisterValidated();
+            private int _registrationDepth;
+            internal bool IsRegistering => 0 < _registrationDepth;
+
+            internal MessageHandler.HandlerDeregistration RegisterValidated()
+            {
+                ++_registrationDepth;
+                try
+                {
+                    Token.TrackGroupRegistration(this);
+                    return RegisterCore();
+                }
+                finally
+                {
+                    --_registrationDepth;
+                    if (_registrationDepth == 0)
+                    {
+                        Token._groupRegistrationsInFlight?.Remove(this);
+                    }
+                }
+            }
+
+            protected abstract MessageHandler.HandlerDeregistration RegisterCore();
 
             /*
                 Rejects invalid staged state without mutating the token or bus. Register()
@@ -3167,7 +3250,7 @@ namespace DxMessaging.Core
                     _priority
                 );
 
-            internal override MessageHandler.HandlerDeregistration RegisterValidated()
+            protected override MessageHandler.HandlerDeregistration RegisterCore()
             {
                 MessageHandler messageHandler = Token._messageHandler;
                 IMessageBus messageBus = ResolveRegistrationMessageBus();
@@ -3383,7 +3466,7 @@ namespace DxMessaging.Core
                     _priority
                 );
 
-            internal override MessageHandler.HandlerDeregistration RegisterValidated()
+            protected override MessageHandler.HandlerDeregistration RegisterCore()
             {
                 MessageHandler messageHandler = Token._messageHandler;
                 IMessageBus messageBus = ResolveRegistrationMessageBus();
@@ -3476,13 +3559,25 @@ namespace DxMessaging.Core
             }
         }
 
-        private sealed class BroadcastRegistration<T> : Registration<T>
+        private sealed class BroadcastRegistration<T> : Registration<T>, ISourceRegistration
             where T : IBroadcastMessage
         {
             private readonly RegistrationKind _kind;
-            private readonly InstanceId _context;
+            private InstanceId _context;
             private readonly object _userHandler;
             private readonly int _priority;
+
+            public bool SupportsSourceRetargeting =>
+                _kind == RegistrationKind.BroadcastHandlerAction
+                || _kind == RegistrationKind.BroadcastHandlerFast
+                || _kind == RegistrationKind.BroadcastPostProcessorAction
+                || _kind == RegistrationKind.BroadcastPostProcessorFast;
+
+            public InstanceId Source
+            {
+                get => _context;
+                set => _context = value;
+            }
 
             internal BroadcastRegistration(
                 MessageRegistrationToken token,
@@ -3512,7 +3607,7 @@ namespace DxMessaging.Core
                     _priority
                 );
 
-            internal override MessageHandler.HandlerDeregistration RegisterValidated()
+            protected override MessageHandler.HandlerDeregistration RegisterCore()
             {
                 MessageHandler messageHandler = Token._messageHandler;
                 IMessageBus messageBus = ResolveRegistrationMessageBus();
@@ -3623,7 +3718,11 @@ namespace DxMessaging.Core
             private Binding GetBinding(IMessageBus messageBus)
             {
                 IMessageBus resolvedBus = messageBus ?? Token._messageHandler.DefaultMessageBus;
-                if (_binding == null || !ReferenceEquals(_binding.MessageBus, resolvedBus))
+                if (
+                    _binding == null
+                    || !ReferenceEquals(_binding.MessageBus, resolvedBus)
+                    || _binding.Source != _context
+                )
                 {
                     _binding = new Binding(this, resolvedBus);
                 }
@@ -3637,6 +3736,8 @@ namespace DxMessaging.Core
                 private readonly Action<InstanceId, T> _contextAction;
                 private readonly MessageHandler.FastHandlerWithContext<T> _contextFast;
                 private readonly InstanceId _context;
+
+                internal InstanceId Source => _context;
 
                 public Binding(BroadcastRegistration<T> registration, IMessageBus messageBus)
                     : base(registration.Token, registration.Handle, messageBus)
@@ -3754,7 +3855,7 @@ namespace DxMessaging.Core
                     Priority
                 );
 
-            internal override MessageHandler.HandlerDeregistration RegisterValidated()
+            protected override MessageHandler.HandlerDeregistration RegisterCore()
             {
                 return StoreDeregistration(
                     Token._messageHandler.RegisterUntargetedInterceptor(
@@ -3794,7 +3895,7 @@ namespace DxMessaging.Core
                     Priority
                 );
 
-            internal override MessageHandler.HandlerDeregistration RegisterValidated()
+            protected override MessageHandler.HandlerDeregistration RegisterCore()
             {
                 return StoreDeregistration(
                     Token._messageHandler.RegisterTargetedInterceptor(
@@ -3834,7 +3935,7 @@ namespace DxMessaging.Core
                     Priority
                 );
 
-            internal override MessageHandler.HandlerDeregistration RegisterValidated()
+            protected override MessageHandler.HandlerDeregistration RegisterCore()
             {
                 return StoreDeregistration(
                     Token._messageHandler.RegisterBroadcastInterceptor(
@@ -3913,7 +4014,7 @@ namespace DxMessaging.Core
                 _broadcastFast = broadcast;
             }
 
-            internal override MessageHandler.HandlerDeregistration RegisterValidated()
+            protected override MessageHandler.HandlerDeregistration RegisterCore()
             {
                 MessageHandler messageHandler = Token._messageHandler;
                 IMessageBus messageBus = ResolveRegistrationMessageBus();

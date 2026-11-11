@@ -191,6 +191,7 @@ nav:
   - Guides:
       - Patterns: guides/patterns.md
       - Unity Integration: guides/unity-integration.md
+      - Subscription Ownership: guides/subscription-ownership.md
       - MCP Local Setup: guides/mcp-local-setup.md
       - Testing: guides/testing.md
       - Diagnostics: guides/diagnostics.md
