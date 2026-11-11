@@ -131,17 +131,6 @@ internal sealed class DocumentationImportTests
         bool cleanupFailure
     )
     {
-        DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
-        while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
-        {
-            root = root.Parent;
-        }
-        Assert.That(root, Is.Not.Null, "Locate the actual ownership guide and bus helpers.");
-        string path = Path.Combine(root!.FullName, "docs", "guides", "subscription-ownership.md");
-        Match[] examples = Regex
-            .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
-            .ToArray();
-        Assert.That(examples, Has.Length.EqualTo(1));
         string probe = """
             namespace SubscriptionOwnershipExample
             {
@@ -230,6 +219,115 @@ internal sealed class DocumentationImportTests
                 }
             }
             """;
+        AssertOwnershipGuideProbe(
+            probe,
+            new object[] { disposeAt, cleanupFailure },
+            $"registration={disposeAt}, cleanupFailure={cleanupFailure}"
+        );
+    }
+
+    /// <summary>Executes persistent owner-disposal callbacks while cleanup succeeds or needs a retry.</summary>
+    /// <remarks>2026-11-11: Nested owner disposal must let the outer group finish before inspecting its retained Count.</remarks>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void SubscriptionOwnershipGuideAllowsReentrantDisposalDuringCleanup(bool cleanupFailure)
+    {
+        string probe = """
+            namespace SubscriptionOwnershipExample
+            {
+                using System;
+                using DxMessaging.Core;
+                using DxMessaging.Core.MessageBus;
+                using DxMessaging.Tests.Runtime;
+
+                public static class ReentryProbe
+                {
+                    public static int[] Run(bool cleanupFailure)
+                    {
+                        MessageBus inner = new MessageBus();
+                        using LeakWatcher leaks = new LeakWatcher(inner);
+                        CleanupBus bus = new CleanupBus(inner);
+                        MessageHandler handler = new MessageHandler(new InstanceId(984), bus) { active = true };
+                        using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+                        token.DiagnosticMode = false;
+                        token.Enable();
+                        using ParentSubscriptions owner = new ParentSubscriptions(token);
+                        InstanceId parent = new InstanceId(985);
+                        owner.BindParent(parent);
+                        bus.OnCleanup = owner.Dispose;
+                        bus.CleanupFailures = cleanupFailure ? 1 : 0;
+                        Exception first = null;
+                        Exception retry = null;
+                        try
+                        {
+                            try { owner.Dispose(); } catch (Exception exception) { first = exception; }
+                            bus.CleanupFailures = 0;
+                            try { owner.Dispose(); } catch (Exception exception) { retry = exception; }
+                            if (cleanupFailure ? !ReferenceEquals(first, bus.Failure) : first != null)
+                            {
+                                throw new InvalidOperationException("Nested disposal changed the outer cleanup outcome; callbacks=" + bus.Callbacks + ", first=" + first?.GetType().Name + ", retry=" + retry?.GetType().Name, first);
+                            }
+                            if (retry != null || bus.Callbacks < 2)
+                            {
+                                throw new InvalidOperationException("The persistent callback must run for both registrations and retry successfully.", retry);
+                            }
+                            ParentChanged changed = new ParentChanged(9);
+                            ParentHidden hidden = default;
+                            bus.SourcedBroadcast(ref parent, ref changed);
+                            bus.SourcedBroadcast(ref parent, ref hidden);
+                            token.Disable();
+                            token.Enable();
+                            bus.SourcedBroadcast(ref parent, ref changed);
+                            bus.SourcedBroadcast(ref parent, ref hidden);
+                            return new[] { owner.Revision, owner.HiddenCount };
+                        }
+                        finally
+                        {
+                            bus.OnCleanup = null;
+                            bus.CleanupFailures = 0;
+                            owner.Dispose();
+                        }
+                    }
+
+                    private sealed class CleanupBus : DelegatingMessageBus
+                    {
+                        internal readonly InvalidOperationException Failure = new InvalidOperationException("Rejected cleanup after nested owner disposal.");
+                        internal Action OnCleanup;
+                        internal int CleanupFailures;
+                        internal int Callbacks;
+                        internal CleanupBus(IMessageBus inner) : base(inner) { }
+                        public override void Deregister<T>(in MessageBusRegistration registration)
+                        {
+                            if (OnCleanup != null) { ++Callbacks; OnCleanup(); }
+                            if (0 < CleanupFailures) { --CleanupFailures; throw Failure; }
+                            base.Deregister<T>(in registration);
+                        }
+                    }
+                }
+            }
+            """;
+        AssertOwnershipGuideProbe(
+            probe,
+            new object[] { cleanupFailure },
+            $"persistent disposal callback, cleanupFailure={cleanupFailure}"
+        );
+    }
+
+    /// <summary>Runs an unchanged published guide fence against the real runtime and cleanup helpers.</summary>
+    private static void AssertOwnershipGuideProbe(string probe, object[] arguments, string label)
+    {
+        DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
+        {
+            root = root.Parent;
+        }
+        Assert.That(root, Is.Not.Null, "Locate the actual ownership guide and bus helpers.");
+        string path = Path.Combine(root!.FullName, "docs", "guides", "subscription-ownership.md");
+        Match[] examples = Regex
+            .Matches(File.ReadAllText(path), @"```csharp\s*\r?\n(?<code>[\s\S]*?)```")
+            .ToArray();
+        Assert.That(examples, Has.Length.EqualTo(1));
+
         string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
             ?? throw new InvalidOperationException("Runtime references are unavailable.");
         string helperRoot = Path.Combine(root.FullName, "Tests", "Runtime", "TestUtilities");
@@ -280,7 +378,7 @@ internal sealed class DocumentationImportTests
                 + string.Join("\n", emitted.Diagnostics)
         );
         System.Runtime.Loader.AssemblyLoadContext context = new(
-            "GuideEnrollment_" + disposeAt + "_" + cleanupFailure,
+            "GuideOwnership_" + Guid.NewGuid().ToString("N"),
             isCollectible: true
         );
         try
@@ -292,11 +390,11 @@ internal sealed class DocumentationImportTests
             object? result = assembly
                 .GetType("SubscriptionOwnershipExample.ReentryProbe", throwOnError: true)!
                 .GetMethod("Run")!
-                .Invoke(null, new object[] { disposeAt, cleanupFailure });
+                .Invoke(null, arguments);
             Assert.That(
                 result,
                 Is.EqualTo(NoOwnedCallbacks),
-                $"registration={disposeAt}, cleanupFailure={cleanupFailure}: disposed subscriptions must never deliver or replay."
+                label + ": disposed subscriptions must never deliver or replay."
             );
         }
         finally

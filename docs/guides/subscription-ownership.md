@@ -34,6 +34,7 @@ namespace SubscriptionOwnershipExample
         private MessageRegistrationGroup _parentGroup;
         private MessageRegistrationHandle _changed;
         private bool _binding;
+        private bool _disposing;
         private bool _disposeRequested;
 
         public int Revision { get; private set; }
@@ -48,9 +49,9 @@ namespace SubscriptionOwnershipExample
         /// <summary>Replaces parent subscriptions and defers disposal until enrollment finishes.</summary>
         public void BindParent(InstanceId parent)
         {
-            if (_binding)
+            if (_binding || _disposing)
             {
-                throw new InvalidOperationException("Finish the current parent binding first.");
+                throw new InvalidOperationException("Finish the current parent binding or disposal first.");
             }
             _binding = true;
             try
@@ -93,7 +94,19 @@ namespace SubscriptionOwnershipExample
                 _disposeRequested = true;
                 return;
             }
-            DisposeParentGroup();
+            if (_disposing)
+            {
+                return;
+            }
+            _disposing = true;
+            try
+            {
+                DisposeParentGroup();
+            }
+            finally
+            {
+                _disposing = false;
+            }
         }
 
         /// <summary>Keeps the owning group reachable until every cleanup obligation completes.</summary>
@@ -128,6 +141,8 @@ namespace SubscriptionOwnershipExample
 ```
 
 During `BindParent`, a reentrant `Dispose` waits until returned handles are enrolled.
+During disposal, nested `Dispose` calls return so the outer call can finish cleanup and check `Count`.
+A nested `BindParent` call is rejected while binding or disposal is in progress.
 The group field remains reachable if a later registration or cleanup fails.
 Call `Dispose` again after resolving a cleanup failure. Replace the group only after its `Count` reaches zero.
 Cleanup visits every member even if another removal throws. One failure is rethrown; multiple failures produce an `AggregateException`.

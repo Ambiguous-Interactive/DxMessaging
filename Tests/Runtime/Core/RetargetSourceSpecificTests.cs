@@ -811,6 +811,140 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(calls, Is.EqualTo(2), "Explicit replay restores the unchanged old source.");
         }
 
+        /// <summary>Keeps registration acceptance with its owning frame during nested lifecycle and bus replay.</summary>
+        /// <remarks>2026-11-11: Source activation and recovery were queued twice when nested replay saw their detached cleanup as inactive staging.</remarks>
+        [Test]
+        public void NestedReplayCannotActivateTheMovingRegistrationAgain(
+            [Values(false, true)] bool post,
+            [Values(false, true)] bool action,
+            [Values(false, true)] bool recovery,
+            [Values("active-retarget", "failed-retarget", "restart")] string replay
+        )
+        {
+            string label = $"post={post}, action={action}, recovery={recovery}, replay={replay}";
+            using CaseState other = new CaseState(false);
+            using CaseState state = new CaseState(false);
+            state.Token.Enable();
+            int movingCalls = 0;
+            int peerCalls = 0;
+            int hooks = 0;
+            Exception nestedFailure = null;
+            state.Token.RegisterUntargeted<PeerMessage>((in PeerMessage _) => ++peerCalls);
+            MessageRegistrationHandle moving = Register(state.Token, post, action, () =>
+                ++movingCalls
+            );
+            Action nested = () =>
+            {
+                ++hooks;
+                if (replay == "restart")
+                {
+                    state.Token.Disable();
+                    state.Token.Enable();
+                    return;
+                }
+                other.Bus.RejectRegistrations = replay == "failed-retarget" ? 1 : 0;
+                try
+                {
+                    state.Token.RetargetMessageBus(other.Bus, MessageBusRebindMode.RebindActive);
+                }
+                catch (InvalidOperationException exception)
+                {
+                    nestedFailure = exception;
+                }
+            };
+            if (recovery)
+            {
+                state.Bus.RejectRegistrations = 1;
+                state.Bus.OnRegistration = () =>
+                {
+                    state.Bus.OnRegistration = nested;
+                };
+                Assert.That(
+                    Assert.Throws<InvalidOperationException>(() =>
+                        state.Token.RetargetSource(moving, NewSource)
+                    ),
+                    Is.SameAs(state.Bus.Failure),
+                    label + ": failed activation retains its original exception."
+                );
+            }
+            else
+            {
+                state.Bus.OnRegistration = nested;
+                Assert.That(
+                    state.Token.RetargetSource(moving, NewSource),
+                    Is.True,
+                    label + ": move retains its handle."
+                );
+            }
+            Assert.That(
+                hooks,
+                Is.EqualTo(1),
+                label + ": the nested operation must actually execute."
+            );
+            Assert.That(
+                nestedFailure,
+                replay == "failed-retarget" ? Is.SameAs(other.Bus.Failure) : Is.Null,
+                label + ": nested replay reports exactly its configured bus rejection."
+            );
+            InstanceId acceptedSource = recovery ? OldSource : NewSource;
+            InstanceId alternateSource = recovery ? NewSource : OldSource;
+            Emit(state.Bus, acceptedSource);
+            Assert.That(
+                movingCalls,
+                Is.EqualTo(1),
+                label + ": only the suspended frame accepts the moving registration."
+            );
+            Emit(other.Bus, acceptedSource);
+            Emit(state.Bus, alternateSource);
+            Emit(other.Bus, alternateSource);
+            Assert.That(
+                movingCalls,
+                Is.EqualTo(1),
+                label + ": nested replay cannot leave another bus/source binding."
+            );
+            PeerMessage peer = default;
+            state.Bus.UntargetedBroadcast(ref peer);
+            Assert.That(
+                peerCalls,
+                Is.EqualTo(replay == "active-retarget" ? 0 : 1),
+                label + ": unrelated active registration follows the nested operation."
+            );
+            other.Bus.UntargetedBroadcast(ref peer);
+            Assert.That(
+                peerCalls,
+                Is.EqualTo(1),
+                label + ": unrelated registration is active exactly once."
+            );
+            Assert.That(
+                state.Token.RetargetSource(moving, alternateSource),
+                Is.True,
+                label + ": no duplicate retry cleanup may block the next intentional move."
+            );
+            Emit(state.Bus, alternateSource);
+            Emit(other.Bus, alternateSource);
+            Assert.That(
+                movingCalls,
+                Is.EqualTo(2),
+                label + ": the same handle still moves on its accepting bus."
+            );
+            state.Token.Disable();
+            state.Token.Enable();
+            IMessageBus future = replay == "active-retarget" ? other.Bus : state.Bus;
+            IMessageBus retired = replay == "active-retarget" ? state.Bus : other.Bus;
+            Emit(retired, alternateSource);
+            Assert.That(
+                movingCalls,
+                Is.EqualTo(2),
+                label + ": explicit cleanup retires the former bus."
+            );
+            Emit(future, alternateSource);
+            Assert.That(
+                movingCalls,
+                Is.EqualTo(3),
+                label + ": explicit replay uses the configured future bus."
+            );
+        }
+
         private static void Emit(IMessageBus bus, InstanceId source)
         {
             ProbeMessage message = default;
@@ -872,6 +1006,16 @@ namespace DxMessaging.Tests.Runtime.Core
             internal MovingBus(IMessageBus inner)
                 : base(inner) { }
 
+            /// <summary>Applies the same before-acceptance hooks to the unrelated replay control.</summary>
+            public override MessageBusRegistration RegisterUntargeted<T>(
+                MessageHandler handler,
+                int priority = 0
+            )
+            {
+                BeforeRegistration();
+                return base.RegisterUntargeted<T>(handler, priority);
+            }
+
             public override MessageBusRegistration RegisterSourcedBroadcast<T>(
                 InstanceId source,
                 MessageHandler handler,
@@ -918,6 +1062,11 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
                 base.Deregister<T>(in registration);
             }
+        }
+
+        private readonly struct PeerMessage : IUntargetedMessage
+        {
+            public Type MessageType => typeof(PeerMessage);
         }
 
         private readonly struct ProbeMessage

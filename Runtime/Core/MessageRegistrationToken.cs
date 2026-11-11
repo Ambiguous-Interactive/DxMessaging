@@ -1581,7 +1581,7 @@ namespace DxMessaging.Core
         /// on another bus stays retryable; finish cleanup before enabling again. If diagnostic formatting
         /// or a log receiver successfully finishes pending rollback cleanup through <see cref="Disable"/>
         /// or <see cref="UnregisterAll"/>, recovery preserves that cleanup instead of replaying staging.
-        /// During registration replay, a nested active retarget moves only subscriptions already
+        /// During registration acceptance or replay, a nested active retarget moves only subscriptions already
         /// active when requested. An in-flight registration keeps its original bus; later queued
         /// registrations use the current override. Nested recovery preserves the owning replay.
         /// A registration accepted during old-bus cleanup remains on its accepting bus until a
@@ -2043,6 +2043,8 @@ namespace DxMessaging.Core
             }
         }
 
+        /// <summary>Queues staged entries that are not already being accepted by an owning frame.</summary>
+        /// <remarks>2026-11-11: Nested lifecycle and bus replay must not activate a registration already owned by an accepting frame.</remarks>
         private void QueueRegistrationsInOrder()
         {
             List<StagedRegistration> queue = GetRegistrationReplayQueue();
@@ -2054,10 +2056,16 @@ namespace DxMessaging.Core
             )
             {
                 RegistrationSlot slot = _slots[slotIndex];
+                if (slot.Registration.IsRegistering)
+                {
+                    continue;
+                }
                 queue.Add(new StagedRegistration(slotIndex, slot.Id, slot.Registration));
             }
         }
 
+        /// <summary>Queues selected inactive handles without duplicating in-flight acceptance.</summary>
+        /// <remarks>2026-11-11: Nested lifecycle and bus replay must not activate a registration already owned by an accepting frame.</remarks>
         private void QueueMissingRegistrationsInOrder(
             List<MessageRegistrationHandle> activeRetargetHandles
         )
@@ -2072,7 +2080,11 @@ namespace DxMessaging.Core
             {
                 RegistrationSlot slot = _slots[slotIndex];
                 MessageRegistrationHandle handle = slot.Registration.Handle;
-                if (!activeRetargetHandles.Contains(handle) || slot.Deregistration != null)
+                if (
+                    !activeRetargetHandles.Contains(handle)
+                    || slot.Deregistration != null
+                    || slot.Registration.IsRegistering
+                )
                 {
                     continue;
                 }
@@ -2081,6 +2093,8 @@ namespace DxMessaging.Core
             }
         }
 
+        /// <summary>Queues inactive staging while preserving retry cleanup and in-flight acceptance.</summary>
+        /// <remarks>2026-11-11: Nested lifecycle and bus replay must not activate a registration already owned by an accepting frame.</remarks>
         private void QueueRegistrationsWithoutRetryableDeregistrationsInOrder()
         {
             List<StagedRegistration> queue = GetRegistrationReplayQueue();
@@ -2092,7 +2106,7 @@ namespace DxMessaging.Core
             )
             {
                 RegistrationSlot slot = _slots[slotIndex];
-                if (slot.Deregistration != null)
+                if (slot.Deregistration != null || slot.Registration.IsRegistering)
                 {
                     continue;
                 }
