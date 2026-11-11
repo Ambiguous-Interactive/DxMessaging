@@ -18,6 +18,8 @@
 
 ## DxMessaging Attributes (Your Code Wizards)
 
+The attributes live in `WallstopStudios.DxMessaging.Attributes`. Unity assembly definitions that use them must reference this assembly. Shared rules that only need constructors and optional arguments can enable `noEngineReferences` and omit the messaging runtime. Message generation still needs the runtime interfaces. See the [4.0 migration steps](../guides/migration-guide.md#reference-the-dedicated-attributes-assembly) for existing assemblies.
+
 Use the attributes below to declare message types, generate constructors, and set optional defaults:
 
 ### 1. Message Type Attributes (Pick Your Message Category)

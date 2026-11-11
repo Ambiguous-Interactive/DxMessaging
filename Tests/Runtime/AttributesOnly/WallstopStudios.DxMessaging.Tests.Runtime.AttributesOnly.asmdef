@@ -1,0 +1,18 @@
+{
+  "name": "WallstopStudios.DxMessaging.Tests.Runtime.AttributesOnly",
+  "rootNamespace": "DxMessaging.Tests.Runtime.AttributesOnly",
+  "references": [
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner",
+    "WallstopStudios.DxMessaging.Attributes"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll"],
+  "autoReferenced": false,
+  "defineConstraints": ["UNITY_INCLUDE_TESTS"],
+  "versionDefines": [],
+  "noEngineReferences": true
+}

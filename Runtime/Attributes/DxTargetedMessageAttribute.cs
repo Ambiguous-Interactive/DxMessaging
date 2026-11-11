@@ -7,7 +7,7 @@ namespace DxMessaging.Core.Attributes
     /// </summary>
     /// <remarks>
     /// Apply to a <c>class</c> or <c>struct</c> to indicate it represents a message addressed to a
-    /// specific <see cref="InstanceId"/> (see <see cref="Messages.ITargetedMessage"/>).
+    /// specific <c>DxMessaging.Core.InstanceId</c> (see <c>DxMessaging.Core.Messages.ITargetedMessage</c>).
     /// This attribute can be used in place of the generic interface variant when you want
     /// source generators/tooling to recognize the message type by attribute.
     /// </remarks>

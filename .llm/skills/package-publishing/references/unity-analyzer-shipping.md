@@ -46,22 +46,24 @@ But **no consumer RUNTIME assembly can reference an editor-only assembly**, so:
 
 The folder location, not the analyzer code, was the bug.
 
-## The fix: ship under the RUNTIME asmdef
+## The fix: ship under the engine-free attributes asmdef
 
 Ship the two `RoslynAnalyzer`-labeled DLLs under `Runtime/Analyzers/`, the folder
-governed by the **all-platforms runtime asmdef**
-(`WallstopStudios.DxMessaging`). Applying the folder rule, the generator now
+governed by the **all-platforms engine-free attributes asmdef**
+(`WallstopStudios.DxMessaging.Attributes`). Applying the folder rule, the generator now
 reaches:
 
 - the DxMessaging runtime assembly, AND
-- every assembly that references it -- which includes the predefined
+- every assembly that directly references the attributes -- including the predefined
   `Assembly-CSharp` (predefined assemblies auto-reference package runtime
-  assemblies) AND any consumer runtime asmdef that references DxMessaging.
+  assemblies) AND any consumer rules or runtime asmdef with a direct attributes reference.
 
 No consumer asmdef is required, so projects that never adopted assembly
 definitions are covered.
 
-Crucially this is targeted, not blanket: the runtime asmdef does NOT pull in
+Each attribute-using asmdef needs a direct attributes reference; runtime type forwarding does not add compile references.
+
+Crucially this is targeted, not blanket: the attributes asmdef does NOT pull in
 unrelated assemblies that have no DxMessaging reference, so the analyzer does not
 pollute compilations it has no business inspecting. (Dropping the DLLs in a
 no-asmdef folder would have hit every predefined assembly indiscriminately --
@@ -76,7 +78,7 @@ Runtime/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll(.meta)
 
 `RoslynAnalyzer`-labeled DLLs are **compiler inputs, not runtime code**. Unity
 excludes them from player builds regardless of which folder they sit in -- the
-all-platforms runtime asmdef governs the folder for _scoping_ purposes, but the
+all-platforms attributes asmdef governs the folder for _scoping_ purposes, but the
 label keeps the bytes out of the shipped game. So `Runtime/Analyzers/` adds zero
 bytes to a consumer's build output; it only changes which compilations see the
 generator.
@@ -131,7 +133,7 @@ npm run refresh:analyzers   # rebuild and refresh the committed DLLs
 1. Compile the analyzer/generator to a DLL.
 1. Label the DLL `RoslynAnalyzer` in its `.meta` (`labels:` sequence).
 1. Place it under the folder of the asmdef whose assembly + referrers you want to
-   reach -- the **runtime** asmdef to reach `Assembly-CSharp` and runtime
+   reach -- the **attributes** asmdef to reach `Assembly-CSharp` and attribute
    referrers; never an editor-only asmdef if consumer runtime code must compile.
 1. Ship the DLL and its `.meta` in the package (`package.json` "files").
 1. Do NOT copy the DLL into the consumer's `Assets/`.

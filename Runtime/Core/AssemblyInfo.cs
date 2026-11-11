@@ -15,3 +15,13 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("WallstopStudios.DxMessaging.Tests.Editor")]
 [assembly: InternalsVisibleTo("WallstopStudios.DxMessaging.Tests.Editor.Allocations")]
 [assembly: InternalsVisibleTo("WallstopStudios.DxMessaging.Tests.00.Runtime.Benchmarks")]
+
+#if UNITY_2021_3_OR_NEWER || DXMESSAGING_SEPARATE_ATTRIBUTES
+[assembly: TypeForwardedTo(typeof(DxMessaging.Core.Attributes.DxAotMessageAttribute))]
+[assembly: TypeForwardedTo(typeof(DxMessaging.Core.Attributes.DxAutoConstructorAttribute))]
+[assembly: TypeForwardedTo(typeof(DxMessaging.Core.Attributes.DxBroadcastMessageAttribute))]
+[assembly: TypeForwardedTo(typeof(DxMessaging.Core.Attributes.DxIgnoreMissingBaseCallAttribute))]
+[assembly: TypeForwardedTo(typeof(DxMessaging.Core.Attributes.DxOptionalParameterAttribute))]
+[assembly: TypeForwardedTo(typeof(DxMessaging.Core.Attributes.DxTargetedMessageAttribute))]
+[assembly: TypeForwardedTo(typeof(DxMessaging.Core.Attributes.DxUntargetedMessageAttribute))]
+#endif

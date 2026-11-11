@@ -7,7 +7,7 @@ namespace DxMessaging.Core.Attributes
     /// </summary>
     /// <remarks>
     /// Apply to a <c>class</c> or <c>struct</c> to indicate it represents an event emitted by a
-    /// specific source but consumable by any listener (see <see cref="Messages.IBroadcastMessage"/>).
+    /// specific source but consumable by any listener (see <c>DxMessaging.Core.Messages.IBroadcastMessage</c>).
     /// This attribute helps source generators/tooling pick up message types via attributes.
     /// </remarks>
     /// <example>

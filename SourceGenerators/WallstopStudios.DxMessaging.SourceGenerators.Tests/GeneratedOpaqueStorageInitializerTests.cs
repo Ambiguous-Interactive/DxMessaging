@@ -185,7 +185,7 @@ internal sealed class GeneratedOpaqueStorageInitializerTests
             }
         )
         {
-            string path = Path.Combine(root!.FullName, "Runtime", "Core", "Attributes", name);
+            string path = Path.Combine(root!.FullName, "Runtime", "Attributes", name);
             trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(path), options, path));
         }
         trees.Add(CSharpSyntaxTree.ParseText(source, options, "UserSource.cs"));

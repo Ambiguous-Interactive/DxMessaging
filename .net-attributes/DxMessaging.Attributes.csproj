@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <AssemblyName>WallstopStudios.DxMessaging.Attributes</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <PackageId>WallstopStudios.DxMessaging.Attributes</PackageId>
+    <PackageVersion Condition="'$(PackageVersion)' == ''">0.0.0-local</PackageVersion>
+    <Version>$(PackageVersion)</Version>
+    <Authors>Wallstop Studios</Authors>
+    <Description>UnityEngine-free DxMessaging attributes and C# source generators.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Ambiguous-Interactive/DxMessaging</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Ambiguous-Interactive/DxMessaging</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Runtime/Attributes/**/*.cs" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None
+      Include="../Runtime/Analyzers/WallstopStudios.DxMessaging.SourceGenerators.dll"
+      Pack="true"
+      PackagePath="analyzers/dotnet/cs"
+    />
+    <None
+      Include="../Runtime/Analyzers/WallstopStudios.DxMessaging.Analyzer.dll"
+      Pack="true"
+      PackagePath="analyzers/dotnet/cs"
+    />
+  </ItemGroup>
+</Project>

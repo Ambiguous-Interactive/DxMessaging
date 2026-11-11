@@ -406,4 +406,4 @@ For deeper exploration, browse the source code:
 | Message Handler       | [MessageHandler.cs](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Runtime/Core/MessageHandler.cs)                     |
 | Registration Token    | [MessageRegistrationToken.cs](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Runtime/Core/MessageRegistrationToken.cs) |
 | Emit Helpers          | [MessageExtensions.cs](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Runtime/Core/Extensions/MessageExtensions.cs)    |
-| Attributes            | [Attributes/](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Runtime/Core/Attributes)                                  |
+| Attributes            | [Attributes/](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Runtime/Attributes)                                       |

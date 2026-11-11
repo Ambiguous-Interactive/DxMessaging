@@ -1,7 +1,10 @@
 {
   "name": "WallstopStudios.DxMessaging.MiniCombat.Sample",
   "rootNamespace": "WallstopStudios.DxMessaging.MiniCombat.Sample",
-  "references": ["WallstopStudios.DxMessaging"],
+  "references": [
+    "WallstopStudios.DxMessaging",
+    "WallstopStudios.DxMessaging.Attributes"
+  ],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

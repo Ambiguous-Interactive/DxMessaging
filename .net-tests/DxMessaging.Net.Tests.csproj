@@ -6,6 +6,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile
+      Include="../Tests/Runtime/Core/AttributeAssemblyContractTests.cs"
+      Link="AttributeAssemblyContractTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/RetargetSourceSpecificTests.cs"
       Link="RetargetSourceSpecificTests.cs"
     />

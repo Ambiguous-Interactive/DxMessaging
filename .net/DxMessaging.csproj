@@ -4,11 +4,16 @@
     <LangVersion>9.0</LangVersion>
     <AssemblyName>WallstopStudios.DxMessaging</AssemblyName>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);DXMESSAGING_SEPARATE_ATTRIBUTES</DefineConstants>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../Runtime/**/*.cs" Exclude="../Runtime/Testing/**/*.cs" />
+    <ProjectReference Include="../.net-attributes/DxMessaging.Attributes.csproj" />
+    <Compile
+      Include="../Runtime/**/*.cs"
+      Exclude="../Runtime/Testing/**/*.cs;../Runtime/Attributes/**/*.cs"
+    />
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
     <Analyzer Include="../Runtime/Analyzers/*.dll" />
   </ItemGroup>

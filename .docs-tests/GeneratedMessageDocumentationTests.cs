@@ -333,11 +333,11 @@ internal sealed class GeneratedMessageDocumentationTests
             "Runtime/Core/Messages/IUntargetedMessage.cs",
             "Runtime/Core/Messages/ITargetedMessage.cs",
             "Runtime/Core/Messages/IBroadcastMessage.cs",
-            "Runtime/Core/Attributes/DxUntargetedMessageAttribute.cs",
-            "Runtime/Core/Attributes/DxTargetedMessageAttribute.cs",
-            "Runtime/Core/Attributes/DxBroadcastMessageAttribute.cs",
-            "Runtime/Core/Attributes/DxAutoConstructorAttribute.cs",
-            "Runtime/Core/Attributes/DxOptionalParameterAttribute.cs",
+            "Runtime/Attributes/DxUntargetedMessageAttribute.cs",
+            "Runtime/Attributes/DxTargetedMessageAttribute.cs",
+            "Runtime/Attributes/DxBroadcastMessageAttribute.cs",
+            "Runtime/Attributes/DxAutoConstructorAttribute.cs",
+            "Runtime/Attributes/DxOptionalParameterAttribute.cs",
         };
         List<SyntaxTree> trees = contracts
             .Select(relative =>
