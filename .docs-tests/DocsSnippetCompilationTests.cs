@@ -727,8 +727,9 @@ internal sealed class DocsSnippetCompilationTests
         }
     }
 
+    /// <summary>Checks that documentation builds accept stable .NET 10 feature bands without requiring one installed patch.</summary>
     [Test]
-    public void DocsTestSdkAcceptsAvailableNet9FeatureBands()
+    public void DocsTestSdkAcceptsAvailableNet10FeatureBands()
     {
         string globalJsonPath = Path.Combine(ResolveRepoRoot(), ".docs-tests", "global.json");
         using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(
@@ -738,13 +739,13 @@ internal sealed class DocsSnippetCompilationTests
 
         Assert.That(
             sdk.GetProperty("version").GetString(),
-            Is.EqualTo("9.0.100"),
-            "The docs test SDK must use the first .NET 9 feature-band floor so Dependabot can run on any available .NET 9 SDK."
+            Is.EqualTo("10.0.100"),
+            "The docs test SDK must use the first .NET 10 feature-band floor so Dependabot can run on any available .NET 10 SDK."
         );
         Assert.That(
             sdk.GetProperty("rollForward").GetString(),
             Is.EqualTo("latestFeature"),
-            "The docs test SDK must roll forward across installed .NET 9 feature bands."
+            "The docs test SDK must roll forward across installed .NET 10 feature bands."
         );
     }
 
@@ -1530,6 +1531,29 @@ internal sealed class DocsSnippetCompilationTests
                 + "EmitFrom(gameObject/this). Offending references:"
                 + System.Environment.NewLine
                 + string.Join(System.Environment.NewLine, violations)
+        );
+    }
+
+    /// <summary>Compiles the complete lifecycle guide against imported production helper declarations.</summary>
+    [Test]
+    public void ComposableLifecycleGuideUsesProductionApiContracts()
+    {
+        string path = Path.Combine(ResolveRepoRoot(), "docs/guides/unity-integration.md");
+        string source = ExtractCodeBlocks(path, "csharp")
+            .Single(block =>
+                block.Contains("class InventoryLifecycleUI", StringComparison.Ordinal)
+            );
+        Diagnostic[] diagnostics = DocsSnippetCompiler
+            .CompileSnippet(source)
+            .Where(d =>
+                d.Severity == DiagnosticSeverity.Error || d.Severity == DiagnosticSeverity.Warning
+            )
+            .ToArray();
+        Assert.That(
+            diagnostics,
+            Is.Empty,
+            "The complete lifecycle example must compile without context-only exclusions: "
+                + string.Join("\n", diagnostics.AsEnumerable())
         );
     }
 

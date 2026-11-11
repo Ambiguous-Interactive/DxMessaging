@@ -210,6 +210,53 @@ void OnAnyTookDamage(in InstanceId source, in TookDamage m) => Track(source, m);
 - Use Targeted when one specific recipient must act.
 - Use Untargeted for global state changes anyone might care about.
 
+## Generic messages on IL2CPP
+
+Generic messages support typed registration and typed emission on Mono and IL2CPP.
+For an IL2CPP message that can arrive through an untyped API before either typed
+operation, list each closed type in an assembly attribute (added in 4.0.0):
+
+```csharp
+using DxMessaging.Core.Attributes;
+
+[assembly: DxAotMessage(typeof(SettingRequestMessage<bool>))]
+[assembly: DxAotMessage(typeof(SettingRequestMessage<QualityChoice>))]
+
+[DxUntargetedMessage]
+public readonly partial struct SettingRequestMessage<T>
+{
+    public readonly T value;
+
+    public SettingRequestMessage(T value)
+    {
+        this.value = value;
+    }
+}
+
+public enum QualityChoice { Low, High }
+```
+
+Place these assembly attributes before namespace and type declarations in a source
+file in the consuming assembly. Add an entry for every closed type that needs a
+startup bridge, including closed generic containing types. The generator handles
+untargeted, targeted, and broadcast messages, whether attributed or handwritten.
+Repeated entries generate one bridge per message and route.
+
+Use public or internal message types accessible from the consuming assembly.
+Selections from another assembly must be accessible there, including their type
+arguments. Open definitions such as `SettingRequestMessage<>`, abstract types,
+and types without a message contract report
+[DXMSG014](../reference/analyzers.md#dxmsg014-aot-registration-requires-an-accessible-closed-message).
+Private nested messages can instead register a typed handler or emit through a
+typed API before the first untyped dispatch.
+
+Ordinary non-generic attributed messages already generate startup bridges.
+The generator does not discover every closed generic use automatically. A type
+created only through reflection still needs an explicit closed selection or a
+prior typed operation. An unlisted first untyped message on IL2CPP throws an
+`InvalidOperationException` naming the missing bridge. Mono's reflection fallback
+does not require these assembly selections.
+
 ## Do's
 
 - Keep messages small, immutable, and specific.

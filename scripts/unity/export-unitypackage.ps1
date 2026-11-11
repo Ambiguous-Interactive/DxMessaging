@@ -72,6 +72,55 @@ $ProjectOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unitypackage 
 # the header comment. SourceGenerators.meta pairs with the excluded folder.
 $ExcludedPayloadEntries = @('SourceGenerators', 'SourceGenerators.meta')
 
+<#
+.SYNOPSIS
+    Reads one matching package record from npm 11 or npm 12 output.
+.DESCRIPTION
+    Preserves the original array shape and requires a package name plus a tarball filename.
+#>
+function Get-NpmPackRecord {
+    param(
+        [Parameter(Mandatory = $true)][string]$JsonText,
+        [Parameter(Mandatory = $true)][string]$ExpectedPackageName
+    )
+
+    try {
+        # Validate the original root, then preserve arrays inside an object property.
+        # ConvertFrom-Json otherwise enumerates the root array on newer hosts.
+        $null = ConvertFrom-Json -InputObject $JsonText
+        $parsed = (ConvertFrom-Json -InputObject ('{"packResult":' + $JsonText + '}')).packResult
+    } catch {
+        throw "Unable to parse npm pack JSON output: $($_.Exception.Message)"
+    }
+    # npm 11 returns an array. npm 12 keys records by package name.
+    if ($JsonText.TrimStart().StartsWith('[', [System.StringComparison]::Ordinal)) {
+        $records = @($parsed)
+    } elseif ($parsed -is [pscustomobject]) {
+        $properties = @($parsed.PSObject.Properties)
+        if ($properties.Count -ne 1 -or $properties[0].Name -cne $ExpectedPackageName) {
+            throw 'npm pack JSON must contain exactly one matching package record.'
+        }
+        $records = @($properties[0].Value)
+    } else {
+        throw 'npm pack JSON must contain exactly one matching package record.'
+    }
+    if ($records.Count -ne 1 -or $records[0] -isnot [pscustomobject]) {
+        throw 'npm pack JSON must contain exactly one matching package record.'
+    }
+    $record = $records[0]
+    if (-not $record.PSObject.Properties['name'] -or $record.name -isnot [string] -or $record.name -cne $ExpectedPackageName) {
+        throw 'npm pack JSON package name does not match the requested package.'
+    }
+    if (
+        -not $record.PSObject.Properties['filename'] -or
+        $record.filename -isnot [string] -or
+        $record.filename -cnotmatch '^[^/\\]+\.tgz$'
+    ) {
+        throw 'npm pack JSON must contain a tarball filename without directory components.'
+    }
+    return $record
+}
+
 function Write-CiError {
     param([Parameter(Mandatory = $true)][string]$Message)
     Write-Host "::error::$Message"
@@ -957,8 +1006,8 @@ try {
 } finally {
     Pop-Location
 }
-$packInfo = $packJsonText | ConvertFrom-Json
-$tarballName = $packInfo[0].filename
+$packInfo = Get-NpmPackRecord -JsonText $packJsonText -ExpectedPackageName $PackageName
+$tarballName = $packInfo.filename
 $tarballPath = Join-Path $stagingPath $tarballName
 if (-not (Test-Path -LiteralPath $tarballPath -PathType Leaf)) {
     throw "npm pack reported $tarballName but no tarball exists at $tarballPath."

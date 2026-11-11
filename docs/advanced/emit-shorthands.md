@@ -350,16 +350,16 @@ If a handler isn't firing, first suspect a GameObject vs Component mismatch. See
 
 ### "How do I debug message flow?"
 
-Use the built-in diagnostics:
+Select the GameObject that hosts the listener you want to inspect. Open its existing
+`MessagingComponent` in the Inspector and enable diagnostics for that listener's token.
+The Inspector shows that component's registrations and captured emissions.
+
+To enable diagnostics by default for newly created buses and tokens, set this before initialization:
 
 ```csharp
-// Add to any Unity component
-using DxMessaging.Unity;
+using DxMessaging.Core.MessageBus;
 
-public class DebugListener : MessagingComponent
-{
-    // Inspector will show recent emissions and registrations
-}
+IMessageBus.GlobalDiagnosticsTargets = DiagnosticsTarget.Editor;
 ```
 
 See [Diagnostics](../guides/diagnostics.md) for more debugging tools.

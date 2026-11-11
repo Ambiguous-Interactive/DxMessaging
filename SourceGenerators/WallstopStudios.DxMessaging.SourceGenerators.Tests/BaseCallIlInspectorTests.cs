@@ -515,6 +515,7 @@ internal sealed class BaseCallIlInspectorTests
 
     // ---- Compilation harness ----------------------------------------------------------------
 
+    /// <summary>Compiles an isolated component fixture using the active SDK runtime references.</summary>
     private static Assembly CompileFixture(string userSource)
     {
         /*
@@ -548,7 +549,7 @@ namespace DxMessaging.Unity
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
         };
-        // Ensure System.Runtime is loaded; required for MetadataReference resolution on net9.0.
+        // Ensure System.Runtime is loaded; required for MetadataReference resolution on net10.0.
         Assembly runtime = Assembly.Load("System.Runtime");
         if (!string.IsNullOrEmpty(runtime.Location))
         {

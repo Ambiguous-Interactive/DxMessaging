@@ -157,7 +157,7 @@ editor), NOT inside the devcontainer. The container ships no local Unity build. 
 
 ## Devcontainer Workflow
 
-The agent runs from inside the slim devcontainer (.NET 9/10 base + Node + docs toolchain). It runs NO local Unity build: local Unity verification goes through the unity-mcp-remote MCP server (the host editor) -- see [Unity MCP Test Loop](./skills/unity-mcp-test-loop/references/mcp-test-loop.md). CI uses `scripts/unity/run-ci-tests.ps1` on self-hosted Windows. See [Devcontainer Cache Contract](./skills/unity-editor-conventions/references/devcontainer-cache-contract.md).
+The agent runs from inside the slim devcontainer (.NET 10 LTS base + Node + docs toolchain). It runs NO local Unity build: local Unity verification goes through the unity-mcp-remote MCP server (the host editor) -- see [Unity MCP Test Loop](./skills/unity-mcp-test-loop/references/mcp-test-loop.md). CI uses `scripts/unity/run-ci-tests.ps1` on self-hosted Windows. See [Devcontainer Cache Contract](./skills/unity-editor-conventions/references/devcontainer-cache-contract.md).
 
 - `.devcontainer/cache-contract.sh` derives `CACHE_WORKSPACE_ROOT` from the script's own location (parent of `.devcontainer/`, equals `${containerWorkspaceFolder}`) when `WORKSPACE_FOLDER` is unset (e.g. during `postCreateCommand`); never hardcode an absolute fallback.
 

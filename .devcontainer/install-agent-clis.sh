@@ -91,8 +91,12 @@ for index in "${!PACKAGES[@]}"; do
 
     log "installing ${package_name}@${latest} (current: ${installed:-missing})..."
     installed_ok=false
+    install_options=(--silent --no-fund --no-audit)
+    case "${package_name}" in
+        opencode-ai|@anthropic-ai/claude-code) install_options+=("--allow-scripts=${package_name}") ;;
+    esac
     for attempt in 1 2 3; do
-        if timeout 180 npm install -g "${package_name}@${latest}" --silent --no-fund --no-audit; then
+        if timeout 180 npm install -g "${package_name}@${latest}" "${install_options[@]}"; then
             if [[ "$(command_version "${command_name}" || true)" == "${latest}" ]]; then
                 installed_ok=true
                 break

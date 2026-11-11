@@ -1,29 +1,23 @@
 "use strict";
-
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SCRIPT_PATH = path.join(REPO_ROOT, "scripts", "unity", "export-unitypackage.ps1");
 const UNITY_VERSION = "2022.3.45f1";
-
 function commandExists(command) {
   // prettier-ignore
   const result = spawnSync(command, ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   return !result.error && result.status === 0;
 }
-
 const HAS_PWSH = commandExists("pwsh");
-
 function swapAsciiCase(value) {
   // prettier-ignore
   return value.replace(/[A-Za-z]/g, (character) => character === character.toUpperCase() ? character.toLowerCase() : character.toUpperCase());
 }
-
 function runStageOnlyRaw(stagingRoot, projectPath, options = {}) {
   const artifactsPath = options.artifactsPath ?? path.join(stagingRoot, "artifacts");
   const repoRoot = options.repoRoot ?? REPO_ROOT;
@@ -53,15 +47,12 @@ function runStageOnlyRaw(stagingRoot, projectPath, options = {}) {
     args.push("-VerifyConsumerInstalls", "-GitRevision", "0123456789abcdef0123456789abcdef01234567");
   }
   args.push("-StageOnly");
-
   return spawnSync("pwsh", args, { cwd: stagingRoot, encoding: "utf8", timeout: 600000 });
 }
-
 function runStageOnly(stagingRoot, projectPath, options) {
   const result = runStageOnlyRaw(stagingRoot, projectPath, options);
   assert.equal(result.status, 0, `stage-only run failed:\n${result.stdout}\n${result.stderr}`);
 }
-
 function walk(dir) {
   const entries = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -73,7 +64,6 @@ function walk(dir) {
   }
   return entries;
 }
-
 function createMinimalPackageRepo(root) {
   fs.mkdirSync(path.join(root, "Runtime"), { recursive: true });
   const packageJson = {
@@ -84,7 +74,54 @@ function createMinimalPackageRepo(root) {
   fs.writeFileSync(path.join(root, "package.json"), `${JSON.stringify(packageJson)}\n`, "utf8");
   fs.writeFileSync(path.join(root, "Runtime", "DxMessaging.Runtime.asmdef"), "{}\n", "utf8");
 }
-
+test("export-unitypackage reads one matching npm 11 or npm 12 tarball record", (t) => {
+  if (!HAS_PWSH) {
+    t.skip("PowerShell is not available");
+    return;
+  }
+  const record = { name: "com.wallstop-studios.dxmessaging", filename: "package-1.0.0.tgz" };
+  const valid = [[record], { [record.name]: record }];
+  // prettier-ignore
+  const invalid = [null, [], {}, 1, "pkg", [null], [1], [{}], [[record]], [{ ...record, name: [record.name] }], [record, record], { a: record, b: record }, { other: record }, [{ ...record, name: "wrong" }], [{ ...record, filename: null }], [{ ...record, filename: "../other.tgz" }], [{ ...record, filename: "dir\\other.tgz" }], [{ ...record, filename: "package.zip" }], { [record.name]: null }];
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-pack-json-"));
+  try {
+    const casesPath = path.join(temp, "cases.json");
+    fs.writeFileSync(
+      casesPath,
+      JSON.stringify([
+        ...valid.map((value) => ({ json: JSON.stringify(value), valid: true })),
+        ...invalid.map((value) => ({ json: JSON.stringify(value), valid: false }))
+      ])
+    );
+    const command = `
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$tokens = $null; $errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($env:DXM_PACK_SCRIPT, [ref]$tokens, [ref]$errors)
+if (@($errors).Count) { throw 'Exporter parse failure' }
+$definition = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-NpmPackRecord' }, $true)
+if (-not $definition) { throw 'Missing production Get-NpmPackRecord' }
+Invoke-Expression $definition.Extent.Text
+foreach ($case in (Get-Content -Raw $env:DXM_PACK_CASES | ConvertFrom-Json)) {
+  $caught = $null; $actual = $null
+  try { $actual = Get-NpmPackRecord -JsonText $case.json -ExpectedPackageName 'com.wallstop-studios.dxmessaging' } catch { $caught = $_ }
+  if ($case.valid) {
+    if ($caught -or $actual.filename -cne 'package-1.0.0.tgz') { throw "Valid envelope rejected: $($case.json) $caught" }
+  } elseif (-not $caught -or $caught.Exception.Message -notmatch 'npm pack') { throw "Invalid envelope accepted or wrong failure: $($case.json) $caught" }
+}`;
+    const result = spawnSync(
+      "pwsh",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+      {
+        encoding: "utf8",
+        env: { ...process.env, DXM_PACK_SCRIPT: SCRIPT_PATH, DXM_PACK_CASES: casesPath }
+      }
+    );
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
 // The three staged folders whose .meta the payload cannot supply; the script
 // pre-writes them with deterministic GUIDs (finding: byte-stable exports).
 const ANCESTOR_METAS = [
@@ -92,20 +129,17 @@ const ANCESTOR_METAS = [
   path.join("Assets", "WallstopStudios", "DxMessaging.meta"),
   path.join("Assets", "WallstopStudios", "DxMessaging", "Samples.meta")
 ];
-
 test("export-unitypackage -StageOnly stages the Assets-form payload with stable metas", (t) => {
   if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
     return;
   }
-
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-unitypackage-stage-"));
   const projectPath = path.join(stagingRoot, "project");
   try {
     runStageOnly(stagingRoot, projectPath, { verifyConsumerInstalls: true });
     const assetsRoot = path.join(projectPath, "Assets");
     const exportRoot = path.join(assetsRoot, "WallstopStudios", "DxMessaging");
-
     // (a) Generator sources and their meta never reach the staged tree.
     assert.ok(!fs.existsSync(path.join(exportRoot, "SourceGenerators")));
     assert.ok(!fs.existsSync(path.join(exportRoot, "SourceGenerators.meta")));
@@ -124,7 +158,6 @@ test("export-unitypackage -StageOnly stages the Assets-form payload with stable 
     assert.match(fs.readFileSync(path.join(consumers, "tarball", "Packages", "manifest.json"), "utf8"), /\.tgz/);
     // prettier-ignore
     { assert.match(fs.readFileSync(path.join(consumers, "git", "Assets", "Editor", "DxmConsumerSampleImporter.cs"), "utf8"), /Sample\.FindByPackage[\s\S]*OverridePreviousImports[\s\S]*HideImportWindow/); assert.match(fs.readFileSync(SCRIPT_PATH, "utf8"), /Runtime\/Core\/MessageHandler\.cs[\s\S]*Samples~\/Mini Combat\/MiniCombat\.unity/); assert.ok(!fs.existsSync(path.join(consumers, "classic", "Assets", "Editor", "DxmConsumerSampleImporter.cs"))); }
-
     // (d) The generated exporter lives OUTSIDE the export root.
     const staged = walk(assetsRoot);
     const exporters = staged.filter((e) => e.full.endsWith("DxmUnityPackageExporter.cs"));
@@ -149,7 +182,6 @@ test("export-unitypackage -StageOnly stages the Assets-form payload with stable 
         assert.ok(fs.existsSync(sibling), `orphan .meta ${entry.full}`);
       }
     }
-
     // Deterministic ancestor folder metas: standard folderAsset yaml...
     const firstMetas = ANCESTOR_METAS.map((relative) => {
       const content = fs.readFileSync(path.join(projectPath, relative), "utf8");
@@ -172,13 +204,11 @@ test("export-unitypackage -StageOnly stages the Assets-form payload with stable 
     fs.rmSync(stagingRoot, { recursive: true, force: true });
   }
 });
-
 test("export-unitypackage -StageOnly defaults to the managed artifact project path", (t) => {
   if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
     return;
   }
-
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-unitypackage-default-"));
   const fakeRepoRoot = path.join(stagingRoot, "repo");
   const artifactsPath = path.join(stagingRoot, "artifacts");
@@ -189,10 +219,8 @@ test("export-unitypackage -StageOnly defaults to the managed artifact project pa
     "projects",
     `${UNITY_VERSION}-unitypackage`
   );
-
   try {
     createMinimalPackageRepo(fakeRepoRoot);
-
     const defaultResult = runStageOnlyRaw(stagingRoot, undefined, {
       repoRoot: fakeRepoRoot,
       artifactsPath
@@ -211,20 +239,17 @@ test("export-unitypackage -StageOnly defaults to the managed artifact project pa
     fs.rmSync(stagingRoot, { recursive: true, force: true });
   }
 });
-
 test("export-unitypackage -StageOnly refuses to delete an unowned existing ProjectPath", (t) => {
   if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
     return;
   }
-
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-unitypackage-unsafe-"));
   const projectPath = path.join(stagingRoot, "consumer-project");
   const consumerFile = path.join(projectPath, "SomeOtherPlugin.dll");
   try {
     fs.mkdirSync(projectPath, { recursive: true });
     fs.writeFileSync(consumerFile, "do not delete", "utf8");
-
     const result = runStageOnlyRaw(stagingRoot, projectPath);
     assert.notEqual(result.status, 0, "stage-only run should reject the unsafe project path");
     assert.match(
@@ -241,13 +266,11 @@ test("export-unitypackage -StageOnly refuses to delete an unowned existing Proje
     fs.rmSync(stagingRoot, { recursive: true, force: true });
   }
 });
-
 test("export-unitypackage -StageOnly rejects destructive ProjectPath values before cleanup", (t) => {
   if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
     return;
   }
-
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-unitypackage-paths-"));
   const artifactRoot = path.join(stagingRoot, "artifacts");
   const cases = [
@@ -273,7 +296,6 @@ test("export-unitypackage -StageOnly rejects destructive ProjectPath values befo
       /Repo-contained export projects must live/
     ]
   ];
-
   try {
     const fakeRepoRoot = path.join(stagingRoot, "repo");
     const managedLink = path.join(
@@ -292,7 +314,6 @@ test("export-unitypackage -StageOnly rejects destructive ProjectPath values befo
     } catch {
       fs.rmSync(managedLink, { recursive: true, force: true });
     }
-
     for (const [name, projectPath, pattern, outputPath, repoRoot] of cases) {
       const result = runStageOnlyRaw(stagingRoot, projectPath, {
         artifactsPath: artifactRoot,
@@ -311,18 +332,15 @@ test("export-unitypackage -StageOnly rejects destructive ProjectPath values befo
     fs.rmSync(stagingRoot, { recursive: true, force: true });
   }
 });
-
 // Single source of truth for the built-in module set the ephemeral export
 // project must enable; both export-unitypackage.ps1 and this guard read it.
 const MODULE_DATA_PATH = path.join(REPO_ROOT, "scripts", "unity", "unity-builtin-modules.json");
 const MATRIX_UNSUPPORTED_MODULES = ["com.unity.modules.accessibility", "com.unity.modules.vr"];
-
 test("export-unitypackage -StageOnly enables the built-in Unity modules", (t) => {
   if (!HAS_PWSH) {
     t.skip("PowerShell is not available");
     return;
   }
-
   const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-unitypackage-manifest-"));
   const projectPath = path.join(stagingRoot, "project");
   try {
@@ -332,12 +350,10 @@ test("export-unitypackage -StageOnly enables the built-in Unity modules", (t) =>
     );
     const deps = manifest.dependencies || {};
     const hasDependency = (id) => Object.prototype.hasOwnProperty.call(deps, id);
-
     assert.ok(
       hasDependency("com.unity.modules.imgui"),
       "manifest must enable com.unity.modules.imgui (the module that broke v3.1.0)"
     );
-
     const required = JSON.parse(fs.readFileSync(MODULE_DATA_PATH, "utf8")).dependencies;
     for (const id of Object.keys(required)) {
       assert.ok(hasDependency(id), `manifest is missing required dependency ${id}`);

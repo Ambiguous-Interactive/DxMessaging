@@ -2,7 +2,7 @@
 // DxMessaging Development Container Configuration
 // =============================================================================
 // For format details, see https://aka.ms/devcontainer.json
-// Project: DxMessaging | Language: C# (.NET 9 / .NET 10 SDKs side-by-side)
+// Project: DxMessaging | Language: C# (.NET 10 LTS)
 // Local Unity verification runs through the unity-mcp-remote MCP server (the
 // host editor), so this container ships only the .NET / Node / docs toolchain.
 // =============================================================================

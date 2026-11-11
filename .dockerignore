@@ -3,8 +3,6 @@
 **
 !.devcontainer/
 !.devcontainer/**
-!SourceGenerators/
-SourceGenerators/**
-!SourceGenerators/global.json
+!global.json
 !package.json
 **/.env*

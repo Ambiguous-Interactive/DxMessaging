@@ -1,3 +1,4 @@
+DxMessaging.Core.Attributes.DxAotMessageAttribute
 DxMessaging.Core.Attributes.DxAutoConstructorAttribute
 DxMessaging.Core.Attributes.DxBroadcastMessageAttribute
 DxMessaging.Core.Attributes.DxIgnoreMissingBaseCallAttribute

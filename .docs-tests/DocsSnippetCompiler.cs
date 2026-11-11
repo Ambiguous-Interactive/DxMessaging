@@ -23,6 +23,7 @@ internal static class DocsSnippetCompiler
         BuildCoreReferences();
 
     private static readonly Lazy<SyntaxTree> BusFirstApi = new(BuildBusFirstApi);
+    private static readonly Lazy<SyntaxTree> TestSupportApi = new(BuildTestSupportApi);
 
     private static readonly string[] DefaultDocNamespaces =
     {
@@ -53,7 +54,7 @@ internal static class DocsSnippetCompiler
 
         CSharpCompilation compilation = CSharpCompilation.Create(
             assemblyName: "DocsSnippetCompilation",
-            syntaxTrees: new[] { stubs, BusFirstApi.Value, userTree },
+            syntaxTrees: new[] { stubs, BusFirstApi.Value, TestSupportApi.Value, userTree },
             references: CoreReferences,
             options: CompilationOptions
         );
@@ -87,7 +88,8 @@ internal static class DocsSnippetCompiler
             .AddRange(documentationDiagnostics);
     }
 
-    private static SyntaxTree BuildBusFirstApi()
+    /// <summary>Finds the checkout containing the real API declarations used by documentation tests.</summary>
+    private static string FindRepositoryRoot()
     {
         DirectoryInfo? root = new(AppContext.BaseDirectory);
         while (root != null && !File.Exists(Path.Combine(root.FullName, "package.json")))
@@ -99,8 +101,130 @@ internal static class DocsSnippetCompiler
             throw new DirectoryNotFoundException("Locate the production bus-first declarations.");
         }
 
+        return root.FullName;
+    }
+
+    /// <summary>Imports public recorder and lifecycle declarations directly from shipped source.</summary>
+    private static SyntaxTree BuildTestSupportApi()
+    {
+        string[] files =
+        {
+            "Runtime/Testing/MessageRecorder.cs",
+            "Runtime/Unity/MessagingLifecycle.cs",
+            "Runtime/Unity/MessagingComponent.cs",
+        };
+        CompilationUnitSyntax declarations = SyntaxFactory
+            .CompilationUnit()
+            .WithMembers(
+                SyntaxFactory.List<MemberDeclarationSyntax>(files.Select(BuildSupportApiScope))
+            );
+        return CSharpSyntaxTree.ParseText(
+            declarations.NormalizeWhitespace().ToFullString(),
+            ParseOptions,
+            "ProductionSupportApi.cs"
+        );
+    }
+
+    /// <summary>Replaces implementation bodies while preserving public parameter and return contracts.</summary>
+    private static NamespaceDeclarationSyntax BuildSupportApiScope(string relativePath)
+    {
+        string path = Path.Combine(FindRepositoryRoot(), relativePath);
+        CompilationUnitSyntax source = CSharpSyntaxTree
+            .ParseText(
+                File.ReadAllText(path),
+                ParseOptions.WithPreprocessorSymbols("UNITY_2021_3_OR_NEWER")
+            )
+            .GetCompilationUnitRoot();
+        NamespaceDeclarationSyntax scope = source
+            .Members.OfType<NamespaceDeclarationSyntax>()
+            .Single();
+        List<MemberDeclarationSyntax> types = new();
+        BlockSyntax stubBody = SyntaxFactory.Block(
+            SyntaxFactory.ThrowStatement(
+                SyntaxFactory
+                    .ObjectCreationExpression(
+                        SyntaxFactory.ParseTypeName("global::System.NotSupportedException")
+                    )
+                    .WithArgumentList(SyntaxFactory.ArgumentList())
+            )
+        );
+        foreach (ClassDeclarationSyntax type in scope.Members.OfType<ClassDeclarationSyntax>())
+        {
+            List<MemberDeclarationSyntax> members = new();
+            foreach (MemberDeclarationSyntax member in type.Members)
+            {
+                if (
+                    type.Identifier.ValueText == "MessagingComponent"
+                    && (
+                        member is not MethodDeclarationSyntax factory
+                        || factory.Identifier.ValueText != "CreateLifecycleBound"
+                    )
+                )
+                {
+                    continue;
+                }
+                if (
+                    member is MethodDeclarationSyntax method
+                    && method.Modifiers.Any(SyntaxKind.PublicKeyword)
+                )
+                {
+                    members.Add(
+                        method
+                            .WithBody(stubBody)
+                            .WithExpressionBody(null)
+                            .WithSemicolonToken(default)
+                    );
+                }
+                else if (
+                    member is PropertyDeclarationSyntax property
+                    && property.Modifiers.Any(SyntaxKind.PublicKeyword)
+                )
+                {
+                    members.Add(
+                        property
+                            .WithAccessorList(null)
+                            .WithInitializer(null)
+                            .WithExpressionBody(
+                                SyntaxFactory.ArrowExpressionClause(
+                                    SyntaxFactory.LiteralExpression(
+                                        SyntaxKind.DefaultLiteralExpression
+                                    )
+                                )
+                            )
+                            .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
+                    );
+                }
+            }
+            if (!type.Modifiers.Any(SyntaxKind.StaticKeyword))
+            {
+                members.Add(
+                    SyntaxFactory
+                        .ConstructorDeclaration(type.Identifier)
+                        .WithModifiers(
+                            SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword))
+                        )
+                        .WithBody(SyntaxFactory.Block())
+                );
+            }
+            types.Add(type.WithAttributeLists(default).WithMembers(SyntaxFactory.List(members)));
+        }
+        return SyntaxFactory
+            .NamespaceDeclaration(scope.Name)
+            .WithUsings(
+                SyntaxFactory.List(
+                    scope.Usings.Where(directive =>
+                        directive.Name?.ToString() is not "UnityEngine.Serialization"
+                    )
+                )
+            )
+            .WithMembers(SyntaxFactory.List(types));
+    }
+
+    /// <summary>Imports bus API declarations while removing production implementation details from documentation stubs.</summary>
+    private static SyntaxTree BuildBusFirstApi()
+    {
         string path = Path.Combine(
-            root.FullName,
+            FindRepositoryRoot(),
             "Runtime",
             "Core",
             "Extensions",
@@ -573,6 +697,13 @@ namespace DxMessaging.Core.Attributes
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
     public sealed class DxUntargetedMessageAttribute : Attribute { }
 
+    // SYNC: Runtime/Core/Attributes/DxAotMessageAttribute.cs assembly opt-in signature.
+    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+    public sealed class DxAotMessageAttribute : Attribute
+    {
+        public DxAotMessageAttribute(Type messageType) { }
+    }
+
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
     public sealed class DxBroadcastMessageAttribute : Attribute { }
 
@@ -825,7 +956,16 @@ namespace UnityEngine
         public GameObject() { }
         public GameObject(string name) { }
     }
-    public class Component : Object { public GameObject gameObject => default; }
+    public class Component : Object
+    {
+        public GameObject gameObject => default;
+        public T GetComponent<T>() => default;
+    }
+    [AttributeUsage(AttributeTargets.Class)]
+    public sealed class RequireComponent : Attribute
+    {
+        public RequireComponent(Type requiredType) { }
+    }
     public class MonoBehaviour : Component { }
 
     [AttributeUsage(AttributeTargets.Field)]

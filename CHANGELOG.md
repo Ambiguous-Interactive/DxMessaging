@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add exclusive Unity messaging lifecycle ownership with retryable cleanup, stale-token and destroyed-owner protection,
+  and `DXMSG015` callback forwarding diagnostics for classes with another base
+  ([#737](https://github.com/Ambiguous-Interactive/DxMessaging/issues/737)).
+- Add test-only message recorders with scoped subscriptions and read-only captures for all three routes
+  ([#740](https://github.com/Ambiguous-Interactive/DxMessaging/issues/740)).
+- Add `DxAotMessage` assembly selections so closed generic messages can dispatch untyped first on IL2CPP
+  ([#734](https://github.com/Ambiguous-Interactive/DxMessaging/issues/734)).
 - Add replayable native Editor settings cache evidence, retaining stopped measurements,
   descriptive counters, native test results, and cleanup/source provenance
   ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
@@ -50,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Accept npm 12 package metadata when validating packages and exporting `.unitypackage` files.
+  ([#742](https://github.com/Ambiguous-Interactive/DxMessaging/issues/742)).
 - Keep empty listener storage eligible for later cleanup when ordinary trim runs during dispatch
   ([#715](https://github.com/Ambiguous-Interactive/DxMessaging/issues/715)).
 - Release unrelated interceptor targets when resetting the default bus while an old registration

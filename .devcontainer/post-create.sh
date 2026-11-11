@@ -181,12 +181,6 @@ validate_dotnet() {
         echo "        $line"
     done
 
-    if dotnet --list-sdks | grep -q "^9\.[0-9]\+\."; then
-        log_success ".NET 9 SDK found"
-    else
-        log_warning ".NET 9 SDK not detected (expected from base image)."
-    fi
-
     if dotnet --list-sdks | grep -q "^10\.[0-9]\+\."; then
         log_success ".NET 10 SDK found"
     else
@@ -197,20 +191,20 @@ validate_dotnet() {
     return 0
 }
 
-# Install the exact SDK pinned in SourceGenerators/global.json
+# Install the exact SDK pinned in global.json
 # (rollForward: disable) so `npm run check:analyzers` — and therefore
 # `npm run validate:all` — works out of the box. The base image ships
-# 9.0.3xx and 10.x channels, which do not satisfy an exact-version pin.
+# other 10.0 feature bands, which do not satisfy an exact-version pin.
 ensure_pinned_sdk() {
-    log_header "Ensuring pinned .NET SDK (SourceGenerators/global.json)"
+    log_header "Ensuring pinned .NET SDK (global.json)"
 
-    local global_json="${WORKSPACE_DIR}/SourceGenerators/global.json"
+    local global_json="${WORKSPACE_DIR}/global.json"
     if [[ ! -f "${global_json}" ]]; then
-        log_warning "SourceGenerators/global.json not found; skipping"
+        log_warning "global.json not found; skipping"
         return 0
     fi
 
-    if (cd "${WORKSPACE_DIR}/SourceGenerators" && dotnet --version >/dev/null 2>&1); then
+    if (cd "${WORKSPACE_DIR}" && dotnet --version >/dev/null 2>&1); then
         log_success "Pinned SDK already resolvable"
         return 0
     fi
@@ -224,7 +218,7 @@ ensure_pinned_sdk() {
     # --install-dir must match the existing dotnet host location; the default
     # ~/.dotnet is not consulted by the /usr/share/dotnet host on PATH.
     if sudo bash "${installer}" --jsonfile "${global_json}" --install-dir /usr/share/dotnet; then
-        log_success "Pinned SDK installed: $(cd "${WORKSPACE_DIR}/SourceGenerators" && dotnet --version 2>/dev/null || echo unknown)"
+        log_success "Pinned SDK installed: $(cd "${WORKSPACE_DIR}" && dotnet --version 2>/dev/null || echo unknown)"
     else
         log_warning "Pinned SDK install failed (continuing); check:analyzers will not run until it is installed"
     fi
@@ -367,6 +361,8 @@ main() {
 
     cd "${WORKSPACE_DIR}"
 
+    # Resolve the repository SDK before any command that requires its exact pin.
+    ensure_pinned_sdk
     run_optional "Restoring .NET local tools" dotnet tool restore
     # npm install reuses the persistent modules tree; npm ci would remove it.
     run_optional "Installing workspace npm dependencies" npm install --prefer-offline --no-audit --no-fund
@@ -381,11 +377,7 @@ main() {
     fi
     run_optional "Installing pre-commit hooks" pre-commit install
 
-    # Step 4: make the SDK pinned by SourceGenerators/global.json resolvable
-    # so `npm run validate:all` (check:analyzers) works out of the box.
-    ensure_pinned_sdk
-
-    # Step 5: validate environment (warn-only, never blocking).
+    # Step 4: validate environment (warn-only, never blocking).
     validate_dotnet || { log_error ".NET validation failed"; exit_code=1; }
     validate_workspace || { log_error "Workspace validation failed"; exit_code=1; }
 

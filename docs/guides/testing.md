@@ -46,6 +46,56 @@ public sealed class PlainMessageTests
 }
 ```
 
+## Capture messages with a recorder
+
+In 4.0.0, add `WallstopStudios.DxMessaging.Testing` to your test assembly definition's
+references. This support assembly is included only when `UNITY_INCLUDE_TESTS` is
+set. It does not add test helpers to the runtime assembly or ordinary player builds.
+
+Use an explicit bus and dispose the recorder after assertions:
+
+```csharp
+using DxMessaging.Core.Extensions;
+using DxMessaging.Core.MessageBus;
+using DxMessaging.Core.Messages;
+using DxMessaging.Testing;
+using NUnit.Framework;
+
+public readonly struct RecordedPing : IUntargetedMessage<RecordedPing> { }
+
+public sealed class RecorderExampleTests
+{
+    [Test]
+    public void ActionEmitsTheExpectedMessage()
+    {
+        MessageBus bus = new MessageBus();
+        using MessageRecorder<RecordedPing> recorder = MessageRecorder.Untargeted<RecordedPing>(bus);
+        RecordedPing message = new RecordedPing();
+        message.Emit(bus);
+        Assert.That(recorder.Received.Count, Is.EqualTo(1));
+    }
+}
+```
+
+The factory owns the handler, token, activation, and cleanup from the manual
+example above. For a recipient, use `MessageRecorder.Targeted<T>(target, bus)`;
+for a sender, use `MessageRecorder.Broadcast<T>(source, bus)`. The context is an
+`InstanceId`; Unity GameObjects and Components convert through the existing APIs.
+Each recorder has its own subscription, including two recorders for the same type
+and context on one bus.
+
+`Received` is a live read-only view in handler delivery order. Structs are copied;
+class messages retain their original references. Interceptor vetoes prevent
+capture, and accepted interceptor mutations are visible. Earlier messages are not
+replayed. Setup and list growth allocate, so use the recorder for behavioral
+assertions outside throughput or allocation measurements.
+
+`Clear()` releases captures while keeping the subscription. Successful `Dispose()`
+removes the subscription and clears captures; repeated disposal is harmless.
+If bus cleanup throws, resolve the cause and retry `Dispose()` on the same
+recorder. Setup failures use the builder's existing cleanup contract: a
+`MessageRegistrationBuildException.Lease` owns cleanup if rollback could not finish.
+
 ## Unity component lifecycle
 
 Put these scripts and `TestPing` above in the same PlayMode test assembly. The receiver registers

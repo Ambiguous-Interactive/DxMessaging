@@ -6,6 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const YAML = require("yaml");
 const { spawnSync } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const { walkFiles } = require("../lib/repo-files.js");
 const {
   UNITY_LOCK_WINDOWS,
@@ -49,42 +50,33 @@ const CLEANUP_POLICY_SHA = CLEANUP_POLICY_PIN.sha;
 const CONSOLIDATED_WORKFLOWS = ["actionlint.yml", "csharpier-check.yml", "dotnet-tests.yml", "json-format-check.yml", "lint-doc-links.yml", "markdownlint.yml", "script-tests.yml", "spellcheck.yml", "validate-banner.yml", "validate-docs.yml", "validate-llms-txt.yml", "yaml-format-lint.yml"];
 // prettier-ignore
 const AGGREGATED_JOBS = ["changes", "actionlint", "markdownlint", "csharpier", "dotnet", "json-format", "line-endings", "spellcheck", "validate-banner", "validate-llms-txt", "yaml-format-lint", "script-tests", "validate-docs", "lint-doc-links"];
-
 const readWorkflow = (file = "ci.yml") => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
-
 const readWorkflowDocument = (file) => YAML.parseDocument(readWorkflow(file));
-
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-
 function getJobBlock(source, jobId, sourceName = "ci.yml") {
   const header = new RegExp(`^  ${escapeRegExp(jobId)}:\n`, "m");
   const match = header.exec(source);
   assert.ok(match, `${sourceName}:${jobId} job must exist`);
-
   const start = match.index;
   const rest = source.slice(start + match[0].length);
   const nextJob = /^  [A-Za-z0-9_-]+:\n/m.exec(rest);
   const end = nextJob ? start + match[0].length + nextJob.index : source.length;
   return source.slice(start, end);
 }
-
 function getStepBlock(jobBlock, stepName) {
   const marker = `      - name: ${stepName}\n`;
   const start = jobBlock.indexOf(marker);
   assert.notEqual(start, -1, `job must include step '${stepName}'`);
-
   const next = jobBlock.indexOf("\n      - name:", start + marker.length);
   return jobBlock.slice(start, next === -1 ? jobBlock.length : next);
 }
-
 function extractShellPatternVariable(source, variableName) {
   const initialPattern = new RegExp(`^\\s*${escapeRegExp(variableName)}='([^']*)'$`);
   const appendPattern = new RegExp(
     `^\\s*${escapeRegExp(variableName)}="\\$${escapeRegExp(variableName)}"'([^']*)'$`
   );
-
   const pieces = [];
   for (const line of source.split(/\r?\n/)) {
     const match = initialPattern.exec(line) || (pieces.length && appendPattern.exec(line));
@@ -94,17 +86,14 @@ function extractShellPatternVariable(source, variableName) {
       break;
     }
   }
-
   assert.ok(pieces.length > 0, `ci.yml must build ${variableName}`);
   return pieces.join("");
 }
-
 test("active workflows keep the shared safety contract", () => {
   const workflowFiles = fs
     .readdirSync(WORKFLOW_DIR)
     .filter((file) => /\.ya?ml$/.test(file))
     .sort();
-
   for (const file of workflowFiles) {
     const source = readWorkflow(file);
     const document = readWorkflowDocument(file);
@@ -113,14 +102,12 @@ test("active workflows keep the shared safety contract", () => {
     assert.doesNotMatch(source, /npx(?! --no-install markdownlint-cli2(?: |$))[^\n]*markdownlint|markdownlint@/, file);
     // prettier-ignore
     assert.equal(source.match(/npm audit --audit-level=high/g)?.length || 0, source.match(/npx --no-install markdownlint-cli2/g)?.length || 0, file);
-
     const keys = document.contents.items.map((item) => String(item.key.value));
     assert.deepEqual(
       keys.slice(0, 5),
       ["name", "on", "concurrency", "permissions", "jobs"],
       `${file} must use the canonical top-level key order`
     );
-
     const workflow = document.toJS();
     assert.equal(Object.hasOwn(workflow.on, "pull_request_target"), false, file);
     assert.equal(
@@ -135,13 +122,11 @@ test("active workflows keep the shared safety contract", () => {
       "object",
       `${file} must declare top-level permissions`
     );
-
     for (const [jobId, job] of Object.entries(workflow.jobs)) {
       assert.ok(
         Number.isFinite(job["timeout-minutes"]) && job["timeout-minutes"] > 0,
         `${file}:${jobId} must have a positive timeout-minutes`
       );
-
       for (const step of job.steps || []) {
         if (typeof step.uses === "string" && step.uses.startsWith("actions/checkout@")) {
           assert.equal(
@@ -154,7 +139,6 @@ test("active workflows keep the shared safety contract", () => {
     }
   }
 });
-
 test("wiki sync deploys every admitted push and fails closed", () => {
   const workflow = readWorkflowDocument("sync-wiki.yml").toJS();
   const filters = workflow.on.push.paths;
@@ -167,13 +151,11 @@ test("wiki sync deploys every admitted push and fails closed", () => {
     "workflow-only": [".github/workflows/sync-wiki.yml"],
     rename: ["docs/old-name.md", "docs/new-name.md"]
   };
-
   assert.deepEqual(filters, ["docs/**", "scripts/wiki/**", ".github/workflows/sync-wiki.yml"]);
   for (const [name, files] of Object.entries(admittedCases)) {
     assert.equal(admitted(files), true, name);
   }
   assert.equal(admitted(["Runtime/Core/MessageBus.cs"]), false, "unrelated");
-
   const { validate, sync } = workflow.jobs;
   assert.ok(Object.hasOwn(workflow.on, "workflow_dispatch"), "manual dispatch must remain enabled");
   assert.equal(validate.outputs, undefined, "the divergent deployment detector must stay removed");
@@ -184,11 +166,9 @@ test("wiki sync deploys every admitted push and fails closed", () => {
     "every admitted run must execute validation"
   );
 });
-
 test("opt-in formatting never executes a fork head with repository write permissions", () => {
   const source = readWorkflow("format-on-demand.yml");
   const workflow = readWorkflowDocument("format-on-demand.yml").toJS();
-
   assert.equal(
     workflow.concurrency.group,
     "${{ github.workflow }}-${{ github.event.issue.number || inputs.pr_number }}"
@@ -200,7 +180,6 @@ test("opt-in formatting never executes a fork head with repository write permiss
     "pull-requests": "read"
   });
   assert.doesNotMatch(source, /repository:\s*\$\{\{\s*steps\.meta\.outputs\.head_repo/);
-
   for (const jobId of ["by_comment", "by_dispatch"]) {
     const job = workflow.jobs[jobId];
     const refusal = job.steps.find((step) => step.name === "Refuse fork pull requests");
@@ -215,14 +194,12 @@ test("opt-in formatting never executes a fork head with repository write permiss
     assert.equal(checkout.if, "${{ steps.meta.outputs.same_repo == 'true' }}", jobId);
     assert.equal(checkout.with.repository, undefined, jobId);
   }
-
   const dispatchMeta = workflow.jobs.by_dispatch.steps.find(
     (step) => step.name === "Resolve PR metadata"
   );
   assert.equal(dispatchMeta.env.PR_NUMBER, "${{ inputs.pr_number }}");
   assert.match(dispatchMeta.with.script, /Number\(process\.env\.PR_NUMBER\)/);
 });
-
 test("static CI checks stay consolidated behind CI Success", () => {
   const source = readWorkflow();
   const ciSuccess = getJobBlock(source, "ci-success");
@@ -231,12 +208,10 @@ test("static CI checks stay consolidated behind CI Success", () => {
   assert.match(ciSuccess, /uses: re-actors\/alls-green@[0-9a-f]{40}/);
   assert.match(ciSuccess, /allowed-skips: ""/);
   assert.match(ciSuccess, /allowed-failures: ""/);
-
   for (const job of AGGREGATED_JOBS) {
     assert.match(ciSuccess, new RegExp(`\\n      - ${job}\\n`), `CI Success must need ${job}`);
   }
 });
-
 test("change detector considers current and previous paths", () => {
   const source = readWorkflow();
   assert.match(source, /--jq '\.\[\] \| \.filename, \(\.previous_filename \/\/ empty\)'/);
@@ -253,7 +228,6 @@ test("change detector considers current and previous paths", () => {
     "push detection must not use GitHub's compare files list because it is capped"
   );
 });
-
 test("change detectors cover harness, package, and changelog contract inputs", () => {
   const source = readWorkflow();
   const scriptsPattern = new RegExp(extractShellPatternVariable(source, "scripts_pattern"));
@@ -281,7 +255,6 @@ test("static child jobs always report and fail closed on bad change detection", 
     const jobBlock = getJobBlock(source, jobId);
     assert.match(jobBlock, /\n    needs: changes\n/, `${jobId} must depend on changes`);
     assert.match(jobBlock, /\n    if: \$\{\{ always\(\) \}\}\n/, `${jobId} must always report`);
-
     const guard = getStepBlock(jobBlock, "Validate change detection");
     assert.match(
       guard,
@@ -305,29 +278,23 @@ test("static child jobs always report and fail closed on bad change detection", 
     );
   }
 });
-
 test("committed line endings are gated, not silently repaired", () => {
   const source = readWorkflow();
   const job = getJobBlock(source, "line-endings");
-
   // Every tracked text file is in scope, so this job is intentionally unfiltered.
   assert.doesNotMatch(job, /\n    needs:/, "line-endings must not be path-filtered");
-
   // `--renormalize` exposes committed bytes that disagree with .gitattributes.
   const check = getStepBlock(job, "Verify committed bytes match .gitattributes");
   assert.match(check, /git add --renormalize \./);
   assert.match(check, /git diff --cached --quiet/);
   assert.match(check, /\n          exit 1\n/, "drift must fail the job");
-
   // CSharpier may repair its worktree, but that cannot replace this fail-closed gate.
   const repair = getStepBlock(getJobBlock(source, "csharpier"), "Normalize line endings");
   assert.match(repair, /git reset --hard/);
   assert.doesNotMatch(repair, /exit 1/);
 });
-
 test(".gitattributes declares text=auto, never a bare text", () => {
   const source = fs.readFileSync(path.join(REPO_ROOT, ".gitattributes"), "utf8");
-
   // GitHub-API commits can contain CRLF blobs without applying attributes. A bare
   // `text` then makes a pristine clone appear modified; `text=auto` leaves the
   // blob stable while the line-endings job reports the drift.
@@ -335,7 +302,6 @@ test(".gitattributes declares text=auto, never a bare text", () => {
     .split(/\r?\n/)
     .filter((line) => !line.trimStart().startsWith("#"))
     .filter((line) => /^\S+\s+text(\s|$)/.test(line));
-
   assert.deepEqual(
     bare,
     [],
@@ -346,10 +312,8 @@ test(".gitattributes declares text=auto, never a bare text", () => {
     ".gitattributes must keep the default '* text=auto eol=lf' rule"
   );
 });
-
 test("the stuck-job watchdog never materializes the default branch", () => {
   const source = fs.readFileSync(path.join(WORKFLOW_DIR, "stuck-job-watchdog.yml"), "utf8");
-
   // Clone the state branch directly. Switching to it from a content-dirty default
   // branch caused 13 consecutive watchdog failures on 2026-07-29.
   const clones = [...source.matchAll(/git(?:_auth)? clone [^\n]*/g)].map((match) =>
@@ -367,7 +331,6 @@ test("the stuck-job watchdog never materializes the default branch", () => {
     "switching between two populated trees is the failure mode being retired"
   );
 });
-
 test("source marker scan is tracked-file scoped and cannot self-match workflow text", () => {
   const source = readWorkflow();
   const dotnet = getJobBlock(source, "dotnet");
@@ -382,21 +345,17 @@ test("source marker scan is tracked-file scoped and cannot self-match workflow t
     "*.sln"
   ];
   const excludedScopes = ["--no-ignore", ".github", ".llm"];
-
   assert.match(markerScan, /source_pathspecs=\(/);
   assert.match(markerScan, /source_file_count=\$\(git ls-files -- "\$\{source_pathspecs\[@\]\}"/);
   assert.match(markerScan, /Scanning \$\{source_file_count\} tracked source files/);
   assert.match(markerScan, /git grep -n -E -I "\(TODO\|FIXME\)" -- "\$\{source_pathspecs\[@\]\}"/);
-
   for (const pathspec of includedPathspecs) {
     assert.match(markerScan, new RegExp(`'${escapeRegExp(pathspec)}'`));
   }
-
   for (const scope of excludedScopes) {
     assert.doesNotMatch(markerScan, new RegExp(escapeRegExp(scope)));
   }
 });
-
 test("script validators run once while script tests stay cross-platform", () => {
   const source = readWorkflow();
   const scriptTests = getJobBlock(source, "script-tests");
@@ -405,7 +364,6 @@ test("script validators run once while script tests stay cross-platform", () => 
     "Run script tests and Unity editor heartbeat guards"
   );
   const validators = getStepBlock(scriptTests, "Run validators");
-
   assert.match(
     scriptTests,
     /os:\n          - ubuntu-latest\n          - macos-latest\n          - windows-latest/
@@ -416,7 +374,6 @@ test("script validators run once while script tests stay cross-platform", () => 
   assert.match(validators, /matrix\.os == 'ubuntu-latest'/);
   assert.match(validators, /\n        run: npm run validate:all\n/);
 });
-
 test("standalone static-check workflows are not reintroduced", () => {
   for (const workflow of CONSOLIDATED_WORKFLOWS) {
     assert.equal(
@@ -426,7 +383,6 @@ test("standalone static-check workflows are not reintroduced", () => {
     );
   }
 });
-
 test("copyable build-lock documentation follows the runner and App credential contract", () => {
   for (const relativePath of [
     "docs/ops/ci-and-github-settings.md",
@@ -801,6 +757,8 @@ test("devcontainer classification covers build inputs and fails safe on incomple
     ["workflow", [".github/workflows/ci.yml"], true],
     ["action", [".github/actions/install-pinned-lychee/action.yml"], true],
     ["image dependency", ["package.json"], true],
+    ["SDK build input", ["global.json"], true],
+    ["build context", [".dockerignore"], true],
     ["dependency lock", ["package-lock.json"], true],
     ["smoke suite", ["scripts/__tests__/llm-harness.test.js"], true],
     ["tool script", ["scripts/llm/harness.js"], true],
@@ -950,7 +908,6 @@ test("release workflows pin App write scopes and denied-push diagnostics", () =>
   );
   assert.doesNotMatch(prepare, /\.artifacts\/release-prepare/);
 });
-
 for (const [mode, expected] of Object.entries(CORRECTNESS_CATEGORY_FILTERS)) {
   test(`${mode} correctness category filter retains lifecycle coverage and excludes heavy work`, () => {
     const steps = YAML.parse(readWorkflow("unity-tests.yml")).jobs["unity-tests"].steps;
@@ -960,3 +917,41 @@ for (const [mode, expected] of Object.entries(CORRECTNESS_CATEGORY_FILTERS)) {
     assert.deepEqual(step.env.DXM_UNITY_TEST_CATEGORY.split(";").sort(), expected.toSorted());
   });
 }
+/** Check the actual release pack step against single and ambiguous archive output. */
+// prettier-ignore
+test("release pack step hashes one actual archive and rejects ambiguous output", () => {
+  const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles, "Git", "bin", "bash.exe") : "bash";
+  const step = Object.values(YAML.parse(fs.readFileSync(path.join(WORKFLOW_DIR, "release.yml"), "utf8")).jobs).flatMap((job) => job.steps ?? []).find((candidate) => candidate.name === "Pack npm package");
+  for (const ambiguous of [false, true]) {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-release-pack-"));
+    try {
+      fs.writeFileSync(path.join(temp, "package.json"), JSON.stringify({ name: "com.wallstop-studios.dxmessaging", version: "0.0.0" }));
+      fs.mkdirSync(path.join(temp, ".artifacts/release"), { recursive: true });
+      const stale = path.join(temp, ".artifacts/release/stale.tgz"); if (ambiguous) fs.writeFileSync(stale, "retained");
+      fs.mkdirSync(path.join(temp, "bin")); fs.writeFileSync(path.join(temp, "bin", "sha256sum"), "#!/bin/sh\nexit 89\n"); fs.chmodSync(path.join(temp, "bin", "sha256sum"), 0o755);
+      const output = path.join(temp, "output.txt"); const result = spawnSync(bash, ["-c", 'export PATH="$PWD/bin:$PATH";\n' + step.run], { cwd: temp, encoding: "utf8", env: { ...process.env, GITHUB_OUTPUT: output } });
+      if (ambiguous) { assert.notEqual(result.status, 0, "An existing second archive must fail qualification"); assert.equal(fs.readFileSync(stale, "utf8"), "retained"); }
+      else { assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`); assert.match(fs.readFileSync(output, "utf8"), /^package-file=com.wallstop-studios.dxmessaging-0.0.0\.tgz\r?\n$/); const archive = path.join(temp, ".artifacts/release/com.wallstop-studios.dxmessaging-0.0.0.tgz"); const digest = createHash("sha256").update(fs.readFileSync(archive)).digest("hex"); assert.equal(fs.readFileSync(archive + ".sha256", "utf8"), `${digest}  ${path.basename(archive)}\n`); }
+    } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+  }
+});
+/** Check both actual smoke command blocks against valid and invalid documentation SDK versions. */
+// prettier-ignore
+test("container SDK smoke checks accept allowed docs feature bands", { skip: process.platform === "win32" }, () => {
+  const workflow = YAML.parse(readWorkflow("devcontainer-test.yml"));
+  for (const job of ["test", "test-arm64"]) {
+    const command = workflow.jobs[job].steps.find((step) => step.with?.runCmd).with.runCmd;
+    const start = command.indexOf("expected_sdk="); const end = command.indexOf('echo "=== .NET 10 SDK + runtime presence ==="');
+    assert.ok(0 <= start && start < end, `${job}: retain the real SDK-resolution block`);
+    const block = command.slice(start, end); const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-sdk-smoke-"));
+    try {
+      for (const directory of ["bin", "SourceGenerators", ".net-tests", ".docs-tests"]) fs.mkdirSync(path.join(temp, directory));
+      for (const relative of ["global.json", ".docs-tests/global.json"]) fs.copyFileSync(path.join(REPO_ROOT, relative), path.join(temp, relative));
+      const dotnet = path.join(temp, "bin", "dotnet"); fs.writeFileSync(dotnet, '#!/usr/bin/env bash\nif [[ "$PWD" == */.docs-tests ]]; then printf "%s\\n" "$DXM_DOCS_SDK"; else printf "10.0.404\\n"; fi\n'); fs.chmodSync(dotnet, 0o755);
+      for (const [version, accepted] of [["10.0.100", true], ["10.0.404", true], ["10.0.500", true], ["10.0.99", false], ["10.1.100", false], ["9.0.999", false], ["11.0.100", false], ["10.0.500-preview", false]]) {
+        const result = spawnSync("bash", ["-euo", "pipefail", "-c", block], { cwd: temp, encoding: "utf8", env: { ...process.env, PATH: `${path.join(temp, "bin")}${path.delimiter}${process.env.PATH}`, DXM_DOCS_SDK: version } });
+        assert.equal(result.status === 0, accepted, `${job}/${version}: ${result.stdout}\n${result.stderr}`);
+      }
+    } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+  }
+});

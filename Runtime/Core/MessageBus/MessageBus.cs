@@ -8145,7 +8145,7 @@ namespace DxMessaging.Core.MessageBus
                     + " dispatch for message type '"
                     + messageType.FullName
                     + "' under an AOT scripting backend because no rooted dispatch bridge was registered. "
-                    + "Use a source-visible concrete message type, annotate it with the DxMessaging message attribute, "
+                    + "Use a source-visible concrete message type, select a closed type with [assembly: DxAotMessage(typeof(...))], "
                     + "or touch the generic registration or typed dispatch path for that concrete type before untyped dispatch."
             );
         }

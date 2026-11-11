@@ -22,6 +22,8 @@ DxMessaging ships source generators and a Roslyn analyzer that report authoring 
 | [`DXMSG011`](#dxmsg011-cannot-preserve-explicit-interface-struct-initializers)   | Error    | Cannot preserve explicit-interface struct initializers                                | `DxAutoConstructorGenerator`            |
 | [`DXMSG012`](#dxmsg012-cannot-infer-primary-constructor-arguments)               | Error    | Cannot infer primary constructor arguments                                            | `DxAutoConstructorGenerator`            |
 | [`DXMSG013`](#dxmsg013-field-constructor-conflicts-with-record-copy-constructor) | Error    | Field constructor conflicts with record copy constructor                              | `DxAutoConstructorGenerator`            |
+| [`DXMSG014`](#dxmsg014-aot-registration-requires-an-accessible-closed-message)   | Error    | AOT registration requires an accessible closed message                                | `DxMessageIdGenerator`                  |
+| [`DXMSG015`](#dxmsg015-missing-messaging-lifecycle-forwarding)                   | Warning  | A MonoBehaviour does not forward a required callback to its owned lifecycle           | `MessagingLifecycleAnalyzer`            |
 
 > All diagnostic IDs can be customised per project in `.editorconfig`. For example,
 > `dotnet_diagnostic.DXMSG006.severity = error` makes a missing base call a build error.
@@ -626,9 +628,42 @@ For Unity 2021, the package-owned `[CustomEditor(typeof(MessageAwareComponent), 
 
 ---
 
+## DXMSG014: AOT registration requires an accessible closed message
+
+An assembly-level `DxAotMessage` attribute must select a closed, concrete class
+or struct with a Dx message contract. The type and its generic arguments must be
+accessible from the assembly containing the attribute. A generic definition,
+abstract class, interface, null value, or non-message type cannot produce a bridge.
+A type from a referenced assembly must already implement every route named by its
+message marker. A marker alone cannot add an interface to another assembly.
+Types generated in the current compilation can still infer their route from the marker.
+
+Replace an open selection with each concrete form used by untyped dispatch.
+Use a public or internal type accessible to the assembly, or perform typed
+registration or emission before untyped dispatch for a private message.
+See [generic messages on IL2CPP](../concepts/message-types.md#generic-messages-on-il2cpp)
+for a complete assembly-attribute example.
+
+---
+
 ## See also
 
 - [Troubleshooting](troubleshooting.md) -- runtime symptoms and how they map to diagnostics.
 - [Inheritance and base calls](../guides/unity-integration.md#important-inheritance-and-base-calls) -- the inheritance contract this analyzer enforces.
 - [Unity Integration](../guides/unity-integration.md) -- broader Unity-side guidance for inheritance and lifecycle.
 - [Quick Reference](quick-reference.md) -- concise listing of all diagnostic IDs.
+
+## DXMSG015: Missing messaging lifecycle forwarding
+
+Available in 4.0.0. A `MonoBehaviour` with an instance `MessagingLifecycle` field must assign
+that field from `CreateLifecycleBound(this)` in `Awake`, call its `Enable` from `OnEnable`,
+call its `Disable` from `OnDisable`, and call its `Dispose` from `OnDestroy`.
+
+The analyzer follows source forwarding methods, inherited callbacks, and explicit base calls.
+A call on another listener's helper or through the raw token does not satisfy the contract.
+Uninvoked lambda and local function bodies do not count. The analysis does not prove conditional
+reachability or arbitrary aliases, interface dispatch, or forwarding in referenced assemblies.
+
+See the [composable lifecycle example](../guides/unity-integration.md#composable-lifecycle-ownership-400)
+for the complete callback pattern. Configure the existing `MessagingComponent` bus or provider
+before creating the helper. Retry failed cleanup through the helper while `IsDisposed` is false.

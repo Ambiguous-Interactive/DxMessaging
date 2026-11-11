@@ -52,6 +52,15 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             isEnabledByDefault: true
         );
 
+        private static readonly DiagnosticDescriptor InvalidAotMessageError = new(
+            id: "DXMSG014",
+            title: "AOT registration requires an accessible closed message",
+            messageFormat: "DxAotMessage must name a closed, concrete message accessible from this assembly; '{0}' cannot be registered. Use a non-abstract class or struct implementing a Dx message interface or bearing one Dx message attribute, and close every generic argument.",
+            category: "DxMessaging",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true
+        );
+
         // Information needed during the generation phase for a valid message type
         private record struct MessageToGenerateInfo(
             INamedTypeSymbol TypeSymbol,
@@ -118,6 +127,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             context.RegisterForSyntaxNotifications(static () => new TypeSyntaxReceiver());
         }
 
+        /// <summary>Collects message definitions and explicit selections, then emits their deterministic message and bridge sources.</summary>
         public void Execute(GeneratorExecutionContext context)
         {
             if (context.SyntaxReceiver is not TypeSyntaxReceiver receiver)
@@ -149,7 +159,131 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 }
             }
 
+            AddExplicitAotSelections(aotTypes, context);
             Execute(typesToGenerate, aotTypes, context);
+        }
+
+        /// <summary>Adds valid closed assembly selections and reports invalid selections at their attribute locations.</summary>
+        private static void AddExplicitAotSelections(
+            List<AotRegistrarInfo> aotTypes,
+            GeneratorExecutionContext context
+        )
+        {
+            foreach (AttributeData attribute in context.Compilation.Assembly.GetAttributes())
+            {
+                context.CancellationToken.ThrowIfCancellationRequested();
+                if (
+                    attribute.AttributeClass?.ToDisplayString()
+                    != "DxMessaging.Core.Attributes.DxAotMessageAttribute"
+                )
+                {
+                    continue;
+                }
+
+                INamedTypeSymbol? messageType =
+                    attribute.ConstructorArguments.Length == 1
+                        ? attribute.ConstructorArguments[0].Value as INamedTypeSymbol
+                        : null;
+                if (
+                    TryGetExplicitAotSelection(
+                        messageType,
+                        context.Compilation,
+                        out AotRegistrarInfo info
+                    )
+                )
+                {
+                    aotTypes.Add(info);
+                    continue;
+                }
+
+                context.ReportDiagnostic(
+                    Diagnostic.Create(
+                        InvalidAotMessageError,
+                        attribute
+                            .ApplicationSyntaxReference?.GetSyntax(context.CancellationToken)
+                            .GetLocation(),
+                        messageType?.ToDisplayString() ?? "null"
+                    )
+                );
+            }
+        }
+
+        /// <summary>Validates a concrete selected type and captures every message route it implements or declares.</summary>
+        private static bool TryGetExplicitAotSelection(
+            INamedTypeSymbol? typeSymbol,
+            Compilation compilation,
+            out AotRegistrarInfo info
+        )
+        {
+            info = default;
+            if (
+                typeSymbol == null
+                || (typeSymbol.TypeKind != TypeKind.Class && typeSymbol.TypeKind != TypeKind.Struct)
+                || typeSymbol.IsAbstract
+                || typeSymbol.IsStatic
+                || typeSymbol.IsRefLikeType
+                || ContainsTypeParameters(typeSymbol)
+                || !compilation.IsSymbolAccessibleWithin(typeSymbol, compilation.Assembly)
+            )
+            {
+                return false;
+            }
+
+            bool untargeted = ImplementsInterface(typeSymbol, UntargetedInterfaceFullName);
+            bool targeted = ImplementsInterface(typeSymbol, TargetedInterfaceFullName);
+            bool broadcast = ImplementsInterface(typeSymbol, BroadcastInterfaceFullName);
+            bool external = !SymbolEqualityComparer.Default.Equals(
+                typeSymbol.ContainingAssembly,
+                compilation.Assembly
+            );
+            int messageAttributes = 0;
+            foreach (AttributeData attribute in typeSymbol.GetAttributes())
+            {
+                switch (attribute.AttributeClass?.ToDisplayString())
+                {
+                    case UntargetedAttrFullName:
+                        if (external && !untargeted)
+                        {
+                            return false;
+                        }
+                        untargeted = true;
+                        ++messageAttributes;
+                        break;
+                    case TargetedAttrFullName:
+                        if (external && !targeted)
+                        {
+                            return false;
+                        }
+                        targeted = true;
+                        ++messageAttributes;
+                        break;
+                    case BroadcastAttrFullName:
+                        if (external && !broadcast)
+                        {
+                            return false;
+                        }
+                        broadcast = true;
+                        ++messageAttributes;
+                        break;
+                }
+            }
+            if (1 < messageAttributes || (!untargeted && !targeted && !broadcast))
+            {
+                return false;
+            }
+
+            /*
+                This selection belongs in the top-level registrar even when its generic
+                definition bears a message attribute. Open definitions have no startup bridge.
+            */
+            info = new AotRegistrarInfo(
+                typeSymbol,
+                untargeted,
+                targeted,
+                broadcast,
+                HasMessageAttribute: false
+            );
+            return true;
         }
 
         private static bool IsSyntaxTargetForGeneration(SyntaxNode node)
@@ -353,6 +487,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             return false;
         }
 
+        /// <summary>Collects message definitions and explicit selections, then emits their deterministic message and bridge sources.</summary>
         private static void Execute(
             List<MessageToGenerateInfo> typesToGenerate,
             List<AotRegistrarInfo> aotTypes,
@@ -1099,20 +1234,38 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 || accessibility == Accessibility.ProtectedOrInternal;
         }
 
-        private static bool ContainsTypeParameters(INamedTypeSymbol typeSymbol)
+        /// <summary>Detects unresolved generic arguments through containing types and array element types.</summary>
+        private static bool ContainsTypeParameters(ITypeSymbol typeSymbol)
         {
-            for (
-                INamedTypeSymbol current = typeSymbol;
-                current != null;
-                current = current.ContainingType
+            if (
+                typeSymbol.TypeKind == TypeKind.TypeParameter
+                || typeSymbol.TypeKind == TypeKind.Error
             )
             {
-                if (0 < current.TypeParameters.Length)
+                return true;
+            }
+            if (typeSymbol is IArrayTypeSymbol array)
+            {
+                return ContainsTypeParameters(array.ElementType);
+            }
+            if (typeSymbol is not INamedTypeSymbol named)
+            {
+                return false;
+            }
+            if (
+                named.IsUnboundGenericType
+                || (named.ContainingType != null && ContainsTypeParameters(named.ContainingType))
+            )
+            {
+                return true;
+            }
+            foreach (ITypeSymbol argument in named.TypeArguments)
+            {
+                if (ContainsTypeParameters(argument))
                 {
                     return true;
                 }
             }
-
             return false;
         }
 

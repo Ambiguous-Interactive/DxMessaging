@@ -43,6 +43,7 @@ namespace DxMessaging.Unity
 
         // Retain cleanup owners only until the outermost release frame exits.
         private List<MessageRegistrationToken> _releasingTokens;
+        private HashSet<MessageRegistrationToken> _lifecycleTokens;
 
         [NonSerialized]
         private IMessageBus _messageBusOverride;
@@ -52,6 +53,9 @@ namespace DxMessaging.Unity
 
         internal readonly Dictionary<MonoBehaviour, MessageRegistrationToken> _registeredListeners =
             new();
+
+        /// <summary>Gets whether Unity has begun the owner's destruction callback.</summary>
+        internal bool DestructionStarted => _destroyed;
 
         internal bool AutoConfigureSerializedProviderOnAwake =>
             autoConfigureSerializedProviderOnAwake;
@@ -99,6 +103,12 @@ namespace DxMessaging.Unity
         /// </remarks>
         public MessageRegistrationToken Create(MonoBehaviour listener)
         {
+            return CreateToken(listener, warnOnExisting: true);
+        }
+
+        /// <summary>Validates listener ownership and resolves its token with optional duplicate-request logging.</summary>
+        private MessageRegistrationToken CreateToken(MonoBehaviour listener, bool warnOnExisting)
+        {
             if (_destroyed)
             {
                 throw new ObjectDisposedException(nameof(MessagingComponent));
@@ -123,7 +133,7 @@ namespace DxMessaging.Unity
                 )
             )
             {
-                if (MessagingDebug.enabled)
+                if (warnOnExisting && MessagingDebug.enabled)
                 {
                     MessagingDebug.Log(
                         LogLevel.Warn,
@@ -139,6 +149,31 @@ namespace DxMessaging.Unity
             createdToken = MessageRegistrationToken.Create(_messageHandler);
             _registeredListeners[listener] = createdToken;
             return createdToken;
+        }
+
+        /// <summary>
+        /// Creates an owner that forwards Unity lifecycle calls to this listener's token.
+        /// </summary>
+        /// <param name="listener">A listener attached to this GameObject.</param>
+        /// <returns>An owner for the token returned by <see cref="Create(MonoBehaviour)"/>.</returns>
+        /// <exception cref="InvalidOperationException">A lifecycle already owns this listener token.</exception>
+        /// <remarks>
+        /// Assign the result in Awake, configure its Token, then forward OnEnable, OnDisable,
+        /// and OnDestroy to Enable, Disable, and Dispose. This does not install Unity callbacks.
+        /// Keep one lifecycle per listener. A second owner is rejected until the token is released.
+        /// The component's configured bus or provider also applies to this owner.
+        /// </remarks>
+        public MessagingLifecycle CreateLifecycleBound(MonoBehaviour listener)
+        {
+            MessageRegistrationToken token = CreateToken(listener, warnOnExisting: false);
+            HashSet<MessageRegistrationToken> owners = _lifecycleTokens ??= new();
+            if (!owners.Add(token))
+            {
+                throw new InvalidOperationException(
+                    "A lifecycle already owns this listener token. Reuse it or release it before creating another owner."
+                );
+            }
+            return new MessagingLifecycle(this, listener, token);
         }
 
         /// <summary>
@@ -271,6 +306,14 @@ namespace DxMessaging.Unity
                         return false;
                     }
                     _ = _registeredListeners.Remove(listener);
+                    if (_lifecycleTokens != null)
+                    {
+                        _ = _lifecycleTokens.Remove(token);
+                        if (_lifecycleTokens.Count == 0)
+                        {
+                            _lifecycleTokens = null;
+                        }
+                    }
                     return true;
                 }
                 finally
