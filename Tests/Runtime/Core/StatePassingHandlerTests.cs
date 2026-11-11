@@ -8,11 +8,13 @@ namespace DxMessaging.Tests.Runtime.Core
     using NUnit.Framework;
 
     /// <summary>Checks explicit state bindings across token routes and lifecycle replay.</summary>
+    /// <remarks>2026-11-11: immutable message probes keep readonly-reference callbacks valid under the CI analyzer contract.</remarks>
     [TestFixture]
     public sealed class StatePassingHandlerTests
     {
         private static readonly InstanceId Context = new InstanceId(962);
 
+        /// <summary>Checks copied value state and shared reference state survive replay and bus retargeting.</summary>
         [Test]
         public void StateBindingsPreserveValuesAcrossReplayAndBusRetarget(
             [ValueSource(
@@ -142,6 +144,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks null callbacks are rejected before any registration is staged.</summary>
         [Test]
         public void NullHandlerIsRejectedWithoutStaging(
             [ValueSource(
@@ -198,6 +201,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Registers one probe callback on the selected message route and processing phase.</summary>
         private static MessageRegistrationHandle Register<TState>(
             MessageRegistrationToken token,
             MessageScenario scenario,
@@ -233,9 +237,10 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        /// <summary>Emits one populated probe on the selected message route.</summary>
         private static void Emit(IMessageBus bus, MessageScenario scenario)
         {
-            ProbeMessage message = new ProbeMessage { Value = 3 };
+            ProbeMessage message = new ProbeMessage(3);
             InstanceId context = Context;
             switch (scenario.Kind)
             {
@@ -294,10 +299,18 @@ namespace DxMessaging.Tests.Runtime.Core
             internal int Seed;
         }
 
-        private struct ProbeMessage : IUntargetedMessage, ITargetedMessage, IBroadcastMessage
+        private readonly struct ProbeMessage
+            : IUntargetedMessage,
+                ITargetedMessage,
+                IBroadcastMessage
         {
-            internal int Value;
+            internal readonly int Value;
             public Type MessageType => typeof(ProbeMessage);
+
+            internal ProbeMessage(int value)
+            {
+                Value = value;
+            }
         }
 
         private sealed class ReferenceMessage : IUntargetedMessage

@@ -20,6 +20,7 @@ namespace DxMessaging.Tests.Runtime.Core
     {
         private static readonly InstanceId Context = new InstanceId(952);
 
+        /// <summary>Checks that group cleanup leaves registrations owned outside the group active.</summary>
         [Test]
         public void DisposeRemovesOnlyEnrolledRegistrations(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -131,6 +132,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks that stale group members cannot remove a replacement registration.</summary>
         [Test]
         public void TokenCleanupBeforeGroupDisposalDoesNotRemoveReplacement(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -166,6 +168,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Rejects enrollment unless the token still owns the handle.</summary>
         [Test]
         public void AddRejectsForeignMissingAndRetiredHandles()
         {
@@ -236,6 +239,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(group.Count, Is.Zero, "Empty group has no remaining handles.");
         }
 
+        /// <summary>Checks every group member is attempted and only failed cleanup is retried.</summary>
         [Test]
         public void CleanupContinuesAfterFailuresAndRetriesOnlyFailedMembers(
             [Values(1, 2)] int failures
@@ -346,6 +350,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(calls, Is.EqualTo(1), "No callback remains after the second cleanup pass.");
         }
 
+        /// <summary>Retains cleanup accepted after disposal inside a registration callback.</summary>
         [Test]
         public void DisposalDuringReplayKeepsCleanupThatArrivesAfterTheCallback(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -448,6 +453,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks late cleanup remains reachable for interceptor and global registrations.</summary>
         [Test]
         public void LateAcceptanceUsesOwningGroupForEveryRegistrationFamily(
             [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
@@ -531,6 +537,133 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Keeps a group's retry obligation while another owner is invoking its teardown.</summary>
+        /// <remarks>2026-11-11: nested group disposal must not drop cleanup temporarily detached by token teardown.</remarks>
+        [Test]
+        public void DisposalInsideAnotherOwnersFailedTeardownRemainsRetryable(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values("remove", "disable", "unregister", "retarget")] string owner
+        )
+        {
+            using CaseState state = new CaseState();
+            using CaseState other = new CaseState();
+            state.Token.Enable();
+            int calls = 0;
+            MessageRegistrationGroup group = state.Token.CreateGroup();
+            MessageRegistrationHandle handle = group.Add(
+                Register(state.Token, scenario, () => ++calls)
+            );
+            state.Bus.OnCleanup = group.Dispose;
+            state.Bus.Failures = 1;
+            InvalidOperationException failure = Assert.Throws<InvalidOperationException>(() =>
+            {
+                switch (owner)
+                {
+                    case "remove":
+                        state.Token.RemoveRegistration(handle);
+                        break;
+                    case "disable":
+                        state.Token.Disable();
+                        break;
+                    case "unregister":
+                        state.Token.UnregisterAll();
+                        break;
+                    case "retarget":
+                        state.Token.RetargetMessageBus(
+                            other.Bus,
+                            MessageBusRebindMode.RebindActive
+                        );
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(owner));
+                }
+            });
+            Assert.That(
+                failure,
+                Is.SameAs(state.Bus.Failure),
+                $"[{scenario}, {owner}] Original teardown failure remains observable."
+            );
+            Assert.That(
+                group.Count,
+                Is.EqualTo(1),
+                $"[{scenario}, {owner}] In-flight failure must stay reachable through its group."
+            );
+            Emit(state.Bus, scenario);
+            Assert.That(
+                calls,
+                Is.EqualTo(1),
+                $"[{scenario}, {owner}] Rejected cleanup is still live before retry."
+            );
+            group.Dispose();
+            Emit(state.Bus, scenario);
+            Emit(other.Bus, scenario);
+            Assert.That(
+                calls,
+                Is.EqualTo(1),
+                $"[{scenario}, {owner}] Retrying the group drains its original obligation."
+            );
+            Assert.That(
+                group.Count,
+                Is.Zero,
+                $"[{scenario}, {owner}] Successful retry releases group ownership."
+            );
+        }
+
+        /// <summary>Retains an outer obligation when another handle's cleanup disposes its group.</summary>
+        /// <remarks>2026-11-11: nested cleanup ownership must include suspended outer invocations after staging is retired.</remarks>
+        [Test]
+        public void NestedCleanupKeepsTheOuterGroupRetryable(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            using CaseState state = new CaseState();
+            state.Token.Enable();
+            int calls = 0;
+            MessageRegistrationGroup group = state.Token.CreateGroup();
+            MessageRegistrationHandle outer = group.Add(
+                Register(state.Token, scenario, () => ++calls)
+            );
+            MessageRegistrationHandle inner = Register(state.Token, scenario, () => { });
+            state.Bus.OnCleanup = () =>
+            {
+                state.Bus.OnCleanup = () =>
+                {
+                    state.Token.RemoveRegistration(outer);
+                    group.Dispose();
+                };
+                state.Token.RemoveRegistration(inner);
+                state.Bus.Failures = 1;
+            };
+            InvalidOperationException failure = Assert.Throws<InvalidOperationException>(() =>
+                state.Token.RemoveRegistration(outer)
+            );
+            Assert.That(
+                failure,
+                Is.SameAs(state.Bus.Failure),
+                $"[{scenario}] Outer failure remains observable."
+            );
+            Assert.That(
+                group.Count,
+                Is.EqualTo(1),
+                $"[{scenario}] Suspended outer cleanup remains owned while inner cleanup invokes disposal."
+            );
+            group.Dispose();
+            Emit(state.Bus, scenario);
+            Assert.That(
+                calls,
+                Is.Zero,
+                $"[{scenario}] Group retry removes the suspended outer registration."
+            );
+            Assert.That(
+                group.Count,
+                Is.Zero,
+                $"[{scenario}] Nested ownership is released after successful retry."
+            );
+        }
+
+        /// <summary>Registers one probe callback on the selected message route and processing phase.</summary>
         private static MessageRegistrationHandle Register(
             MessageRegistrationToken token,
             MessageScenario scenario,
@@ -564,6 +697,7 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        /// <summary>Emits one populated probe on the selected message route.</summary>
         private static void Emit(IMessageBus bus, MessageScenario scenario)
         {
             ProbeMessage message = default;
@@ -697,6 +831,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 return base.RegisterBroadcastInterceptor(interceptor, priority);
             }
 
+            /// <summary>Runs the cleanup hook and rejects configured attempts before reaching the inner bus.</summary>
             public override void Deregister<T>(in MessageBusRegistration registration)
             {
                 Attempts.Add(registration);

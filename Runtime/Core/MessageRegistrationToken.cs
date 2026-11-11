@@ -163,6 +163,7 @@ namespace DxMessaging.Core
         private bool _enabled;
         private bool _diagnosticMode = IMessageBus.ShouldEnableDiagnostics();
 
+        /// <summary>Captures the handler, configured bus, and diagnostics state for registration ownership.</summary>
         private MessageRegistrationToken(MessageHandler messageHandler, IMessageBus messageBus)
         {
             _enabled = false;
@@ -1388,6 +1389,8 @@ namespace DxMessaging.Core
         }
 
         private List<Registration> _groupRegistrationsInFlight;
+        private MessageRegistrationHandle? _cleanupInFlight;
+        private List<MessageRegistrationHandle> _cleanupParents;
 
         /// <summary>Creates an owner for a selected set of this token's registrations.</summary>
         /// <returns>An empty group. Enroll returned registration handles with <see cref="MessageRegistrationGroup.Add"/>.</returns>
@@ -1398,12 +1401,17 @@ namespace DxMessaging.Core
             return new MessageRegistrationGroup(this);
         }
 
+        /// <summary>Reports whether staged, pending, or in-flight work still belongs to this handle.</summary>
         internal bool OwnsRegistration(MessageRegistrationHandle handle)
         {
             if (
                 TryGetSlot(handle.Slot, handle.Id, out _)
                 || (_orphanDeregistrations != null && _orphanDeregistrations.ContainsKey(handle))
             )
+            {
+                return true;
+            }
+            if (IsCleanupInFlight(handle))
             {
                 return true;
             }
@@ -1420,6 +1428,14 @@ namespace DxMessaging.Core
             return false;
         }
 
+        /// <summary>Reports cleanup ownership until its acceptance or retry outcome is known.</summary>
+        private bool IsCleanupInFlight(MessageRegistrationHandle handle)
+        {
+            return (_cleanupInFlight.HasValue && _cleanupInFlight.Value == handle)
+                || (_cleanupParents != null && _cleanupParents.Contains(handle));
+        }
+
+        /// <summary>Tracks callback acceptance until the outermost registration attempt returns.</summary>
         internal void TrackGroupRegistration(MessageRegistrationHandle handle)
         {
             if (
@@ -1431,6 +1447,7 @@ namespace DxMessaging.Core
             }
         }
 
+        /// <summary>Tracks callback acceptance until the outermost registration attempt returns.</summary>
         private void TrackGroupRegistration(Registration registration)
         {
             if (
@@ -1744,6 +1761,41 @@ namespace DxMessaging.Core
             return combined;
         }
 
+        /// <summary>Keeps detached cleanup reachable while a callback invokes nested owner operations.</summary>
+        private readonly struct CleanupOwnershipScope : IDisposable
+        {
+            private readonly MessageRegistrationToken _token;
+            private readonly MessageRegistrationHandle? _previous;
+
+            /// <summary>Tracks the current handle and preserves a suspended outer cleanup owner.</summary>
+            internal CleanupOwnershipScope(
+                MessageRegistrationToken token,
+                MessageRegistrationHandle handle
+            )
+            {
+                _token = token;
+                _previous = token._cleanupInFlight;
+                if (_previous.HasValue)
+                {
+                    List<MessageRegistrationHandle> parents = token._cleanupParents ??=
+                        new List<MessageRegistrationHandle>();
+                    parents.Add(_previous.Value);
+                }
+                token._cleanupInFlight = handle;
+            }
+
+            /// <summary>Restores the enclosing owner after cleanup succeeds or retry storage is restored.</summary>
+            public void Dispose()
+            {
+                _token._cleanupInFlight = _previous;
+                if (_previous.HasValue)
+                {
+                    List<MessageRegistrationHandle> parents = _token._cleanupParents;
+                    parents.RemoveAt(parents.Count - 1);
+                }
+            }
+        }
+
         /// <summary>Temporarily transfers one cleanup value to its invoking owner.</summary>
         /// <remarks>2026-10-18: Nested cleanup must not invoke or consume an in-flight value twice.</remarks>
         private Exception InvokeOwnedDeregistration(
@@ -1753,6 +1805,7 @@ namespace DxMessaging.Core
             bool isOrphan
         )
         {
+            using CleanupOwnershipScope ownership = new CleanupOwnershipScope(this, handle);
             if (isOrphan)
             {
                 _orphanDeregistrations.Remove(handle);
@@ -2171,6 +2224,7 @@ namespace DxMessaging.Core
             return firstException;
         }
 
+        /// <summary>Consumes one matching cleanup snapshot while keeping failed actions retryable.</summary>
         private Exception InvokeSnapshotDeregistration(TeardownIdentity identity)
         {
             if (GetDeregistrationVersion(identity.Deregistration) != identity.Version)
@@ -2181,6 +2235,7 @@ namespace DxMessaging.Core
                 identity.Id,
                 identity.Slot
             );
+            using CleanupOwnershipScope ownership = new CleanupOwnershipScope(this, handle);
             object remaining;
             if (
                 TryGetSlot(identity.Slot, identity.Id, out RegistrationSlot slot)
@@ -2253,6 +2308,7 @@ namespace DxMessaging.Core
             return true;
         }
 
+        /// <summary>Replays staged registrations with rollback and diagnostic cleanup tracking.</summary>
         private void InvokeRegistrationQueueWithRollback(out bool cleanupCompletedDuringLogging)
         {
             cleanupCompletedDuringLogging = false;
@@ -2464,6 +2520,7 @@ namespace DxMessaging.Core
             RemoveRegistrationState(handle);
         }
 
+        /// <summary>Retries cleanup retained after its original staging slot was removed.</summary>
         private void RemoveOrphanDeregistration(MessageRegistrationHandle handle)
         {
             if (
@@ -2508,6 +2565,7 @@ namespace DxMessaging.Core
             return slotIndex;
         }
 
+        /// <summary>Resolves a live slot only when its index and handle identity still match.</summary>
         private bool TryGetSlot(int slotIndex, long id, out RegistrationSlot slot)
         {
             // Non-token handles use -1 even when consumers enable checked arithmetic.
@@ -3044,22 +3102,27 @@ namespace DxMessaging.Core
                 the staging closure at call time -- the staging closure also read the
                 field, not a snapshot).
             */
-            public MessageHandler.HandlerDeregistration Register()
+            public MessageHandler.HandlerDeregistration Register(
+                IMessageBus messageBusOverride = null
+            )
             {
                 Validate();
-                return RegisterValidated();
+                return RegisterValidated(messageBusOverride);
             }
 
             private int _registrationDepth;
             internal bool IsRegistering => 0 < _registrationDepth;
 
-            internal MessageHandler.HandlerDeregistration RegisterValidated()
+            /// <summary>Registers validated state while tracking callback acceptance for group ownership.</summary>
+            internal MessageHandler.HandlerDeregistration RegisterValidated(
+                IMessageBus messageBusOverride = null
+            )
             {
                 ++_registrationDepth;
                 try
                 {
                     Token.TrackGroupRegistration(this);
-                    return RegisterCore();
+                    return RegisterCore(messageBusOverride);
                 }
                 finally
                 {
@@ -3071,7 +3134,9 @@ namespace DxMessaging.Core
                 }
             }
 
-            protected abstract MessageHandler.HandlerDeregistration RegisterCore();
+            protected abstract MessageHandler.HandlerDeregistration RegisterCore(
+                IMessageBus messageBusOverride
+            );
 
             /*
                 Rejects invalid staged state without mutating the token or bus. Register()
@@ -3129,9 +3194,10 @@ namespace DxMessaging.Core
                 }
             }
 
-            protected IMessageBus ResolveRegistrationMessageBus()
+            /// <summary>Uses a captured active bus when supplied, otherwise the token's current replay bus.</summary>
+            protected IMessageBus ResolveRegistrationMessageBus(IMessageBus messageBusOverride)
             {
-                return Token._messageBus;
+                return messageBusOverride ?? Token._messageBus;
             }
 
             protected static void ThrowIfNullHandler(object handler, string parameterName)
@@ -3250,10 +3316,13 @@ namespace DxMessaging.Core
                     _priority
                 );
 
-            protected override MessageHandler.HandlerDeregistration RegisterCore()
+            /// <summary>Registers the staged callback on the selected bus and retains its cleanup.</summary>
+            protected override MessageHandler.HandlerDeregistration RegisterCore(
+                IMessageBus messageBusOverride
+            )
             {
                 MessageHandler messageHandler = Token._messageHandler;
-                IMessageBus messageBus = ResolveRegistrationMessageBus();
+                IMessageBus messageBus = ResolveRegistrationMessageBus(messageBusOverride);
                 switch (_kind)
                 {
                     case RegistrationKind.TargetedHandlerAction:
@@ -3466,10 +3535,13 @@ namespace DxMessaging.Core
                     _priority
                 );
 
-            protected override MessageHandler.HandlerDeregistration RegisterCore()
+            /// <summary>Registers the staged callback on the selected bus and retains its cleanup.</summary>
+            protected override MessageHandler.HandlerDeregistration RegisterCore(
+                IMessageBus messageBusOverride
+            )
             {
                 MessageHandler messageHandler = Token._messageHandler;
-                IMessageBus messageBus = ResolveRegistrationMessageBus();
+                IMessageBus messageBus = ResolveRegistrationMessageBus(messageBusOverride);
                 switch (_kind)
                 {
                     case RegistrationKind.UntargetedHandlerAction:
@@ -3567,6 +3639,8 @@ namespace DxMessaging.Core
             private readonly object _userHandler;
             private readonly int _priority;
 
+            public IMessageBus ActiveMessageBus => _binding?.MessageBus;
+
             public bool SupportsSourceRetargeting =>
                 _kind == RegistrationKind.BroadcastHandlerAction
                 || _kind == RegistrationKind.BroadcastHandlerFast
@@ -3607,10 +3681,13 @@ namespace DxMessaging.Core
                     _priority
                 );
 
-            protected override MessageHandler.HandlerDeregistration RegisterCore()
+            /// <summary>Registers the staged callback on the selected bus and retains its cleanup.</summary>
+            protected override MessageHandler.HandlerDeregistration RegisterCore(
+                IMessageBus messageBusOverride
+            )
             {
                 MessageHandler messageHandler = Token._messageHandler;
-                IMessageBus messageBus = ResolveRegistrationMessageBus();
+                IMessageBus messageBus = ResolveRegistrationMessageBus(messageBusOverride);
                 switch (_kind)
                 {
                     case RegistrationKind.BroadcastHandlerAction:
@@ -3715,6 +3792,7 @@ namespace DxMessaging.Core
 
             private Binding _binding;
 
+            /// <summary>Captures callbacks for the selected bus and source without changing frozen invocations.</summary>
             private Binding GetBinding(IMessageBus messageBus)
             {
                 IMessageBus resolvedBus = messageBus ?? Token._messageHandler.DefaultMessageBus;
@@ -3855,13 +3933,15 @@ namespace DxMessaging.Core
                     Priority
                 );
 
-            protected override MessageHandler.HandlerDeregistration RegisterCore()
+            protected override MessageHandler.HandlerDeregistration RegisterCore(
+                IMessageBus messageBusOverride
+            )
             {
                 return StoreDeregistration(
                     Token._messageHandler.RegisterUntargetedInterceptor(
                         _interceptor,
                         Priority,
-                        ResolveRegistrationMessageBus()
+                        ResolveRegistrationMessageBus(messageBusOverride)
                     )
                 );
             }
@@ -3895,13 +3975,15 @@ namespace DxMessaging.Core
                     Priority
                 );
 
-            protected override MessageHandler.HandlerDeregistration RegisterCore()
+            protected override MessageHandler.HandlerDeregistration RegisterCore(
+                IMessageBus messageBusOverride
+            )
             {
                 return StoreDeregistration(
                     Token._messageHandler.RegisterTargetedInterceptor(
                         _interceptor,
                         Priority,
-                        ResolveRegistrationMessageBus()
+                        ResolveRegistrationMessageBus(messageBusOverride)
                     )
                 );
             }
@@ -3935,13 +4017,15 @@ namespace DxMessaging.Core
                     Priority
                 );
 
-            protected override MessageHandler.HandlerDeregistration RegisterCore()
+            protected override MessageHandler.HandlerDeregistration RegisterCore(
+                IMessageBus messageBusOverride
+            )
             {
                 return StoreDeregistration(
                     Token._messageHandler.RegisterBroadcastInterceptor(
                         _interceptor,
                         Priority,
-                        ResolveRegistrationMessageBus()
+                        ResolveRegistrationMessageBus(messageBusOverride)
                     )
                 );
             }
@@ -4014,10 +4098,13 @@ namespace DxMessaging.Core
                 _broadcastFast = broadcast;
             }
 
-            protected override MessageHandler.HandlerDeregistration RegisterCore()
+            /// <summary>Registers the staged callback on the selected bus and retains its cleanup.</summary>
+            protected override MessageHandler.HandlerDeregistration RegisterCore(
+                IMessageBus messageBusOverride
+            )
             {
                 MessageHandler messageHandler = Token._messageHandler;
-                IMessageBus messageBus = ResolveRegistrationMessageBus();
+                IMessageBus messageBus = ResolveRegistrationMessageBus(messageBusOverride);
                 if (_kind == RegistrationKind.GlobalAcceptAllAction)
                 {
                     return StoreDeregistration(

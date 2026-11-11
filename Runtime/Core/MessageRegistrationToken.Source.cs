@@ -3,6 +3,7 @@ namespace DxMessaging.Core
     using System;
     using System.Collections.Generic;
     using System.Runtime.ExceptionServices;
+    using MessageBus;
 
     public sealed partial class MessageRegistrationToken
     {
@@ -13,7 +14,7 @@ namespace DxMessaging.Core
         /// <param name="handle">Handle returned by a source-bound registration on this token.</param>
         /// <param name="newSource">Source to accept on subsequent emissions and lifecycle replays.</param>
         /// <returns>True for a retained source-bound registration; false for an unsupported, stale, foreign, or removed handle.</returns>
-        /// <exception cref="InvalidOperationException">The same registration is already moving or is being accepted by the bus.</exception>
+        /// <exception cref="InvalidOperationException">The same registration is moving, being accepted or cleaned up, or retains overlapping cleanup.</exception>
         /// <remarks>
         /// Added in 4.0.0. A disabled registration changes staging only. An active registration moves
         /// on its current bus. Priority, state, handle and diagnostic counts survive; a move joins the
@@ -23,7 +24,8 @@ namespace DxMessaging.Core
         /// restores old staging and attempts old-source recovery; two failures produce an
         /// AggregateException. Reentrant disable/removal takes precedence over activation. Cleanup
         /// accepted after a reentrant lifecycle cancellation remains under this handle; finish it
-        /// through Disable, RemoveRegistration or an owning group before enabling again.
+        /// through Disable, RemoveRegistration or an owning group before enabling again. A move
+        /// during this handle's cleanup or with overlapping retry cleanup is rejected before staging changes.
         /// </remarks>
         public bool RetargetSource(MessageRegistrationHandle handle, InstanceId newSource)
         {
@@ -43,11 +45,13 @@ namespace DxMessaging.Core
             Registration registration = slot.Registration;
             if (
                 registration.IsRegistering
+                || IsCleanupInFlight(handle)
+                || slot.Deregistration is PendingDeregistration
                 || (_sourceMoves != null && _sourceMoves.Contains(handle))
             )
             {
                 throw new InvalidOperationException(
-                    "Finish the current registration or source move before moving the same handle again."
+                    "Finish the current registration, source move or overlapping cleanup before moving the same handle again."
                 );
             }
             List<MessageRegistrationHandle> moves = _sourceMoves ??=
@@ -55,10 +59,17 @@ namespace DxMessaging.Core
             moves.Add(handle);
             long cancellationVersion = _sourceMoveCancellationVersion;
             bool active = slot.Deregistration != null;
+            IMessageBus activeMessageBus = active ? source.ActiveMessageBus : null;
             try
             {
                 if (active)
                 {
+                    if (activeMessageBus == null)
+                    {
+                        throw new InvalidOperationException(
+                            "The active source registration has no accepted bus binding."
+                        );
+                    }
                     Exception cleanupFailure = InvokeOwnedDeregistration(
                         handle,
                         slot.Deregistration,
@@ -92,7 +103,9 @@ namespace DxMessaging.Core
                 }
                 try
                 {
-                    MessageHandler.HandlerDeregistration cleanup = registration.Register();
+                    MessageHandler.HandlerDeregistration cleanup = registration.Register(
+                        activeMessageBus
+                    );
                     AddDeregistration(handle.Slot, handle.Id, cleanup);
                 }
                 catch (Exception activationFailure)
@@ -108,7 +121,11 @@ namespace DxMessaging.Core
                     {
                         try
                         {
-                            AddDeregistration(handle.Slot, handle.Id, registration.Register());
+                            AddDeregistration(
+                                handle.Slot,
+                                handle.Id,
+                                registration.Register(activeMessageBus)
+                            );
                         }
                         catch (Exception exception)
                         {
@@ -168,6 +185,7 @@ namespace DxMessaging.Core
         private interface ISourceRegistration
         {
             bool SupportsSourceRetargeting { get; }
+            IMessageBus ActiveMessageBus { get; }
             InstanceId Source { get; set; }
         }
     }

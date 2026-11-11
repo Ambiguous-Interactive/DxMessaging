@@ -33,37 +33,71 @@ namespace SubscriptionOwnershipExample
         private readonly MessageRegistrationToken _token;
         private MessageRegistrationGroup _parentGroup;
         private MessageRegistrationHandle _changed;
+        private bool _binding;
+        private bool _disposeRequested;
 
         public int Revision { get; private set; }
         public int HiddenCount { get; private set; }
 
+        /// <summary>Uses an existing token while its lifecycle remains with its original owner.</summary>
         public ParentSubscriptions(MessageRegistrationToken token)
         {
             _token = token ?? throw new ArgumentNullException(nameof(token));
         }
 
+        /// <summary>Replaces parent subscriptions and defers disposal until enrollment finishes.</summary>
         public void BindParent(InstanceId parent)
         {
-            Dispose();
-            _parentGroup = _token.CreateGroup();
-            _changed = _parentGroup.Add(
-                _token.RegisterBroadcast<ParentChanged, ParentSubscriptions>(
-                    parent, this,
-                    static (ParentSubscriptions owner, in ParentChanged message) =>
-                        owner.Revision = message.Revision));
-            _parentGroup.Add(
-                _token.RegisterBroadcast<ParentHidden, ParentSubscriptions>(
-                    parent, this,
-                    static (ParentSubscriptions owner, in ParentHidden message) =>
-                        ++owner.HiddenCount));
+            if (_binding)
+            {
+                throw new InvalidOperationException("Finish the current parent binding first.");
+            }
+            _binding = true;
+            try
+            {
+                DisposeParentGroup();
+                _parentGroup = _token.CreateGroup();
+                _changed = _parentGroup.Add(
+                    _token.RegisterBroadcast<ParentChanged, ParentSubscriptions>(
+                        parent, this,
+                        static (ParentSubscriptions owner, in ParentChanged message) =>
+                            owner.Revision = message.Revision));
+                _parentGroup.Add(
+                    _token.RegisterBroadcast<ParentHidden, ParentSubscriptions>(
+                        parent, this,
+                        static (ParentSubscriptions owner, in ParentHidden message) =>
+                            ++owner.HiddenCount));
+            }
+            finally
+            {
+                _binding = false;
+                if (_disposeRequested)
+                {
+                    _disposeRequested = false;
+                    Dispose();
+                }
+            }
         }
 
+        /// <summary>Moves only the changed-message subscription.</summary>
         public bool MoveChangedHandler(InstanceId source)
         {
             return _token.RetargetSource(_changed, source);
         }
 
+        /// <summary>Removes parent subscriptions after any current enrollment finishes.</summary>
         public void Dispose()
+        {
+            if (_binding)
+            {
+                _disposeRequested = true;
+                return;
+            }
+            DisposeParentGroup();
+        }
+
+        /// <summary>Keeps the owning group reachable until every cleanup obligation completes.</summary>
+        private void DisposeParentGroup()
         {
             if (_parentGroup == null)
             {
@@ -93,6 +127,7 @@ namespace SubscriptionOwnershipExample
 }
 ```
 
+During `BindParent`, a reentrant `Dispose` waits until returned handles are enrolled.
 The group field remains reachable if a later registration or cleanup fails.
 Call `Dispose` again after resolving a cleanup failure. Replace the group only after its `Count` reaches zero.
 Cleanup visits every member even if another removal throws. One failure is rethrown; multiple failures produce an `AggregateException`.
@@ -110,7 +145,7 @@ Enrollment rejects foreign or missing handles. Once disposal starts, the group r
 
 `RetargetSource` moves a broadcast handler or post-processor registered for one source.
 It accepts an `InstanceId` or a Unity `GameObject`; `InstanceId` also converts a `Component`.
-A null `GameObject` selects the empty identity, following the normal `InstanceId` conversion.
+The `GameObject` overload handles null by selecting `InstanceId.EmptyId` before converting live objects.
 The sample's `MoveChangedHandler` moves only its changed-message handle; the hidden-message handle stays with its current source.
 To replace an entire set, finish group cleanup and build a new group.
 
@@ -125,6 +160,8 @@ It rejects moving the same registration while a custom bus is still accepting it
 A later queued registration can change its staged source during token replay.
 
 Failed old-source cleanup leaves the old source and handle retryable.
+A move during that handle's cleanup is rejected before changing its staged source.
+If failed cleanup and reentrant replay retain more than one bus binding, finish cleanup through the token, handle, or group before moving the source.
 Failed new-source activation restores old staging and attempts to register it again.
 Recovery joins the old source's current equal-priority order; it cannot restore a removed insertion position.
 If recovery also fails, both failures appear in an `AggregateException`.

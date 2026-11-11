@@ -18,6 +18,7 @@ namespace DxMessaging.Tests.Runtime.Core
         private static readonly InstanceId OldSource = new InstanceId(972);
         private static readonly InstanceId NewSource = new InstanceId(973);
 
+        /// <summary>Checks moves preserve handle identity, priority, diagnostics, and lifecycle replay.</summary>
         [Test]
         public void MovePreservesHandlePriorityAndReplay(
             [Values(false, true)] bool post,
@@ -115,6 +116,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks harmless handles and unchanged sources leave bus registration state intact.</summary>
         [Test]
         public void SameSourceAndInvalidHandlesDoNotTouchTheBus()
         {
@@ -178,6 +180,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks failed activation restores old staging and preserves failed recovery for cleanup.</summary>
         [Test]
         public void RejectedNewSourceRestoresOldStagingAndRetainsRecoveryFailures(
             [Values(1, 2)] int rejections
@@ -262,6 +265,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(calls, Is.EqualTo(2), "Retry cannot create an old/new duplicate.");
         }
 
+        /// <summary>Checks callback-triggered disable or removal wins over source activation.</summary>
         [Test]
         public void CleanupCallbacksCanCancelActivationOrRemoveTheHandle(
             [Values(false, true)] bool remove
@@ -348,6 +352,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(laterCalls, Is.EqualTo(1), "Later replay reads its updated source.");
         }
 
+        /// <summary>Checks an outer dispatch records the source captured before a reentrant move.</summary>
         [Test]
         public void FrozenCallbacksRetainTheirSourceAfterASelfMove(
             [Values(false, true)] bool post,
@@ -564,6 +569,7 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Finds diagnostic metadata for one handle without relying on collection indexing.</summary>
         private static MessageRegistrationMetadata Metadata(
             MessageRegistrationToken token,
             MessageRegistrationHandle handle
@@ -585,6 +591,7 @@ namespace DxMessaging.Tests.Runtime.Core
             return default;
         }
 
+        /// <summary>Registers one probe callback on the selected message route and processing phase.</summary>
         private static MessageRegistrationHandle Register(
             MessageRegistrationToken token,
             bool post,
@@ -604,6 +611,204 @@ namespace DxMessaging.Tests.Runtime.Core
             return post
                 ? token.RegisterBroadcastPostProcessor(OldSource, fast, priority)
                 : token.RegisterBroadcast(OldSource, fast, priority);
+        }
+
+        /// <summary>Moves and recovers a preserved subscription on the bus that still owns it.</summary>
+        /// <remarks>2026-11-11: PreserveRegistrations changes future replay, not an existing handle's active bus.</remarks>
+        [Test]
+        public void PreservedRegistrationMovesOnItsActiveBus(
+            [Values(false, true)] bool post,
+            [Values(false, true)] bool action,
+            [Values(0, 1, 2)] int failures
+        )
+        {
+            using CaseState other = new CaseState(diagnostics: false);
+            using CaseState state = new CaseState(diagnostics: false);
+            state.Token.Enable();
+            int calls = 0;
+            MessageRegistrationHandle handle = Register(state.Token, post, action, () => ++calls);
+            state.Token.RetargetMessageBus(other.Bus, MessageBusRebindMode.PreserveRegistrations);
+            state.Bus.RejectRegistrations = failures;
+            if (failures == 0)
+            {
+                Assert.That(
+                    state.Token.RetargetSource(handle, NewSource),
+                    Is.True,
+                    $"post={post}, action={action}: source move keeps the handle."
+                );
+            }
+            else if (failures == 1)
+            {
+                InvalidOperationException failure = Assert.Throws<InvalidOperationException>(() =>
+                    state.Token.RetargetSource(handle, NewSource)
+                );
+                Assert.That(
+                    failure,
+                    Is.SameAs(state.Bus.Failure),
+                    $"post={post}, action={action}: rejection comes from the still-active bus."
+                );
+            }
+            else
+            {
+                AggregateException failure = Assert.Throws<AggregateException>(() =>
+                    state.Token.RetargetSource(handle, NewSource)
+                );
+                Assert.That(
+                    failure.InnerExceptions,
+                    Has.Count.EqualTo(2),
+                    $"post={post}, action={action}: activation and recovery fail on the active bus."
+                );
+                Assert.That(failure.InnerExceptions[0], Is.SameAs(state.Bus.Failure));
+                Assert.That(failure.InnerExceptions[1], Is.SameAs(state.Bus.Failure));
+            }
+            Emit(state.Bus, OldSource);
+            Emit(state.Bus, NewSource);
+            Emit(other.Bus, OldSource);
+            Emit(other.Bus, NewSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(failures == 2 ? 0 : 1),
+                $"post={post}, action={action}, failures={failures}: only the preserved active bus delivers."
+            );
+            if (failures != 2)
+            {
+                int previous = calls;
+                Emit(other.Bus, failures == 0 ? NewSource : OldSource);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(previous),
+                    "The configured future bus must not receive the active source move."
+                );
+                Emit(state.Bus, failures == 0 ? NewSource : OldSource);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(previous + 1),
+                    "The original active bus keeps the moved or recovered registration."
+                );
+            }
+            state.Token.Disable();
+            state.Token.Enable();
+            int beforeReplay = calls;
+            Emit(state.Bus, failures == 0 ? NewSource : OldSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(beforeReplay),
+                "Disable removes the preserved active bus registration."
+            );
+            Emit(other.Bus, failures == 0 ? NewSource : OldSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(beforeReplay + 1),
+                "Later replay uses the configured future bus and retained staged source."
+            );
+        }
+
+        /// <summary>Rejects a move while overlapping accepted registrations still need cleanup.</summary>
+        /// <remarks>2026-11-11: Failed cleanup plus reentrant replay can retain bindings on two buses; drain both before choosing a new source.</remarks>
+        [Test]
+        public void OverlappingCleanupMustFinishBeforeMovingSource(
+            [Values(false, true)] bool post,
+            [Values(false, true)] bool action
+        )
+        {
+            using CaseState other = new CaseState(false);
+            using CaseState state = new CaseState(false);
+            state.Token.Enable();
+            int calls = 0;
+            MessageRegistrationHandle handle = Register(state.Token, post, action, () => ++calls);
+            state.Bus.OnCleanup = () =>
+            {
+                state.Token.RetargetMessageBus(
+                    other.Bus,
+                    MessageBusRebindMode.PreserveRegistrations
+                );
+                state.Token.Disable();
+                state.Token.Enable();
+            };
+            state.Bus.RejectCleanup = 1;
+            Assert.That(
+                Assert.Throws<InvalidOperationException>(() =>
+                    state.Token.RetargetSource(handle, NewSource)
+                ),
+                Is.SameAs(state.Bus.Failure),
+                "The old bus rejected cleanup after replay accepted another binding."
+            );
+            Assert.Throws<InvalidOperationException>(
+                () => state.Token.RetargetSource(handle, NewSource),
+                "Overlapping retry cleanup has no single active bus; finish cleanup before moving."
+            );
+            Assert.That(
+                Metadata(state.Token, handle).context,
+                Is.EqualTo(OldSource),
+                "Rejected overlapping cleanup must preserve staged source."
+            );
+            state.Token.Disable();
+            state.Token.Enable();
+            Emit(state.Bus, OldSource);
+            Emit(state.Bus, NewSource);
+            Emit(other.Bus, NewSource);
+            Assert.That(
+                calls,
+                Is.Zero,
+                "Cleanup removes both old bindings and no new source was staged."
+            );
+            Emit(other.Bus, OldSource);
+            Assert.That(
+                calls,
+                Is.EqualTo(1),
+                "Replay uses the configured future bus and unchanged source."
+            );
+        }
+
+        /// <summary>Rejects source mutation until cleanup returns and its acceptance outcome is known.</summary>
+        /// <remarks>2026-11-11: Detached cleanup is still active; a failed cleanup must not restore an old binding under new staging.</remarks>
+        [Test]
+        public void InFlightCleanupCannotChangeStagedSource(
+            [Values(false, true)] bool post,
+            [Values(false, true)] bool action
+        )
+        {
+            using CaseState state = new CaseState(false);
+            state.Token.Enable();
+            int calls = 0;
+            MessageRegistrationHandle handle = Register(state.Token, post, action, () => ++calls);
+            Exception moveFailure = null;
+            state.Bus.OnCleanup = () =>
+            {
+                try
+                {
+                    state.Token.RetargetSource(handle, NewSource);
+                }
+                catch (Exception exception)
+                {
+                    moveFailure = exception;
+                }
+            };
+            state.Bus.RejectCleanup = 1;
+            Assert.That(
+                Assert.Throws<InvalidOperationException>(() => state.Token.Disable()),
+                Is.SameAs(state.Bus.Failure),
+                "Cleanup reports its original bus failure."
+            );
+            Assert.That(
+                moveFailure,
+                Is.TypeOf<InvalidOperationException>(),
+                "Moving the handle during its own cleanup must be rejected before changing staging."
+            );
+            Assert.That(
+                Metadata(state.Token, handle).context,
+                Is.EqualTo(OldSource),
+                "Failed cleanup retains matching staged and active sources."
+            );
+            Emit(state.Bus, OldSource);
+            Emit(state.Bus, NewSource);
+            Assert.That(calls, Is.EqualTo(1), "The rejected old-source cleanup remains live once.");
+            state.Token.Disable();
+            state.Token.Enable();
+            Emit(state.Bus, NewSource);
+            Assert.That(calls, Is.EqualTo(1), "Rejected nested move must not affect later replay.");
+            Emit(state.Bus, OldSource);
+            Assert.That(calls, Is.EqualTo(2), "Explicit replay restores the unchanged old source.");
         }
 
         private static void Emit(IMessageBus bus, InstanceId source)
@@ -687,6 +892,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 return base.RegisterBroadcastPostProcessor<T>(source, handler, priority);
             }
 
+            /// <summary>Runs the acceptance hook and rejects configured attempts before reaching the inner bus.</summary>
             private void BeforeRegistration()
             {
                 Action callback = OnRegistration;
@@ -699,6 +905,7 @@ namespace DxMessaging.Tests.Runtime.Core
                 }
             }
 
+            /// <summary>Runs the cleanup hook and rejects configured attempts before reaching the inner bus.</summary>
             public override void Deregister<T>(in MessageBusRegistration registration)
             {
                 Action callback = OnCleanup;

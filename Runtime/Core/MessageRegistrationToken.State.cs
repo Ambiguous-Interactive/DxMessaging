@@ -317,12 +317,14 @@ namespace DxMessaging.Core
             private readonly StateHandler<TMessage, TState> _handler;
             private readonly StateHandlerWithContext<TMessage, TState> _contextHandler;
 
+            /// <summary>Stores explicit state and rejects a missing callback before staging.</summary>
             internal StateBinding(TState state, StateHandler<TMessage, TState> handler)
             {
                 _state = state;
                 _handler = handler ?? throw new ArgumentNullException(nameof(handler));
             }
 
+            /// <summary>Stores explicit state and rejects a missing callback before staging.</summary>
             internal StateBinding(TState state, StateHandlerWithContext<TMessage, TState> handler)
             {
                 _state = state;
