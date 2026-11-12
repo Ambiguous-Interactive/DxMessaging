@@ -8,25 +8,24 @@ DxMessaging ships source generators and a Roslyn analyzer that report authoring 
 
 ## Quick reference table
 
-| ID                                                                                | Severity | Title                                                                                 | Source                                  |
-| --------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------- | --------------------------------------- |
-| [`DXMSG002`](#dxmsg002-multiple-message-attributes)                               | Error    | Multiple Message Attributes                                                           | `DxMessageIdGenerator`                  |
-| [`DXMSG003`](#dxmsg003-containing-type-must-be-partial-for-nested-generation)     | Warning  | Containing type must be partial for nested generation                                 | both generators                         |
-| [`DXMSG004`](#dxmsg004-add-partial-keyword-to-containing-type)                    | Info     | Add 'partial' keyword to containing type                                              | both generators                         |
-| [`DXMSG005`](#dxmsg005-invalid-optional-default-value)                            | Error    | Invalid optional default value                                                        | `DxAutoConstructorGenerator`            |
-| [`DXMSG006`](#dxmsg006-missing-base-call)                                         | Warning  | Missing `base.{method}()` call                                                        | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG007`](#dxmsg007-new-hides-unity-method)                                    | Warning  | Unity lifecycle method hidden with `new`                                              | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG008`](#dxmsg008-opt-out-marker)                                            | Info     | Type opted out of base-call check                                                     | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG009`](#dxmsg009-implicit-hide-and-missing-modifier)                        | Warning  | Method implicitly hides MessageAwareComponent lifecycle method (no `override`/`new`)  | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG010`](#dxmsg010-broken-transitive-base-call-chain)                         | Warning  | `base.{method}()` chains into an override that does not reach `MessageAwareComponent` | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG011`](#dxmsg011-cannot-preserve-explicit-interface-struct-initializers)    | Error    | Cannot preserve explicit-interface struct initializers                                | `DxAutoConstructorGenerator`            |
-| [`DXMSG012`](#dxmsg012-cannot-infer-primary-constructor-arguments)                | Error    | Cannot infer primary constructor arguments                                            | `DxAutoConstructorGenerator`            |
-| [`DXMSG013`](#dxmsg013-field-constructor-conflicts-with-record-copy-constructor)  | Error    | Field constructor conflicts with record copy constructor                              | `DxAutoConstructorGenerator`            |
-| [`DXMSG014`](#dxmsg014-aot-registration-requires-an-accessible-closed-message)    | Error    | AOT registration requires an accessible closed message                                | `DxMessageIdGenerator`                  |
-| [`DXMSG015`](#dxmsg015-missing-messaging-lifecycle-forwarding)                    | Warning  | A MonoBehaviour does not forward a required callback to its owned lifecycle           | `MessagingLifecycleAnalyzer`            |
-| [`DXMSG016`](#dxmsg016-serialized-field-generates-an-invalid-or-conflicting-name) | Error    | Serialized field generates an invalid or conflicting name                             | `DxAutoConstructorGenerator`            |
-
-| [`DXMSG017`](#dxmsg017-serialized-field-type-cannot-be-exposed-by-generated-members) | Error | Serialized field type cannot be exposed by generated members | `DxAutoConstructorGenerator` |
+| ID                                                                                   | Severity | Title                                                                                 | Source                                  |
+| ------------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------- | --------------------------------------- |
+| [`DXMSG002`](#dxmsg002-multiple-message-attributes)                                  | Error    | Multiple Message Attributes                                                           | `DxMessageIdGenerator`                  |
+| [`DXMSG003`](#dxmsg003-containing-type-must-be-partial-for-nested-generation)        | Warning  | Containing type must be partial for nested generation                                 | both generators                         |
+| [`DXMSG004`](#dxmsg004-add-partial-keyword-to-containing-type)                       | Info     | Add 'partial' keyword to containing type                                              | both generators                         |
+| [`DXMSG005`](#dxmsg005-invalid-optional-default-value)                               | Error    | Invalid optional default value                                                        | `DxAutoConstructorGenerator`            |
+| [`DXMSG006`](#dxmsg006-missing-base-call)                                            | Warning  | Missing `base.{method}()` call                                                        | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG007`](#dxmsg007-new-hides-unity-method)                                       | Warning  | Unity lifecycle method hidden with `new`                                              | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG008`](#dxmsg008-opt-out-marker)                                               | Info     | Type opted out of base-call check                                                     | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG009`](#dxmsg009-implicit-hide-and-missing-modifier)                           | Warning  | Method implicitly hides MessageAwareComponent lifecycle method (no `override`/`new`)  | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG010`](#dxmsg010-broken-transitive-base-call-chain)                            | Warning  | `base.{method}()` chains into an override that does not reach `MessageAwareComponent` | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG011`](#dxmsg011-cannot-preserve-explicit-interface-struct-initializers)       | Error    | Cannot preserve explicit-interface struct initializers                                | `DxAutoConstructorGenerator`            |
+| [`DXMSG012`](#dxmsg012-cannot-infer-primary-constructor-arguments)                   | Error    | Cannot infer primary constructor arguments                                            | `DxAutoConstructorGenerator`            |
+| [`DXMSG013`](#dxmsg013-field-constructor-conflicts-with-record-copy-constructor)     | Error    | Field constructor conflicts with record copy constructor                              | `DxAutoConstructorGenerator`            |
+| [`DXMSG014`](#dxmsg014-aot-registration-requires-an-accessible-closed-message)       | Error    | AOT registration requires an accessible closed message                                | `DxMessageIdGenerator`                  |
+| [`DXMSG015`](#dxmsg015-missing-messaging-lifecycle-forwarding)                       | Warning  | A MonoBehaviour does not forward a required callback to its owned lifecycle           | `MessagingLifecycleAnalyzer`            |
+| [`DXMSG016`](#dxmsg016-serialized-field-generates-an-invalid-or-conflicting-name)    | Error    | Serialized field generates an invalid or conflicting name                             | `DxAutoConstructorGenerator`            |
+| [`DXMSG017`](#dxmsg017-serialized-field-type-cannot-be-exposed-by-generated-members) | Error    | Serialized field type cannot be exposed by generated members                          | `DxAutoConstructorGenerator`            |
 
 > All diagnostic IDs can be customised per project in `.editorconfig`. For example,
 > `dotnet_diagnostic.DXMSG006.severity = error` makes a missing base call a build error.
