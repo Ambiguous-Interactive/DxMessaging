@@ -62,17 +62,30 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             isEnabledByDefault: true
         );
 
+        private static readonly DiagnosticDescriptor SerializedFieldNameDiagnostic = new(
+            id: "DXMSG016",
+            title: "Serialized field generates an invalid or conflicting name",
+            messageFormat: "Field '{0}' cannot generate '{1}': {2}. Rename the field or conflicting member, or write the constructor and properties explicitly.",
+            category: "DxMessaging",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true
+        );
+
         private const string AutoGenConstructorAttrFullName =
             "DxMessaging.Core.Attributes.DxAutoConstructorAttribute";
 
         private const string OptionalParameterAttrFullName =
             "DxMessaging.Core.Attributes.DxOptionalParameterAttribute";
 
+        private const string SerializeFieldAttrFullName = "UnityEngine.SerializeField";
+
         // Info needed during generation for a valid type
         private record struct TypeToGenerateInfo(
             INamedTypeSymbol TypeSymbol,
             TypeDeclarationSyntax DeclarationSyntax,
-            List<IFieldSymbol> FieldsToInject // Public non-static fields in declaration order
+            List<IFieldSymbol> FieldsToInject,
+            bool IncludeSerializedFields,
+            bool GenerateSerializedProperties
         );
 
         /// <summary>
@@ -149,6 +162,8 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
 
             // Check if the type has the DxAutoGenConstructor attribute
             bool hasAutoGenConstructorAttribute = false;
+            bool includeSerializedFields = false;
+            bool generateSerializedProperties = false;
             foreach (AttributeData attributeData in typeSymbol.GetAttributes())
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -158,6 +173,24 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 )
                 {
                     hasAutoGenConstructorAttribute = true;
+                    foreach (
+                        KeyValuePair<string, TypedConstant> argument in attributeData.NamedArguments
+                    )
+                    {
+                        if (argument.Value.Value is not true)
+                        {
+                            continue;
+                        }
+                        if (argument.Key == "IncludeSerializedFields")
+                        {
+                            includeSerializedFields = true;
+                        }
+                        else if (argument.Key == "GenerateSerializedProperties")
+                        {
+                            generateSerializedProperties = true;
+                        }
+                    }
+                    includeSerializedFields |= generateSerializedProperties;
                     break;
                 }
             }
@@ -167,16 +200,16 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 return null;
             }
 
-            // Find public readonly non-static fields in declaration order
+            // Select public fields and explicitly requested serialized storage.
             List<IFieldSymbol> fieldsToInject = new();
             foreach (ISymbol member in typeSymbol.GetMembers())
             {
                 if (
-                    member is IFieldSymbol
-                    {
-                        DeclaredAccessibility: Accessibility.Public,
-                        IsStatic: false,
-                    } field
+                    member is IFieldSymbol { IsStatic: false, IsImplicitlyDeclared: false } field
+                    && (
+                        field.DeclaredAccessibility == Accessibility.Public
+                        || (includeSerializedFields && HasSerializeFieldAttribute(field))
+                    )
                 )
                 {
                     fieldsToInject.Add(field);
@@ -190,7 +223,79 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                 return null;
             }
 
-            return new TypeToGenerateInfo(typeSymbol, typeDeclarationSyntax, fieldsToInject);
+            return new TypeToGenerateInfo(
+                typeSymbol,
+                typeDeclarationSyntax,
+                fieldsToInject,
+                includeSerializedFields,
+                generateSerializedProperties
+            );
+        }
+
+        private static bool HasSerializeFieldAttribute(IFieldSymbol field)
+        {
+            foreach (AttributeData attribute in field.GetAttributes())
+            {
+                if (attribute.AttributeClass?.ToDisplayString() == SerializeFieldAttrFullName)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static string EscapeIdentifier(string name) =>
+            SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None
+            || SyntaxFacts.GetContextualKeywordKind(name) != SyntaxKind.None
+                ? "@" + name
+                : name;
+
+        private static bool HasConflictingMember(
+            Compilation compilation,
+            INamedTypeSymbol type,
+            string name
+        )
+        {
+            if (type.Name == name || type.GetMembers(name).Length != 0)
+            {
+                return true;
+            }
+            foreach (ITypeParameterSymbol parameter in type.TypeParameters)
+            {
+                if (parameter.Name == name)
+                {
+                    return true;
+                }
+            }
+            for (INamedTypeSymbol? parent = type.BaseType; parent != null; parent = parent.BaseType)
+            {
+                foreach (ISymbol member in parent.GetMembers(name))
+                {
+                    if (compilation.IsSymbolAccessibleWithin(member, type))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static void ReportSerializedNameDiagnostic(
+            GeneratorExecutionContext context,
+            IFieldSymbol field,
+            string name,
+            string reason
+        )
+        {
+            context.ReportDiagnostic(
+                Diagnostic.Create(
+                    SerializedFieldNameDiagnostic,
+                    field.Locations.FirstOrDefault(),
+                    field.Name,
+                    name,
+                    reason
+                )
+            );
         }
 
         /// <summary>Orders source trees before offsets that are meaningful only within one tree.</summary>
@@ -489,6 +594,16 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             // Generate constructor parameters and body assignments
             StringBuilder constructorParams = new();
             StringBuilder constructorBody = new();
+            StringBuilder serializedProperties = new();
+            HashSet<string>? parameterNames = typeInfo.IncludeSerializedFields
+                ? new HashSet<string>(StringComparer.Ordinal)
+                : null;
+            HashSet<string>? propertyNames = typeInfo.GenerateSerializedProperties
+                ? new HashSet<string>(StringComparer.Ordinal)
+                : null;
+            bool reservesMessageType =
+                typeInfo.GenerateSerializedProperties
+                && DxMessageIdGenerator.HasMessageAttribute(typeSymbol);
 
             SymbolDisplayFormat fieldTypeFormat =
                 SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
@@ -564,7 +679,36 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     : fieldTypeFormat;
                 string fieldType = field.Type.ToDisplayString(parameterTypeFormat);
                 string fieldName = field.Name;
-                string parameterName = field.ToDisplayString(IdentifierNameFormat);
+                string fieldIdentifier = field.ToDisplayString(IdentifierNameFormat);
+                bool serialized =
+                    typeInfo.IncludeSerializedFields && HasSerializeFieldAttribute(field);
+                string parameterValue = serialized ? fieldName.TrimStart('_') : fieldName;
+                string parameterName = serialized
+                    ? EscapeIdentifier(parameterValue)
+                    : fieldIdentifier;
+                if (parameterNames != null)
+                {
+                    if (!SyntaxFacts.IsValidIdentifier(parameterValue))
+                    {
+                        ReportSerializedNameDiagnostic(
+                            spc,
+                            field,
+                            parameterValue,
+                            "constructor parameter name is not a valid C# identifier"
+                        );
+                        return null;
+                    }
+                    if (!parameterNames.Add(parameterValue))
+                    {
+                        ReportSerializedNameDiagnostic(
+                            spc,
+                            field,
+                            parameterValue,
+                            "constructor parameter name is already used"
+                        );
+                        return null;
+                    }
+                }
                 string? defaultExpr = null;
                 bool isOptional = false;
 
@@ -707,8 +851,45 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     (fieldType, parameterName, isOptional, defaultExpr, annotationsEnabled)
                 );
                 constructorBody.AppendLine(
-                    $"{Indent}{Indent}    this.{parameterName} = {parameterName};"
+                    $"{Indent}{Indent}    this.{fieldIdentifier} = {parameterName};"
                 );
+                if (serialized && propertyNames != null)
+                {
+                    string propertyValue =
+                        char.ToUpperInvariant(parameterValue[0]) + parameterValue.Substring(1);
+                    string propertyName = EscapeIdentifier(propertyValue);
+                    if (
+                        !SyntaxFacts.IsValidIdentifier(propertyValue)
+                        || !propertyNames.Add(propertyValue)
+                        || HasConflictingMember(compilation, typeSymbol, propertyValue)
+                        || (
+                            reservesMessageType
+                            && propertyValue == DxMessageIdGenerator.MessageTypePropertyName
+                        )
+                    )
+                    {
+                        ReportSerializedNameDiagnostic(
+                            spc,
+                            field,
+                            propertyValue,
+                            "property name is invalid or conflicts with an existing member"
+                        );
+                        return null;
+                    }
+                    serializedProperties
+                        .AppendLine()
+                        .AppendLine(
+                            annotationsEnabled
+                                ? "#nullable enable annotations"
+                                : "#nullable disable annotations"
+                        )
+                        .AppendLine(
+                            $"{innerIndent}    /// <summary>Gets the serialized value of <c>{fieldName}</c>.</summary>"
+                        )
+                        .AppendLine(
+                            $"{innerIndent}    public {(fieldRequiresUnsafeContext ? "unsafe " : "")}{fieldType} {propertyName} => this.{fieldIdentifier};"
+                        );
+                }
             }
 
             bool initialAnnotationsEnabled = parameterDetails[0].AnnotationsEnabled;
@@ -790,7 +971,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     $"{innerIndent}    {constructorAccessibility} {unsafeModifier}{typeSymbol.ToDisplayString(IdentifierNameFormat)}({constructorParams}){constructorInitializer}",
                     $"{innerIndent}    {{",
                     $"{constructorBody}",
-                    $"{innerIndent}    }}",
+                    $"{innerIndent}    }}{serializedProperties}",
                     $"{innerIndent}}}",
                     $"{containersClose}",
                     namespaceBlockClose,

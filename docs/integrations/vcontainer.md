@@ -30,7 +30,7 @@ from these framework-specific examples. If your application needs conditional co
 configure [Version Defines on its own assembly](https://docs.unity3d.com/2021.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#define-symbols).
 
 For a custom application asmdef, reference `WallstopStudios.DxMessaging`,
-`WallstopStudios.DxMessaging.VContainer`, `VContainer`, and `VContainer.Unity` for
+`WallstopStudios.DxMessaging.Attributes`, `WallstopStudios.DxMessaging.VContainer`, `VContainer`, and `VContainer.Unity` for
 these examples.
 
 ### 1. Create a LifetimeScope with DxMessaging

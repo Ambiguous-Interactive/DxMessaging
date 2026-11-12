@@ -7,7 +7,7 @@ namespace DxMessaging.Core.Attributes
     /// </summary>
     /// <remarks>
     /// Apply this to a partial <c>struct</c> or <c>class</c> to generate a constructor whose parameters
-    /// match public instance fields in declaration order within each source file. Across partial files,
+    /// match public instance fields by default, in declaration order within each source file. Across partial files,
     /// parameters follow the compiler's syntax-tree order; use named arguments when file order is not controlled.
     /// Fields marked with
     /// <see cref="DxOptionalParameterAttribute"/> are emitted as optional parameters.
@@ -19,9 +19,13 @@ namespace DxMessaging.Core.Attributes
     /// DXMSG012 reports primary constructors with parameters: remove this attribute and write an explicit
     /// constructor with a this(...) initializer to choose the primary constructor arguments.
     /// An empty primary parameter list is chained automatically with this().
-    /// A type with no public instance fields needs no generated constructor and is not diagnosed.
-    /// DXMSG013 reports a record class whose sole public instance field has its own record type.
+    /// A type with no selected instance fields needs no generated constructor and is not diagnosed.
+    /// DXMSG013 reports a record class whose sole selected instance field has its own record type.
     /// Use a property with an object initializer or a different constructor signature to preserve copying.
+    /// Enable <see cref="IncludeSerializedFields"/> to include fields marked with <c>UnityEngine.SerializeField</c>
+    /// at any accessibility. Enable <see cref="GenerateSerializedProperties"/> to also generate their read-only getters.
+    /// Serialized parameter names omit leading underscores; property names uppercase the first remaining character.
+    /// DXMSG016 reports invalid names and name collisions. Both options are disabled by default.
     /// </remarks>
     /// <example>
     /// <code>
@@ -41,5 +45,20 @@ namespace DxMessaging.Core.Attributes
         Inherited = false,
         AllowMultiple = false
     )]
-    public sealed class DxAutoConstructorAttribute : Attribute { }
+    public sealed class DxAutoConstructorAttribute : Attribute
+    {
+        // SYNC: .docs-tests/DocsSnippetCompiler.cs mirrors these named options for snippet compilation.
+        /// <summary>
+        /// Gets or sets whether fields marked with <c>UnityEngine.SerializeField</c> participate
+        /// regardless of accessibility. Their constructor parameter names omit leading underscores.
+        /// </summary>
+        public bool IncludeSerializedFields { get; set; }
+
+        /// <summary>
+        /// Gets or sets whether serialized fields receive public read-only properties.
+        /// This also includes those fields in the constructor. Property names omit leading
+        /// underscores and uppercase the first remaining character.
+        /// </summary>
+        public bool GenerateSerializedProperties { get; set; }
+    }
 }

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add opt-in constructors and read-only properties for Unity-serialized fields while preserving their storage names
+  ([#745](https://github.com/Ambiguous-Interactive/DxMessaging/issues/745)).
 - Split public attributes into an engine-free assembly and prepare an attributes-only NuGet package with the existing generators
   for shared rules code ([#739](https://github.com/Ambiguous-Interactive/DxMessaging/issues/739)).
 - Add registration groups, source retargeting, and explicit-state handlers so pooled objects can replace subscriptions

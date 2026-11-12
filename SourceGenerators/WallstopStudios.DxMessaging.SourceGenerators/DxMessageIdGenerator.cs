@@ -25,6 +25,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             *** Assumes the user has defined this interface in their code ***
         */
         private const string BaseInterfaceFullName = "DxMessaging.Core.IMessage";
+        internal const string MessageTypePropertyName = "MessageType";
 
         // Message Type Attribute Full Names (Ensure these match your attributes)
         private const string BroadcastAttrFullName =
@@ -33,6 +34,19 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             "DxMessaging.Core.Attributes.DxTargetedMessageAttribute";
         private const string UntargetedAttrFullName =
             "DxMessaging.Core.Attributes.DxUntargetedMessageAttribute";
+
+        internal static bool HasMessageAttribute(INamedTypeSymbol type)
+        {
+            foreach (AttributeData attribute in type.GetAttributes())
+            {
+                string? name = attribute.AttributeClass?.ToDisplayString();
+                if (name is BroadcastAttrFullName or TargetedAttrFullName or UntargetedAttrFullName)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         // Target Interface Full Names (Ensure these match your specific message interfaces)
         private const string BroadcastInterfaceFullName =
@@ -787,7 +801,7 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                     $"{innerIndent}{accessibility} partial {typeKind} {typeNameWithGenerics} : global::{BaseInterfaceFullName} {interfaceDeclaration}",
                     $"{innerIndent}{{",
                     $"{innerIndent}    /// <inheritdoc/>",
-                    $"{innerIndent}    public global::System.Type MessageType => typeof({fullyQualifiedName});",
+                    $"{innerIndent}    public global::System.Type {MessageTypePropertyName} => typeof({fullyQualifiedName});",
                     $"{aotBridgeSource}",
                     $"{innerIndent}}}",
                     $"{containersClose}",

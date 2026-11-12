@@ -673,7 +673,12 @@ namespace DxMessaging.Core.Attributes
     using System;
 
     [AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class)]
-    public sealed class DxAutoConstructorAttribute : Attribute { }
+    public sealed class DxAutoConstructorAttribute : Attribute
+    {
+        // SYNC: Runtime/Attributes/DxAutoConstructorAttribute.cs named options; actual examples also use the shipped source.
+        public bool IncludeSerializedFields { get; set; }
+        public bool GenerateSerializedProperties { get; set; }
+    }
 
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class DxOptionalParameterAttribute : Attribute

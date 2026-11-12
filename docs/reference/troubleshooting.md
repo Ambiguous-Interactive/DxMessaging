@@ -83,10 +83,12 @@ you write and register.
    containing declaration `partial`. You can implement the route interface by
    hand without these attributes or the generation-related `partial` requirement.
 1. For a field constructor, apply `[DxAutoConstructor]` to a partial type with
-   public instance fields. Properties and static fields are excluded.
+   public instance fields, or opt in to [serialized fields](helpers.md#serialized-fields-and-read-only-properties-400).
+   Properties and static fields are excluded.
 1. Read the first compiler error in Unity's Console and let compilation finish
    after fixing it. An assembly definition is not required; the package's
-   generators reach `Assembly-CSharp` and assemblies that reference DxMessaging.
+   generators reach `Assembly-CSharp`. In 4.0, custom assembly definitions that use
+   attributes must directly reference `WallstopStudios.DxMessaging.Attributes`.
 
 See [source generator troubleshooting](helpers.md#troubleshooting-source-generators)
 for nested types, constructor rules, generated-source inspection and bug-report

@@ -11,7 +11,8 @@
 ## Do I need an assembly definition for the source generator to work?
 
 No. The package's generators reach Unity's default `Assembly-CSharp` and
-assemblies that reference DxMessaging. Apply a route attribute and mark the
+assemblies that directly reference `WallstopStudios.DxMessaging.Attributes` in 4.0.
+Keep the runtime reference when using messaging APIs. Apply a route attribute and mark the
 message and its containing declarations `partial` when you want generated
 members. A handwritten route-interface implementation without generator
 attributes does not require `partial`. See
