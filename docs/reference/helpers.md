@@ -18,6 +18,8 @@
 
 ## DxMessaging Attributes (Your Code Wizards)
 
+The attributes live in `WallstopStudios.DxMessaging.Attributes`. Unity assembly definitions that use them must reference this assembly. Shared rules that only need constructors and optional arguments can enable `noEngineReferences` and omit the messaging runtime. Message generation still needs the runtime interfaces. See the [4.0 migration steps](../guides/migration-guide.md#reference-the-dedicated-attributes-assembly) for existing assemblies.
+
 Use the attributes below to declare message types, generate constructors, and set optional defaults:
 
 ### 1. Message Type Attributes (Pick Your Message Category)
@@ -69,13 +71,11 @@ public readonly partial struct TookDamage {
 
 ### 2. `[DxAutoConstructor]` - Automatic Constructors
 
-**Problem:** Writing constructors for every message is tedious and error-prone.
-
-**Solution:** Let the source generator do it!
+Apply `[DxAutoConstructor]` to a partial type to generate a constructor from its fields.
 
 ```csharp
 [DxUntargetedMessage]
-[DxAutoConstructor]  // <- Magic happens here!
+[DxAutoConstructor]
 public readonly partial struct VideoSettingsChanged
 {
     public readonly int width;
@@ -86,7 +86,7 @@ public readonly partial struct VideoSettingsChanged
 #### What you get (auto-generated)
 
 ```csharp
-// You don't write this - it's generated for you!
+// Generated constructor.
 public VideoSettingsChanged(int width, int height)
 {
     this.width = width;
@@ -98,11 +98,86 @@ public VideoSettingsChanged(int width, int height)
 
 - Creates constructor parameters in **field declaration order** within each source file
 - Orders fields across partial files by the compiler's source-file order; use named arguments when that order is not controlled
-- Only includes `public` fields
+- Includes `public` fields by default; opt in to serialized fields as described below
 - Ignores `static` fields
 - Works with `readonly` structs (recommended!)
 - Supports nested types inside partial classes, structs, and invariant interfaces
 - Supports internal types (types with `internal` visibility)
+
+#### Serialized fields and read-only properties (4.0.0)
+
+Use `IncludeSerializedFields = true` to include declared instance fields marked with
+`UnityEngine.SerializeField`, at any accessibility. Set `GenerateSerializedProperties = true`
+to also generate their public read-only getters. The property option also enables those
+fields in the constructor; both options default to `false`.
+
+For example, this handwritten form repeats its serialized field list:
+
+```csharp
+using System;
+using UnityEngine;
+
+[Serializable]
+public struct ScreenPrefab
+{
+    [SerializeField] private int _screen;
+    [SerializeField] private GameObject _prefab;
+
+    public int Screen => _screen;
+    public GameObject Prefab => _prefab;
+
+    public ScreenPrefab(int screen, GameObject prefab)
+    {
+        _screen = screen;
+        _prefab = prefab;
+    }
+}
+```
+
+Keep the type name and serialized field names, then add `partial` to generate the constructor and getters:
+
+```csharp
+using System;
+using DxMessaging.Core.Attributes;
+using UnityEngine;
+
+[Serializable]
+[DxAutoConstructor(GenerateSerializedProperties = true)]
+public partial struct ScreenPrefab
+{
+    [SerializeField] private int _screen;
+    [SerializeField] private GameObject _prefab;
+}
+
+public static class ScreenPrefabExamples
+{
+    public static ScreenPrefab Create(int screen, GameObject prefab)
+    {
+        return new ScreenPrefab(screen: screen, prefab: prefab);
+    }
+}
+```
+
+The generated properties are `Screen` and `Prefab`. Serialized constructor parameters omit
+all leading underscores; property names uppercase the first remaining character using invariant
+casing. C# keyword parameter names are escaped, so `_class` becomes `@class`. Existing public
+fields that are not marked with `SerializeField` keep their parameter names.
+
+To retain existing handwritten getters, enable only `IncludeSerializedFields`. Static fields,
+constants, and compiler-generated backing fields are excluded. The options select fields by the
+Unity attribute's full type name; an unrelated attribute called `SerializeField` does not opt in.
+
+Keep serialized field names when migrating existing assets. Unity continues to serialize those
+fields, while generated getters add no storage. C# constructor calls apply optional defaults;
+Unity deserialization and `default(T)` keep their existing construction rules.
+[`DXMSG016`](analyzers.md#dxmsg016-serialized-field-generates-an-invalid-or-conflicting-name)
+reports invalid names, duplicate parameter names, and property names that conflict with a type
+or an existing accessible member. Rename the conflicting field/member or keep explicit code.
+[`DXMSG017`](analyzers.md#dxmsg017-serialized-field-type-cannot-be-exposed-by-generated-members)
+reports field types that cannot appear in the generated public signatures. Make those types
+accessible or write the constructor and properties explicitly with suitable access levels.
+
+#### Constructor restrictions
 
 > **Fixed in v4.0.0:** Generated constructors retain the required unsafe context
 > for pointer parameters, preserve `void*` syntax, and accept valid `null` pointer
@@ -142,10 +217,10 @@ or later language versions. It does not change the supported Unity floor.
 instead of an invalid generated secondary constructor. Remove `[DxAutoConstructor]`
 and write the constructor with an explicit `this(...)` chain to supply the primary
 constructor arguments. For an empty primary parameter list, the generator adds the
-required `this()` chain automatically. No diagnostic is needed when the type has no public instance fields.
+required `this()` chain automatically. No diagnostic is needed when the type has no selected instance fields.
 Ordinary non-positional records and nested types inside positional containers remain supported.
 
-**Breaking change in v4.0.0:** A record class with one public field of its own
+**Breaking change in v4.0.0:** A record class with one selected field of its own
 record type receives
 [`DXMSG013`](analyzers.md#dxmsg013-field-constructor-conflicts-with-record-copy-constructor).
 That constructor signature belongs to the record copy constructor. Earlier versions

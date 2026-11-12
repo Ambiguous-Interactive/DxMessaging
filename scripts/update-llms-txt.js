@@ -314,7 +314,8 @@ Emitter > MessageBus > Interceptors > Handlers (by priority)
 ## Project Structure
 
 \`\`\`text
-/Runtime/Core/          Core messaging engine (MessageBus, Messages, Attributes)
+/Runtime/Core/          Core messaging engine (MessageBus, Messages)
+/Runtime/Attributes/    Engine-free attributes for shared rules and source generation
 /Runtime/Unity/         Unity integration (Components, DI support)
 /Editor/                Inspector tools, analyzers, custom editors
 /SourceGenerators/      C# Source Generators for auto-constructors

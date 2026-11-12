@@ -99,10 +99,12 @@ For ZIP downloads, extract the repository contents into
 
 DxMessaging's compiled source generators (`[DxUntargetedMessage]`, `[DxTargetedMessage]`,
 `[DxBroadcastMessage]`, `[DxAutoConstructor]`) work whether or not your project
-uses assembly definitions. The package ships the optimized analyzer assemblies so they reach the
-DxMessaging assembly and every assembly that references it, including the default
-`Assembly-CSharp` used by projects without any `.asmdef` files. You do not need to
-create an assembly definition for `[Dx*Message]` types to generate.
+uses assembly definitions. In 4.0, add `WallstopStudios.DxMessaging.Attributes` to each
+custom assembly definition that uses these attributes. Keep `WallstopStudios.DxMessaging`
+when the same assembly uses message interfaces or runtime APIs. The compiler DLLs are
+scoped to the attributes assembly and assemblies that reference it. Unity's predefined `Assembly-CSharp`
+receives the references automatically; you do not need to create an assembly definition
+for `[Dx*Message]` types to generate.
 
 If you previously worked around an earlier version by copying the analyzer DLLs
 into your own `Assets/` folder, that is no longer necessary: the package now ships

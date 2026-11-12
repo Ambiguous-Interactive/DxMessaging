@@ -59,7 +59,7 @@ for (const row of [
   }
 ]) {
   test("assembly discovery preserves the declared " + row.name + " scope", () => {
-    const expected = row.suffixes.map((s) => prefix + s).sort();
+    const expected = [...row.suffixes, "Runtime.AttributesOnly"].map((s) => prefix + s).sort();
     assert.deepEqual(defaultIncludeAssemblies(root, row.options), expected);
     const selection = resolveTestAssemblySelection(root, row.options);
     assert.deepEqual(selection.assemblies, expected);

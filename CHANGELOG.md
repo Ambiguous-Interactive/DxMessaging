@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add explicit sticky publication, latest-state lookup and token replay for late untargeted listeners,
+  with owned cleanup and explicit payload lifetime ([#736](https://github.com/Ambiguous-Interactive/DxMessaging/issues/736)).
+- Add opt-in constructors and read-only properties for Unity-serialized fields while preserving their storage names
+  and reporting invalid names or inaccessible field types
+  ([#745](https://github.com/Ambiguous-Interactive/DxMessaging/issues/745)).
+- Split public attributes into an engine-free assembly and prepare an attributes-only NuGet package with the existing generators
+  for shared rules code ([#739](https://github.com/Ambiguous-Interactive/DxMessaging/issues/739)).
 - Add registration groups, source retargeting, and explicit-state handlers so pooled objects can replace subscriptions
   without application-owned cleanup loops or captured callbacks
   ([#738](https://github.com/Ambiguous-Interactive/DxMessaging/issues/738)).
@@ -30,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING:** Add a direct `WallstopStudios.DxMessaging.Attributes` reference to Unity assembly definitions that use public
+  DxMessaging attributes. Namespaces stay unchanged; see the [4.0 migration guide](docs/guides/migration-guide.md#reference-the-dedicated-attributes-assembly).
 - Correct IntelliSense summaries and references, including cache enumeration, bus reset behavior,
   global observer message and context parameters, empty-bus debug logging, and deregistration callback boundaries
   ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503),

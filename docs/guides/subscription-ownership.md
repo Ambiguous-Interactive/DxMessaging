@@ -3,6 +3,8 @@
 > **Added in 4.0.0.** Use registration groups, source retargeting, and explicit state handlers with an existing token.
 
 A token owns its registrations for its whole lifecycle. A registration group owns a selected subset of those handles.
+For readiness and current settings, [sticky messages](sticky-messages.md) let a callback receive
+the latest explicitly published state when its token activates. Register once during setup.
 Use a group when a pooled object changes parent or replaces one set of subscriptions while keeping its other subscriptions.
 
 | Existing application code                                              | API to use                                                            |

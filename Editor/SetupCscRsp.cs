@@ -21,8 +21,8 @@ namespace DxMessaging.Editor
         /*
             Older package versions copied the analyzer + Roslyn runtime DLLs into the consumer
             project here so the source generator applied project-wide. The generator now ships
-            under the package's Runtime/Analyzers folder (Unity scopes it natively to the runtime
-            assembly and everything that references it, including the predefined Assembly-CSharp),
+            under the package's Runtime/Analyzers folder (Unity scopes it natively to the attributes
+            assembly and its direct referrers, including the runtime and predefined Assembly-CSharp),
             so this in-project copy is redundant and is removed on upgrade.
         */
         internal const string LegacyAnalyzerCopyFolder =
@@ -398,8 +398,8 @@ namespace DxMessaging.Editor
         /// <remarks>
         /// DxMessaging analyzers are activated solely through the RoslynAnalyzer-labeled
         /// DLLs shipped under the package's <c>Runtime/Analyzers</c> folder, which Unity
-        /// scopes to the runtime assembly and every assembly that references it (including
-        /// the predefined Assembly-CSharp). A stray <c>-a:</c> registration here (for
+        /// scopes to the attributes assembly and its direct referrers, including the runtime
+        /// and predefined Assembly-CSharp. A stray <c>-a:</c> registration here (for
         /// example, one left behind by an older package version that copied analyzers into
         /// the project) double-loads the source generator, and registering dependency DLLs
         /// as analyzers makes Unity's compiler path fragile, so this method strips them.

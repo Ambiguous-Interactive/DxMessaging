@@ -12,7 +12,8 @@ The active Unity workflows run `scripts/unity/run-ci-tests.ps1` directly on self
 Windows runners. `unity-tests.yml` is a four-version matrix. Each editor-scoped
 job runs `editmode`, `playmode`, and `standalone` as separate invocations under
 one lock and cleanup window. The oldest and current endpoint jobs also run the
-Minimal, Low, Medium, and High shipping-fidelity cells. All player modes build
+Minimal, Low, Medium, and High shipping-fidelity cells only for a manual dispatch with
+`shipping_fidelity` enabled. All player modes build
 `StandaloneWindows64` IL2CPP players from runner-local projects under
 `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>-<source-set-key>/` for ordinary correctness runs.
 The workflow derives the short key from tracked Runtime, Editor, Tests, and Samples input paths.

@@ -254,7 +254,7 @@ internal sealed class RuntimeHashCompilationTests
         }
         Assert.That(directory, Is.Not.Null, "Repository root must be found.");
         CSharpParseOptions parseOptions = new(LanguageVersion.CSharp9);
-        /* Match the maintained portable project's recursive Runtime C# inputs, without Unity symbols. */
+        /* Compile the real runtime and attributes sources into one isolated contract image without Unity symbols. */
         SyntaxTree[] trees = Directory
             .EnumerateFiles(
                 Path.Combine(directory!.FullName, "Runtime"),

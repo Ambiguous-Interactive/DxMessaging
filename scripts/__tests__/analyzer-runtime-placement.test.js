@@ -20,13 +20,7 @@ function hasRoslynAnalyzerLabel(metaPath) {
 function nearestAsmdef(startDir) {
   let dir = startDir;
   while (true) {
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir);
-    } catch {
-      entries = [];
-    }
-    const asmdef = entries.find((name) => name.endsWith(".asmdef"));
+    const asmdef = fs.readdirSync(dir).find((name) => name.endsWith(".asmdef"));
     if (asmdef) {
       return JSON.parse(fs.readFileSync(path.join(dir, asmdef), "utf8"));
     }
@@ -80,6 +74,12 @@ test("the source generator + analyzer ship under Runtime/Analyzers (issue #229)"
       `${dll}.meta (carrying the RoslynAnalyzer label) must ship alongside it.`
     );
     assert.ok(hasRoslynAnalyzerLabel(meta), `${dll}.meta must carry the RoslynAnalyzer label.`);
+    const scope = nearestAsmdef(path.dirname(expected));
+    assert.deepEqual(
+      [scope?.name, scope?.noEngineReferences],
+      ["WallstopStudios.DxMessaging.Attributes", true],
+      "Compiler inputs must reach engine-free consumers of the attributes."
+    );
   }
 });
 

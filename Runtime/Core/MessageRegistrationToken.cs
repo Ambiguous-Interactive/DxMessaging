@@ -1383,6 +1383,32 @@ namespace DxMessaging.Core
                     throw;
                 }
                 AddDeregistration(slotIndex, handle.Id, actualDeregistration);
+                try
+                {
+                    ReplayLatestIfOwned(registration, handle, actualDeregistration);
+                }
+                catch (Exception replayFailure)
+                {
+                    try
+                    {
+                        RemoveRegistration(handle);
+                    }
+                    catch (Exception cleanupFailure)
+                    {
+                        throw new AggregateException(
+                            "Retained-state replay and cleanup both failed. Retry token cleanup after the bus recovers.",
+                            replayFailure,
+                            cleanupFailure
+                        );
+                    }
+                    throw;
+                }
+            }
+            else if (_stickyReplay?.ActivationQueue != null)
+            {
+                _stickyReplay.ActivationQueue.Add(
+                    new StagedRegistration(slotIndex, handle.Id, registration)
+                );
             }
 
             return handle;
@@ -1497,7 +1523,11 @@ namespace DxMessaging.Core
                     so replay tolerates re-entrant registration mutation.
                 */
                 QueueRegistrationsInOrder();
-                InvokeRegistrationQueueWithRollback(out _);
+                if (!InvokeRegistrationQueueWithRollback(out _))
+                {
+                    _enabled = 0 < _deregistrationCount;
+                    return;
+                }
             }
 
             _enabled = true;
@@ -1523,6 +1553,7 @@ namespace DxMessaging.Core
         /// </example>
         public void Disable()
         {
+            CancelStickyReplay();
             CancelSourceMoves();
             if (!_enabled && _deregistrationCount == 0)
             {
@@ -1555,6 +1586,7 @@ namespace DxMessaging.Core
         /// </example>
         public void UnregisterAll()
         {
+            CancelStickyReplay();
             CancelSourceMoves();
             Exception deregistrationException = InvokeDeregistrationQueue();
             if (deregistrationException == null && _deregistrationCount == 0)
@@ -1601,6 +1633,16 @@ namespace DxMessaging.Core
                     : rebindMode;
 
             bool sameBus = ReferenceEquals(_messageBus, messageBus);
+            if (
+                effectiveMode == MessageBusRebindMode.RebindActive
+                && _stickyReplay != null
+                && 0 < _stickyReplay.Depth
+            )
+            {
+                throw new InvalidOperationException(
+                    "Defer active bus rebinding until retained-state replay finishes, or use PreserveRegistrations for future registrations."
+                );
+            }
             bool rebindActiveRegistrations =
                 effectiveMode == MessageBusRebindMode.RebindActive
                 && _enabled
@@ -1610,6 +1652,7 @@ namespace DxMessaging.Core
                 return;
             }
 
+            long stickyCancellationVersion = _stickyReplay?.CancellationVersion ?? 0;
             bool replayWasInProgress = _isReplayingRegistrations;
             IMessageBus previousMessageBus = _messageBus;
             List<MessageRegistrationHandle> activeRetargetHandles = null;
@@ -1664,14 +1707,16 @@ namespace DxMessaging.Core
                     bool cleanupCompletedDuringLogging = false;
                     try
                     {
-                        InvokeRegistrationQueueWithRollback(out cleanupCompletedDuringLogging);
-                        _enabled = true;
+                        _enabled =
+                            InvokeRegistrationQueueWithRollback(out cleanupCompletedDuringLogging)
+                            || 0 < _deregistrationCount;
                     }
                     catch (Exception exception)
                     {
                         RestoreRegistrationsAfterRetargetFailure(
                             previousMessageBus,
                             cleanupCompletedDuringLogging,
+                            stickyCancellationVersion,
                             replayWasInProgress ? activeRetargetHandles : null
                         );
                         ExceptionDispatchInfo.Capture(exception).Throw();
@@ -2006,11 +2051,16 @@ namespace DxMessaging.Core
         private void RestoreRegistrationsAfterRetargetFailure(
             IMessageBus previousMessageBus,
             bool cleanupCompletedDuringLogging,
+            long stickyCancellationVersion,
             List<MessageRegistrationHandle> activeRetargetHandles
         )
         {
             _messageBus = previousMessageBus;
-            if (cleanupCompletedDuringLogging || _registrationCount == 0)
+            if (
+                cleanupCompletedDuringLogging
+                || _registrationCount == 0
+                || stickyCancellationVersion != (_stickyReplay?.CancellationVersion ?? 0)
+            )
             {
                 _enabled = 0 < _deregistrationCount;
                 return;
@@ -2026,8 +2076,7 @@ namespace DxMessaging.Core
             }
             try
             {
-                InvokeRegistrationQueueWithRollback(out _);
-                _enabled = true;
+                _enabled = InvokeRegistrationQueueWithRollback(out _) || 0 < _deregistrationCount;
             }
             catch (Exception restoreException)
             {
@@ -2117,17 +2166,23 @@ namespace DxMessaging.Core
 
         /// <summary>Replays registrations still staged when their turn begins.</summary>
         /// <remarks>2026-10-17: Skip a later entry removed or replaced by an earlier registration callback.</remarks>
-        private void InvokeRegistrationReplayQueue()
+        private bool InvokeRegistrationReplayQueue()
         {
             List<StagedRegistration> queue = GetRegistrationReplayQueue();
             // Nested replay borrows another queue while this invocation owns its entries.
             _registrationReplayQueue = null;
             bool wasReplaying = _isReplayingRegistrations;
             _isReplayingRegistrations = true;
+            long stickyCancellationVersion = _stickyReplay?.CancellationVersion ?? 0;
             try
             {
-                foreach (StagedRegistration staged in queue)
+                for (int index = 0; index < queue.Count; ++index)
                 {
+                    StagedRegistration staged = queue[index];
+                    if (stickyCancellationVersion != (_stickyReplay?.CancellationVersion ?? 0))
+                    {
+                        break;
+                    }
                     Registration registration = staged.Registration;
                     if (registration == null || !TryGetSlot(staged.Slot, staged.Id, out _))
                     {
@@ -2137,7 +2192,14 @@ namespace DxMessaging.Core
                     MessageHandler.HandlerDeregistration actualDeregistration =
                         registration.Register();
                     AddDeregistration(staged.Slot, staged.Id, actualDeregistration);
+                    ReplayLatestIfOwned(
+                        registration,
+                        MessageRegistrationHandle.FromIdentity(staged.Id, staged.Slot),
+                        actualDeregistration,
+                        queue
+                    );
                 }
+                return stickyCancellationVersion == (_stickyReplay?.CancellationVersion ?? 0);
             }
             finally
             {
@@ -2323,7 +2385,7 @@ namespace DxMessaging.Core
         }
 
         /// <summary>Replays staged registrations with rollback and diagnostic cleanup tracking.</summary>
-        private void InvokeRegistrationQueueWithRollback(out bool cleanupCompletedDuringLogging)
+        private bool InvokeRegistrationQueueWithRollback(out bool cleanupCompletedDuringLogging)
         {
             cleanupCompletedDuringLogging = false;
             HashSet<TeardownIdentity> rollbackBaseline = _rollbackBaseline
@@ -2334,7 +2396,7 @@ namespace DxMessaging.Core
                 SnapshotDeregistrations(rollbackBaseline);
                 try
                 {
-                    InvokeRegistrationReplayQueue();
+                    return InvokeRegistrationReplayQueue();
                 }
                 catch (Exception exception)
                 {
@@ -3127,6 +3189,17 @@ namespace DxMessaging.Core
             private int _registrationDepth;
             internal bool IsRegistering => 0 < _registrationDepth;
 
+            internal void BeginOwnedReplay() => ++_registrationDepth;
+
+            internal void EndOwnedReplay()
+            {
+                --_registrationDepth;
+                if (_registrationDepth == 0)
+                {
+                    Token._groupRegistrationsInFlight?.Remove(this);
+                }
+            }
+
             /// <summary>Registers validated state while tracking callback acceptance for group ownership.</summary>
             internal MessageHandler.HandlerDeregistration RegisterValidated(
                 IMessageBus messageBusOverride = null
@@ -3524,7 +3597,7 @@ namespace DxMessaging.Core
             }
         }
 
-        private sealed class UntargetedRegistration<T> : Registration<T>
+        private class UntargetedRegistration<T> : Registration<T>
             where T : IUntargetedMessage
         {
             private readonly RegistrationKind _kind;
@@ -3605,6 +3678,19 @@ namespace DxMessaging.Core
             }
 
             private Binding _binding;
+
+            protected void InvokeRetained(in T message, IMessageBus acceptedBus)
+            {
+                Binding binding = GetBinding(acceptedBus);
+                if (_kind == RegistrationKind.UntargetedHandlerAction)
+                {
+                    binding.AugmentedScalarAction(in message);
+                }
+                else
+                {
+                    binding.AugmentedScalarFast(in message);
+                }
+            }
 
             private Binding GetBinding(IMessageBus messageBus)
             {

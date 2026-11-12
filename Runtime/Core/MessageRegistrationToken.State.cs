@@ -5,6 +5,7 @@ namespace DxMessaging.Core
 
     public sealed partial class MessageRegistrationToken
     {
+        // SYNC: .docs-tests/DocsSnippetCompiler.cs mirrors StateHandler for readiness guide compilation.
         /// <summary>Handles a message with an explicit state parameter.</summary>
         /// <typeparam name="TMessage">Message type accepted by the callback.</typeparam>
         /// <typeparam name="TState">Type of the state stored with the registration.</typeparam>

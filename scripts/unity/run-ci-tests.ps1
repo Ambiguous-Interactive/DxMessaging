@@ -1398,6 +1398,7 @@ function New-DiSampleAsmdef {
   "rootNamespace": "DxMessaging.Samples.DI",
   "references": [
     "WallstopStudios.DxMessaging",
+    "WallstopStudios.DxMessaging.Attributes",
     "WallstopStudios.DxMessaging.Reflex",
     "WallstopStudios.DxMessaging.VContainer",
     "WallstopStudios.DxMessaging.Zenject",
@@ -3777,11 +3778,15 @@ public static class DxmShippingFidelityBuilder
             }
         }
         if (
-            assemblyNames.Length != 2
+            assemblyNames.Length != 3
             || !string.Equals(assemblyNames[0], "Assembly-CSharp", StringComparison.Ordinal)
             || !string.Equals(
                 assemblyNames[1],
                 "WallstopStudios.DxMessaging",
+                StringComparison.Ordinal)
+            || !string.Equals(
+                assemblyNames[2],
+                "WallstopStudios.DxMessaging.Attributes",
                 StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
@@ -6769,9 +6774,13 @@ function Test-ShippingAssemblyEvidence {
     }
     $assemblyNames = [string[]]@($evidence.playerAssemblies)
     Assert-NoShippingTestAssemblies -AssemblyNames $assemblyNames -Label 'Shipping build assembly inventory'
-    $expectedAssemblyNames = @('Assembly-CSharp', 'WallstopStudios.DxMessaging')
+    $expectedAssemblyNames = @(
+        'Assembly-CSharp',
+        'WallstopStudios.DxMessaging',
+        'WallstopStudios.DxMessaging.Attributes'
+    )
     if (($assemblyNames -join "`n") -cne ($expectedAssemblyNames -join "`n")) {
-        throw 'Shipping build assembly inventory differs from the exact two expected consumer assemblies.'
+        throw 'Shipping build assembly inventory differs from the exact three expected consumer assemblies.'
     }
 }
 

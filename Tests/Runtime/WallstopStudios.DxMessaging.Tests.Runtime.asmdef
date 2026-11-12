@@ -5,7 +5,8 @@
     "UnityEngine.TestRunner",
     "UnityEditor.TestRunner",
     "WallstopStudios.DxMessaging",
-    "WallstopStudios.DxMessaging.Testing"
+    "WallstopStudios.DxMessaging.Testing",
+    "WallstopStudios.DxMessaging.Attributes"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

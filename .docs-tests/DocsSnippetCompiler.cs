@@ -673,7 +673,12 @@ namespace DxMessaging.Core.Attributes
     using System;
 
     [AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class)]
-    public sealed class DxAutoConstructorAttribute : Attribute { }
+    public sealed class DxAutoConstructorAttribute : Attribute
+    {
+        // SYNC: Runtime/Attributes/DxAutoConstructorAttribute.cs named options; actual examples also use the shipped source.
+        public bool IncludeSerializedFields { get; set; }
+        public bool GenerateSerializedProperties { get; set; }
+    }
 
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class DxOptionalParameterAttribute : Attribute
@@ -691,7 +696,7 @@ namespace DxMessaging.Core.Attributes
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
     public sealed class DxUntargetedMessageAttribute : Attribute { }
 
-    // SYNC: Runtime/Core/Attributes/DxAotMessageAttribute.cs assembly opt-in signature.
+    // SYNC: Runtime/Attributes/DxAotMessageAttribute.cs assembly opt-in signature.
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
     public sealed class DxAotMessageAttribute : Attribute
     {
@@ -867,6 +872,14 @@ namespace DxMessaging.Core
 
     public sealed class MessageRegistrationToken : System.IDisposable
     {
+        /*
+            SYNC: Runtime/Core/MessageRegistrationToken.State.cs StateHandler and
+            Runtime/Core/MessageRegistrationToken.Sticky.cs replay overload signatures.
+            Actual guide execution is also checked against the compiled production runtime.
+        */
+        public delegate void StateHandler<TMessage, TState>(TState state, in TMessage message)
+            where TMessage : IMessage;
+
         public static MessageRegistrationToken Create(
             MessageHandler handler,
             IMessageBus bus = null
@@ -897,6 +910,25 @@ namespace DxMessaging.Core
             MessageHandler.FastHandler<TMessage> untargetedHandler,
             int priority = 0
         ) => new object();
+
+        public object RegisterUntargeted<TMessage>(
+            System.Action<TMessage> untargetedHandler,
+            bool replayLatest,
+            int priority = 0
+        ) where TMessage : IUntargetedMessage => new object();
+
+        public object RegisterUntargeted<TMessage>(
+            MessageHandler.FastHandler<TMessage> untargetedHandler,
+            bool replayLatest,
+            int priority = 0
+        ) where TMessage : IUntargetedMessage => new object();
+
+        public object RegisterUntargeted<TMessage, TState>(
+            TState state,
+            StateHandler<TMessage, TState> handler,
+            bool replayLatest,
+            int priority = 0
+        ) where TMessage : IUntargetedMessage => new object();
 
         public object RegisterGameObjectTargeted<TMessage>(
             UnityEngine.GameObject target,

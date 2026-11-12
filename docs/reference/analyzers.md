@@ -8,22 +8,24 @@ DxMessaging ships source generators and a Roslyn analyzer that report authoring 
 
 ## Quick reference table
 
-| ID                                                                               | Severity | Title                                                                                 | Source                                  |
-| -------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------- | --------------------------------------- |
-| [`DXMSG002`](#dxmsg002-multiple-message-attributes)                              | Error    | Multiple Message Attributes                                                           | `DxMessageIdGenerator`                  |
-| [`DXMSG003`](#dxmsg003-containing-type-must-be-partial-for-nested-generation)    | Warning  | Containing type must be partial for nested generation                                 | both generators                         |
-| [`DXMSG004`](#dxmsg004-add-partial-keyword-to-containing-type)                   | Info     | Add 'partial' keyword to containing type                                              | both generators                         |
-| [`DXMSG005`](#dxmsg005-invalid-optional-default-value)                           | Error    | Invalid optional default value                                                        | `DxAutoConstructorGenerator`            |
-| [`DXMSG006`](#dxmsg006-missing-base-call)                                        | Warning  | Missing `base.{method}()` call                                                        | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG007`](#dxmsg007-new-hides-unity-method)                                   | Warning  | Unity lifecycle method hidden with `new`                                              | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG008`](#dxmsg008-opt-out-marker)                                           | Info     | Type opted out of base-call check                                                     | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG009`](#dxmsg009-implicit-hide-and-missing-modifier)                       | Warning  | Method implicitly hides MessageAwareComponent lifecycle method (no `override`/`new`)  | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG010`](#dxmsg010-broken-transitive-base-call-chain)                        | Warning  | `base.{method}()` chains into an override that does not reach `MessageAwareComponent` | `MessageAwareComponentBaseCallAnalyzer` |
-| [`DXMSG011`](#dxmsg011-cannot-preserve-explicit-interface-struct-initializers)   | Error    | Cannot preserve explicit-interface struct initializers                                | `DxAutoConstructorGenerator`            |
-| [`DXMSG012`](#dxmsg012-cannot-infer-primary-constructor-arguments)               | Error    | Cannot infer primary constructor arguments                                            | `DxAutoConstructorGenerator`            |
-| [`DXMSG013`](#dxmsg013-field-constructor-conflicts-with-record-copy-constructor) | Error    | Field constructor conflicts with record copy constructor                              | `DxAutoConstructorGenerator`            |
-| [`DXMSG014`](#dxmsg014-aot-registration-requires-an-accessible-closed-message)   | Error    | AOT registration requires an accessible closed message                                | `DxMessageIdGenerator`                  |
-| [`DXMSG015`](#dxmsg015-missing-messaging-lifecycle-forwarding)                   | Warning  | A MonoBehaviour does not forward a required callback to its owned lifecycle           | `MessagingLifecycleAnalyzer`            |
+| ID                                                                                   | Severity | Title                                                                                 | Source                                  |
+| ------------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------- | --------------------------------------- |
+| [`DXMSG002`](#dxmsg002-multiple-message-attributes)                                  | Error    | Multiple Message Attributes                                                           | `DxMessageIdGenerator`                  |
+| [`DXMSG003`](#dxmsg003-containing-type-must-be-partial-for-nested-generation)        | Warning  | Containing type must be partial for nested generation                                 | both generators                         |
+| [`DXMSG004`](#dxmsg004-add-partial-keyword-to-containing-type)                       | Info     | Add 'partial' keyword to containing type                                              | both generators                         |
+| [`DXMSG005`](#dxmsg005-invalid-optional-default-value)                               | Error    | Invalid optional default value                                                        | `DxAutoConstructorGenerator`            |
+| [`DXMSG006`](#dxmsg006-missing-base-call)                                            | Warning  | Missing `base.{method}()` call                                                        | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG007`](#dxmsg007-new-hides-unity-method)                                       | Warning  | Unity lifecycle method hidden with `new`                                              | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG008`](#dxmsg008-opt-out-marker)                                               | Info     | Type opted out of base-call check                                                     | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG009`](#dxmsg009-implicit-hide-and-missing-modifier)                           | Warning  | Method implicitly hides MessageAwareComponent lifecycle method (no `override`/`new`)  | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG010`](#dxmsg010-broken-transitive-base-call-chain)                            | Warning  | `base.{method}()` chains into an override that does not reach `MessageAwareComponent` | `MessageAwareComponentBaseCallAnalyzer` |
+| [`DXMSG011`](#dxmsg011-cannot-preserve-explicit-interface-struct-initializers)       | Error    | Cannot preserve explicit-interface struct initializers                                | `DxAutoConstructorGenerator`            |
+| [`DXMSG012`](#dxmsg012-cannot-infer-primary-constructor-arguments)                   | Error    | Cannot infer primary constructor arguments                                            | `DxAutoConstructorGenerator`            |
+| [`DXMSG013`](#dxmsg013-field-constructor-conflicts-with-record-copy-constructor)     | Error    | Field constructor conflicts with record copy constructor                              | `DxAutoConstructorGenerator`            |
+| [`DXMSG014`](#dxmsg014-aot-registration-requires-an-accessible-closed-message)       | Error    | AOT registration requires an accessible closed message                                | `DxMessageIdGenerator`                  |
+| [`DXMSG015`](#dxmsg015-missing-messaging-lifecycle-forwarding)                       | Warning  | A MonoBehaviour does not forward a required callback to its owned lifecycle           | `MessagingLifecycleAnalyzer`            |
+| [`DXMSG016`](#dxmsg016-serialized-field-generates-an-invalid-or-conflicting-name)    | Error    | Serialized field generates an invalid or conflicting name                             | `DxAutoConstructorGenerator`            |
+| [`DXMSG017`](#dxmsg017-serialized-field-type-cannot-be-exposed-by-generated-members) | Error    | Serialized field type cannot be exposed by generated members                          | `DxAutoConstructorGenerator`            |
 
 > All diagnostic IDs can be customised per project in `.editorconfig`. For example,
 > `dotnet_diagnostic.DXMSG006.severity = error` makes a missing base call a build error.
@@ -550,9 +552,10 @@ build platform. Unity feeds `RoslynAnalyzer`-labeled DLLs to the C# compiler as
 analyzers without requiring `-a:` entries in `csc.rsp`, and scopes a
 folder-resident analyzer to the assembly defined by the nearest enclosing
 `.asmdef` plus every assembly that references it. Because the folder is governed
-by the all-platforms runtime asmdef, the analyzer reaches the DxMessaging runtime
-assembly and everything referencing it -- including the predefined
-`Assembly-CSharp` -- so nothing is copied into the consuming project.
+by the all-platforms engine-free attributes asmdef, the compiler extensions reach the
+attributes assembly and its direct referrers, including the DxMessaging runtime and
+predefined `Assembly-CSharp`. Add `WallstopStudios.DxMessaging.Attributes` to each custom
+assembly definition that uses attributes. Nothing is copied into the consuming project.
 The package contains only the two DxMessaging compiler extensions. Unity's
 compiler host supplies Roslyn and `System.Collections.Immutable`; DxMessaging
 does not bundle private copies of those compiler assemblies.
@@ -599,10 +602,10 @@ DxMessaging splits its compiler extensions into two DLLs: one analyzer and one s
 Both target Roslyn 3.8.0 for Unity 2021 compatibility:
 
 - `WallstopStudios.DxMessaging.Analyzer.dll` contains the base-call analyzer
-  (DXMSG006/007/008/009/010). Unity 2021 rejects analyzers built against Roslyn 4.x;
+  (DXMSG006/007/008/009/010/015). Unity 2021 rejects analyzers built against Roslyn 4.x;
   Microsoft's `Microsoft.Unity.Analyzers` package pins Roslyn 3.8.0 for the same reason.
 - `WallstopStudios.DxMessaging.SourceGenerators.dll` contains the source generators
-  (DXMSG002/003/004/005/011). They use the classic `ISourceGenerator` API so Unity 2021 can
+  (DXMSG002/003/004/005/011/012/013/014/016). They use the classic `ISourceGenerator` API so Unity 2021 can
   instantiate them.
 
 Both DLLs ship under the package's `Runtime/Analyzers/` folder, tagged
@@ -667,3 +670,47 @@ reachability or arbitrary aliases, interface dispatch, or forwarding in referenc
 See the [composable lifecycle example](../guides/unity-integration.md#composable-lifecycle-ownership-400)
 for the complete callback pattern. Configure the existing `MessagingComponent` bus or provider
 before creating the helper. Retry failed cleanup through the helper while `IsDisposed` is false.
+
+## DXMSG016: Serialized field generates an invalid or conflicting name
+
+- **Severity:** Error
+- **Source:** `DxAutoConstructorGenerator`
+- **Available in:** 4.0.0
+- **Triggered when:** An opted-in serialized field produces an invalid constructor parameter name,
+  repeats another parameter name, or generates a property name that conflicts with a member or its type.
+
+`IncludeSerializedFields` removes leading underscores from serialized parameter names.
+`GenerateSerializedProperties` also uppercases the first remaining character for each getter.
+For example, `_count` becomes parameter `count` and property `Count`. The original field stays
+`_count`. A field named `_` has no remaining name; `_1` cannot become parameter `1`.
+Fields `_count` and `count` cannot both become the same constructor parameter.
+Property names must also differ from type parameter names. On an attributed message, `MessageType`
+is reserved for the message generator, so a serialized `_messageType` field needs an explicit getter
+with another name or constructor-only generation.
+
+Rename the field or conflicting member. Preserve existing serialized names through Unity's
+normal migration process if you rename stored fields. If a handwritten getter already has the
+right name, enable only `IncludeSerializedFields` to generate the constructor and retain it.
+Otherwise, remove `DxAutoConstructor` and write the constructor and properties explicitly.
+The generator emits no constructor or properties for a type with this diagnostic.
+
+See [serialized field examples](helpers.md#serialized-fields-and-read-only-properties-400).
+
+## DXMSG017: Serialized field type cannot be exposed by generated members
+
+- **Severity:** Error
+- **Source:** `DxAutoConstructorGenerator`
+- **Available in:** 4.0.0
+- **Triggered when:** Opted-in serialized field types cannot appear in the generated public
+  constructor or read-only properties because their accessibility is too narrow.
+
+A private serialized field can legally store a private nested enum. A public constructor on a
+public type cannot expose that enum as a parameter. The same restriction applies to generated
+properties, arrays, and generic type arguments. The generator checks the containing type's
+actual accessibility, so legal signatures inside private containers remain supported.
+
+Make the field type accessible to callers, or remove `DxAutoConstructor` and write the
+constructor and properties with the access levels your API needs. The diagnostic includes the
+compiler's accessibility explanation. No constructor or properties are emitted for that type.
+
+See [serialized field examples](helpers.md#serialized-fields-and-read-only-properties-400).

@@ -203,7 +203,7 @@ internal sealed class OptionalStructDocumentationTests
             }
         )
         {
-            string path = Path.Combine(root, "Runtime", "Core", "Attributes", file);
+            string path = Path.Combine(root, "Runtime", "Attributes", file);
             trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(path), parseOptions, path));
         }
         string paths = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")

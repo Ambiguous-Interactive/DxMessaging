@@ -7,7 +7,7 @@ namespace DxMessaging.Core.Attributes
     /// </summary>
     /// <remarks>
     /// Apply to a <c>class</c> or <c>struct</c> to indicate it represents a global notification that
-    /// is not addressed to a specific target (see <see cref="Messages.IUntargetedMessage"/>).
+    /// is not addressed to a specific target (see <c>DxMessaging.Core.Messages.IUntargetedMessage</c>).
     /// This attribute enables source generators and tooling to recognize message types without
     /// requiring the generic interface form.
     /// </remarks>

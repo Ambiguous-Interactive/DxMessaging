@@ -138,7 +138,7 @@ jobs:
           # Docs, README, CHANGELOG, and sample Markdown are dotnet triggers because the
           # dotnet job compiles samples and checks documentation contracts.
           set_output dotnet \
-            "(\.cs$|\.csproj$|\.sln$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^Runtime/Analyzers/|^SourceGenerators/|^\.docs-tests/|^docs/.*\.(md|markdown|html)$|^README\.md$|^CHANGELOG\.md$|^Samples~/.*\.(md|markdown)$|^docs/overrides/|^\.config/dotnet-tools\.json$|^scripts/unity/.*\.cs\.txt$|$ci_workflow)"
+            "(\.cs$|\.csproj$|\.sln$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^Runtime/Analyzers/|^SourceGenerators/|^\.docs-tests/|^\.net-attributes/|^\.nuget-tests/|^docs/.*\.(md|markdown|html)$|^README\.md$|^CHANGELOG\.md$|^Samples~/.*\.(md|markdown)$|^docs/overrides/|^\.config/dotnet-tools\.json$|^scripts/unity/.*\.cs\.txt$|$ci_workflow)"
 
           json_pattern='(\.json$|\.asmdef$|\.asmref$|(^|/)\.prettierrc[^/]*$'
           json_pattern="$json_pattern"'|(^|/)prettier\.config\.[^/]+$'
@@ -223,7 +223,7 @@ jobs:
         if: ${{ needs.changes.outputs.actionlint != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
 
       - name: Validate Unity version single-source
         if: ${{ needs.changes.outputs.actionlint != 'false' }}
@@ -257,7 +257,7 @@ jobs:
         if: ${{ needs.changes.outputs.markdown != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -355,7 +355,7 @@ jobs:
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
 
       - name: Install reportgenerator tool
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
@@ -400,6 +400,40 @@ jobs:
       - name: Run plain .NET runtime tests
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
         run: dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release
+
+      - name: Pack the engine-free attributes and test a package-only consumer
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        env:
+          NUGET_PACKAGES: ${{ runner.temp }}/dxm-attributes-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          dotnet pack .net-attributes/DxMessaging.Attributes.csproj --configuration Release --output .artifacts/nuget
+          dotnet test .nuget-tests/DxMessaging.Attributes.Package.Tests.csproj --configuration Release --logger 'trx;LogFileName=package-consumer.trx' --results-directory .artifacts/nuget-tests
+
+      - name: Verify the consumer needs the packaged generators
+        if: ${{ needs.changes.outputs.dotnet != 'false' }}
+        env:
+          NUGET_PACKAGES: ${{ runner.temp }}/dxm-attributes-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if dotnet build .nuget-tests/DxMessaging.Attributes.Package.Tests.csproj \
+              --configuration Release --no-restore --target Rebuild -p:DisableDxGenerators=true \
+              > .artifacts/nuget-tests/generator-absence.log 2>&1; then
+            cat .artifacts/nuget-tests/generator-absence.log
+            echo "::error::The package consumer compiled without the generators."
+            exit 1
+          fi
+          grep -F 'error CS1729' .artifacts/nuget-tests/generator-absence.log
+          dotnet test .nuget-tests/DxMessaging.Attributes.Package.Tests.csproj --configuration Release --no-restore
+
+      - name: Upload the attributes package and consumer results
+        if: ${{ always() && needs.changes.outputs.dotnet != 'false' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: attributes-package
+          path: |
+            .artifacts/nuget/
+            .artifacts/nuget-tests/
+          if-no-files-found: warn
 
       - name: Verify committed analyzer payload is current
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
@@ -496,7 +530,7 @@ jobs:
         if: ${{ needs.changes.outputs.json != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -580,7 +614,7 @@ jobs:
         if: ${{ needs.changes.outputs.spellcheck != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -616,7 +650,7 @@ jobs:
         if: ${{ needs.changes.outputs.banner != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
 
       - name: Validate banner metadata
         if: ${{ needs.changes.outputs.banner != 'false' }}
@@ -651,7 +685,7 @@ jobs:
         if: ${{ needs.changes.outputs.llms != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -696,7 +730,7 @@ jobs:
         if: ${{ needs.changes.outputs.yaml != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
           cache: "npm"
           cache-dependency-path: package.json
 
@@ -763,7 +797,7 @@ jobs:
         if: ${{ needs.changes.outputs.scripts != 'false' }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
           cache: "npm"
           cache-dependency-path: package.json
 

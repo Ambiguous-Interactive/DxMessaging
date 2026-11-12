@@ -1,0 +1,117 @@
+name: Attributes NuGet package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version, for example 4.0.0-preview.1
+        required: true
+        type: string
+      mode:
+        description: Build, publish, or verify a version after NuGet indexes it
+        default: build
+        type: choice
+        options:
+          - build
+          - publish
+          - verify
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build and verify attributes package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PACKAGE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate the version and publication branch
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$PACKAGE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[a-z0-9]+([.-][a-z0-9]+)*)?$ ]] || [ "$PACKAGE_VERSION" = 0.0.0-local ]; then
+            echo "::error::Use a release version or a lowercase prerelease version, not 0.0.0-local."
+            exit 1
+          fi
+          if [ "$MODE" = publish ] && [ "$GITHUB_REF" != refs/heads/master ]; then
+            echo "::error::Publish attributes packages from master after the pull request checks pass."
+            exit 1
+          fi
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - name: Pack the attributes
+        run: |
+          dotnet pack .net-attributes/DxMessaging.Attributes.csproj --configuration Release --output .artifacts/nuget -p:PackageVersion="$PACKAGE_VERSION"
+          (cd .artifacts/nuget && sha256sum ./*.nupkg > package.sha256)
+
+      - name: Run the package-only consumer
+        env:
+          NUGET_PACKAGES: ${{ runner.temp }}/dxm-attributes-${{ github.run_id }}-${{ github.run_attempt }}
+        run: >
+          dotnet test .nuget-tests/DxMessaging.Attributes.Package.Tests.csproj
+          --configuration Release -p:AttributesPackageVersion="$PACKAGE_VERSION"
+          --logger 'trx;LogFileName=package-consumer.trx'
+          --results-directory .artifacts/nuget-tests
+
+      - name: Upload the package and consumer results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: attributes-package
+          path: |
+            .artifacts/nuget/
+            .artifacts/nuget-tests/
+          if-no-files-found: warn
+
+      - name: Publish to NuGet.org
+        if: ${{ inputs.mode == 'publish' }}
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::error::Configure NUGET_API_KEY for WallstopStudios.DxMessaging.Attributes before publishing."
+            exit 1
+          fi
+          dotnet nuget push ".artifacts/nuget/WallstopStudios.DxMessaging.Attributes.${PACKAGE_VERSION}.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json
+
+      - name: Restore and verify the live package
+        if: ${{ inputs.mode == 'verify' }}
+        env:
+          NUGET_PACKAGES: ${{ runner.temp }}/dxm-attributes-live-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          dotnet restore .nuget-tests/DxMessaging.Attributes.Package.Tests.csproj -p:AttributesPackageVersion="$PACKAGE_VERSION" -p:RestoreAdditionalProjectSources=https://api.nuget.org/v3/index.json
+          dotnet test .nuget-tests/DxMessaging.Attributes.Package.Tests.csproj \
+            --configuration Release --no-restore -p:AttributesPackageVersion="$PACKAGE_VERSION" \
+            -p:RestoreAdditionalProjectSources=https://api.nuget.org/v3/index.json \
+            --logger 'trx;LogFileName=live-package-consumer.trx' --results-directory .artifacts/nuget-live-tests
+          package=".artifacts/nuget/WallstopStudios.DxMessaging.Attributes.${PACKAGE_VERSION}.nupkg"
+          payloads="$(unzip -Z1 "$package" | grep -E '^(lib/|analyzers/|README.md$)')"
+          while IFS= read -r payload; do
+            unzip -p "$package" "$payload" | cmp - "$NUGET_PACKAGES/wallstopstudios.dxmessaging.attributes/$PACKAGE_VERSION/$payload"
+          done <<< "$payloads"
+
+      - name: Upload live package results
+        if: ${{ always() && inputs.mode == 'verify' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: attributes-live-package-results
+          path: .artifacts/nuget-live-tests/
+          if-no-files-found: warn

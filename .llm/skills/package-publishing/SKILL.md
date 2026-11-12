@@ -67,10 +67,11 @@ When a script writes to a new top-level directory (`.artifacts/`, `.profiler-out
   `labels:` sequence) by the nearest enclosing asmdef: the analyzer applies to that assembly
   AND every assembly that references it. With no enclosing asmdef it applies to all predefined
   assemblies.
-- The DLLs must ship under `Runtime/Analyzers/`, governed by the all-platforms runtime asmdef
-  `WallstopStudios.DxMessaging`. That reaches the runtime assembly plus every referrer,
+- The DLLs must ship under `Runtime/Analyzers/`, governed by the all-platforms engine-free asmdef
+  `WallstopStudios.DxMessaging.Attributes`. Runtime and attribute-using assemblies reference this scope,
   including the predefined `Assembly-CSharp`, so consumers who never adopted asmdefs are
-  covered, without polluting unrelated compilations.
+  covered, without polluting unrelated compilations. Keep direct attributes references in each
+  attribute-using asmdef; runtime type forwarding does not add compile references.
 - Never ship them under an editor-only asmdef. That was issue #229: `Editor/Analyzers/` under
   `WallstopStudios.DxMessaging.Editor` meant no consumer RUNTIME assembly could reference it,
   so `Assembly-CSharp` never got the generator and `[Dx*Message]` types failed with `CS0315` /

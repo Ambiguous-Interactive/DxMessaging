@@ -2467,6 +2467,12 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
             yield return (readmePath, File.ReadAllText(readmePath));
         }
 
+        string packageReadmePath = Path.Combine(repoRoot, ".net-attributes", "README.md");
+        if (File.Exists(packageReadmePath))
+        {
+            yield return (packageReadmePath, File.ReadAllText(packageReadmePath));
+        }
+
         string samplesRoot = Path.Combine(repoRoot, "Samples~");
         if (Directory.Exists(samplesRoot))
         {
@@ -2548,6 +2554,12 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
             yield return (readmePath, File.ReadAllText(readmePath));
         }
 
+        string packageReadmePath = Path.Combine(repoRoot, ".net-attributes", "README.md");
+        if (File.Exists(packageReadmePath))
+        {
+            yield return (packageReadmePath, File.ReadAllText(packageReadmePath));
+        }
+
         string samplesRoot = Path.Combine(repoRoot, "Samples~");
         if (Directory.Exists(samplesRoot))
         {
@@ -2611,6 +2623,11 @@ Do not emit from temporaries: new Heal(10).Emit() won't compile.
         if (File.Exists(readmePath))
         {
             paths = paths.Append(readmePath);
+        }
+        string packageReadmePath = Path.Combine(repoRoot, ".net-attributes", "README.md");
+        if (File.Exists(packageReadmePath))
+        {
+            paths = paths.Append(packageReadmePath);
         }
         if (Directory.Exists(samplesRoot))
         {

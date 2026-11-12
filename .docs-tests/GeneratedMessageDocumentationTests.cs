@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using System.Reflection;
+using System.Runtime.Loader;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -14,6 +16,8 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 [TestFixture]
 internal sealed class GeneratedMessageDocumentationTests
 {
+    private static readonly string[] SerializedStorageFieldNames = { "_screen", "_prefab" };
+
     [TestCase(
         "Heal",
         "## Why Use Attributes Instead of Manual Implementation",
@@ -295,6 +299,108 @@ internal sealed class GeneratedMessageDocumentationTests
         }
     }
 
+    /// <summary>Compiles and executes the published handwritten and generated serialized-field forms.</summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void SerializedFieldBeforeAndAfterExamplesExecuteWithActualGenerator(bool useGenerator)
+    {
+        string context = $"useGenerator={useGenerator}";
+        string root = ResolveRoot();
+        CSharpParseOptions options = new(LanguageVersion.CSharp9);
+        CompilationUnitSyntax[] snippets = ReadSnippets(
+            Path.Combine(root, "docs", "reference", "helpers.md"),
+            "#### Serialized fields and read-only properties (4.0.0)",
+            "#### Constructor restrictions",
+            options
+        );
+        Assert.That(
+            snippets,
+            Has.Length.EqualTo(2),
+            "Keep the before and after examples complete: " + context
+        );
+        CSharpCompilation input = CreateCompilation(
+                root,
+                snippets[useGenerator ? 1 : 0].Members.OfType<TypeDeclarationSyntax>(),
+                options,
+                "using UnityEngine;\n"
+            )
+            .AddSyntaxTrees(
+                CSharpSyntaxTree.ParseText(
+                    """
+                    namespace UnityEngine
+                    {
+                        [System.AttributeUsage(System.AttributeTargets.Field)]
+                        public sealed class SerializeField : System.Attribute { }
+                        public sealed class GameObject { }
+                    }
+                    """,
+                    options,
+                    "UnityFieldTypes.cs"
+                )
+            );
+        Assert.That(
+            input.GetDiagnostics().Any(d => d.Id is "CS1729" or "CS1739"),
+            Is.EqualTo(useGenerator),
+            "Only the generated form needs the generator to supply its constructor: " + context
+        );
+        GeneratorDriver driver = CSharpGeneratorDriver
+            .Create(
+                generators: new ISourceGenerator[] { new DxAutoConstructorGenerator() },
+                parseOptions: options
+            )
+            .RunGeneratorsAndUpdateCompilation(
+                input,
+                out Compilation output,
+                out ImmutableArray<Diagnostic> diagnostics
+            );
+        Assert.That(
+            driver.GetRunResult().Results.Select(result => result.Exception),
+            Has.All.Null,
+            context
+        );
+        Assert.That(diagnostics, Is.Empty, context);
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = output.Emit(image);
+        Assert.That(
+            emitted.Success,
+            Is.True,
+            context + "\n" + string.Join("\n", emitted.Diagnostics)
+        );
+        image.Position = 0;
+        AssemblyLoadContext load = new("SerializedFieldDocumentation", isCollectible: true);
+        try
+        {
+            Assembly assembly = load.LoadFromStream(image);
+            object prefab = Activator.CreateInstance(assembly.GetType("UnityEngine.GameObject")!)!;
+            object value = useGenerator
+                ? assembly
+                    .GetType("ScreenPrefabExamples")!
+                    .GetMethod("Create")!
+                    .Invoke(null, new[] { (object)7, prefab })!
+                : Activator.CreateInstance(assembly.GetType("ScreenPrefab")!, 7, prefab)!;
+            Type type = value.GetType();
+            Assert.That(
+                type.Name,
+                Is.EqualTo("ScreenPrefab"),
+                "Preserve the declared type name: " + context
+            );
+            Assert.That(type.GetProperty("Screen")!.GetValue(value), Is.EqualTo(7), context);
+            Assert.That(type.GetProperty("Prefab")!.GetValue(value), Is.SameAs(prefab), context);
+            Assert.That(type.GetProperty("Screen")!.CanWrite, Is.False, context);
+            Assert.That(type.GetProperty("Prefab")!.CanWrite, Is.False, context);
+            Assert.That(
+                type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                    .Select(field => field.Name),
+                Is.EquivalentTo(SerializedStorageFieldNames),
+                context
+            );
+        }
+        finally
+        {
+            load.Unload();
+        }
+    }
+
     private static CompilationUnitSyntax[] ReadSnippets(
         string path,
         string sectionStart,
@@ -324,7 +430,8 @@ internal sealed class GeneratedMessageDocumentationTests
     private static CSharpCompilation CreateCompilation(
         string root,
         IEnumerable<TypeDeclarationSyntax> declarations,
-        CSharpParseOptions options
+        CSharpParseOptions options,
+        string additionalUsings = ""
     )
     {
         string[] contracts =
@@ -333,11 +440,11 @@ internal sealed class GeneratedMessageDocumentationTests
             "Runtime/Core/Messages/IUntargetedMessage.cs",
             "Runtime/Core/Messages/ITargetedMessage.cs",
             "Runtime/Core/Messages/IBroadcastMessage.cs",
-            "Runtime/Core/Attributes/DxUntargetedMessageAttribute.cs",
-            "Runtime/Core/Attributes/DxTargetedMessageAttribute.cs",
-            "Runtime/Core/Attributes/DxBroadcastMessageAttribute.cs",
-            "Runtime/Core/Attributes/DxAutoConstructorAttribute.cs",
-            "Runtime/Core/Attributes/DxOptionalParameterAttribute.cs",
+            "Runtime/Attributes/DxUntargetedMessageAttribute.cs",
+            "Runtime/Attributes/DxTargetedMessageAttribute.cs",
+            "Runtime/Attributes/DxBroadcastMessageAttribute.cs",
+            "Runtime/Attributes/DxAutoConstructorAttribute.cs",
+            "Runtime/Attributes/DxOptionalParameterAttribute.cs",
         };
         List<SyntaxTree> trees = contracts
             .Select(relative =>
@@ -348,6 +455,7 @@ internal sealed class GeneratedMessageDocumentationTests
             .ToList<SyntaxTree>();
         string source =
             "using System;\nusing DxMessaging.Core;\nusing DxMessaging.Core.Attributes;\nusing DxMessaging.Core.Messages;\n"
+            + additionalUsings
             + string.Join("\n", declarations.Select(declaration => declaration.ToFullString()));
         trees.Add(CSharpSyntaxTree.ParseText(source, options, "PublishedExample.cs"));
         string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")

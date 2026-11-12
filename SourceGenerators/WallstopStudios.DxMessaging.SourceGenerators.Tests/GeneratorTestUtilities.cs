@@ -33,6 +33,8 @@ internal static class GeneratorTestUtilities
     /// </summary>
     internal static ImmutableArray<MetadataReference> CompilationReferences => CoreReferences;
 
+    /// <summary>Builds against the shipped attributes rather than fixture replacements.</summary>
+    /// <remarks>2026-11-11: Public attribute files moved to Runtime/Attributes; retain their real source after the assembly split.</remarks>
     internal static CSharpCompilation CreateAutoConstructorCompilationFromShippedAttributes(
         string source
     )
@@ -48,7 +50,7 @@ internal static class GeneratorTestUtilities
                 "Find the repository containing the test assembly."
             );
         }
-        string attributes = Path.Combine(root.FullName, "Runtime", "Core", "Attributes");
+        string attributes = Path.Combine(root.FullName, "Runtime", "Attributes");
         CSharpParseOptions parseOptions = new(LanguageVersion.CSharp9);
         List<SyntaxTree> trees = new();
         foreach (
@@ -533,7 +535,7 @@ namespace DxMessaging.Core.Attributes
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
     public sealed class DxUntargetedMessageAttribute : Attribute { }
 
-    // SYNC: Runtime/Core/Attributes/DxAotMessageAttribute.cs assembly opt-in signature.
+    // SYNC: Runtime/Attributes/DxAotMessageAttribute.cs assembly opt-in signature.
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
     public sealed class DxAotMessageAttribute : Attribute
     {

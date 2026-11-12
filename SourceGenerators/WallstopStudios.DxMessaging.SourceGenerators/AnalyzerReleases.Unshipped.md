@@ -6,3 +6,5 @@ DXMSG011 | DxMessaging | Error | Preserve explicit-interface struct initializers
 DXMSG012 | DxMessaging | Error | Require argument choices for primary constructors with parameters
 DXMSG013 | DxMessaging | Error | Preserve record copy semantics when a field constructor has the copy signature
 DXMSG014 | DxMessaging | Error | Require accessible closed concrete messages for assembly AOT selections
+DXMSG016 | DxMessaging | Error | Reject invalid or conflicting serialized-field constructor and property names
+DXMSG017 | DxMessaging | Error | Reject serialized field types that cannot be exposed by generated public members

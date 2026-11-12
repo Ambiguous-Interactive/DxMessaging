@@ -4,26 +4,53 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 ## Migrating to 4.0.0
 
+### Reference the dedicated attributes assembly
+
+The seven public attributes move to `WallstopStudios.DxMessaging.Attributes` with unchanged namespaces and names. Add that assembly reference to each Unity assembly definition that uses a DxMessaging attribute. Keep the `WallstopStudios.DxMessaging` reference when the same assembly also uses message interfaces or runtime APIs. Predefined assemblies receive both references automatically.
+
+A shared rules assembly that only uses `[DxAutoConstructor]` and `[DxOptionalParameter]` can reference just the attributes and set `noEngineReferences` to `true`. The existing generator is scoped to this engine-free assembly and assemblies that reference it. Runtime type forwarding preserves legacy attribute lookups; an assembly definition still needs its direct compile reference.
+
+The `.net-attributes` project prepares a matching NuGet package with compiler inputs included. Local package qualification is not a public feed release; use its package README for the current release status.
+
 ### Replace selected subscription sets
 
 Use [registration groups, source retargeting, and explicit state handlers](subscription-ownership.md)
 to replace application-owned handle lists and capturing registration callbacks. Existing token lifecycle
 calls still control activation. Finish a group's pending cleanup before replacing it.
 
+### Replace readiness branches with explicit current state
+
+Use [sticky messages](sticky-messages.md) when a listener needs the latest readiness or settings
+value. Change the publisher to `EmitSticky`, stage the callback once with `replayLatest: true`,
+and keep the existing token lifecycle owner. Preserve pending user edits in the callback.
+Clear retained service and scene references when their owner ends. Ordinary emission stays uncached.
+
+### Generate serialized-field constructors without renaming storage
+
+For structs or classes that repeat private `[SerializeField]` fields in a constructor and getters,
+use the [serialized-field options](../reference/helpers.md#serialized-fields-and-read-only-properties-400).
+Make the type and any containing type partial. Keep the original field names and attributes, remove
+the handwritten constructor, and enable `IncludeSerializedFields`. Keep existing getters, or remove
+them and enable `GenerateSerializedProperties` to generate both the constructor and getters.
+
+These options are off by default. Check named constructor arguments: opted-in serialized fields
+omit leading underscores in parameter names. `DXMSG016` identifies names that would collide. `DXMSG017` identifies field types that cannot
+appear in the generated public signatures; make the types accessible or retain explicit members.
+
 ### Choose primary constructor arguments explicitly
 
-When `[DxAutoConstructor]` is applied to a type with primary constructor parameters and public
+When `[DxAutoConstructor]` is applied to a type with primary constructor parameters and selected
 instance fields, 4.0 reports
 [`DXMSG012`](../reference/analyzers.md#dxmsg012-cannot-infer-primary-constructor-arguments).
 Earlier versions generated a secondary constructor that failed to compile.
 Remove the attribute and write the field constructor with a `this(...)` initializer
 that passes the primary constructor arguments your type needs. Non-positional records
-and types without public instance fields need no change. Empty primary parameter lists
+and types without selected instance fields need no change. Empty primary parameter lists
 are chained automatically with `this()`.
 
 ### Preserve record copy behavior
 
-A record class with exactly one public field of its own record type can no longer
+A record class with exactly one selected field of its own record type can no longer
 use `[DxAutoConstructor]`. The field constructor's signature would replace the
 record copy constructor and could silently change `with` results. Version 4.0 reports
 [`DXMSG013`](../reference/analyzers.md#dxmsg013-field-constructor-conflicts-with-record-copy-constructor)

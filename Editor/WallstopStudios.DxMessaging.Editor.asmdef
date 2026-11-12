@@ -1,7 +1,7 @@
 {
   "name": "WallstopStudios.DxMessaging.Editor",
   "rootNamespace": "DxMessaging.Editor",
-  "references": ["WallstopStudios.DxMessaging"],
+  "references": ["WallstopStudios.DxMessaging", "WallstopStudios.DxMessaging.Attributes"],
   "includePlatforms": ["Editor"],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

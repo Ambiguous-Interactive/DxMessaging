@@ -1,7 +1,7 @@
 {
   "name": "WallstopStudios.DxMessaging",
   "rootNamespace": "DxMessaging",
-  "references": [],
+  "references": ["WallstopStudios.DxMessaging.Attributes"],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": true,

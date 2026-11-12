@@ -1322,7 +1322,11 @@ if (
         profileSha256 = $profileSha256
         unityVersion = '6000.3.16f1'
         includeTestAssemblies = $false
-        playerAssemblies = @('Assembly-CSharp', 'WallstopStudios.DxMessaging')
+        playerAssemblies = @(
+            'Assembly-CSharp',
+            'WallstopStudios.DxMessaging',
+            'WallstopStudios.DxMessaging.Attributes'
+        )
     }
     [System.IO.File]::WriteAllText($assemblyEvidencePath, ($assemblyEvidence | ConvertTo-Json -Depth 10))
     Test-ShippingAssemblyEvidence `
@@ -1354,6 +1358,9 @@ if (
         'include-tests',
         'loaded-test-assembly',
         'unexpected-player-assembly',
+        'missing-attributes',
+        'duplicate-player-assembly',
+        'unordered-player-assemblies',
         'mistyped-assembly-name',
         'extra-property'
     )) {
@@ -1364,6 +1371,14 @@ if (
             $mutatedEvidence.playerAssemblies += 'nunit.framework'
         } elseif ($badAssemblyMutation -ceq 'unexpected-player-assembly') {
             $mutatedEvidence.playerAssemblies += 'StaleShippingPlugin'
+        } elseif ($badAssemblyMutation -ceq 'missing-attributes') {
+            $mutatedEvidence.playerAssemblies = @('Assembly-CSharp', 'WallstopStudios.DxMessaging')
+        } elseif ($badAssemblyMutation -ceq 'duplicate-player-assembly') {
+            $mutatedEvidence.playerAssemblies = @(
+                'Assembly-CSharp', 'WallstopStudios.DxMessaging', 'WallstopStudios.DxMessaging'
+            )
+        } elseif ($badAssemblyMutation -ceq 'unordered-player-assemblies') {
+            [array]::Reverse($mutatedEvidence.playerAssemblies)
         } elseif ($badAssemblyMutation -ceq 'mistyped-assembly-name') {
             $mutatedEvidence.playerAssemblies = @('Assembly-CSharp', 42)
         } else {
