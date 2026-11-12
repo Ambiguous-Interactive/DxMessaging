@@ -395,7 +395,7 @@ metrics because the Release player strips the required profiler recorder (see
   inventory, generated project inputs, runtime results, and unchanged-binary
   manifest. The runner clears and hashes every generated project input before
   reuse. It also archives a privacy-safe hash and semantic summary of the
-  resolved package lock, the exact two-assembly player inventory, loaded
+  resolved package lock, the exact consumer/runtime/attributes build inventory, loaded
   assembly inventory, and profile evidence. Each cell also records build-time,
   size, and cold-start evidence. The builder writes `shipping-build-report.json`
   from the same `BuildReport` that proves the final options: a Stopwatch
