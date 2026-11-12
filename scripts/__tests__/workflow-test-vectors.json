@@ -82,32 +82,9 @@
   ],
   "CORRECTNESS_CATEGORY_FILTERS": {
     "editmode": [
-      "!Stress",
-      "!Performance",
-      "!Allocation",
-      "!MemoryReclaim",
-      "!PerfBench",
-      "!PerfGate",
-      "!PerfBaseline",
-      "!UnityRuntime"
+      "!(Stress|Performance|Allocation|MemoryReclaim|UnityRuntime|PerfBench|PerfGate|PerfBaseline)"
     ],
-    "playmode": [
-      "!Stress",
-      "!Performance",
-      "!Allocation",
-      "!MemoryReclaim",
-      "!PerfBench",
-      "!PerfGate",
-      "!PerfBaseline"
-    ],
-    "standalone": [
-      "!Stress",
-      "!Performance",
-      "!Allocation",
-      "!MemoryReclaim",
-      "!PerfBench",
-      "!PerfGate",
-      "!PerfBaseline"
-    ]
+    "playmode": ["!(Stress|Performance|Allocation|MemoryReclaim|PerfBench|PerfGate|PerfBaseline)"],
+    "standalone": ["!(Stress|Performance|Allocation|MemoryReclaim|PerfBench|PerfGate|PerfBaseline)"]
   }
 }
