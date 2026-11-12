@@ -142,6 +142,25 @@ Add a version to the canonical `.github/unity-versions.json` `all` array when on
 
 The test, benchmark, and performance workflows use separate `t`, `b`, and `p` roots. Unity versions and modes also have separate projects. This keeps incompatible package graphs apart while each fixed runner retains its own warm `Library`; a new version starts cold on every runner.
 
+## Inspect correctness project storage
+
+Successful correctness jobs on DAD inspect their Editor version after confirmed Unity cleanup.
+`inspect-test-project-caches.ps1` reports owned project generations, file counts, Bee bytes,
+other Library bytes, and bytes outside Library. Each `DXM_TEST_CACHE_INVENTORY` log row names
+its project and identifies the current source-set key. `DXM_TEST_CACHE_SUMMARY` reconciles the
+rows and records elapsed time and drive free space. File lengths measure logical bytes;
+they do not measure unique physical storage or attribute changes in drive free space.
+
+For a separate operator inspection, select `inspect-test-cache` in `Runner Audit (Windows)`
+and supply the source-set key from the matching workflow. The operator mode requires DAD
+and loads the inspector from its exact workflow commit without checkout. Shared Windows
+labels can select ELI; that guard failure changes no caches and provides no DAD inventory.
+Correctness jobs instead collect only when their actual runner is DAD.
+
+Both entry points preserve files. They measure marked projects, require an owned current
+generation, and reject redirected paths. They do not retire caches. Keep the routine capacity policy open until
+its separate bounded retirement and native qualification have evidence.
+
 ## IL2CPP-Only Failure Patterns
 
 IL2CPP exercises an AOT-compiled path that EditMode/PlayMode under Mono cannot. These regressions historically slip past the Mono gate and only surface when a downstream consumer builds a player. The catalog:
