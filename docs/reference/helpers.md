@@ -173,6 +173,9 @@ Unity deserialization and `default(T)` keep their existing construction rules.
 [`DXMSG016`](analyzers.md#dxmsg016-serialized-field-generates-an-invalid-or-conflicting-name)
 reports invalid names, duplicate parameter names, and property names that conflict with a type
 or an existing accessible member. Rename the conflicting field/member or keep explicit code.
+[`DXMSG017`](analyzers.md#dxmsg017-serialized-field-type-cannot-be-exposed-by-generated-members)
+reports field types that cannot appear in the generated public signatures. Make those types
+accessible or write the constructor and properties explicitly with suitable access levels.
 
 #### Constructor restrictions
 

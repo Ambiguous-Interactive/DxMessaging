@@ -537,6 +537,156 @@ internal sealed class GeneratedSerializedFieldTests
         }
     }
 
+    private static IEnumerable<TestCaseData> AccessibilityCases()
+    {
+        foreach (string target in new[] { "public", "internal" })
+        {
+            foreach (
+                string visibility in new[]
+                {
+                    "public",
+                    "private",
+                    "internal",
+                    "protected",
+                    "protected internal",
+                    "private protected",
+                }
+            )
+            {
+                foreach (bool properties in new[] { false, true })
+                {
+                    bool allowed =
+                        visibility == "public"
+                        || (
+                            target == "internal"
+                            && (visibility == "internal" || visibility == "protected internal")
+                        );
+                    yield return new TestCaseData(target, visibility, properties, allowed).SetName(
+                        $"SerializedFieldAccessibility({target},{visibility},{properties})"
+                    );
+                }
+            }
+        }
+    }
+
+    /// <summary>Reports an actionable diagnostic instead of emitting illegal public signatures.</summary>
+    /// <remarks>2026-11-12: Legal private serialized storage may have a type that public generated members cannot expose.</remarks>
+    [TestCaseSource(nameof(AccessibilityCases))]
+    public void SerializedFieldAccessibility(
+        string target,
+        string visibility,
+        bool properties,
+        bool allowed
+    )
+    {
+        string verify = allowed
+            ? $"new Packet(mode: (Packet.Choice)1).Read() == 1{(properties ? " && (int)new Packet(mode: (Packet.Choice)1).Mode == 1" : "")}"
+            : "true";
+        string source = $$"""
+            using DxMessaging.Core.Attributes;
+            using UnityEngine;
+            [DxAutoConstructor(IncludeSerializedFields = true, GenerateSerializedProperties = {{(
+                properties ? "true" : "false"
+            )}})]
+            {{target}} partial class Packet
+            {
+                {{visibility}} enum Choice { First, Second }
+                [SerializeField] private Choice _mode = default;
+                public int Read() => (int)_mode;
+            }
+            public static class Consumer { public static bool Verify() => {{verify}}; }
+            """;
+        AssertAccessibility(source, allowed);
+    }
+
+    /// <summary>Uses actual containing accessibility domains for private nested targets.</summary>
+    [TestCase(false, false)]
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    [TestCase(true, true)]
+    public void SerializedFieldAccessibilityRespectsPrivateContainers(bool sibling, bool properties)
+    {
+        string source = $$"""
+            using DxMessaging.Core.Attributes;
+            using UnityEngine;
+            public partial class Outer
+            {
+                {{(sibling ? "private enum Choice { First, Second }" : "")}}
+                [DxAutoConstructor(IncludeSerializedFields = true, GenerateSerializedProperties = {{(
+                properties ? "true" : "false"
+            )}})]
+                private partial class Packet
+                {
+                    {{(sibling ? "" : "private enum Choice { First, Second }")}}
+                    [SerializeField] private Choice _mode = default;
+                    public int Read() => (int)_mode;
+                }
+                public static bool Verify() => {{(
+                sibling ? "new Packet(mode: (Choice)1).Read() == 1" : "true"
+            )}};
+            }
+            public static class Consumer { public static bool Verify() => Outer.Verify(); }
+            """;
+        AssertAccessibility(source, sibling);
+    }
+
+    /// <summary>Checks types nested inside arrays and generic signatures as well as direct types.</summary>
+    [TestCase(false, false)]
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    [TestCase(true, true)]
+    public void SerializedFieldAccessibilityChecksTypeArguments(bool array, bool properties)
+    {
+        string source = $$"""
+            using DxMessaging.Core.Attributes;
+            using UnityEngine;
+            [DxAutoConstructor(IncludeSerializedFields = true, GenerateSerializedProperties = {{(
+                properties ? "true" : "false"
+            )}})]
+            public partial class Packet
+            {
+                private enum Choice { First, Second }
+                [SerializeField] private {{(
+                array ? "Choice[]" : "System.Collections.Generic.List<Choice>"
+            )}} _mode = null;
+                public int Read() => _mode == null ? 0 : 1;
+            }
+            public static class Consumer { public static bool Verify() => true; }
+            """;
+        AssertAccessibility(source, false);
+    }
+
+    private static void AssertAccessibility(string source, bool allowed)
+    {
+        (
+            GeneratorDriverRunResult result,
+            Compilation output,
+            ImmutableArray<Diagnostic> diagnostics
+        ) = Generate(source);
+        string context =
+            source
+            + "\n"
+            + string.Join("\n", diagnostics)
+            + "\n"
+            + string.Join("\n", output.GetDiagnostics());
+        if (allowed)
+        {
+            Assert.That(diagnostics, Is.Empty, context);
+        }
+        else
+        {
+            Assert.That(diagnostics, Has.Length.EqualTo(1), context);
+            Assert.That(diagnostics.Single().Id, Is.EqualTo("DXMSG017"), context);
+            Assert.That(
+                diagnostics.Single().GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+                Does.Contain("accessible"),
+                context
+            );
+            Assert.That(result.Results.Single().GeneratedSources, Is.Empty, context);
+        }
+        AssertCompilationExecutes(output, context);
+    }
+
     private static (
         GeneratorDriverRunResult Result,
         Compilation Output,

@@ -71,6 +71,15 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             isEnabledByDefault: true
         );
 
+        private static readonly DiagnosticDescriptor SerializedFieldAccessibilityDiagnostic = new(
+            id: "DXMSG017",
+            title: "Serialized field type cannot be exposed by generated members",
+            messageFormat: "Type '{0}' cannot expose its serialized field types ({1}). Make the field types accessible or write the constructor and properties explicitly.",
+            category: "DxMessaging",
+            defaultSeverity: DiagnosticSeverity.Error,
+            isEnabledByDefault: true
+        );
+
         private const string AutoGenConstructorAttrFullName =
             "DxMessaging.Core.Attributes.DxAutoConstructorAttribute";
 
@@ -465,6 +474,36 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
                         .Replace("<", "-")
                         .Replace(">", "-")
                         .Replace(",", "-"); // Hyphens cannot collide with legal C# identifier characters.
+
+                if (typeInfo.IncludeSerializedFields)
+                {
+                    SyntaxTree generatedTree = CSharpSyntaxTree.ParseText(
+                        generatedSource,
+                        (CSharpParseOptions)typeInfo.DeclarationSyntax.SyntaxTree.Options,
+                        hintName,
+                        cancellationToken: context.CancellationToken
+                    );
+                    SemanticModel generatedModel = context
+                        .Compilation.AddSyntaxTrees(generatedTree)
+                        .GetSemanticModel(generatedTree);
+                    Diagnostic? inaccessibleSignature = generatedModel
+                        .GetDeclarationDiagnostics(cancellationToken: context.CancellationToken)
+                        .FirstOrDefault(static diagnostic => diagnostic.Id is "CS0051" or "CS0053");
+                    if (inaccessibleSignature != null)
+                    {
+                        context.ReportDiagnostic(
+                            Diagnostic.Create(
+                                SerializedFieldAccessibilityDiagnostic,
+                                typeInfo.DeclarationSyntax.Identifier.GetLocation(),
+                                typeInfo.TypeSymbol.ToDisplayString(
+                                    SymbolDisplayFormat.MinimallyQualifiedFormat
+                                ),
+                                inaccessibleSignature.GetMessage(CultureInfo.InvariantCulture)
+                            )
+                        );
+                        continue;
+                    }
+                }
 
                 context.AddSource(hintName, SourceText.From(generatedSource, Encoding.UTF8));
             }

@@ -26,6 +26,8 @@ DxMessaging ships source generators and a Roslyn analyzer that report authoring 
 | [`DXMSG015`](#dxmsg015-missing-messaging-lifecycle-forwarding)                    | Warning  | A MonoBehaviour does not forward a required callback to its owned lifecycle           | `MessagingLifecycleAnalyzer`            |
 | [`DXMSG016`](#dxmsg016-serialized-field-generates-an-invalid-or-conflicting-name) | Error    | Serialized field generates an invalid or conflicting name                             | `DxAutoConstructorGenerator`            |
 
+| [`DXMSG017`](#dxmsg017-serialized-field-type-cannot-be-exposed-by-generated-members) | Error | Serialized field type cannot be exposed by generated members | `DxAutoConstructorGenerator` |
+
 > All diagnostic IDs can be customised per project in `.editorconfig`. For example,
 > `dotnet_diagnostic.DXMSG006.severity = error` makes a missing base call a build error.
 
@@ -692,5 +694,24 @@ normal migration process if you rename stored fields. If a handwritten getter al
 right name, enable only `IncludeSerializedFields` to generate the constructor and retain it.
 Otherwise, remove `DxAutoConstructor` and write the constructor and properties explicitly.
 The generator emits no constructor or properties for a type with this diagnostic.
+
+See [serialized field examples](helpers.md#serialized-fields-and-read-only-properties-400).
+
+## DXMSG017: Serialized field type cannot be exposed by generated members
+
+- **Severity:** Error
+- **Source:** `DxAutoConstructorGenerator`
+- **Available in:** 4.0.0
+- **Triggered when:** Opted-in serialized field types cannot appear in the generated public
+  constructor or read-only properties because their accessibility is too narrow.
+
+A private serialized field can legally store a private nested enum. A public constructor on a
+public type cannot expose that enum as a parameter. The same restriction applies to generated
+properties, arrays, and generic type arguments. The generator checks the containing type's
+actual accessibility, so legal signatures inside private containers remain supported.
+
+Make the field type accessible to callers, or remove `DxAutoConstructor` and write the
+constructor and properties with the access levels your API needs. The diagnostic includes the
+compiler's accessibility explanation. No constructor or properties are emitted for that type.
 
 See [serialized field examples](helpers.md#serialized-fields-and-read-only-properties-400).

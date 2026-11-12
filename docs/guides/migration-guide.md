@@ -8,7 +8,7 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 The seven public attributes move to `WallstopStudios.DxMessaging.Attributes` with unchanged namespaces and names. Add that assembly reference to each Unity assembly definition that uses a DxMessaging attribute. Keep the `WallstopStudios.DxMessaging` reference when the same assembly also uses message interfaces or runtime APIs. Predefined assemblies receive both references automatically.
 
-A shared rules assembly that only uses `[DxAutoConstructor]` and `[DxOptionalParameter]` can reference just the attributes and set `noEngineReferences` to `true`. The existing generator is scoped to this engine-free assembly and its referrers. Runtime type forwarding preserves legacy attribute lookups; an assembly definition still needs its direct compile reference.
+A shared rules assembly that only uses `[DxAutoConstructor]` and `[DxOptionalParameter]` can reference just the attributes and set `noEngineReferences` to `true`. The existing generator is scoped to this engine-free assembly and assemblies that reference it. Runtime type forwarding preserves legacy attribute lookups; an assembly definition still needs its direct compile reference.
 
 The `.net-attributes` project prepares a matching NuGet package with compiler inputs included. Local package qualification is not a public feed release; use its package README for the current release status.
 
@@ -34,7 +34,8 @@ the handwritten constructor, and enable `IncludeSerializedFields`. Keep existing
 them and enable `GenerateSerializedProperties` to generate both the constructor and getters.
 
 These options are off by default. Check named constructor arguments: opted-in serialized fields
-omit leading underscores in parameter names. `DXMSG016` identifies names that would collide.
+omit leading underscores in parameter names. `DXMSG016` identifies names that would collide. `DXMSG017` identifies field types that cannot
+appear in the generated public signatures; make the types accessible or retain explicit members.
 
 ### Choose primary constructor arguments explicitly
 
