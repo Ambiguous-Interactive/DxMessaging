@@ -32,6 +32,10 @@ on:
         description: "Reclaim only retired, package-owned test Bee caches on DAD; no checkout or Unity."
         type: boolean
         default: false
+      inspect-test-cache:
+        description: "Measure owned correctness project storage on DAD without changing files or starting Unity."
+        type: boolean
+        default: false
       retained-test-cache-key:
         description: "Eight-character source-set key to preserve during cache reclamation."
         type: string
@@ -169,8 +173,8 @@ jobs:
           required-label-sets: '[["self-hosted","Windows","RAM-64GB"]]'
 
   reclaim-retired-test-cache:
-    name: Reclaim retired DxMessaging test caches
-    if: ${{ inputs['reclaim-retired-test-cache'] }}
+    name: Inspect or reclaim DxMessaging test caches
+    if: ${{ inputs['reclaim-retired-test-cache'] || inputs['inspect-test-cache'] }}
     needs:
       - runner-preflight
     runs-on: [self-hosted, Windows, RAM-64GB]
@@ -181,6 +185,7 @@ jobs:
         env:
           DXM_RETAINED_TEST_CACHE_KEY: ${{ inputs['retained-test-cache-key'] }}
           DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
+          DXM_TEST_CACHE_INVENTORY_ONLY: ${{ inputs['inspect-test-cache'] }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
@@ -216,6 +221,62 @@ jobs:
           $driveRoot = [System.IO.Path]::GetPathRoot($root)
           $before = ([System.IO.DriveInfo]::new($driveRoot)).AvailableFreeSpace
           Write-Host "Workspace drive free bytes before: $before"
+          if ($env:DXM_TEST_CACHE_INVENTORY_ONLY -eq 'true') {
+              $ownedCurrent = 0
+              foreach ($project in @($projects | Sort-Object Name)) {
+                  if ($project.Name -cnotmatch '^\d+\.\d+\.\d+[abfp]\d+-(editmode|playmode|standalone|unitypackage)(-[0-9a-f]{8})?$') {
+                      continue
+                  }
+                  Assert-PlainCacheDirectory $project.FullName
+                  $marker = Join-Path $project.FullName '.dxmessaging-ci-project'
+                  $current = $project.Name.EndsWith("-$retainedKey", [System.StringComparison]::Ordinal)
+                  if (-not (Test-Path -LiteralPath $marker -PathType Leaf) -or
+                      (Get-Content -LiteralPath $marker -Raw).Trim() -cne 'com.wallstop-studios.dxmessaging unity ci ephemeral project') {
+                      if ($current) { throw 'The retained source-set project is not owned; inventory is incomplete.' }
+                      Write-Host "Skipping unowned project: $($project.Name)"
+                      continue
+                  }
+                  if ($current) { ++$ownedCurrent }
+                  $row = [ordered]@{
+                      project = $project.Name
+                      retained = $current
+                      files = 0L
+                      totalBytes = 0L
+                      beeBytes = 0L
+                      otherLibraryBytes = 0L
+                      outsideLibraryBytes = 0L
+                  }
+                  $libraryPrefix = (Join-Path $project.FullName 'Library') + [System.IO.Path]::DirectorySeparatorChar
+                  $beePrefix = (Join-Path $project.FullName 'Library/Bee') + [System.IO.Path]::DirectorySeparatorChar
+                  $pending = [System.Collections.Generic.Stack[string]]::new()
+                  $pending.Push($project.FullName)
+                  while ($pending.Count -ne 0) {
+                      foreach ($entry in @(Get-ChildItem -LiteralPath $pending.Pop() -Force)) {
+                          if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                              throw "Refusing redirected cache contents: $($entry.FullName)"
+                          }
+                          if ($entry.PSIsContainer) {
+                              $pending.Push($entry.FullName)
+                              continue
+                          }
+                          ++$row.files
+                          $row.totalBytes += $entry.Length
+                          if ($entry.FullName.StartsWith($beePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                              $row.beeBytes += $entry.Length
+                          } elseif ($entry.FullName.StartsWith($libraryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                              $row.otherLibraryBytes += $entry.Length
+                          } else {
+                              $row.outsideLibraryBytes += $entry.Length
+                          }
+                      }
+                  }
+                  Write-Host ('DXM_TEST_CACHE_INVENTORY ' + ($row | ConvertTo-Json -Compress))
+              }
+              if ($ownedCurrent -eq 0) { throw 'No owned current project was measured; inventory is incomplete.' }
+              $after = ([System.IO.DriveInfo]::new($driveRoot)).AvailableFreeSpace
+              Write-Host "Inventory complete; no cache changed. Free bytes before: $before; after: $after"
+              return
+          }
           $removed = 0
           foreach ($project in @($projects | Sort-Object Name)) {
               if ($project.Name -cnotmatch '^\d+\.\d+\.\d+[abfp]\d+-(editmode|playmode|standalone|unitypackage)(-[0-9a-f]{8})?$') {
@@ -266,7 +327,7 @@ jobs:
     if: >-
       ${{ !inputs['shipping-editor-verification'] && !inputs['native-sdk-floor'] &&
       inputs['native-sdk-log-source'] == '' && !inputs['native-sdk-registry-probe'] &&
-      !inputs['native-sdk-upm-network-probe'] && !inputs['reclaim-retired-test-cache'] }}
+      !inputs['native-sdk-upm-network-probe'] && !inputs['reclaim-retired-test-cache'] && !inputs['inspect-test-cache'] }}
     # F9: surface the mode (Audit vs Maintenance) in the job display name so
     # operators reading the Actions UI immediately see which mode this run is
     # without expanding the inputs.
