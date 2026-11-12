@@ -33,7 +33,7 @@ namespace DxMessaging.Core.MessageBus
     /// <summary>
     /// Instanced MessageBus for use cases where you want distinct islands of MessageBuses.
     /// </summary>
-    public sealed partial class MessageBus : IMessageBus, IStickyMessageBus
+    public sealed partial class MessageBus : IStickyMessageBus
     {
         private long _emissionId;
 

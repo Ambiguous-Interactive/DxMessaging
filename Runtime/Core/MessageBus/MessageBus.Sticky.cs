@@ -6,15 +6,14 @@ namespace DxMessaging.Core.MessageBus
 
     public sealed partial class MessageBus
     {
-        private Dictionary<Type, StickyValue> _stickyValues;
+        private Dictionary<Type, object> _stickyValues;
 
         /// <inheritdoc />
         public void EmitSticky<TMessage>(ref TMessage message)
             where TMessage : IUntargetedMessage
         {
-            Dictionary<Type, StickyValue> values = _stickyValues ??=
-                new Dictionary<Type, StickyValue>();
-            if (!values.TryGetValue(typeof(TMessage), out StickyValue stored))
+            Dictionary<Type, object> values = _stickyValues ??= new Dictionary<Type, object>();
+            if (!values.TryGetValue(typeof(TMessage), out object stored))
             {
                 stored = new StickyValue<TMessage>();
                 values.Add(typeof(TMessage), stored);
@@ -29,7 +28,7 @@ namespace DxMessaging.Core.MessageBus
         {
             if (
                 _stickyValues != null
-                && _stickyValues.TryGetValue(typeof(TMessage), out StickyValue stored)
+                && _stickyValues.TryGetValue(typeof(TMessage), out object stored)
             )
             {
                 message = ((StickyValue<TMessage>)stored).Value;
@@ -54,9 +53,7 @@ namespace DxMessaging.Core.MessageBus
             return true;
         }
 
-        private abstract class StickyValue { }
-
-        private sealed class StickyValue<TMessage> : StickyValue
+        private sealed class StickyValue<TMessage>
             where TMessage : IUntargetedMessage
         {
             internal TMessage Value;
