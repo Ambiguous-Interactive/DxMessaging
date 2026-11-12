@@ -13,6 +13,7 @@ DxMessaging.Core.Diagnostics.MessageRegistrationType
 DxMessaging.Core.DxMessagingStaticState
 DxMessaging.Core.Extensions.MessageBusExtensions
 DxMessaging.Core.Extensions.MessageExtensions
+DxMessaging.Core.Extensions.StickyMessageExtensions
 DxMessaging.Core.Helper.MessageCache`1
 DxMessaging.Core.Helper.MessageCache`1+MessageCacheEnumerator
 DxMessaging.Core.Helper.MessageHelperIndexer
@@ -30,6 +31,7 @@ DxMessaging.Core.MessageBus.IMessageBus+TrimResult
 DxMessaging.Core.MessageBus.IMessageBus+UntargetedInterceptor`1
 DxMessaging.Core.MessageBus.IMessageBusProvider
 DxMessaging.Core.MessageBus.IMessageRegistrationBuilder
+DxMessaging.Core.MessageBus.IStickyMessageBus
 DxMessaging.Core.MessageBus.MessageBus
 DxMessaging.Core.MessageBus.MessageBusRebindMode
 DxMessaging.Core.MessageBus.MessageBusRegistration

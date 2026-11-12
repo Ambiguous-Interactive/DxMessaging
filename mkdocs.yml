@@ -192,6 +192,7 @@ nav:
       - Patterns: guides/patterns.md
       - Unity Integration: guides/unity-integration.md
       - Subscription Ownership: guides/subscription-ownership.md
+      - Current State for Late Listeners: guides/sticky-messages.md
       - MCP Local Setup: guides/mcp-local-setup.md
       - Testing: guides/testing.md
       - Diagnostics: guides/diagnostics.md

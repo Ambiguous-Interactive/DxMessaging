@@ -33,7 +33,7 @@ namespace DxMessaging.Core.MessageBus
     /// <summary>
     /// Instanced MessageBus for use cases where you want distinct islands of MessageBuses.
     /// </summary>
-    public sealed class MessageBus : IMessageBus
+    public sealed partial class MessageBus : IMessageBus, IStickyMessageBus
     {
         private long _emissionId;
 
@@ -2991,6 +2991,7 @@ namespace DxMessaging.Core.MessageBus
 
         internal void ResetState()
         {
+            _stickyValues = null;
             ResetTypedSlotsForReferencedHandlers();
             _emissionId = 0;
             _scopedEmissionId = 0;

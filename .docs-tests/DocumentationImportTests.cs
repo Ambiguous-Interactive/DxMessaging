@@ -25,6 +25,141 @@ internal sealed class DocumentationImportTests
         MetadataReference.CreateFromImage(PortableRuntimeImage.Value)
     );
 
+    /// <summary>Runs both published readiness forms against the actual runtime, preserving pending edits.</summary>
+    [Test]
+    public void StickyReadinessGuidePreservesStateAndRegistrationOwnership(
+        [Values(false, true)] bool after,
+        [Values(false, true)] bool published,
+        [Values(false, true)] bool pendingEdit
+    )
+    {
+        string path = Path.Combine(
+            DocsSnippetCompilationTests.ResolveRepoRoot(),
+            "docs",
+            "guides",
+            "sticky-messages.md"
+        );
+        string[] examples = DocsSnippetCompilationTests.ExtractCodeBlocks(path, "csharp").ToArray();
+        Assert.That(
+            examples,
+            Has.Length.EqualTo(3),
+            "Bind the actual publisher and both readiness forms."
+        );
+        string probe = """
+            using System;
+            using DxMessaging.Core;
+            using DxMessaging.Core.MessageBus;
+            public static class StickyGuideProbe
+            {
+                public static int[] Run(bool published, bool pendingEdit, bool after)
+                {
+                    MessageBus bus = new MessageBus();
+                    bus.DiagnosticsMode = false;
+                    MessageHandler handler = new MessageHandler(new InstanceId(984), bus) { active = true };
+                    using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+                    token.DiagnosticMode = false;
+                    Settings settings = new Settings { Volume = 17 };
+                    if (published)
+                    {
+                        PUBLISH
+                    }
+                    VIEW_CREATION
+                    if (pendingEdit)
+                    {
+                        view.SetVolume(31);
+                    }
+                    token.Enable();
+                    if (!published)
+                    {
+                        PUBLISH
+                    }
+                    int initialCalls = view.InitializationCalls;
+                    int initialVolume = settings.Volume;
+                    int initialDisplay = view.DisplayedVolume;
+                    int registrations = bus.RegisteredUntargeted;
+                    token.Disable();
+                    token.Enable();
+                    int reenabledCalls = view.InitializationCalls;
+                    if (after)
+                    {
+                        if (!SettingsPublication.Read(bus, out SettingsReady current) || !ReferenceEquals(current.Settings, settings))
+                            throw new InvalidOperationException("The actual publisher and reader must preserve the service reference.");
+                        SettingsPublication.EndService(bus);
+                        if (SettingsPublication.Read(bus, out _))
+                            throw new InvalidOperationException("The documented service cleanup must clear retained state.");
+                    }
+                    return new[] { initialCalls, initialVolume, initialDisplay, registrations, reenabledCalls };
+                }
+            }
+            """;
+        string publication = after
+            ? "SettingsPublication.Publish(bus, settings);"
+            : "SettingsReady message = new SettingsReady(settings); bus.UntargetedBroadcast(ref message);";
+        probe = probe
+            .Replace("PUBLISH", publication, StringComparison.Ordinal)
+            .Replace(
+                "VIEW_CREATION",
+                after
+                    ? "ReadySettingsView view = new ReadySettingsView(token);"
+                    : "ReadySettingsView view = new ReadySettingsView(token, published ? settings : null);",
+                StringComparison.Ordinal
+            );
+        CSharpParseOptions options = new(LanguageVersion.CSharp9);
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            "StickyReadinessGuide",
+            new[]
+            {
+                CSharpSyntaxTree.ParseText(examples[0], options, path + ":publisher"),
+                CSharpSyntaxTree.ParseText(examples[after ? 2 : 1], options, path + ":view"),
+                CSharpSyntaxTree.ParseText(probe, options, "StickyGuideProbe.cs"),
+            },
+            references
+                .Split(Path.PathSeparator)
+                .Select(file => MetadataReference.CreateFromFile(file))
+                .Append(PortableRuntime.Value),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = compilation.Emit(image);
+        Assert.That(
+            emitted.Success,
+            Is.True,
+            "Compile unchanged published fences against actual APIs:\n"
+                + string.Join("\n", emitted.Diagnostics)
+        );
+        System.Runtime.Loader.AssemblyLoadContext context = new(
+            "StickyReadinessGuide",
+            isCollectible: true
+        );
+        try
+        {
+            using MemoryStream runtime = new(PortableRuntimeImage.Value);
+            _ = context.LoadFromStream(runtime);
+            image.Position = 0;
+            System.Reflection.Assembly assembly = context.LoadFromStream(image);
+            int[]? result =
+                assembly
+                    .GetType("StickyGuideProbe", throwOnError: true)!
+                    .GetMethod("Run")!
+                    .Invoke(null, new object[] { published, pendingEdit, after }) as int[];
+            int volume = pendingEdit ? 31 : 17;
+            Assert.That(
+                result,
+                Is.EqualTo(new[] { 1, volume, volume, after || !published ? 1 : 0, after ? 2 : 1 }),
+                $"after={after},published={published},pendingEdit={pendingEdit}: preserve pending intent and one staged registration across activation."
+            );
+        }
+        finally
+        {
+            context.Unload();
+        }
+    }
+
     /// <summary>Compiles the full ownership guide against real APIs and rejects broken group, move, and state calls.</summary>
     [TestCase("published", true)]
     [TestCase("group", false)]

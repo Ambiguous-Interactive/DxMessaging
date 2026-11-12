@@ -18,6 +18,13 @@ Use [registration groups, source retargeting, and explicit state handlers](subsc
 to replace application-owned handle lists and capturing registration callbacks. Existing token lifecycle
 calls still control activation. Finish a group's pending cleanup before replacing it.
 
+### Replace readiness branches with explicit current state
+
+Use [sticky messages](sticky-messages.md) when a listener needs the latest readiness or settings
+value. Change the publisher to `EmitSticky`, stage the callback once with `replayLatest: true`,
+and keep the existing token lifecycle owner. Preserve pending user edits in the callback.
+Clear retained service and scene references when their owner ends. Ordinary emission stays uncached.
+
 ### Generate serialized-field constructors without renaming storage
 
 For structs or classes that repeat private `[SerializeField]` fields in a constructor and getters,

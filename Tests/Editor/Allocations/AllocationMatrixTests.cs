@@ -280,6 +280,104 @@ namespace DxMessaging.Tests.Editor.Allocations
             }
         }
 
+        /// <summary>Measures warmed retained-state publication and lookup separately from registration.</summary>
+        [Test]
+        public void StickyEmitAndLookupAreZeroAlloc(
+            [Values(false, true)] bool referenceMessage,
+            [Values(0, 1, 2)] int form,
+            [Values(0, 1, 2)] int operation
+        )
+        {
+            if (referenceMessage)
+            {
+                VerifySticky(new ClassUntargetedMessage("retained"), form, operation);
+            }
+            else
+            {
+                VerifySticky(new UntypedAllocationMessage(173), form, operation);
+            }
+        }
+
+        private void VerifySticky<TMessage>(TMessage message, int form, int operation)
+            where TMessage : DxMessaging.Core.Messages.IUntargetedMessage
+        {
+            RunWithFreshHarness(MessageScenario.Untargeted(), (token, bus) =>
+            {
+                token.DiagnosticMode = false;
+                bus.DiagnosticsMode = false;
+                ExplicitStateCounter counter = new ExplicitStateCounter();
+                bus.EmitSticky(ref message);
+                switch (form)
+                {
+                    case 0:
+                        token.RegisterUntargeted<TMessage>(
+                            _ => counter.Record(),
+                            replayLatest: true
+                        );
+                        break;
+                    case 1:
+                        token.RegisterUntargeted<TMessage>(
+                            (in TMessage _) => counter.Record(),
+                            replayLatest: true
+                        );
+                        break;
+                    default:
+                        token.RegisterUntargeted<TMessage, ExplicitStateCounter>(
+                            counter,
+                            static (ExplicitStateCounter state, in TMessage _) => state.Record(),
+                            replayLatest: true
+                        );
+                        break;
+                }
+                Assert.That(
+                    counter.Count,
+                    Is.EqualTo(1),
+                    "The actual callback must replay before measurement."
+                );
+                bool found = false;
+                TMessage latest = default;
+                Action body;
+                if (operation == 0)
+                {
+                    body = () => bus.EmitSticky(ref message);
+                }
+                else if (operation == 1)
+                {
+                    body = () => found = bus.TryGetLatest(out latest);
+                }
+                else
+                {
+                    body = () => bus.UntargetedBroadcast(ref message);
+                }
+                AllocationAssertions.AssertNoAllocations(
+                    $"Sticky-{typeof(TMessage).Name}-Form{form}-Operation{operation}",
+                    body
+                );
+                if (operation == 1)
+                {
+                    Assert.That(found, Is.True, "The measured lookup must find retained state.");
+                    Assert.That(
+                        latest,
+                        Is.EqualTo(message),
+                        "Lookup preserves the original value."
+                    );
+                    Assert.That(
+                        counter.Count,
+                        Is.EqualTo(1),
+                        "Lookup does not invoke a subscriber."
+                    );
+                }
+                else
+                {
+                    Assert.That(
+                        1 < counter.Count,
+                        Is.True,
+                        "The measured emission must execute its actual callback."
+                    );
+                }
+            });
+        }
+
         private void VerifyExplicitState<TState>(MessageScenario scenario, TState state)
             where TState : IExplicitStateProbe
         {

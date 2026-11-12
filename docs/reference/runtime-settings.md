@@ -1,5 +1,9 @@
 # Runtime Settings
 
+Explicit [sticky state](../guides/sticky-messages.md) has no eviction setting. `Trim` and the
+idle-eviction settings preserve retained current values. Publishers own their lifetime through
+replacement and `ClearLatest<T>`; reset clears the built-in default bus's state.
+
 [Back to Reference](reference.md) | [Memory Reclamation Guide](../guides/memory-reclamation.md) | [Runtime Configuration](../advanced/runtime-configuration.md)
 
 ---

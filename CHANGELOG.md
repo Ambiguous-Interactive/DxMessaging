@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add explicit sticky publication, latest-state lookup and token replay for late untargeted listeners,
+  with owned cleanup and explicit payload lifetime ([#736](https://github.com/Ambiguous-Interactive/DxMessaging/issues/736)).
 - Add opt-in constructors and read-only properties for Unity-serialized fields while preserving their storage names
   ([#745](https://github.com/Ambiguous-Interactive/DxMessaging/issues/745)).
 - Split public attributes into an engine-free assembly and prepare an attributes-only NuGet package with the existing generators

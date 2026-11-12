@@ -6,6 +6,14 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile
+      Include="../Tests/Runtime/MemoryReclaim/StickyStateRetentionTests.cs"
+      Link="StickyStateRetentionTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/StickyUntargetedSpecificTests.cs"
+      Link="StickyUntargetedSpecificTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/AttributeAssemblyContractTests.cs"
       Link="AttributeAssemblyContractTests.cs"
     />

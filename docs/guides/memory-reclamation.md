@@ -32,6 +32,11 @@ registration's teardown succeeds, the token releases that consumed cleanup value
 later users of recycled typed context maps can collect. A failed teardown keeps its
 cleanup value for retry.
 
+**Added in 4.0.0:** Explicit [sticky messages](sticky-messages.md) retain current state separately
+from empty dispatch caches. Trim preserves that state. Replacement or `ClearLatest<T>` releases
+the previous payload immediately; final clear releases the dictionary, and built-in bus reset
+clears all retained types. Clear scene and service references when their owner ends.
+
 ## Table of Contents
 
 - [Memory Reclamation](#memory-reclamation)
