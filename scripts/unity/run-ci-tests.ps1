@@ -1398,6 +1398,7 @@ function New-DiSampleAsmdef {
   "rootNamespace": "DxMessaging.Samples.DI",
   "references": [
     "WallstopStudios.DxMessaging",
+    "WallstopStudios.DxMessaging.Attributes",
     "WallstopStudios.DxMessaging.Reflex",
     "WallstopStudios.DxMessaging.VContainer",
     "WallstopStudios.DxMessaging.Zenject",

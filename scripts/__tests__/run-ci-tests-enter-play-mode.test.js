@@ -148,7 +148,7 @@ for (const testMode of ["editmode", "standalone"]) test(`run-ci-tests -GenerateO
     // prettier-ignore
     const diAsmdef = testMode === "editmode" ? JSON.parse(fs.readFileSync(path.join(projectPath, "Assets", "DxmCiSamples", "DI", "DxmCi.Samples.DI.asmdef"), "utf8")) : null;
     // prettier-ignore
-    if (testMode === "editmode") assert.deepEqual([...diAsmdef.versionDefines.map(({ define }) => define), ...diAsmdef.references.filter((reference) => reference === "Reflex" || reference === "Reflex.Unity")].sort(), ["REFLEX_PRESENT", "Reflex", "VCONTAINER_PRESENT", "ZENJECT_PRESENT"]);
+    if (testMode === "editmode") assert.deepEqual([...diAsmdef.versionDefines.map(({ define }) => define), ...diAsmdef.references.filter((reference) => reference === "Reflex" || reference === "Reflex.Unity")].sort(), ["REFLEX_PRESENT", "Reflex", "VCONTAINER_PRESENT", "ZENJECT_PRESENT"]); if (diAsmdef) assert.ok(diAsmdef.references.includes(JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "Runtime", "WallstopStudios.DxMessaging.Attributes.asmdef"), "utf8")).name), "DI samples that use Dx attributes need their direct assembly reference");
     // prettier-ignore
     for (const cacheName of ["upm", "npm", "git-lfs"]) assert.ok(fs.existsSync(path.join(cacheRoot, cacheName)), cacheName);
     // prettier-ignore
@@ -274,7 +274,7 @@ test("run-ci-tests -GenerateOnly rejects an unowned CachePath without modifying 
 
 test("PowerShell Unity harness regression tests pass", () => {
   // prettier-ignore
-  for (const script of ["il2cpp-profile.test.ps1", "require-comparison-rows.test.ps1", "same-player-repeat-evidence.test.ps1", "editor-process-watchdog.test.ps1", "shipping-fidelity.test.ps1", "source-input-project-cache.test.ps1", "artifact-processing-parallel.test.ps1", "import-worker-logs.test.ps1"]) {
+  for (const script of ["il2cpp-profile.test.ps1", "require-comparison-rows.test.ps1", "same-player-repeat-evidence.test.ps1", "editor-process-watchdog.test.ps1", "shipping-fidelity.test.ps1", "source-input-project-cache.test.ps1", "artifact-processing-parallel.test.ps1", "import-worker-logs.test.ps1", "runner-cache-reclaim.test.ps1"]) {
     const testScript = path.join(REPO_ROOT, "scripts", "unity", "__tests__", script);
     const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-File", testScript], {
       encoding: "utf8"
