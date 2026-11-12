@@ -178,6 +178,9 @@ do not replay.
   rebinding outside a replay callback activate again and can replay the current value.
   `MessageHandler.active` still gates delivery. An inactive handler skips replay; after making
   it active, use a new token activation to replay, or wait for the next normal emission.
+- Registrations added by a replay callback join the owning activation after previously staged
+  callbacks. Nested additions are activated before `Enable` completes, subject to removal,
+  lifecycle cancellation, and the same rollback rules.
 - Removal, group disposal, token disposal and disable are allowed inside replay. Disable or
   disposal cancels the remaining activation queue. A throwing immediate replay retires its new
   registration when cleanup succeeds. A failed `Enable` rolls back new active subscriptions while

@@ -1,6 +1,7 @@
 namespace DxMessaging.Core
 {
     using System;
+    using System.Collections.Generic;
     using Extensions;
     using MessageBus;
     using Messages;
@@ -98,7 +99,8 @@ namespace DxMessaging.Core
         private void ReplayLatestIfOwned(
             Registration registration,
             MessageRegistrationHandle handle,
-            MessageHandler.HandlerDeregistration cleanup
+            MessageHandler.HandlerDeregistration cleanup,
+            List<StagedRegistration> activationQueue = null
         )
         {
             if (!(registration is IStickyReplay replay) || !CanReplayLatest(registration, handle))
@@ -106,6 +108,8 @@ namespace DxMessaging.Core
                 return;
             }
             StickyReplayContext context = _stickyReplay ??= new StickyReplayContext();
+            List<StagedRegistration> previousQueue = context.ActivationQueue;
+            context.ActivationQueue = activationQueue ?? previousQueue;
             ++context.Depth;
             registration.BeginOwnedReplay();
             try
@@ -114,6 +118,7 @@ namespace DxMessaging.Core
             }
             finally
             {
+                context.ActivationQueue = previousQueue;
                 registration.EndOwnedReplay();
                 --context.Depth;
             }
@@ -144,6 +149,7 @@ namespace DxMessaging.Core
 
         private sealed class StickyReplayContext
         {
+            internal List<StagedRegistration> ActivationQueue;
             internal int Depth;
             internal long CancellationVersion;
         }

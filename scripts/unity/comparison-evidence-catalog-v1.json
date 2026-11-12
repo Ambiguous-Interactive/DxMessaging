@@ -53,7 +53,7 @@
     "dxToken": {
       "origin": "repository",
       "path": "Runtime/Core/MessageRegistrationToken.cs",
-      "sha256": "c1bfa6ed4aee12219fa5cd8c51612b65674eeb23dc21e0e881e47701218f0579"
+      "sha256": "b9cc18cf0d4654747cc3ad5ed98c388e45bf226b4ea2df17286819689e6226c1"
     },
     "dxFlat": {
       "origin": "repository",

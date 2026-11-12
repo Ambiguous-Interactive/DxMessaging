@@ -89,6 +89,78 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             Assert.That(storage.GetValue(bus), Is.Null, "Reset drops every holder.");
         }
 
+        /// <summary>Group enrollment during replay must release the callback after removal.</summary>
+        /// <remarks>2026-11-12: Replay completion left a receiver rooted by the token's in-flight list.</remarks>
+        [Test]
+        public void ReplayGroupEnrollmentReleasesRemovedReceiver([Values(false, true)] bool throws)
+        {
+            using DiagnosticsScope diagnostics = new DiagnosticsScope(
+                diagnosticsTargets: DiagnosticsTarget.Off
+            );
+            MessageBus bus = new MessageBus();
+            MessageHandler handler = new MessageHandler(new InstanceId(984), bus) { active = true };
+            using MessageRegistrationToken token = MessageRegistrationToken.Create(handler, bus);
+            ValueState message = new ValueState(null);
+            bus.EmitSticky(ref message);
+            WeakReference receiver = EnrollAndRemove(token, throws);
+            Collect();
+            Assert.That(
+                receiver.IsAlive,
+                Is.False,
+                $"throws={throws}: completed replay must release its receiver while the token stays alive."
+            );
+            Assert.That(
+                bus.RegisteredUntargeted,
+                Is.Zero,
+                "Group disposal removes the subscription."
+            );
+            GC.KeepAlive(token);
+            GC.KeepAlive(bus);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static WeakReference EnrollAndRemove(MessageRegistrationToken token, bool throws)
+        {
+            using MessageRegistrationGroup group = token.CreateGroup();
+            ReplayReceiver receiver = new ReplayReceiver(group, throws);
+            WeakReference observed = new WeakReference(receiver);
+            receiver.Handle = token.RegisterUntargeted<ValueState>(
+                receiver.Receive,
+                replayLatest: true
+            );
+            if (throws)
+            {
+                Assert.Throws<InvalidOperationException>(() => token.Enable());
+            }
+            else
+            {
+                token.Enable();
+            }
+            return observed;
+        }
+
+        private sealed class ReplayReceiver
+        {
+            private readonly MessageRegistrationGroup _group;
+            private readonly bool _throws;
+            internal MessageRegistrationHandle Handle;
+
+            internal ReplayReceiver(MessageRegistrationGroup group, bool throws)
+            {
+                _group = group;
+                _throws = throws;
+            }
+
+            internal void Receive(ValueState message)
+            {
+                _group.Add(Handle);
+                if (_throws)
+                {
+                    throw new InvalidOperationException("Injected enrolled replay failure.");
+                }
+            }
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static WeakReference Publish(MessageBus bus, bool referenceMessage)
         {

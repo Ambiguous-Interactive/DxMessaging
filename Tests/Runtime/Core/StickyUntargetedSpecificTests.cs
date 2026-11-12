@@ -970,6 +970,309 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Retarget recovery must preserve cancellation from the failed new-bus callback.</summary>
+        /// <remarks>2026-11-12: Capturing cancellation only after rollback revived disabled staging.</remarks>
+        [Test]
+        public void FailedNewBusReplayPreservesItsCancellation(
+            [Values(false, true)] bool unregister
+        )
+        {
+            using CaseState state = new CaseState();
+            MessageBus replacement = new MessageBus();
+            using LeakWatcher leaks = new LeakWatcher(replacement);
+            ValueMessage original = new ValueMessage(17);
+            ValueMessage next = new ValueMessage(23);
+            state.Bus.EmitSticky(ref original);
+            replacement.EmitSticky(ref next);
+            int calls = 0;
+            state.Token.RegisterUntargeted<ValueMessage>(
+                message =>
+                {
+                    ++calls;
+                    if (message.Value == 23)
+                    {
+                        if (unregister)
+                        {
+                            state.Token.UnregisterAll();
+                        }
+                        else
+                        {
+                            state.Token.Disable();
+                        }
+                        throw new InvalidOperationException("Injected failure after cancellation.");
+                    }
+                },
+                replayLatest: true
+            );
+            state.Token.Enable();
+            Assert.Throws<InvalidOperationException>(() =>
+                state.Token.RetargetMessageBus(replacement, MessageBusRebindMode.RebindActive)
+            );
+            Assert.That(
+                state.Token.Enabled,
+                Is.False,
+                $"unregister={unregister}: cancellation must survive recovery."
+            );
+            Assert.That(
+                calls,
+                Is.EqualTo(2),
+                "Recovery must not invoke old-bus staging after cancellation."
+            );
+            Assert.That(
+                state.Bus.RegisteredUntargeted,
+                Is.Zero,
+                "Old-bus subscriptions stay removed."
+            );
+            Assert.That(
+                replacement.RegisteredUntargeted,
+                Is.Zero,
+                "New-bus subscriptions stay removed."
+            );
+            state.Token.Enable();
+            Assert.That(
+                calls,
+                Is.EqualTo(unregister ? 2 : 3),
+                "Only retained staging can be explicitly enabled later."
+            );
+            state.Token.Dispose();
+        }
+
+        /// <summary>Callbacks added by replay join the owning activation in insertion order.</summary>
+        /// <remarks>2026-11-12: A fixed queue snapshot left newly staged callbacks inactive on an enabled token.</remarks>
+        [Test]
+        public void ReplayActivatesNewCallbacksInOrder([Values(false, true)] bool sticky)
+        {
+            using CaseState state = new CaseState();
+            ValueMessage message = new ValueMessage(17);
+            state.Bus.EmitSticky(ref message);
+            List<int> order = new List<int>();
+            bool added = false;
+            state.Token.RegisterUntargeted<ValueMessage>(
+                _ =>
+                {
+                    order.Add(1);
+                    if (!added)
+                    {
+                        added = true;
+                        state.Token.RegisterUntargeted<ValueMessage>(
+                            m => order.Add(3),
+                            replayLatest: sticky
+                        );
+                    }
+                },
+                replayLatest: true
+            );
+            state.Token.RegisterUntargeted<ValueMessage>(_ => order.Add(2), replayLatest: true);
+            state.Token.Enable();
+            Assert.That(
+                order,
+                Is.EqualTo(sticky ? new[] { 1, 2, 3 } : new[] { 1, 2 }),
+                "New replay follows previously staged callbacks."
+            );
+            order.Clear();
+            state.Bus.UntargetedBroadcast(ref message);
+            Assert.That(
+                order,
+                Is.EqualTo(new[] { 1, 2, 3 }),
+                "Every accepted callback receives the next publication."
+            );
+        }
+
+        /// <summary>Removing or cancelling newly staged replay work prevents its activation.</summary>
+        [Test]
+        public void ReplayAddedCallbacksRespectOwnership([Values(0, 1, 2)] int cancellation)
+        {
+            using CaseState state = new CaseState();
+            ValueMessage message = new ValueMessage(17);
+            state.Bus.EmitSticky(ref message);
+            int calls = 0;
+            bool added = false;
+            state.Token.RegisterUntargeted<ValueMessage>(
+                _ =>
+                {
+                    if (added)
+                    {
+                        return;
+                    }
+                    added = true;
+                    MessageRegistrationHandle handle = state.Token.RegisterUntargeted<ValueMessage>(
+                        m => ++calls,
+                        replayLatest: true
+                    );
+                    if (cancellation == 0)
+                    {
+                        state.Token.RemoveRegistration(handle);
+                    }
+                    else if (cancellation == 1)
+                    {
+                        state.Token.Disable();
+                    }
+                    else
+                    {
+                        state.Token.UnregisterAll();
+                    }
+                },
+                replayLatest: true
+            );
+            state.Token.Enable();
+            Assert.That(
+                calls,
+                Is.Zero,
+                $"cancellation={cancellation}: cancelled work must not replay."
+            );
+            Assert.That(
+                state.Token.Enabled,
+                Is.EqualTo(cancellation == 0),
+                "Lifecycle cancellation controls the owning activation."
+            );
+            state.Token.Enable();
+            Assert.That(
+                calls,
+                Is.EqualTo(cancellation == 1 ? 1 : 0),
+                "Only disabled staging can be activated later."
+            );
+        }
+
+        /// <summary>Replay additions can themselves add callbacks without losing activation ownership.</summary>
+        [Test]
+        public void ReplayActivationDrainsNestedAdditions([Values(1, 4)] int depth)
+        {
+            using CaseState state = new CaseState();
+            ValueMessage message = new ValueMessage(17);
+            state.Bus.EmitSticky(ref message);
+            List<int> order = new List<int>();
+            Add(0);
+            state.Token.Enable();
+            Assert.That(
+                order.Count,
+                Is.EqualTo(depth + 1),
+                "Activation drains every nested addition."
+            );
+            for (int index = 0; index <= depth; ++index)
+            {
+                Assert.That(
+                    order[index],
+                    Is.EqualTo(index),
+                    "Nested additions retain insertion order."
+                );
+            }
+            Assert.That(
+                state.Bus.RegisteredUntargeted,
+                Is.EqualTo(1),
+                "Callbacks share one handler subscription for this message type."
+            );
+
+            void Add(int index)
+            {
+                bool added = false;
+                state.Token.RegisterUntargeted<ValueMessage>(
+                    _ =>
+                    {
+                        order.Add(index);
+                        if (!added && index < depth)
+                        {
+                            added = true;
+                            Add(index + 1);
+                            state.Token.Enable();
+                        }
+                    },
+                    replayLatest: true
+                );
+            }
+        }
+
+        /// <summary>Failure in an appended callback rolls back its activation and retains retryable staging.</summary>
+        [Test]
+        public void ReplayAddedCallbackFailureRetainsRecovery([Values(false, true)] bool retarget)
+        {
+            using CaseState state = new CaseState();
+            MessageBus replacement = new MessageBus();
+            using LeakWatcher leaks = new LeakWatcher(replacement);
+            ValueMessage original = new ValueMessage(17);
+            ValueMessage next = new ValueMessage(23);
+            state.Bus.EmitSticky(ref original);
+            replacement.EmitSticky(ref next);
+            bool add = !retarget;
+            bool added = false;
+            bool fail = true;
+            int calls = 0;
+            state.Token.RegisterUntargeted<ValueMessage>(
+                _ =>
+                {
+                    if (!add || added)
+                    {
+                        return;
+                    }
+                    added = true;
+                    state.Token.RegisterUntargeted<ValueMessage>(
+                        m =>
+                        {
+                            ++calls;
+                            if (fail)
+                            {
+                                fail = false;
+                                throw new InvalidOperationException(
+                                    "Injected appended replay failure."
+                                );
+                            }
+                        },
+                        replayLatest: true
+                    );
+                },
+                replayLatest: true
+            );
+            if (retarget)
+            {
+                state.Token.Enable();
+                add = true;
+                Assert.Throws<InvalidOperationException>(() =>
+                    state.Token.RetargetMessageBus(replacement, MessageBusRebindMode.RebindActive)
+                );
+                Assert.That(
+                    state.Token.Enabled,
+                    Is.True,
+                    "Successful recovery restores old-bus ownership."
+                );
+            }
+            else
+            {
+                Assert.Throws<InvalidOperationException>(() => state.Token.Enable());
+                Assert.That(
+                    state.Token.Enabled,
+                    Is.False,
+                    "A failed Enable rolls back all accepted subscriptions."
+                );
+                Assert.That(
+                    state.Bus.RegisteredUntargeted,
+                    Is.Zero,
+                    "Rollback owns and removes the appended subscription."
+                );
+                state.Token.Enable();
+            }
+            Assert.That(
+                calls,
+                Is.EqualTo(2),
+                "Recovery or an explicit retry activates the appended callback once."
+            );
+            Assert.That(
+                state.Bus.RegisteredUntargeted,
+                Is.EqualTo(1),
+                "Both callbacks use the original handler subscription."
+            );
+            Assert.That(
+                replacement.RegisteredUntargeted,
+                Is.Zero,
+                "Failed retarget leaves no new-bus subscription."
+            );
+            state.Bus.UntargetedBroadcast(ref original);
+            Assert.That(
+                calls,
+                Is.EqualTo(3),
+                "The recovered callback receives future original-bus delivery."
+            );
+            state.Token.Dispose();
+        }
+
         private sealed class StickyBus : DelegatingMessageBus, IStickyMessageBus
         {
             internal Action OnRegistration;

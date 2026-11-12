@@ -1404,6 +1404,12 @@ namespace DxMessaging.Core
                     throw;
                 }
             }
+            else if (_stickyReplay?.ActivationQueue != null)
+            {
+                _stickyReplay.ActivationQueue.Add(
+                    new StagedRegistration(slotIndex, handle.Id, registration)
+                );
+            }
 
             return handle;
         }
@@ -1646,6 +1652,7 @@ namespace DxMessaging.Core
                 return;
             }
 
+            long stickyCancellationVersion = _stickyReplay?.CancellationVersion ?? 0;
             bool replayWasInProgress = _isReplayingRegistrations;
             IMessageBus previousMessageBus = _messageBus;
             List<MessageRegistrationHandle> activeRetargetHandles = null;
@@ -1709,6 +1716,7 @@ namespace DxMessaging.Core
                         RestoreRegistrationsAfterRetargetFailure(
                             previousMessageBus,
                             cleanupCompletedDuringLogging,
+                            stickyCancellationVersion,
                             replayWasInProgress ? activeRetargetHandles : null
                         );
                         ExceptionDispatchInfo.Capture(exception).Throw();
@@ -2043,11 +2051,16 @@ namespace DxMessaging.Core
         private void RestoreRegistrationsAfterRetargetFailure(
             IMessageBus previousMessageBus,
             bool cleanupCompletedDuringLogging,
+            long stickyCancellationVersion,
             List<MessageRegistrationHandle> activeRetargetHandles
         )
         {
             _messageBus = previousMessageBus;
-            if (cleanupCompletedDuringLogging || _registrationCount == 0)
+            if (
+                cleanupCompletedDuringLogging
+                || _registrationCount == 0
+                || stickyCancellationVersion != (_stickyReplay?.CancellationVersion ?? 0)
+            )
             {
                 _enabled = 0 < _deregistrationCount;
                 return;
@@ -2163,8 +2176,9 @@ namespace DxMessaging.Core
             long stickyCancellationVersion = _stickyReplay?.CancellationVersion ?? 0;
             try
             {
-                foreach (StagedRegistration staged in queue)
+                for (int index = 0; index < queue.Count; ++index)
                 {
+                    StagedRegistration staged = queue[index];
                     if (stickyCancellationVersion != (_stickyReplay?.CancellationVersion ?? 0))
                     {
                         break;
@@ -2181,7 +2195,8 @@ namespace DxMessaging.Core
                     ReplayLatestIfOwned(
                         registration,
                         MessageRegistrationHandle.FromIdentity(staged.Id, staged.Slot),
-                        actualDeregistration
+                        actualDeregistration,
+                        queue
                     );
                 }
                 return stickyCancellationVersion == (_stickyReplay?.CancellationVersion ?? 0);
@@ -3176,7 +3191,14 @@ namespace DxMessaging.Core
 
             internal void BeginOwnedReplay() => ++_registrationDepth;
 
-            internal void EndOwnedReplay() => --_registrationDepth;
+            internal void EndOwnedReplay()
+            {
+                --_registrationDepth;
+                if (_registrationDepth == 0)
+                {
+                    Token._groupRegistrationsInFlight?.Remove(this);
+                }
+            }
 
             /// <summary>Registers validated state while tracking callback acceptance for group ownership.</summary>
             internal MessageHandler.HandlerDeregistration RegisterValidated(
