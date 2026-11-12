@@ -33,3 +33,5 @@ In Unity, install the normal DxMessaging UPM package and reference `WallstopStud
 The package contains the seven public attributes. Message attributes still need the messaging runtime when their generated interfaces are used; `[DxAutoConstructor]` and `[DxOptionalParameter]` work without it. Attribute namespaces and names remain `DxMessaging.Core.Attributes`. The runtime forwards its former attribute types to the new assembly for binary lookup compatibility.
 
 See [DxMessaging documentation](https://ambiguous-interactive.github.io/DxMessaging/) for generator behavior and supported message APIs.
+
+Contributors can build, test, and publish the package through the [NuGet publishing runbook](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/runbooks/nuget-attributes.md). CI tests an actual package consumer and checks that removing the packaged generators breaks its constructor calls. Public feed verification remains required before announcing a release.

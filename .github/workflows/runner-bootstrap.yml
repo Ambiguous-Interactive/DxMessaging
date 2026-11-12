@@ -507,7 +507,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
 
       - name: Install artifact tooling dependencies
         id: install_dependencies
@@ -748,7 +748,7 @@ jobs:
         id: log_node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
 
       - name: Install artifact tooling dependencies
         id: log_tooling
@@ -922,7 +922,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
 
       - name: Install artifact tooling dependencies
         id: install_dependencies
@@ -1312,7 +1312,7 @@ jobs:
         timeout-minutes: 5
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: "26.13.0"
+          node-version: "26.13.1"
 
       - name: Install artifact tooling dependencies
         id: install_dependencies
