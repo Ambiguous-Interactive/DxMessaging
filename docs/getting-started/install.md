@@ -102,7 +102,7 @@ DxMessaging's compiled source generators (`[DxUntargetedMessage]`, `[DxTargetedM
 uses assembly definitions. In 4.0, add `WallstopStudios.DxMessaging.Attributes` to each
 custom assembly definition that uses these attributes. Keep `WallstopStudios.DxMessaging`
 when the same assembly uses message interfaces or runtime APIs. The compiler DLLs are
-scoped to the attributes assembly and its referrers. Unity's predefined `Assembly-CSharp`
+scoped to the attributes assembly and assemblies that reference it. Unity's predefined `Assembly-CSharp`
 receives the references automatically; you do not need to create an assembly definition
 for `[Dx*Message]` types to generate.
 
