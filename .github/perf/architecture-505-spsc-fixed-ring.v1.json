@@ -60,11 +60,11 @@
   },
   "evidence": {
     "state": "protocol-only",
-    "sourceSha256": "ace7c6117c4d2e97dffee44426358dd7f0525e93f36588277b925e9551df2895",
-    "testSourceSha256": "b39b7225d13e52133db1fe970a70c84c079594e2ab3b2a58f38bdbf34ae5099f",
+    "sourceSha256": "da4483fa468818e4a16eecc69b2a1271f7af8799b2ff16c66eb06947cda62e38",
+    "testSourceSha256": "d089717f67c53c246d5a36e6eafd5f322fc59cbd715097c5a0a7f05865c16131",
     "profileSha256": null,
     "evidenceSha256": null,
-    "evidenceLocation": "Current consolidated source binding. Current native qualification is pending; priorEvidence retains the historical source and evidence identities."
+    "evidenceLocation": "Current source binding includes the #755 maintenance admission fence and guaranteed stress-worker cleanup. Issue #755 records current semantic qualification; PR #754 records supported CI results. This protocol-only record makes no performance claim. priorEvidence retains its historical source and evidence identities."
   },
   "priorEvidence": {
     "state": "tested",
