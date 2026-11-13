@@ -144,7 +144,7 @@ The test, benchmark, and performance workflows use separate `t`, `b`, and `p` ro
 
 ## Inspect correctness project storage
 
-Successful correctness jobs on DAD inspect their Editor version after confirmed Unity cleanup.
+Correctness jobs on DAD inspect their Editor version after confirmed Unity cleanup.
 `inspect-test-project-caches.ps1` reports owned project generations, file counts, Bee bytes,
 other Library bytes, and bytes outside Library. Each `DXM_TEST_CACHE_INVENTORY` log row names
 its project and identifies the current source-set key. `DXM_TEST_CACHE_SUMMARY` reconciles the
@@ -157,9 +157,29 @@ and loads the inspector from its exact workflow commit without checkout. Shared 
 labels can select ELI; that guard failure changes no caches and provides no DAD inventory.
 Correctness jobs instead collect only when their actual runner is DAD.
 
-Both entry points preserve files. They measure marked projects, require an owned current
-generation, and reject redirected paths. They do not retire caches. Keep the routine capacity policy open until
-its separate bounded retirement and native qualification have evidence.
+The inspector and operator mode preserve every file. They measure marked projects,
+require an owned current generation, and reject redirected paths.
+
+## Retire previous correctness generations
+
+After all three ordinary modes, uploads, and confirmed cleanup succeed, DAD push and pull-request
+jobs run `retire-test-project-caches.ps1`. It keeps the current keyed editmode, playmode,
+and standalone projects for that Editor. It removes whole older owned keyed projects,
+including their Library and Build directories. This bounds managed generation count;
+it does not impose a byte cap on the current generation or guarantee drive capacity.
+
+The entry point uses the same inspector before and after retirement. It requires the workflow source-set key, all three
+current projects, and a separate existing `.artifacts` evidence root. It validates every
+candidate before deleting any project. Redirected paths, incomplete current scope, or unexpected
+top-level data stop retirement. Current project inputs, the complete evidence root, other
+Editors, unitypackage projects, unkeyed or unowned projects, package caches, and other project
+roles remain. Manual workflows retain inspection only.
+
+`DXM_TEST_CACHE_RETIRED` names each removed project and its measured logical bytes.
+`DXM_TEST_CACHE_POST_INVENTORY` and `DXM_TEST_CACHE_POST_SUMMARY` describe what remains;
+`DXM_TEST_CACHE_RETIREMENT` reconciles removed counts and logical lengths. Free-space
+observations do not attribute unique physical bytes reclaimed. Unknown or unowned leftovers
+need separate review; this policy does not delete them.
 
 ## IL2CPP-Only Failure Patterns
 
@@ -203,3 +223,31 @@ For `standalone` runs, the direct runner first configures the generated project 
 - Unity LTS roadmap: https://unity.com/releases/lts
 - Unity managed code stripping: https://docs.unity3d.com/Manual/ManagedCodeStripping.html
 - Active workflows: `.github/workflows/unity-tests.yml` (direct Unity on self-hosted Windows; editmode/playmode/standalone on all versions and shipping on the oldest/current endpoints), `.github/workflows/unity-benchmarks.yml`, `.github/workflows/perf-numbers.yml`, and `.github/workflows/release.yml`; ubuntu reference mirrors: `.github/workflows-disabled/`
+
+## Bind the installed Test Framework
+
+Correctness standalone builds pass `-CaptureTestFrameworkEvidence` to `run-ci-tests.ps1`.
+The optional collector is an Editor-only generated assembly. Other modes and default
+benchmark/shipping calls do not enable capture. The option requires PowerShell 7 for
+independent metadata validation; the default harness keeps its existing shell contract.
+
+The two collector template paths participate in the correctness source-set key. Both must
+be tracked alongside nonempty package inputs. A new collector layout therefore uses its
+own generated project generation. Unchanged inputs keep their timestamps on reuse.
+
+Each schema 4 `test-framework/<build>/<snapshot>/receipt.json` records the actual Editor PID,
+project fingerprint, Unity version, resolved package identity and three loaded module MVIDs.
+Module identities use numeric version parts, culture, signing-identifier bytes, flags and content type.
+Canonical absolute file-URI fingerprints identify project, package and loaded-module paths.
+These fields remain verifiable after the unchanged CI artifact processing step. A fresh build directory
+keeps earlier process snapshots separate when an artifact root is reused. Copied DLLs, optional
+symbols, manifest, lockfile and package metadata accompany it. `sources.zip` stores package
+C# and assembly-definition files; the receipt maps compact stored names to original paths
+and hashes every retained file. Data-contract JSON preserves the nested record arrays.
+
+After the existing built-player gate, the reader requires matching process/project/version,
+complete source bytes and module identities read independently from the copied DLL headers.
+Capture errors remain evidence and fail qualification. The requested manifest version does
+not establish the loaded framework, especially for Unity 6 core packages. Source collection
+is an observer; record its cost separately and preserve exact test outcomes. It does not
+measure cleanup time or establish the five-minute target.

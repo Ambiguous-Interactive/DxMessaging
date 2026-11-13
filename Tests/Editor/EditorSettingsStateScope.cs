@@ -5,6 +5,7 @@ namespace DxMessaging.Tests.Editor
     using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Linq;
     using DxMessaging.Editor.Settings;
     using UnityEditor;
     using UnityEngine;
@@ -831,13 +832,29 @@ try {
                     }
                     else if (File.Exists(saved.Value))
                     {
-                        if (File.Exists(saved.Key))
+                        if (
+                            File.Exists(saved.Key)
+                            && File.GetLastWriteTimeUtc(saved.Key)
+                                == File.GetLastWriteTimeUtc(saved.Value)
+                            && File.ReadAllBytes(saved.Key)
+                                .SequenceEqual(File.ReadAllBytes(saved.Value))
+                        )
                         {
-                            operation = "delete";
-                            File.Delete(saved.Key);
+                            // Preserve the existing file and its open readers when nothing changed.
+                            operation = "delete backup";
+                            diagnosticPath = saved.Value;
+                            File.Delete(saved.Value);
                         }
-                        operation = "move";
-                        File.Move(saved.Value, saved.Key);
+                        else
+                        {
+                            if (File.Exists(saved.Key))
+                            {
+                                operation = "delete";
+                                File.Delete(saved.Key);
+                            }
+                            operation = "move";
+                            File.Move(saved.Value, saved.Key);
+                        }
                     }
                 }
                 catch (Exception exception)

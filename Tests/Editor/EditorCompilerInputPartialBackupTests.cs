@@ -13,6 +13,147 @@ namespace DxMessaging.Tests.Editor
 
     public sealed class EditorCompilerInputPartialBackupTests
     {
+        private static readonly string[] InputPaths =
+        {
+            "Assets/csc.rsp",
+            "Assets/csc.rsp.meta",
+            "csc.rsp",
+            "csc.rsp.meta",
+            DxMessagingBaseCallIgnoreSync.SidecarAssetPath,
+            DxMessagingBaseCallIgnoreSync.SidecarAssetPath + ".meta",
+        };
+
+        /// <remarks>
+        /// 2026-11-13: disposal deleted unchanged compiler inputs. That needlessly required
+        /// delete sharing on Windows and replaced the file behind open readers on Unix.
+        /// The owned reader establishes this conditional defect, not a historical lock owner.
+        /// </remarks>
+        [TestCaseSource(nameof(UnchangedInputCases))]
+        public void UnchangedCompilerInputKeepsOpenReader(string relativePath)
+        {
+            using EditorCompilerInputScope originals = new();
+            string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string path = Path.Combine(root, relativePath);
+            byte[] expected = { 7, 11, 13, 17 };
+            byte[] changed = { 19, 23, 29, 31 };
+            for (int cycle = 0; cycle < 10; ++cycle)
+            {
+                string context = $"path={relativePath}, cycle={cycle}";
+                File.WriteAllBytes(path, expected);
+                DateTime modified = File.GetLastWriteTimeUtc(path);
+                string[] backups = BackupFiles(new[] { path });
+                EditorCompilerInputScope scope = null;
+                FileStream reader = null;
+                try
+                {
+                    reader = new FileStream(
+                        path,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.ReadWrite
+                    );
+                    scope = new();
+                    scope.Dispose();
+                    CollectionAssert.AreEqual(expected, File.ReadAllBytes(path), context);
+                    Assert.That(File.GetLastWriteTimeUtc(path), Is.EqualTo(modified), context);
+                    CollectionAssert.AreEqual(backups, BackupFiles(new[] { path }), context);
+                    scope.Dispose();
+                    File.WriteAllBytes(path, changed);
+                    byte[] observed = new byte[changed.Length];
+                    Assert.That(
+                        reader.Read(observed, 0, observed.Length),
+                        Is.EqualTo(observed.Length),
+                        context
+                    );
+                    CollectionAssert.AreEqual(
+                        changed,
+                        observed,
+                        $"{context} An unchanged input must retain the file behind its open reader."
+                    );
+                }
+                finally
+                {
+                    reader?.Dispose();
+                    scope?.Dispose();
+                }
+            }
+        }
+
+        private static IEnumerable<TestCaseData> UnchangedInputCases() =>
+            InputPaths.Select(path =>
+                new TestCaseData(path).SetName($"CompilerInputUnchanged_{path}")
+            );
+
+        [TestCaseSource(nameof(RestoredInputCases))]
+        public void ChangedCompilerInputRestoresOriginal(string relativePath, string mutation)
+        {
+            using EditorCompilerInputScope originals = new();
+            string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string path = Path.Combine(root, relativePath);
+            byte[] expected = { 7, 11, 13, 17 };
+            string context = $"path={relativePath}, mutation={mutation}";
+            if (mutation == "created")
+            {
+                File.Delete(path);
+            }
+            else
+            {
+                File.WriteAllBytes(path, expected);
+            }
+            DateTime modified = File.GetLastWriteTimeUtc(path);
+            string[] backups = BackupFiles(new[] { path });
+            using (EditorCompilerInputScope scope = new())
+            {
+                if (mutation == "removed")
+                {
+                    File.Delete(path);
+                }
+                else if (mutation == "retouched")
+                {
+                    File.SetLastWriteTimeUtc(path, modified.AddMinutes(-1));
+                }
+                else
+                {
+                    File.WriteAllBytes(
+                        path,
+                        mutation == "same-length"
+                            ? new byte[] { 19, 23, 29, 31 }
+                            : new byte[] { 19, 23, 29 }
+                    );
+                }
+                scope.Dispose();
+                Assert.That(File.Exists(path), Is.EqualTo(mutation != "created"), context);
+                if (mutation != "created")
+                {
+                    CollectionAssert.AreEqual(expected, File.ReadAllBytes(path), context);
+                    Assert.That(File.GetLastWriteTimeUtc(path), Is.EqualTo(modified), context);
+                }
+                CollectionAssert.AreEqual(backups, BackupFiles(new[] { path }), context);
+            }
+        }
+
+        private static IEnumerable<TestCaseData> RestoredInputCases()
+        {
+            foreach (string path in InputPaths)
+            {
+                foreach (
+                    string mutation in new[]
+                    {
+                        "modified",
+                        "same-length",
+                        "removed",
+                        "created",
+                        "retouched",
+                    }
+                )
+                {
+                    yield return new TestCaseData(path, mutation).SetName(
+                        $"CompilerInputRestored_{path}_{mutation}"
+                    );
+                }
+            }
+        }
+
         /// <remarks>
         /// 2026-11-01: a failed backup can leave partial bytes. Constructor cleanup must
         /// preserve originals instead of restoring an incomplete backup. The injected

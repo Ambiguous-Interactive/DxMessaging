@@ -70,6 +70,8 @@ param(
     [ValidateSet('Local', 'Central')]
     [string]$LicenseReturnOwner = 'Local',
 
+    [switch]$CaptureTestFrameworkEvidence,
+
     [switch]$GenerateOnly,
 
     [switch]$SkipCiAnalyzers
@@ -4020,6 +4022,7 @@ function Initialize-EphemeralProject {
         [string]$Path,
         [switch]$IncludeComparisons,
         [switch]$IncludeNativeCollectionsResearch,
+        [switch]$CaptureTestFrameworkEvidence,
         [string]$Backend = 'IL2CPP',
         [ValidateSet('Disabled', 'Minimal', 'Low', 'Medium', 'High')]
         [string]$ManagedStrippingLevel = 'Disabled',
@@ -4118,6 +4121,16 @@ function Initialize-EphemeralProject {
         New-Item -ItemType Directory -Force -Path (Join-Path $project 'Packages') | Out-Null
         New-Item -ItemType Directory -Force -Path (Join-Path $project 'ProjectSettings') | Out-Null
         New-Item -ItemType Directory -Force -Path ([System.IO.Path]::Combine($project, 'Assets', 'Editor')) | Out-Null
+    }
+
+    if ($CaptureTestFrameworkEvidence) {
+        $collector = [System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiTestFrameworkEvidence')
+        New-Item -ItemType Directory -Force -Path $collector | Out-Null
+        foreach ($inputName in @('cs', 'asmdef')) {
+            Set-EphemeralCompilerInput `
+                -Path (Join-Path $collector "DxmCiTestFrameworkEvidence.$inputName") `
+                -Content ([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot "test-framework-evidence.$inputName.txt")))
+        }
     }
 
     $shippingProjectInputRelativePaths = @()
@@ -7852,6 +7865,13 @@ function Test-NUnitResults {
     Write-CiNotice "${Label}: total=$total passed=$passed failed=$failed skipped=$skipped"
 }
 
+if ($CaptureTestFrameworkEvidence) {
+    if ($TestMode -cne 'standalone' -or $IncludeComparisons) {
+        throw 'Framework evidence capture requires a correctness standalone build.'
+    }
+    . (Join-Path $PSScriptRoot 'assert-test-framework-evidence.ps1')
+}
+
 $RepoRoot = Resolve-FullPath -Path $RepoRoot
 Assert-RepoRoot -Path $RepoRoot
 $ArtifactsPath = Resolve-FullPath -Path $ArtifactsPath
@@ -8007,6 +8027,7 @@ $ProjectPath = Initialize-EphemeralProject `
     -Mode $TestMode `
     -Path $ProjectPath `
     -IncludeComparisons:$IncludeComparisons `
+    -CaptureTestFrameworkEvidence:$CaptureTestFrameworkEvidence `
     -IncludeNativeCollectionsResearch:($AssemblyNames -ceq 'WallstopStudios.DxMessaging.Tests.00.Runtime.NativeCollectionsResearch') `
     -Backend $StandaloneScriptingBackend `
     -ManagedStrippingLevel $managedStrippingLevel `
@@ -8754,6 +8775,11 @@ try {
             '-logFile', '-'
         ) + $categoryArgs + $acceleratorArgs
 
+        if ($CaptureTestFrameworkEvidence) {
+            $frameworkEvidenceDirectory = Join-Path (Join-Path $ArtifactsPath 'test-framework') ([guid]::NewGuid().ToString('N'))
+            $buildArgs += @('-dxmFrameworkEvidenceDirectory', $frameworkEvidenceDirectory)
+        }
+
         $buildResult = Invoke-ProcessWithTreeKillTimeout `
             -FilePath $UnityEditorPath `
             -Arguments $buildArgs `
@@ -8798,6 +8824,13 @@ try {
                 throw "Standalone test-player build timed out and the process tree was killed before producing a valid player at $standaloneExe ($standaloneBuildProblem). Raise the limit via DXM_STANDALONE_BUILD_TIMEOUT_SECONDS (0 disables the timeout). See the build log at $logPath."
             }
             throw "Editor build produced invalid DxMessaging test player output at $standaloneExe ($standaloneBuildProblem; build exit code $($buildResult.ExitCode) / $(Get-NativeExitCodeDescription -ExitCode $buildResult.ExitCode)). The build modifier may not have run, Unity may have cleaned a Temp output, or a stale player was detected. See the build log at $logPath."
+        }
+        if ($CaptureTestFrameworkEvidence) {
+            Assert-UnityTestFrameworkEvidence `
+                -Directory $frameworkEvidenceDirectory `
+                -ProcessId $buildResult.ProcessId `
+                -Project $ProjectPath `
+                -UnityVersion $UnityVersion
         }
         # Required player files are present. If the build process exited non-zero or was
         # tree-killed, narrate the benign post-build shutdown crash and keep going.

@@ -1,0 +1,8 @@
+{
+  "name": "DxmCiTestFrameworkEvidence",
+  "references": ["UnityEditor.TestRunner", "UnityEngine.TestRunner"],
+  "includePlatforms": ["Editor"],
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll"],
+  "autoReferenced": false
+}
