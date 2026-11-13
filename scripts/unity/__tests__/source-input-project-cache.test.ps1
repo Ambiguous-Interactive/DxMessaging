@@ -55,6 +55,10 @@ try {
     New-Item -ItemType Directory -Path 'Runtime' | Out-Null
     Set-Content -LiteralPath 'Runtime/A.cs' -Value 'class A {}'
     Invoke-FixtureGit -GitArguments @('add', 'Runtime/A.cs')
+    New-Item -ItemType Directory -Path 'scripts/unity' -Force | Out-Null
+    Set-Content -LiteralPath 'scripts/unity/test-framework-evidence.cs.txt' -Value 'class Collector {}'
+    Set-Content -LiteralPath 'scripts/unity/test-framework-evidence.asmdef.txt' -Value '{"name":"Collector"}'
+    Invoke-FixtureGit -GitArguments @('add', 'scripts/unity/test-framework-evidence.cs.txt', 'scripts/unity/test-framework-evidence.asmdef.txt')
     $initial = Read-CacheKey
     Set-Content -LiteralPath 'Runtime/A.cs' -Value 'class A { int value; }'
     Invoke-FixtureGit -GitArguments @('add', 'Runtime/A.cs')
@@ -73,6 +77,12 @@ try {
     $renamed = Read-CacheKey
     Assert-CacheCondition -Name 'A renamed input selects a different generated project' `
         -Condition ($renamed -cne $removed)
+    Invoke-FixtureGit -GitArguments @('rm', '--force', '--quiet', 'scripts/unity/test-framework-evidence.cs.txt')
+    Assert-CacheSelectionFails -Name 'A missing owned collector input cannot reuse a correctness project'
+    Set-Content -LiteralPath 'scripts/unity/test-framework-evidence.cs.txt' -Value 'class Collector {}'
+    Invoke-FixtureGit -GitArguments @('add', 'scripts/unity/test-framework-evidence.cs.txt')
+    Assert-CacheCondition -Name 'Restoring the same collector layout restores the same project key' `
+        -Condition ((Read-CacheKey) -ceq $renamed)
     Set-Content -LiteralPath 'README.md' -Value 'Documentation change'
     Invoke-FixtureGit -GitArguments @('add', 'README.md')
     Assert-CacheCondition -Name 'Unrelated documentation preserves the generated project' `

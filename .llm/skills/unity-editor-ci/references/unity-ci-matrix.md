@@ -223,3 +223,28 @@ For `standalone` runs, the direct runner first configures the generated project 
 - Unity LTS roadmap: https://unity.com/releases/lts
 - Unity managed code stripping: https://docs.unity3d.com/Manual/ManagedCodeStripping.html
 - Active workflows: `.github/workflows/unity-tests.yml` (direct Unity on self-hosted Windows; editmode/playmode/standalone on all versions and shipping on the oldest/current endpoints), `.github/workflows/unity-benchmarks.yml`, `.github/workflows/perf-numbers.yml`, and `.github/workflows/release.yml`; ubuntu reference mirrors: `.github/workflows-disabled/`
+
+## Bind the installed Test Framework
+
+Correctness standalone builds pass `-CaptureTestFrameworkEvidence` to `run-ci-tests.ps1`.
+The optional collector is an Editor-only generated assembly. Other modes and default
+benchmark/shipping calls do not enable capture. The option requires PowerShell 7 for
+independent metadata validation; the default harness keeps its existing shell contract.
+
+The two collector template paths participate in the correctness source-set key. Both must
+be tracked alongside nonempty package inputs. A new collector layout therefore uses its
+own generated project generation. Unchanged inputs keep their timestamps on reuse.
+
+Each `test-framework/<build>/<snapshot>/receipt.json` records the actual Editor PID, project, Unity
+version, resolved package identity and three loaded module MVIDs. A fresh build directory
+keeps earlier process snapshots separate when an artifact root is reused. Copied DLLs, optional
+symbols, manifest, lockfile and package metadata accompany it. `sources.zip` stores package
+C# and assembly-definition files; the receipt maps compact stored names to original paths
+and hashes every retained file. Data-contract JSON preserves the nested record arrays.
+
+After the existing built-player gate, the reader requires matching process/project/version,
+complete source bytes and module identities read independently from the copied DLL headers.
+Capture errors remain evidence and fail qualification. The requested manifest version does
+not establish the loaded framework, especially for Unity 6 core packages. Source collection
+is an observer; record its cost separately and preserve exact test outcomes. It does not
+measure cleanup time or establish the five-minute target.

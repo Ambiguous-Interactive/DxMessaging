@@ -222,10 +222,15 @@ jobs:
         timeout-minutes: 2
         shell: pwsh
         run: |
-          $sourceFiles = @(git ls-files -- Runtime Editor Tests 'Samples~')
-          if ($LASTEXITCODE -ne 0 -or $sourceFiles.Count -eq 0) {
+          $packageFiles = @(git ls-files -- Runtime Editor Tests 'Samples~')
+          if ($LASTEXITCODE -ne 0 -or $packageFiles.Count -eq 0) {
             throw 'Cannot select a Unity project cache without tracked package input paths.'
           }
+          $frameworkFiles = @(git ls-files -- scripts/unity/test-framework-evidence.cs.txt scripts/unity/test-framework-evidence.asmdef.txt)
+          if ($LASTEXITCODE -ne 0 -or $frameworkFiles.Count -ne 2) {
+            throw 'Cannot select a correctness project without both owned framework collector inputs.'
+          }
+          $sourceFiles = @($packageFiles) + @($frameworkFiles)
           $hasher = [System.Security.Cryptography.SHA256]::Create()
           try {
             $bytes = [System.Text.Encoding]::UTF8.GetBytes(($sourceFiles -join "`n"))
@@ -460,6 +465,7 @@ jobs:
             -UnityVersion '${{ matrix.unity-version }}' `
             -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
             -TestMode standalone `
+            -CaptureTestFrameworkEvidence `
             -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
             -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-standalone' `
             -ProjectPath $projectPath `
