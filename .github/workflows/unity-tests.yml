@@ -847,6 +847,16 @@ jobs:
           reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
           incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
 
+      - name: Inspect retained correctness project caches on DAD
+        if: ${{ success() && runner.name == 'DAD-MACHINE' && !inputs.consumer_install_validation }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          ./scripts/unity/inspect-test-project-caches.ps1 `
+            -WorkspacePath $env:RUNNER_WORKSPACE `
+            -RetainedSourceSetKey $env:DXM_UNITY_SOURCE_SET_KEY `
+            -UnityVersion '${{ matrix.unity-version }}'
+
   # Single aggregate gate so branch protection can require ONE "Unity CI Success"
   # context instead of the individual matrix and preflight contexts.
   #
