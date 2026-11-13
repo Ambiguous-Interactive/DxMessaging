@@ -2884,8 +2884,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
 
         private static string ResolveArchitecture()
         {
-            return IntPtr.Size == 8 ? "x64" : "x86";
+            return ResolveArchitecture(RuntimeInformation.ProcessArchitecture);
         }
+
+        internal static string ResolveArchitecture(Architecture architecture) =>
+            architecture.ToString().ToLowerInvariant();
 
         private static string ResolveBuildConfiguration()
         {

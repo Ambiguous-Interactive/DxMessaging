@@ -7,6 +7,22 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     [Category("PerfBench")]
     public sealed class BenchmarkArchitectureContractTests
     {
+        [TestCase(Architecture.X86, "x86")]
+        [TestCase(Architecture.X64, "x64")]
+        [TestCase(Architecture.Arm, "arm")]
+        [TestCase(Architecture.Arm64, "arm64")]
+        public void ArchitectureLabelsDistinguishInstructionSetsWithTheSamePointerWidth(
+            Architecture architecture,
+            string expected
+        )
+        {
+            Assert.That(
+                DispatchBenchmarkResult.ResolveArchitecture(architecture),
+                Is.EqualTo(expected),
+                $"architecture={architecture}"
+            );
+        }
+
         [Test]
         public void ResultNamesTheActualProcessArchitecture()
         {
