@@ -75,7 +75,8 @@ namespace DxMessaging.Tests.Runtime
             lock (_maintenance)
             {
                 ThrowIfDisposed();
-                Volatile.Write(ref _state, 1);
+                // Fence closed admission before observing the active-operation count.
+                Interlocked.Exchange(ref _state, 1);
                 WaitForOperations();
                 int dropped = unchecked((int)(uint)(_tail - _head));
                 Array.Clear(_items, 0, _items.Length);
@@ -94,7 +95,8 @@ namespace DxMessaging.Tests.Runtime
                 {
                     return;
                 }
-                Volatile.Write(ref _state, 2);
+                // Fence closed admission before observing the active-operation count.
+                Interlocked.Exchange(ref _state, 2);
                 WaitForOperations();
                 Array.Clear(_items, 0, _items.Length);
                 _head = 0;
