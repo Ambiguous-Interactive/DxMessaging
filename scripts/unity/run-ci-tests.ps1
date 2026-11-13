@@ -8957,10 +8957,13 @@ try {
                     throw 'The native standalone cleanup profile reader failed.'
                 }
                 $profileSamples = Get-Content -LiteralPath (Join-Path $cleanupProfileDirectory 'samples.json') -Raw | ConvertFrom-Json
-                if (-not $profileSamples.Completed -or $profileSamples.Error -or
+                if ($profileSamples.SchemaVersion -ne 1 -or -not $profileSamples.Completed -or $profileSamples.Error -or
+                    $null -eq $profileSamples.Original -or $null -eq $profileSamples.Restored -or
+                    $profileSamples.Original.Enabled -or $profileSamples.Original.DriverEnabled -or $profileSamples.Original.BinaryLog -or
+                    $profileSamples.Original.FirstFrame -ne -1 -or $profileSamples.Original.LastFrame -ne -1 -or
                     $profileSamples.ReaderProcessId -ne $readerResult.ProcessId -or
                     $profileSamples.UnityVersion -cne $UnityVersion -or @($profileSamples.Samples).Count -eq 0 -or
-                    ($observation.Original | ConvertTo-Json -Compress) -cne ($profileSamples.Restored | ConvertTo-Json -Compress)) {
+                    ($profileSamples.Original | ConvertTo-Json -Compress) -cne ($profileSamples.Restored | ConvertTo-Json -Compress)) {
                     throw 'The native cleanup hierarchy or reader restoration is incomplete.'
                 }
                 Assert-StandaloneCleanupHierarchy -Profile $profileSamples -ExpectedScopes $expectedCleanupScopes

@@ -180,6 +180,7 @@ namespace DxMessaging.Ci
             {
                 ReaderProcessId = Process.GetCurrentProcess().Id,
                 UnityVersion = Application.unityVersion,
+                Original = original,
                 Samples = Array.Empty<Sample>(),
             };
             Exception failure = null;
@@ -423,6 +424,7 @@ namespace DxMessaging.Ci
             public bool Completed;
             public string Error;
             public Sample[] Samples;
+            public ProfilerState Original;
             public ProfilerState Restored;
         }
     }

@@ -28,7 +28,8 @@ Each observation retains `admission.json` and `observation.json` beneath
 `.artifacts/unity/<version>-standalone/cleanup-study/<ordinal>/cleanup-profile/<invocation>/`.
 Capture also retains `cleanup.raw`, `samples.json` and the separate native reader's
 log. The reader runs after the builder exits. Its process ID differs from the
-builder's ID. Bind both to their invocations and the verified framework snapshot;
+builder's ID. Each process restores its own admitted settings; those settings can
+differ. Bind both to their invocations and the verified framework snapshot;
 do not use the reader's process as the build identity.
 
 The native reader exports each main-thread `ExecutePostBuildCleanupMethods` sample

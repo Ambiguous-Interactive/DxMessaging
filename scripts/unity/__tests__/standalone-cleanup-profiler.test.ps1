@@ -108,7 +108,13 @@ try {
         Assert-Control ([IO.File]::ReadAllText($packetPath) -ceq $unchanged) 'A second finish must not rewrite the completed observation.'
     }
     $profile = Join-Path $scratch 'Capture'
+    [UnityEngine.Profiling.Profiler]::logFile = 'reader-original.log'
+    [UnityEditorInternal.ProfilerDriver]::connectedProfiler = 23
+    [UnityEditorInternal.ProfilerDriver]::profileEditor = $true
     [DxMessaging.Ci.DxmStandaloneCleanupProfiler]::Export($profile)
+    $readerPacket = Get-Content -LiteralPath (Join-Path $profile 'samples.json') -Raw | ConvertFrom-Json
+    Assert-Control ($null -ne $readerPacket.Original -and $readerPacket.Original.LogFile -ceq 'reader-original.log' -and $readerPacket.Original.Connection -eq 23 -and $readerPacket.Original.ProfileEditor) 'The separate reader must retain its own starting settings.'
+    Assert-Control (($readerPacket.Original | ConvertTo-Json -Compress) -ceq ($readerPacket.Restored | ConvertTo-Json -Compress)) 'Reader restoration must match reader admission, independently of the builder.'
     $samples = Get-Content -LiteralPath (Join-Path $profile 'samples.json') -Raw | ConvertFrom-Json
     Assert-Control ($samples.Completed -and @($samples.Samples).Count -eq 3) 'Keep each same-name raw sample separately.'
     Assert-Control (($samples.Samples.Index -join ',') -ceq '1,2,3') 'Raw execution order must be preserved.'
@@ -129,6 +135,9 @@ try {
     }
     [UnityEditorInternal.ProfilerDriver]::MissingMarkers = $false
     [UnityEditorInternal.ProfilerDriver]::RawLoadFails = $false
+    [UnityEngine.Profiling.Profiler]::logFile = 'original.log'
+    [UnityEditorInternal.ProfilerDriver]::connectedProfiler = 17
+    [UnityEditorInternal.ProfilerDriver]::profileEditor = $false
     $directory = Join-Path $scratch 'restore-failure'
     [Environment]::SetEnvironmentVariable('DXM_CLEANUP_PROFILER_MODE', 'Capture')
     [Environment]::SetEnvironmentVariable('DXM_CLEANUP_PROFILER_DIRECTORY', $directory)
