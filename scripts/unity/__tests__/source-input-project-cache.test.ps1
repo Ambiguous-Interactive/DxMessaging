@@ -59,8 +59,6 @@ try {
     Set-Content -LiteralPath 'scripts/unity/test-framework-evidence.cs.txt' -Value 'class Collector {}'
     Set-Content -LiteralPath 'scripts/unity/test-framework-evidence.asmdef.txt' -Value '{"name":"Collector"}'
     Invoke-FixtureGit -GitArguments @('add', 'scripts/unity/test-framework-evidence.cs.txt', 'scripts/unity/test-framework-evidence.asmdef.txt')
-    Set-Content -LiteralPath 'scripts/unity/standalone-cleanup-profiler.cs.txt' -Value 'class CleanupObserver {}'
-    Invoke-FixtureGit -GitArguments @('add', 'scripts/unity/standalone-cleanup-profiler.cs.txt')
     $initial = Read-CacheKey
     Set-Content -LiteralPath 'Runtime/A.cs' -Value 'class A { int value; }'
     Invoke-FixtureGit -GitArguments @('add', 'Runtime/A.cs')
@@ -84,12 +82,6 @@ try {
     Set-Content -LiteralPath 'scripts/unity/test-framework-evidence.cs.txt' -Value 'class Collector {}'
     Invoke-FixtureGit -GitArguments @('add', 'scripts/unity/test-framework-evidence.cs.txt')
     Assert-CacheCondition -Name 'Restoring the same collector layout restores the same project key' `
-        -Condition ((Read-CacheKey) -ceq $renamed)
-    Invoke-FixtureGit -GitArguments @('rm', '--force', '--quiet', 'scripts/unity/standalone-cleanup-profiler.cs.txt')
-    Assert-CacheSelectionFails -Name 'A missing owned observer input cannot reuse a correctness project'
-    Set-Content -LiteralPath 'scripts/unity/standalone-cleanup-profiler.cs.txt' -Value 'class CleanupObserver {}'
-    Invoke-FixtureGit -GitArguments @('add', 'scripts/unity/standalone-cleanup-profiler.cs.txt')
-    Assert-CacheCondition -Name 'Restoring the same observer layout restores the same project key' `
         -Condition ((Read-CacheKey) -ceq $renamed)
     Set-Content -LiteralPath 'README.md' -Value 'Documentation change'
     Invoke-FixtureGit -GitArguments @('add', 'README.md')

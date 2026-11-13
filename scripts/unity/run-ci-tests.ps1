@@ -72,9 +72,6 @@ param(
 
     [switch]$CaptureTestFrameworkEvidence,
 
-    [ValidateSet('Disabled', 'Control', 'Capture')]
-    [string]$CleanupProfilerMode = 'Disabled',
-
     [switch]$GenerateOnly,
 
     [switch]$SkipCiAnalyzers
@@ -2087,21 +2084,7 @@ using UnityEngine.TestTools;
 public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPostBuildCleanup, IPostprocessBuildWithReport
 {
     private static bool s_Armed;
-    private static readonly EditorApplication.CallbackFunction s_Exit = ExitAfterCleanup;
-
-    private static void ExitAfterCleanup()
-    {
-        try
-        {
-            DxMessaging.Ci.DxmStandaloneCleanupProfiler.Finish();
-            EditorApplication.Exit(0);
-        }
-        catch (Exception exception)
-        {
-            Debug.LogException(exception);
-            EditorApplication.Exit(1);
-        }
-    }
+    private static readonly EditorApplication.CallbackFunction s_Exit = () => EditorApplication.Exit(0);
     public int callbackOrder => 0;
 
     public BuildPlayerOptions ModifyOptions(BuildPlayerOptions playerOptions)
@@ -2144,7 +2127,6 @@ $pilotDefineOption
         DxMessaging.Ci.DxmCiTestConfigurator.WriteBuildOptionsEvidence(
             Environment.GetEnvironmentVariable("DXM_BUILD_OPTIONS_PROFILE_PATH"),
             report.summary.options);
-        DxMessaging.Ci.DxmStandaloneCleanupProfiler.Begin();
     }
 
     public void Cleanup()
@@ -4251,7 +4233,6 @@ EditorSettings:
     if ($Mode -eq 'standalone') {
         $standaloneFiles = @(
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmCiStandaloneBuildModifier.cs')); Content = (New-StandaloneBuildModifierSource -DevelopmentBuild $DevelopmentBuild -CanonicalProfileId $CanonicalProfileId -PilotControl $PilotControl) },
-            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmStandaloneCleanupProfiler.cs')); Content = ([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'standalone-cleanup-profiler.cs.txt'))) },
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.cs')); Content = (New-StandaloneTestCallbackSource -CanonicalProfileId $CanonicalProfileId -CanonicalProfileSha256 $CanonicalProfileSha256 -ResultWriterSource ([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'DxmNUnitResultWriter.cs.txt')))) },
             @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmCiStandaloneTestCallback', 'DxmCiStandaloneTestCallback.asmdef')); Content = (New-StandaloneTestCallbackAsmdef) }
         )
@@ -7884,45 +7865,6 @@ function Test-NUnitResults {
     Write-CiNotice "${Label}: total=$total passed=$passed failed=$failed skipped=$skipped"
 }
 
-function Assert-StandaloneCleanupHierarchy {
-    param(
-        [Parameter(Mandatory = $true)]$SamplePacket,
-        [Parameter(Mandatory = $true)][ValidateSet(2, 3)][int]$ExpectedScopes
-    )
-    $rows = @($SamplePacket.Samples)
-    if ($rows.Count -ne $ExpectedScopes) {
-        throw "Standalone cleanup hierarchy requires $ExpectedScopes scopes; found $($rows.Count)."
-    }
-    $marker = 'ExecutePostBuildCleanupMethods'
-    $outer = $rows[0]
-    if ($outer.Name -cne $marker -or $outer.Thread -cne 'Main Thread' -or
-        @($outer.Ancestors | Where-Object { $_ -ceq $marker }).Count -ne 0 -or
-        $outer.StartNs -lt 0 -or $outer.InclusiveNs -lt 0 -or $outer.Children -lt ($ExpectedScopes - 1)) {
-        throw 'Standalone cleanup hierarchy has no complete outer scope.'
-    }
-    $outerEnd = $outer.StartNs + $outer.InclusiveNs
-    $previousIndex = $outer.Index
-    $previousEnd = $outer.StartNs
-    foreach ($child in $rows[1..($rows.Count - 1)]) {
-        if ($child.Name -cne $marker -or $child.Thread -cne 'Main Thread' -or $child.Frame -ne $outer.Frame -or
-            @($child.Ancestors | Where-Object { $_ -ceq $marker }).Count -ne 1 -or
-            @($child.AncestorIndices) -notcontains $outer.Index -or $child.Index -le $previousIndex -or
-            $child.InclusiveNs -lt 0 -or $child.StartNs -lt $previousEnd -or
-            ($child.StartNs + $child.InclusiveNs) -gt $outerEnd) {
-            throw "Standalone cleanup hierarchy has an incomplete or misplaced child at index $($child.Index)."
-        }
-        $previousIndex = $child.Index
-        $previousEnd = $child.StartNs + $child.InclusiveNs
-    }
-}
-
-if ($CleanupProfilerMode -cne 'Disabled') {
-    if ($TestMode -cne 'standalone' -or -not $CaptureTestFrameworkEvidence -or
-        $IncludeComparisons -or $StandalonePlayerRunCount -ne 1 -or -not [string]::IsNullOrWhiteSpace($CanonicalProfilePath)) {
-        throw 'Cleanup profiling requires an ordinary correctness standalone build with framework evidence.'
-    }
-}
-
 if ($CaptureTestFrameworkEvidence) {
     if ($TestMode -cne 'standalone' -or $IncludeComparisons) {
         throw 'Framework evidence capture requires a correctness standalone build.'
@@ -8838,29 +8780,12 @@ try {
             $buildArgs += @('-dxmFrameworkEvidenceDirectory', $frameworkEvidenceDirectory)
         }
 
-        $cleanupProfileDirectory = $null
-        if ($CleanupProfilerMode -cne 'Disabled') {
-            $cleanupProfileDirectory = Join-Path (Join-Path $ArtifactsPath 'cleanup-profile') ([guid]::NewGuid().ToString('N'))
-        }
-        $cleanupEnvironment = @{
-            DXM_CLEANUP_PROFILER_MODE = [Environment]::GetEnvironmentVariable('DXM_CLEANUP_PROFILER_MODE')
-            DXM_CLEANUP_PROFILER_DIRECTORY = [Environment]::GetEnvironmentVariable('DXM_CLEANUP_PROFILER_DIRECTORY')
-        }
-        try {
-            # An inherited environment variable cannot enable this opt-in observer.
-            $env:DXM_CLEANUP_PROFILER_MODE = if ($CleanupProfilerMode -ceq 'Disabled') { $null } else { $CleanupProfilerMode }
-            $env:DXM_CLEANUP_PROFILER_DIRECTORY = $cleanupProfileDirectory
-            $buildResult = Invoke-ProcessWithTreeKillTimeout `
-                -FilePath $UnityEditorPath `
-                -Arguments $buildArgs `
-                -TimeoutSeconds (Get-StandaloneBuildTimeoutSeconds) `
-                -LogPath $logPath `
-                -Label "Build standalone IL2CPP test player (Unity $UnityVersion)"
-        } finally {
-            foreach ($entry in $cleanupEnvironment.GetEnumerator()) {
-                [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value)
-            }
-        }
+        $buildResult = Invoke-ProcessWithTreeKillTimeout `
+            -FilePath $UnityEditorPath `
+            -Arguments $buildArgs `
+            -TimeoutSeconds (Get-StandaloneBuildTimeoutSeconds) `
+            -LogPath $logPath `
+            -Label "Build standalone IL2CPP test player (Unity $UnityVersion)"
         Remove-Item -LiteralPath Env:\DXM_BUILD_OPTIONS_PROFILE_PATH -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath Env:\DXM_PREBUILD_CONFIG_PROFILE_PATH -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath Env:\DXM_POSTBUILD_CONFIG_PROFILE_PATH -ErrorAction SilentlyContinue
@@ -8906,71 +8831,6 @@ try {
                 -ProcessId $buildResult.ProcessId `
                 -Project $ProjectPath `
                 -UnityVersion $UnityVersion
-        }
-        if ($CleanupProfilerMode -cne 'Disabled') {
-            $observation = Get-Content -LiteralPath (Join-Path $cleanupProfileDirectory 'observation.json') -Raw | ConvertFrom-Json
-            $observationProject = ConvertTo-ComparableFullPath -Path $observation.ProjectPath
-            $expectedProject = ConvertTo-ComparableFullPath -Path $ProjectPath
-            $onWindowsHost = [IO.Path]::DirectorySeparatorChar -eq '\'
-            $pathComparison = if ($onWindowsHost) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
-            if ($observation.SchemaVersion -ne 1 -or -not $observation.Completed -or $observation.Error -or
-                $observation.Mode -cne $CleanupProfilerMode -or $observation.BuildProcessId -ne $buildResult.ProcessId -or
-                $observation.UnityVersion -cne $UnityVersion -or -not [string]::Equals($observationProject, $expectedProject, $pathComparison) -or
-                $null -eq $observation.Original -or $null -eq $observation.Restored -or
-                $observation.Original.Enabled -or $observation.Original.DriverEnabled -or $observation.Original.BinaryLog -or
-                $observation.Original.FirstFrame -ne -1 -or $observation.Original.LastFrame -ne -1 -or
-                (-not [string]::IsNullOrWhiteSpace($env:GITHUB_SHA) -and $observation.SourceCommit -cne $env:GITHUB_SHA) -or
-                $observation.StopwatchFrequency -le 0 -or $observation.PostprocessTimestamp -le 0 -or
-                $observation.ArmedTimestamp -lt $observation.PostprocessTimestamp -or
-                $observation.ExitCallbackTimestamp -lt $observation.ArmedTimestamp -or
-                ($observation.Original | ConvertTo-Json -Compress) -cne ($observation.Restored | ConvertTo-Json -Compress)) {
-                throw 'The standalone cleanup observation is incomplete or its source/process/state binding differs.'
-            }
-            if ($CleanupProfilerMode -ceq 'Capture') {
-                $frameworkSnapshots = @(Get-ChildItem -LiteralPath $frameworkEvidenceDirectory -Directory)
-                if ($frameworkSnapshots.Count -ne 1) {
-                    throw 'Cleanup profiling requires one verified framework snapshot.'
-                }
-                $resolvedFramework = Get-Content -LiteralPath (Join-Path $frameworkSnapshots[0].FullName 'receipt.json') -Raw | ConvertFrom-Json
-                # Layouts are bound to captured TestLauncherBase source, not guessed from Unity version.
-                $expectedCleanupScopes = switch -CaseSensitive ($resolvedFramework.PackageVersion) {
-                    '1.4.6' { 2 }
-                    '1.6.0' { 3 }
-                    '1.7.0' { 3 }
-                    default { throw 'Cleanup profiling requires a separately verified framework marker layout.' }
-                }
-                $rawPath = Join-Path $cleanupProfileDirectory 'cleanup.raw'
-                if ((Get-Item -LiteralPath $rawPath).Length -ne $observation.RawBytes -or $observation.RawBytes -le 0) {
-                    throw 'The standalone cleanup raw profile differs from its producer receipt.'
-                }
-                try {
-                    $env:DXM_CLEANUP_PROFILER_DIRECTORY = $cleanupProfileDirectory
-                    $readerResult = Invoke-ProcessWithTreeKillTimeout `
-                        -FilePath $UnityEditorPath `
-                        -Arguments @('-batchmode', '-nographics', '-projectPath', $ProjectPath, '-executeMethod', 'DxMessaging.Ci.DxmStandaloneCleanupProfiler.ExportRaw', '-quit', '-logFile', '-') `
-                        -TimeoutSeconds (Get-StandaloneBuildTimeoutSeconds) `
-                        -LogPath (Join-Path $cleanupProfileDirectory 'reader.log') `
-                        -Label "Read standalone cleanup hierarchy (Unity $UnityVersion)"
-                } finally {
-                    [Environment]::SetEnvironmentVariable('DXM_CLEANUP_PROFILER_DIRECTORY', $cleanupEnvironment.DXM_CLEANUP_PROFILER_DIRECTORY)
-                }
-                if ($readerResult.TimedOut -or $readerResult.ExitCode -ne 0) {
-                    throw 'The native standalone cleanup profile reader failed.'
-                }
-                $profileSamples = Get-Content -LiteralPath (Join-Path $cleanupProfileDirectory 'samples.json') -Raw | ConvertFrom-Json
-                if ($profileSamples.SchemaVersion -ne 1 -or -not $profileSamples.Completed -or $profileSamples.Error -or
-                    $null -eq $profileSamples.Original -or $null -eq $profileSamples.Restored -or
-                    $profileSamples.Original.Enabled -or $profileSamples.Original.DriverEnabled -or $profileSamples.Original.BinaryLog -or
-                    $profileSamples.Original.FirstFrame -ne -1 -or $profileSamples.Original.LastFrame -ne -1 -or
-                    $profileSamples.ReaderProcessId -ne $readerResult.ProcessId -or
-                    $profileSamples.UnityVersion -cne $UnityVersion -or @($profileSamples.Samples).Count -eq 0 -or
-                    ($profileSamples.Original | ConvertTo-Json -Compress) -cne ($profileSamples.Restored | ConvertTo-Json -Compress)) {
-                    throw 'The native cleanup hierarchy or reader restoration is incomplete.'
-                }
-                Assert-StandaloneCleanupHierarchy -SamplePacket $profileSamples -ExpectedScopes $expectedCleanupScopes
-            } elseif ($observation.RawBytes -ne 0 -or (Test-Path -LiteralPath (Join-Path $cleanupProfileDirectory 'cleanup.raw'))) {
-                throw 'The timestamp-only cleanup control must not write a raw profile.'
-            }
         }
         # Required player files are present. If the build process exited non-zero or was
         # tree-killed, narrate the benign post-build shutdown crash and keep going.
