@@ -179,6 +179,10 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(ring.TryDequeue(out _), Is.False);
         }
 
+        /// <remarks>
+        /// 2026-11-13: maintenance must fence admission before observing active operations.
+        /// Always stop and join workers, including when a reset-count assertion fails.
+        /// </remarks>
         [Test]
         public void ConcurrentResetAndDisposalLeaveNoRetainedReferences()
         {
@@ -258,19 +262,138 @@ namespace DxMessaging.Tests.Runtime.Core
             producer.Start();
             consumer.Start();
             start.Set();
-            Assert.That(activity.Wait(TimeSpan.FromSeconds(10)), Is.True);
-            for (int iteration = 0; iteration < 32; ++iteration)
+            bool producerFinished = false;
+            bool consumerFinished = false;
+            try
             {
-                Assert.That(ring.Reset(), Is.InRange(0, ring.Capacity));
-                Thread.Yield();
+                Assert.That(activity.Wait(TimeSpan.FromSeconds(10)), Is.True);
+                for (int iteration = 0; iteration < 32; ++iteration)
+                {
+                    int dropped = ring.Reset();
+                    Assert.That(
+                        dropped,
+                        Is.InRange(0, ring.Capacity),
+                        $"Reset iteration {iteration}."
+                    );
+                    Thread.Yield();
+                }
             }
-            ring.Dispose();
-            Interlocked.Exchange(ref stop, 1);
-            Assert.That(producer.Join(TimeSpan.FromSeconds(10)), Is.True);
-            Assert.That(consumer.Join(TimeSpan.FromSeconds(10)), Is.True);
+            finally
+            {
+                try
+                {
+                    ring.Dispose();
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref stop, 1);
+                    producerFinished = producer.Join(TimeSpan.FromSeconds(10));
+                    consumerFinished = consumer.Join(TimeSpan.FromSeconds(10));
+                }
+            }
+            Assert.That(producerFinished, Is.True);
+            Assert.That(consumerFinished, Is.True);
             Assert.That(failures.All(error => error == null), Is.True);
             Assert.That(slots.All(item => item == null), Is.True);
             Assert.Throws<ObjectDisposedException>(() => ring.TryEnqueue(new object()));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void MaintenanceWaitsForAdmittedOperationsAndRejectsNewWork(bool dispose)
+        {
+            using SpscFixedRingControl<object> ring = new(4);
+            object payload = new();
+            Assert.That(ring.TryEnqueue(payload), Is.True);
+            Type type = typeof(SpscFixedRingControl<object>);
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            MethodInfo enter = type.GetMethod("EnterOperation", flags);
+            MethodInfo exit = type.GetMethod("ExitOperation", flags);
+            FieldInfo state = type.GetField("_state", flags);
+            FieldInfo items = type.GetField("_items", flags);
+            Assert.That(enter, Is.Not.Null);
+            Assert.That(exit, Is.Not.Null);
+            Assert.That(state, Is.Not.Null);
+            Assert.That(items, Is.Not.Null);
+            object[] slots = (object[])items.GetValue(ring);
+            using ManualResetEventSlim finished = new(false);
+            Exception failure = null;
+            int dropped = -1;
+            Thread maintenance = new(() =>
+            {
+                try
+                {
+                    if (dispose)
+                    {
+                        ring.Dispose();
+                    }
+                    else
+                    {
+                        dropped = ring.Reset();
+                    }
+                }
+                catch (Exception error)
+                {
+                    failure = error;
+                }
+                finally
+                {
+                    finished.Set();
+                }
+            })
+            {
+                IsBackground = true,
+            };
+            // Hold the real admission boundary while maintenance closes new admission.
+            enter.Invoke(ring, null);
+            bool joined = false;
+            bool started = false;
+            try
+            {
+                maintenance.Start();
+                started = true;
+                Assert.That(
+                    SpinWait.SpinUntil(
+                        () => (int)state.GetValue(ring) != 0,
+                        TimeSpan.FromSeconds(10)
+                    ),
+                    Is.True,
+                    "Maintenance must close admission."
+                );
+                Assert.That(finished.IsSet, Is.False, "An admitted operation must finish first.");
+                Assert.That(
+                    slots[0],
+                    Is.SameAs(payload),
+                    "Maintenance must not clear active storage."
+                );
+                Type exceptionType = dispose
+                    ? typeof(ObjectDisposedException)
+                    : typeof(InvalidOperationException);
+                Assert.Throws(exceptionType, () => ring.TryEnqueue(new object()));
+                Assert.Throws(exceptionType, () => ring.TryDequeue(out _));
+            }
+            finally
+            {
+                exit.Invoke(ring, null);
+                if (started)
+                {
+                    joined = maintenance.Join(TimeSpan.FromSeconds(10));
+                }
+            }
+            Assert.That(
+                joined,
+                Is.True,
+                "Maintenance must finish after the admitted operation exits."
+            );
+            Assert.That(failure, Is.Null);
+            Assert.That(slots.All(item => item == null), Is.True);
+            if (!dispose)
+            {
+                Assert.That(dropped, Is.EqualTo(1));
+                Assert.That(ring.TryEnqueue(payload), Is.True, "Reset must reopen admission.");
+                Assert.That(ring.TryDequeue(out object actual), Is.True);
+                Assert.That(actual, Is.SameAs(payload));
+            }
         }
 
         [Test]
