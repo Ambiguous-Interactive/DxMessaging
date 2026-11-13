@@ -69,7 +69,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # Unity's shipped API target remains .NET Standard 2.1, independently of this SDK.
 # ------------------------------------------------------------------------------
 COPY global.json /tmp/dxm-global.json
-RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+RUN curl -fsSL https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
     && bash /tmp/dotnet-install.sh --jsonfile /tmp/dxm-global.json --install-dir /usr/share/dotnet \
     && rm /tmp/dotnet-install.sh /tmp/dxm-global.json
 
