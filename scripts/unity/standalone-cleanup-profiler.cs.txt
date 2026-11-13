@@ -1,0 +1,429 @@
+// MIT License - Copyright (c) 2026 wallstop
+namespace DxMessaging.Ci
+{
+    using System;
+    using System.Collections.Generic;
+    using System.Diagnostics;
+    using System.IO;
+    using System.Linq;
+    using System.Runtime.ExceptionServices;
+    using System.Runtime.Serialization.Json;
+    using System.Text;
+    using UnityEditor;
+    using UnityEditor.Profiling;
+    using UnityEditorInternal;
+    using UnityEngine;
+    using Profiler = UnityEngine.Profiling.Profiler;
+
+    // This observer is armed only by the explicit standalone research options.
+    // The same compiled source handles capture and timestamp-only controls.
+    public static class DxmStandaloneCleanupProfiler
+    {
+        private const string MarkerName = "ExecutePostBuildCleanupMethods";
+        private static Observation s_Observation;
+        private static ProfilerState s_Original;
+        private static string s_Directory;
+
+        public static void Begin()
+        {
+            string mode = Environment.GetEnvironmentVariable("DXM_CLEANUP_PROFILER_MODE");
+            if (string.IsNullOrEmpty(mode))
+            {
+                return;
+            }
+            if (mode != "Control" && mode != "Capture")
+            {
+                throw new InvalidOperationException("Unknown cleanup observer mode: " + mode);
+            }
+            if (s_Observation != null)
+            {
+                throw new InvalidOperationException("A cleanup observation is already active.");
+            }
+            s_Directory = Environment.GetEnvironmentVariable("DXM_CLEANUP_PROFILER_DIRECTORY");
+            if (string.IsNullOrEmpty(s_Directory) || !Path.IsPathRooted(s_Directory))
+            {
+                throw new InvalidOperationException(
+                    "Cleanup observer output must be an absolute path."
+                );
+            }
+            if (Directory.Exists(s_Directory))
+            {
+                throw new InvalidOperationException("Cleanup observer output already exists.");
+            }
+            s_Original = ProfilerState.Read();
+            if (
+                s_Original.Enabled
+                || s_Original.DriverEnabled
+                || s_Original.BinaryLog
+                || s_Original.FirstFrame != -1
+                || s_Original.LastFrame != -1
+            )
+            {
+                throw new InvalidOperationException(
+                    "Cleanup profiling requires an idle profiler with empty history."
+                );
+            }
+            Directory.CreateDirectory(s_Directory);
+            s_Observation = new Observation
+            {
+                Mode = mode,
+                BuildProcessId = Process.GetCurrentProcess().Id,
+                UnityVersion = Application.unityVersion,
+                ProjectPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..")),
+                SourceCommit = Environment.GetEnvironmentVariable("GITHUB_SHA"),
+                PostprocessUtc = DateTime.UtcNow.ToString("o"),
+                StopwatchFrequency = Stopwatch.Frequency,
+                PostprocessTimestamp = Stopwatch.GetTimestamp(),
+                Original = s_Original,
+            };
+            try
+            {
+                if (mode == "Capture")
+                {
+                    ProfilerDriver.profileEditor = true;
+                    Profiler.logFile = Path.Combine(s_Directory, "cleanup.raw");
+                    Profiler.enableBinaryLog = true;
+                    ProfilerDriver.enabled = true;
+                    Profiler.enabled = true;
+                }
+                s_Observation.ArmedTimestamp = Stopwatch.GetTimestamp();
+                Write("admission.json", s_Observation);
+            }
+            catch (Exception original)
+            {
+                s_Observation = null;
+                if (mode == "Capture")
+                {
+                    try
+                    {
+                        s_Original.Restore();
+                    }
+                    catch (Exception cleanup)
+                    {
+                        throw new AggregateException(original, cleanup);
+                    }
+                }
+                throw;
+            }
+        }
+
+        // Called immediately before the existing next-update EditorApplication.Exit.
+        // Stopping closes the raw file before the editor exits or the player runs.
+        public static void Finish()
+        {
+            if (s_Observation == null)
+            {
+                return;
+            }
+            Observation observation = s_Observation;
+            observation.ExitCallbackTimestamp = Stopwatch.GetTimestamp();
+            try
+            {
+                if (observation.Mode == "Capture")
+                {
+                    s_Original.Restore();
+                    string raw = Path.Combine(s_Directory, "cleanup.raw");
+                    observation.RawBytes = new FileInfo(raw).Length;
+                    if (observation.RawBytes == 0)
+                    {
+                        throw new InvalidOperationException("The cleanup raw profile is empty.");
+                    }
+                }
+                observation.Restored = ProfilerState.Read();
+                if (!s_Original.Matches(observation.Restored))
+                {
+                    throw new InvalidOperationException("Cleanup observer profiler state changed.");
+                }
+                observation.Completed = true;
+                Write("observation.json", observation);
+            }
+            catch (Exception exception)
+            {
+                observation.Error = exception.ToString();
+                observation.Restored = ProfilerState.Read();
+                Write("observation.json", observation);
+                throw;
+            }
+            finally
+            {
+                s_Observation = null;
+            }
+        }
+
+        // Runs in a separate editor process after the observed builder has exited.
+        public static void ExportRaw()
+        {
+            string directory = Environment.GetEnvironmentVariable("DXM_CLEANUP_PROFILER_DIRECTORY");
+            if (string.IsNullOrEmpty(directory))
+            {
+                throw new InvalidOperationException("Cleanup profile input is missing.");
+            }
+            Export(directory);
+        }
+
+        public static void Export(string directory)
+        {
+            ProfilerState original = ProfilerState.Read();
+            if (
+                original.Enabled
+                || original.DriverEnabled
+                || original.BinaryLog
+                || original.FirstFrame != -1
+                || original.LastFrame != -1
+            )
+            {
+                throw new InvalidOperationException(
+                    "Cleanup profile reader requires an idle profiler with empty history."
+                );
+            }
+            ProfileSamples output = new ProfileSamples
+            {
+                ReaderProcessId = Process.GetCurrentProcess().Id,
+                UnityVersion = Application.unityVersion,
+                Samples = Array.Empty<Sample>(),
+            };
+            Exception failure = null;
+            try
+            {
+                if (!ProfilerDriver.LoadProfile(Path.Combine(directory, "cleanup.raw"), false))
+                {
+                    throw new InvalidOperationException(
+                        "The native cleanup profile could not be loaded."
+                    );
+                }
+                List<Sample> samples = new List<Sample>();
+                for (
+                    int frame = ProfilerDriver.firstFrameIndex;
+                    frame >= 0 && frame <= ProfilerDriver.lastFrameIndex;
+                    ++frame
+                )
+                {
+                    using (RawFrameDataView view = ProfilerDriver.GetRawFrameDataView(frame, 0))
+                    {
+                        if (!view.valid || view.threadName != "Main Thread")
+                        {
+                            continue;
+                        }
+                        Stack<Ancestor> ancestors = new Stack<Ancestor>();
+                        for (int index = 0; index < view.sampleCount; ++index)
+                        {
+                            while (ancestors.Count > 0 && ancestors.Peek().EndIndex <= index)
+                            {
+                                ancestors.Pop();
+                            }
+                            string name = view.GetSampleName(index);
+                            int descendants = view.GetSampleChildrenCountRecursive(index);
+                            if (name == MarkerName)
+                            {
+                                samples.Add(
+                                    new Sample
+                                    {
+                                        Frame = frame,
+                                        Thread = view.threadName,
+                                        Index = index,
+                                        Name = name,
+                                        Children = view.GetSampleChildrenCount(index),
+                                        Descendants = descendants,
+                                        StartNs = checked((long)view.GetSampleStartTimeNs(index)),
+                                        InclusiveNs = checked((long)view.GetSampleTimeNs(index)),
+                                        Ancestors = ancestors
+                                            .Reverse()
+                                            .Select(a => a.Name)
+                                            .ToArray(),
+                                        AncestorIndices = ancestors
+                                            .Reverse()
+                                            .Select(a => a.Index)
+                                            .ToArray(),
+                                    }
+                                );
+                            }
+                            if (descendants > 0)
+                            {
+                                ancestors.Push(
+                                    new Ancestor
+                                    {
+                                        Index = index,
+                                        EndIndex = checked(index + descendants + 1),
+                                        Name = name,
+                                    }
+                                );
+                            }
+                        }
+                    }
+                }
+                output.Samples = samples.ToArray();
+                if (samples.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        "The raw profile contains no main-thread cleanup scopes."
+                    );
+                }
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+            finally
+            {
+                try
+                {
+                    original.Restore();
+                    output.Restored = ProfilerState.Read();
+                    if (!original.Matches(output.Restored))
+                    {
+                        throw new InvalidOperationException(
+                            "Cleanup reader profiler state changed."
+                        );
+                    }
+                }
+                catch (Exception restoration)
+                {
+                    failure =
+                        failure == null
+                            ? restoration
+                            : new AggregateException(failure, restoration);
+                }
+                output.Completed = failure == null;
+                output.Error = failure?.ToString();
+                File.WriteAllText(Path.Combine(directory, "samples.json"), Serialize(output));
+            }
+            if (failure != null)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
+            }
+        }
+
+        private static string Serialize(object value)
+        {
+            using MemoryStream stream = new MemoryStream();
+            DataContractJsonSerializer serializer = new DataContractJsonSerializer(value.GetType());
+            serializer.WriteObject(stream, value);
+            return Encoding.UTF8.GetString(stream.ToArray());
+        }
+
+        private static void Write(string file, Observation value) =>
+            File.WriteAllText(Path.Combine(s_Directory, file), Serialize(value));
+
+        private sealed class Ancestor
+        {
+            internal int Index;
+            internal int EndIndex;
+            internal string Name;
+        }
+
+        [Serializable]
+        private sealed class ProfilerState
+        {
+            public bool Enabled;
+            public bool DriverEnabled;
+            public bool BinaryLog;
+            public string LogFile;
+            public bool ProfileEditor;
+            public int Connection;
+            public int FirstFrame;
+            public int LastFrame;
+
+            internal static ProfilerState Read() =>
+                new ProfilerState
+                {
+                    Enabled = Profiler.enabled,
+                    DriverEnabled = ProfilerDriver.enabled,
+                    BinaryLog = Profiler.enableBinaryLog,
+                    LogFile = Profiler.logFile,
+                    ProfileEditor = ProfilerDriver.profileEditor,
+                    Connection = ProfilerDriver.connectedProfiler,
+                    FirstFrame = ProfilerDriver.firstFrameIndex,
+                    LastFrame = ProfilerDriver.lastFrameIndex,
+                };
+
+            internal bool Matches(ProfilerState other) =>
+                Enabled == other.Enabled
+                && DriverEnabled == other.DriverEnabled
+                && BinaryLog == other.BinaryLog
+                && LogFile == other.LogFile
+                && ProfileEditor == other.ProfileEditor
+                && Connection == other.Connection
+                && FirstFrame == other.FirstFrame
+                && LastFrame == other.LastFrame;
+
+            internal void Restore()
+            {
+                List<Exception> errors = new List<Exception>();
+                void Step(Action action)
+                {
+                    try
+                    {
+                        action();
+                    }
+                    catch (Exception error)
+                    {
+                        errors.Add(error);
+                    }
+                }
+                Step(() => Profiler.enabled = false);
+                Step(() => ProfilerDriver.enabled = false);
+                Step(() => Profiler.enableBinaryLog = false);
+                Step(() => Profiler.logFile = "");
+                Step(ProfilerDriver.ClearAllFrames);
+                Step(() => ProfilerDriver.connectedProfiler = Connection);
+                Step(() => ProfilerDriver.profileEditor = ProfileEditor);
+                Step(() => Profiler.logFile = LogFile);
+                Step(() => Profiler.enableBinaryLog = BinaryLog);
+                Step(() => ProfilerDriver.enabled = DriverEnabled);
+                Step(() => Profiler.enabled = Enabled);
+                if (errors.Count > 0)
+                {
+                    throw new AggregateException("Profiler restoration failed.", errors);
+                }
+            }
+        }
+
+        [Serializable]
+        private sealed class Observation
+        {
+            public int SchemaVersion = 1;
+            public string Mode;
+            public int BuildProcessId;
+            public string UnityVersion;
+            public string ProjectPath;
+            public string SourceCommit;
+            public string PostprocessUtc;
+            public long StopwatchFrequency;
+            public long PostprocessTimestamp;
+            public long ArmedTimestamp;
+            public long ExitCallbackTimestamp;
+            public long RawBytes;
+            public bool Completed;
+            public string Error;
+            public ProfilerState Original;
+            public ProfilerState Restored;
+        }
+
+        [Serializable]
+        private sealed class Sample
+        {
+            public int Frame;
+            public string Thread;
+            public int Index;
+            public string Name;
+            public int Children;
+            public int Descendants;
+            public long StartNs;
+            public long InclusiveNs;
+            public string[] Ancestors;
+            public int[] AncestorIndices;
+        }
+
+        [Serializable]
+        private sealed class ProfileSamples
+        {
+            public int SchemaVersion = 1;
+            public int ReaderProcessId;
+            public string UnityVersion;
+            public bool Completed;
+            public string Error;
+            public Sample[] Samples;
+            public ProfilerState Restored;
+        }
+    }
+}

@@ -7,6 +7,51 @@ covers the methodology behind those tables, the CI configuration that runs them,
 the scenario taxonomy, baseline capture, the automatic pull-request evidence and the
 local-only smoke gate, and how to add or bump a comparison library.
 
+## Observe standalone build cleanup
+
+Use the `Unity Tests` manual workflow input `cleanup_profiler_editor` to investigate
+cleanup on one supported Editor. Its default is `Disabled`. The selected job runs
+its ordinary standalone suite as a warmup, then four observations in fixed order:
+`Control`, `Capture`, `Capture`, `Control`. Each uses the same runner, owned project,
+source and test filter while the existing organization lock remains held. Other
+Editors keep their ordinary runs. Shipping and consumer-install requests cannot be
+combined with this study.
+
+Capture and control compile identical observer and build-modifier source. Control
+records timestamps without enabling profiling. Capture starts native binary
+profiling in the existing postprocess-build callback and stops before the existing
+next-update exit. The observer restores the original profiler settings and empty
+history. It preserves the existing player build, test selection, watchdogs and
+cleanup. A failed observer or restoration fails the study.
+
+Each observation retains `admission.json` and `observation.json` beneath
+`.artifacts/unity/<version>-standalone/cleanup-study/<ordinal>/cleanup-profile/<invocation>/`.
+Capture also retains `cleanup.raw`, `samples.json` and the separate native reader's
+log. The reader runs after the builder exits. Its process ID differs from the
+builder's ID. Bind both to their invocations and the verified framework snapshot;
+do not use the reader's process as the build identity.
+
+The native reader exports each main-thread `ExecutePostBuildCleanupMethods` sample
+with raw index, parent indices, ancestry, start time and inclusive duration in
+nanoseconds. The controller requires the layout established by the captured source:
+
+| Resolved Test Framework | Cleanup layout                           |
+| ----------------------- | ---------------------------------------- |
+| 1.4.6                   | One outer scope and one nested child     |
+| 1.6.0 and 1.7.0         | One outer scope and two ordered children |
+
+Unknown layouts require a separate source check. Missing scopes, invalid ancestry,
+changed frames, overlapping children and children outside the outer interval fail
+qualification. Keep the outer inclusive duration separate from its children's
+durations. Summing the same-name samples counts nested work more than once.
+
+The observer's postprocess-to-exit timestamp interval includes remaining build work
+and cleanup. It is broader than the cleanup method. Keep every control and capture;
+use the fixed order to inspect observer effects before interpreting raw times.
+Every optional trial must preserve the warmup's exact case names, multiplicity,
+outcomes and skip reasons. A raw profile alone does not establish method cost without profiling, a causal
+optimization or the five-minute CI target.
+
 ## Measurement methodology
 
 The benchmark harness measures raw dispatch cost over a single continuous

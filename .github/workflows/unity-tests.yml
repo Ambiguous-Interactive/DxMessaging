@@ -62,6 +62,16 @@ on:
         description: "Validate Git, UPM tarball, and classic package consumers"
         type: boolean
         default: false
+      cleanup_profiler_editor:
+        description: "Run warmup plus Control/Capture/Capture/Control cleanup observations on one Editor"
+        type: choice
+        default: "Disabled"
+        options:
+          - "Disabled"
+          - "2021.3.45f1"
+          - "2022.3.45f1"
+          - "6000.3.16f1"
+          - "6000.5.2f1"
 
 concurrency:
   # The organization enrollment contract (build-lock #274) requires literal
@@ -226,11 +236,11 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $packageFiles.Count -eq 0) {
             throw 'Cannot select a Unity project cache without tracked package input paths.'
           }
-          $frameworkFiles = @(git ls-files -- scripts/unity/test-framework-evidence.cs.txt scripts/unity/test-framework-evidence.asmdef.txt)
-          if ($LASTEXITCODE -ne 0 -or $frameworkFiles.Count -ne 2) {
-            throw 'Cannot select a correctness project without both owned framework collector inputs.'
+          $harnessFiles = @(git ls-files -- scripts/unity/test-framework-evidence.cs.txt scripts/unity/test-framework-evidence.asmdef.txt scripts/unity/standalone-cleanup-profiler.cs.txt)
+          if ($LASTEXITCODE -ne 0 -or $harnessFiles.Count -ne 3) {
+            throw 'Cannot select a correctness project without all three owned harness inputs.'
           }
-          $sourceFiles = @($packageFiles) + @($frameworkFiles)
+          $sourceFiles = @($packageFiles) + @($harnessFiles)
           $hasher = [System.Security.Cryptography.SHA256]::Create()
           try {
             $bytes = [System.Text.Encoding]::UTF8.GetBytes(($sourceFiles -join "`n"))
@@ -239,6 +249,15 @@ jobs:
             $hasher.Dispose()
           }
           "DXM_UNITY_SOURCE_SET_KEY=$($sourceSetHash.Substring(0, 8))" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Validate cleanup profiler request
+        timeout-minutes: 1
+        if: ${{ inputs.cleanup_profiler_editor && inputs.cleanup_profiler_editor != 'Disabled' }}
+        shell: pwsh
+        run: |
+          if ('${{ inputs.shipping_fidelity }}' -ceq 'true' -or '${{ inputs.consumer_install_validation }}' -ceq 'true') {
+            throw 'Cleanup profiling requires ordinary correctness tests without shipping or consumer-install validation.'
+          }
 
       - name: Print runner diagnostics
         timeout-minutes: 2
@@ -461,18 +480,50 @@ jobs:
           $projectPath = Join-Path $env:RUNNER_WORKSPACE 'dxm-u\t\${{ matrix.unity-version }}-standalone'
           $projectPath = "${projectPath}-$env:DXM_UNITY_SOURCE_SET_KEY"
           $cachePath = Join-Path $env:RUNNER_WORKSPACE 'dxm-c\${{ matrix.unity-version }}'
-          ./scripts/unity/run-ci-tests.ps1 `
-            -UnityVersion '${{ matrix.unity-version }}' `
-            -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
-            -TestMode standalone `
-            -CaptureTestFrameworkEvidence `
-            -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
-            -ArtifactsPath '.artifacts/unity/${{ matrix.unity-version }}-standalone' `
-            -ProjectPath $projectPath `
-            -CachePath $cachePath `
-            -LicenseReturnOwner Central `
-            -ReleaseCodeOptimization `
-            -ReleasePlayerBuild
+          $baseArtifacts = '.artifacts/unity/${{ matrix.unity-version }}-standalone'
+          $observations = @(@{ Mode = 'Disabled'; Artifacts = $baseArtifacts })
+          if ('${{ inputs.cleanup_profiler_editor }}' -ceq '${{ matrix.unity-version }}') {
+            $ordinal = 0
+            foreach ($mode in @('Control', 'Capture', 'Capture', 'Control')) {
+              ++$ordinal
+              $observations += @{ Mode = $mode; Artifacts = "$baseArtifacts/cleanup-study/$ordinal" }
+            }
+          }
+          $baselineInventory = $null
+          foreach ($observation in $observations) {
+            ./scripts/unity/run-ci-tests.ps1 `
+              -UnityVersion '${{ matrix.unity-version }}' `
+              -UnityInstallRoot (Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3') `
+              -TestMode standalone `
+              -CaptureTestFrameworkEvidence `
+              -AssemblyNames $env:DXM_TEST_ASSEMBLIES `
+              -ArtifactsPath $observation.Artifacts `
+              -ProjectPath $projectPath `
+              -CachePath $cachePath `
+              -LicenseReturnOwner Central `
+              -CleanupProfilerMode $observation.Mode `
+              -ReleaseCodeOptimization `
+              -ReleasePlayerBuild
+            # The first ordinary run warms the same project and stays canonical.
+            # Each optional study trial must preserve its complete case inventory.
+            if ($observations.Count -gt 1) {
+              [xml]$results = Get-Content -LiteralPath (Join-Path $observation.Artifacts 'results.xml') -Raw
+              [string[]]$inventory = @($results.SelectNodes('//test-case') | ForEach-Object {
+                $reason = $_.SelectSingleNode('reason/message')
+                [ordered]@{
+                  name = $_.GetAttribute('fullname')
+                  result = $_.GetAttribute('result')
+                  reason = $(if ($null -ne $reason) { $reason.InnerText } else { '' })
+                } | ConvertTo-Json -Compress
+              })
+              [Array]::Sort($inventory, [StringComparer]::Ordinal)
+              $currentInventory = [string]::Join("`n", $inventory)
+              if ($null -eq $baselineInventory) { $baselineInventory = $currentInventory }
+              elseif ($currentInventory -cne $baselineInventory) {
+                throw 'Cleanup profiling changed native case identities, multiplicity, outcomes or skip reasons.'
+              }
+            }
+          }
 
       # Explicitly requested dispatch runs cover semantic and 1/16/256/1000-message
       # shipping topologies at every stripping level on the endpoint editors. Keep the
