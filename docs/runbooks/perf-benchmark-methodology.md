@@ -99,6 +99,47 @@ not the enclosing bus context-map owner. The old synthetic priority-owner constr
 row is retired. Historical constructor rows for those owners are not comparable to
 the remaining storage constructor rows.
 
+### Sticky publication, lookup, and replay workloads
+
+`StickyMessageBenchmarks` adds 18 warmed throughput rows. Ordinary and sticky
+publication each cover class and struct payloads with no callback, `Action<T>`,
+and `FastHandler<T>`. Both publication arms start with the same retained value;
+the ordinary arm keeps it while the sticky arm updates it. Lookup rows cover a
+present value, an empty latest-value map, and a missing type in a populated map,
+for both payload kinds. Each row uses the continuous-window protocol and its
+separate allocation batch. Callback counts, payload values, retained reference
+identity, registration counts, and cleanup are checked outside the measured window.
+
+`StickyMessageLatencyBenchmarks` adds 28 latency rows with 32 raw trials per row:
+
+- Twelve first-publication rows cover ordinary and sticky emission, class and
+  struct payloads, and the three callback choices above. Each trial starts with a
+  fresh bus that has never published a message. Handler setup stays outside the clock.
+- Sixteen registration rows cover class and struct payloads, `Action<T>` and
+  `FastHandler<T>`, a present or absent latest value, and replay enabled or disabled.
+  An existing subscription stays live. The clock covers registration of a distinct,
+  enabled token and any synchronous replay. Existing subscribers must receive no
+  replay; only the new subscriber receives the retained value when replay is enabled.
+
+These latency rows warm the exact operation on a throwaway bus before measurement.
+They measure fresh per-bus state with warmed code, rather than a first JIT compile.
+State construction, callback creation, verification, and disposal stay outside each
+sample. The existing cold-latency protocol includes allocation-probe overhead in
+single-shot times on profiler-bearing backends. A stripped IL2CPP player reports
+unavailable allocation measurements as `-1`.
+
+`ColdLatencyMeasurement.RawTrials` retains the ordered wall-clock, allocation-count,
+and allocation-byte samples without changing the median calculation. The sticky
+fixture writes all samples after measurement as `DXM_STICKY_LATENCY_TRIAL` records,
+using round-trip wall-clock precision. Preserve those records alongside the summary
+CSV; its millisecond rounding can hide differences between short operations.
+
+Bind each result to its source commit, Unity version, backend, optimization level,
+and actual process instruction set. Process architecture comes from
+`RuntimeInformation.ProcessArchitecture`; an eight-byte pointer does not distinguish
+Arm64 from x64. Treat local Mono runs as local observations. These rows alone do
+not establish an IL2CPP optimization, an independent-build result, or a causal speedup.
+
 ### Cold vs warm/hot modes
 
 Both registration and dispatch are covered in two modes. "Cold" is the
