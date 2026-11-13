@@ -7886,10 +7886,10 @@ function Test-NUnitResults {
 
 function Assert-StandaloneCleanupHierarchy {
     param(
-        [Parameter(Mandatory = $true)]$Profile,
+        [Parameter(Mandatory = $true)]$SamplePacket,
         [Parameter(Mandatory = $true)][ValidateSet(2, 3)][int]$ExpectedScopes
     )
-    $rows = @($Profile.Samples)
+    $rows = @($SamplePacket.Samples)
     if ($rows.Count -ne $ExpectedScopes) {
         throw "Standalone cleanup hierarchy requires $ExpectedScopes scopes; found $($rows.Count)."
     }
@@ -8909,9 +8909,10 @@ try {
         }
         if ($CleanupProfilerMode -cne 'Disabled') {
             $observation = Get-Content -LiteralPath (Join-Path $cleanupProfileDirectory 'observation.json') -Raw | ConvertFrom-Json
-            $observationProject = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($observation.ProjectPath))
-            $expectedProject = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($ProjectPath))
-            $pathComparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+            $observationProject = ConvertTo-ComparableFullPath -Path $observation.ProjectPath
+            $expectedProject = ConvertTo-ComparableFullPath -Path $ProjectPath
+            $onWindowsHost = [IO.Path]::DirectorySeparatorChar -eq '\'
+            $pathComparison = if ($onWindowsHost) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
             if ($observation.SchemaVersion -ne 1 -or -not $observation.Completed -or $observation.Error -or
                 $observation.Mode -cne $CleanupProfilerMode -or $observation.BuildProcessId -ne $buildResult.ProcessId -or
                 $observation.UnityVersion -cne $UnityVersion -or -not [string]::Equals($observationProject, $expectedProject, $pathComparison) -or
@@ -8966,7 +8967,7 @@ try {
                     ($profileSamples.Original | ConvertTo-Json -Compress) -cne ($profileSamples.Restored | ConvertTo-Json -Compress)) {
                     throw 'The native cleanup hierarchy or reader restoration is incomplete.'
                 }
-                Assert-StandaloneCleanupHierarchy -Profile $profileSamples -ExpectedScopes $expectedCleanupScopes
+                Assert-StandaloneCleanupHierarchy -SamplePacket $profileSamples -ExpectedScopes $expectedCleanupScopes
             } elseif ($observation.RawBytes -ne 0 -or (Test-Path -LiteralPath (Join-Path $cleanupProfileDirectory 'cleanup.raw'))) {
                 throw 'The timestamp-only cleanup control must not write a raw profile.'
             }

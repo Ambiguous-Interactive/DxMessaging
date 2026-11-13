@@ -107,15 +107,15 @@ try {
         [DxMessaging.Ci.DxmStandaloneCleanupProfiler]::Finish()
         Assert-Control ([IO.File]::ReadAllText($packetPath) -ceq $unchanged) 'A second finish must not rewrite the completed observation.'
     }
-    $profile = Join-Path $scratch 'Capture'
+    $captureDirectory = Join-Path $scratch 'Capture'
     [UnityEngine.Profiling.Profiler]::logFile = 'reader-original.log'
     [UnityEditorInternal.ProfilerDriver]::connectedProfiler = 23
     [UnityEditorInternal.ProfilerDriver]::profileEditor = $true
-    [DxMessaging.Ci.DxmStandaloneCleanupProfiler]::Export($profile)
-    $readerPacket = Get-Content -LiteralPath (Join-Path $profile 'samples.json') -Raw | ConvertFrom-Json
+    [DxMessaging.Ci.DxmStandaloneCleanupProfiler]::Export($captureDirectory)
+    $readerPacket = Get-Content -LiteralPath (Join-Path $captureDirectory 'samples.json') -Raw | ConvertFrom-Json
     Assert-Control ($null -ne $readerPacket.Original -and $readerPacket.Original.LogFile -ceq 'reader-original.log' -and $readerPacket.Original.Connection -eq 23 -and $readerPacket.Original.ProfileEditor) 'The separate reader must retain its own starting settings.'
     Assert-Control (($readerPacket.Original | ConvertTo-Json -Compress) -ceq ($readerPacket.Restored | ConvertTo-Json -Compress)) 'Reader restoration must match reader admission, independently of the builder.'
-    $samples = Get-Content -LiteralPath (Join-Path $profile 'samples.json') -Raw | ConvertFrom-Json
+    $samples = Get-Content -LiteralPath (Join-Path $captureDirectory 'samples.json') -Raw | ConvertFrom-Json
     Assert-Control ($samples.Completed -and @($samples.Samples).Count -eq 3) 'Keep each same-name raw sample separately.'
     Assert-Control (($samples.Samples.Index -join ',') -ceq '1,2,3') 'Raw execution order must be preserved.'
     Assert-Control (($samples.Samples[0].AncestorIndices -join ',') -ceq '0' -and ($samples.Samples[1].AncestorIndices -join ',') -ceq '0,1') 'Parents must come from raw ancestry.'
@@ -148,9 +148,46 @@ try {
     Assert-Control (-not $packet.Completed -and $packet.Error.Contains('controlled log stop failure')) 'Restoration failure cannot produce a successful observation.'
     Assert-Control (-not [UnityEngine.Profiling.Profiler]::enabled -and -not [UnityEditorInternal.ProfilerDriver]::enabled -and [UnityEngine.Profiling.Profiler]::logFile -ceq 'original.log' -and [UnityEditorInternal.ProfilerDriver]::connectedProfiler -eq 17) 'All later restoration steps must run after one fails.'
     $runnerAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $unity 'run-ci-tests.ps1'), [ref]$null, [ref]$null)
+    $runnerText = [IO.File]::ReadAllText((Join-Path $unity 'run-ci-tests.ps1'))
+    $pathStart = $runnerText.IndexOf('            $observationProject =', [StringComparison]::Ordinal)
+    $pathEnd = $runnerText.IndexOf('            if ($observation.SchemaVersion', $pathStart, [StringComparison]::Ordinal)
+    $pathBlock = $runnerText.Substring($pathStart, $pathEnd - $pathStart)
+    $pathHelper = $runnerAst.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'ConvertTo-ComparableFullPath' }, $true).Extent.Text
+    # The empty session has no PowerShell 7 platform variables, as on Windows PowerShell 5.1.
+    $session = [System.Management.Automation.Runspaces.InitialSessionState]::Create()
+    $session.LanguageMode = 'FullLanguage'
+    $session.Commands.Add([System.Management.Automation.Runspaces.SessionStateCmdletEntry]::new('Set-StrictMode', [Microsoft.PowerShell.Commands.SetStrictModeCommand], $null))
+    $runspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($session)
+    $runspace.Open()
+    $shell = [powershell]::Create()
+    try {
+        $shell.Runspace = $runspace
+        $runspace.SessionStateProxy.SetVariable('ProjectPath', $scratch)
+        foreach ($case in @('trailing-separator', 'different-path', 'case-variant')) {
+            $actualPath = switch ($case) {
+                'trailing-separator' { $scratch + [IO.Path]::DirectorySeparatorChar }
+                'different-path' { $scratch + '-other' }
+                'case-variant' { $scratch.ToUpperInvariant() }
+            }
+            $expectedEqual = $case -ceq 'trailing-separator' -or ($case -ceq 'case-variant' -and [IO.Path]::DirectorySeparatorChar -eq '\')
+            $runspace.SessionStateProxy.SetVariable('observation', [pscustomobject]@{ ProjectPath = $actualPath })
+            $shell.Commands.Clear()
+            $shell.Streams.Error.Clear()
+            $checkPath = "Set-StrictMode -Version Latest; $pathHelper`n$pathBlock`n[string]::Equals(`$observationProject, `$expectedProject, `$pathComparison)"
+            $null = $shell.AddScript($checkPath)
+            $pathResult = @($shell.Invoke())
+            Assert-Control ($shell.Streams.Error.Count -eq 0 -and $pathResult.Count -eq 1 -and $pathResult[0] -eq $expectedEqual) ("Actual observer path binding must work without PowerShell 7 platform variables: " + ($shell.Streams.Error -join '; '))
+            if ([IO.Path]::DirectorySeparatorChar -eq '\') {
+                $legacyScript = "`$ErrorActionPreference = 'Stop'; `$observation = @{ ProjectPath = '" + $actualPath.Replace("'", "''") + "' }; `$ProjectPath = '" + $scratch.Replace("'", "''") + "'; $checkPath"
+                $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($legacyScript))
+                $legacyResult = @(& powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand $encoded 2>&1)
+                Assert-Control ($LASTEXITCODE -eq 0 -and ($legacyResult -join '').Trim() -ceq $expectedEqual.ToString()) ("Native Windows PowerShell 5.1 path binding failed: " + ($legacyResult -join '; '))
+            }
+        }
+    } finally { $shell.Dispose(); $runspace.Dispose() }
     $hierarchyFunction = $runnerAst.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Assert-StandaloneCleanupHierarchy' }, $true)
     . ([scriptblock]::Create($hierarchyFunction.Extent.Text))
-    Assert-StandaloneCleanupHierarchy -Profile $samples -ExpectedScopes 3
+    Assert-StandaloneCleanupHierarchy -SamplePacket $samples -ExpectedScopes 3
     Assert-Control $true 'The actual hierarchy qualifier accepts the native-reader fixture.'
     foreach ($mutation in @('missing-child', 'flat-markers', 'outside-parent', 'wrong-frame', 'reversed', 'overlap')) {
         $changed = $samples | ConvertTo-Json -Depth 10 | ConvertFrom-Json
@@ -162,12 +199,12 @@ try {
             'reversed' { $changed.Samples = @($changed.Samples[0], $changed.Samples[2], $changed.Samples[1]) }
             'overlap' { $changed.Samples[2].StartNs = $changed.Samples[1].StartNs }
         }
-        Assert-ControlFailure { Assert-StandaloneCleanupHierarchy -Profile $changed -ExpectedScopes 3 } 'Standalone cleanup hierarchy'
+        Assert-ControlFailure { Assert-StandaloneCleanupHierarchy -SamplePacket $changed -ExpectedScopes 3 } 'Standalone cleanup hierarchy'
     }
     $twoScopes = $samples | ConvertTo-Json -Depth 10 | ConvertFrom-Json
     $twoScopes.Samples = @($twoScopes.Samples[0], $twoScopes.Samples[1])
     $twoScopes.Samples[0].Children = 1
-    Assert-StandaloneCleanupHierarchy -Profile $twoScopes -ExpectedScopes 2
+    Assert-StandaloneCleanupHierarchy -SamplePacket $twoScopes -ExpectedScopes 2
     Assert-Control $true 'The declared older framework layout accepts one nested child.'
     $generatedSources = @{}
     foreach ($mode in @('Control', 'Capture')) {

@@ -50,8 +50,8 @@ The observer's postprocess-to-exit timestamp interval includes remaining build w
 and cleanup. It is broader than the cleanup method. Keep every control and capture;
 use the fixed order to inspect observer effects before interpreting raw times.
 Every optional trial must preserve the warmup's exact case names, multiplicity,
-outcomes and skip reasons. A raw profile alone does not establish method cost without profiling, a causal
-optimization or the five-minute CI target.
+outcomes and skip reasons. A raw profile alone does not establish the method cost
+when profiling is disabled, a causal optimization or the five-minute CI target.
 
 ## Measurement methodology
 
