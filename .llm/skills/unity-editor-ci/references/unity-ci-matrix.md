@@ -144,7 +144,7 @@ The test, benchmark, and performance workflows use separate `t`, `b`, and `p` ro
 
 ## Inspect correctness project storage
 
-Successful correctness jobs on DAD inspect their Editor version after confirmed Unity cleanup.
+Correctness jobs on DAD inspect their Editor version after confirmed Unity cleanup.
 `inspect-test-project-caches.ps1` reports owned project generations, file counts, Bee bytes,
 other Library bytes, and bytes outside Library. Each `DXM_TEST_CACHE_INVENTORY` log row names
 its project and identifies the current source-set key. `DXM_TEST_CACHE_SUMMARY` reconciles the
@@ -157,9 +157,29 @@ and loads the inspector from its exact workflow commit without checkout. Shared 
 labels can select ELI; that guard failure changes no caches and provides no DAD inventory.
 Correctness jobs instead collect only when their actual runner is DAD.
 
-Both entry points preserve files. They measure marked projects, require an owned current
-generation, and reject redirected paths. They do not retire caches. Keep the routine capacity policy open until
-its separate bounded retirement and native qualification have evidence.
+The inspector and operator mode preserve every file. They measure marked projects,
+require an owned current generation, and reject redirected paths.
+
+## Retire previous correctness generations
+
+After all three ordinary modes, uploads, and confirmed cleanup succeed, DAD push and pull-request
+jobs run `retire-test-project-caches.ps1`. It keeps the current keyed editmode, playmode,
+and standalone projects for that Editor. It removes whole older owned keyed projects,
+including their Library and Build directories. This bounds managed generation count;
+it does not impose a byte cap on the current generation or guarantee drive capacity.
+
+The entry point uses the same inspector before and after retirement. It requires the workflow source-set key, all three
+current projects, and a separate existing `.artifacts` evidence root. It validates every
+candidate before deleting any project. Redirected paths, incomplete current scope, or unexpected
+top-level data stop retirement. Current project inputs, the complete evidence root, other
+Editors, unitypackage projects, unkeyed or unowned projects, package caches, and other project
+roles remain. Manual workflows retain inspection only.
+
+`DXM_TEST_CACHE_RETIRED` names each removed project and its measured logical bytes.
+`DXM_TEST_CACHE_POST_INVENTORY` and `DXM_TEST_CACHE_POST_SUMMARY` describe what remains;
+`DXM_TEST_CACHE_RETIREMENT` reconciles removed counts and logical lengths. Free-space
+observations do not attribute unique physical bytes reclaimed. Unknown or unowned leftovers
+need separate review; this policy does not delete them.
 
 ## IL2CPP-Only Failure Patterns
 

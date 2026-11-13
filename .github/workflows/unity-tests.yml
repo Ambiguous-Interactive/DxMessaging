@@ -848,12 +848,27 @@ jobs:
           incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
 
       - name: Inspect retained correctness project caches on DAD
-        if: ${{ success() && runner.name == 'DAD-MACHINE' && !inputs.consumer_install_validation }}
+        if: ${{ success() && runner.name == 'DAD-MACHINE' && github.event_name == 'workflow_dispatch' && !inputs.consumer_install_validation }}
         timeout-minutes: 5
         shell: pwsh
         run: |
           ./scripts/unity/inspect-test-project-caches.ps1 `
             -WorkspacePath $env:RUNNER_WORKSPACE `
+            -RetainedSourceSetKey $env:DXM_UNITY_SOURCE_SET_KEY `
+            -UnityVersion '${{ matrix.unity-version }}'
+
+      - name: Retire previous correctness project generations on DAD
+        if: >-
+          ${{ success() && runner.name == 'DAD-MACHINE' &&
+          (github.event_name == 'pull_request' || github.event_name == 'push') &&
+          steps.run_editmode.outcome == 'success' && steps.run_playmode.outcome == 'success' &&
+          steps.run_standalone.outcome == 'success' }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          ./scripts/unity/retire-test-project-caches.ps1 `
+            -WorkspacePath $env:RUNNER_WORKSPACE `
+            -EvidencePath (Join-Path $env:GITHUB_WORKSPACE '.artifacts') `
             -RetainedSourceSetKey $env:DXM_UNITY_SOURCE_SET_KEY `
             -UnityVersion '${{ matrix.unity-version }}'
 
