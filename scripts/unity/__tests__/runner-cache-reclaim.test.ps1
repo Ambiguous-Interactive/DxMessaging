@@ -161,6 +161,8 @@ try {
                 Set-Content -LiteralPath (Join-Path $project "$child/sentinel") -Value "$project/$child"
             }
             Set-Content -LiteralPath (Join-Path $project '.dxmessaging-ci-project') -Value 'com.wallstop-studios.dxmessaging unity ci ephemeral project'
+            # Match the production harness's generated root compiler input (2026-11-13 CI regression).
+            Copy-Item -LiteralPath (Join-Path $repo '.github/analyzers/DxMessaging.CiProject.editorconfig') -Destination (Join-Path $project 'DxMessaging.CiProject.editorconfig')
         }
         $unowned = Join-Path $root '2021.3.45f1-editmode-feedface'
         New-Item -ItemType Directory -Path $unowned, $evidence, (Join-Path $workspace 'dxm-c/2021.3.45f1/upm') -Force | Out-Null

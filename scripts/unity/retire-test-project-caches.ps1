@@ -51,13 +51,14 @@ if ($current.Count -ne 3) { throw 'All three owned current correctness projects 
 $standardPattern = '^' + [regex]::Escape($UnityVersion) + '-(editmode|playmode|standalone)-[0-9a-f]{8}$'
 $retired = @($rows | Where-Object { $_.project -cmatch $standardPattern -and -not $_.retained } | Sort-Object project)
 $expectedDirectories = @('Assets', 'Packages', 'ProjectSettings', 'Library', 'Build', 'Temp', 'Logs', 'UserSettings', 'obj')
+$expectedFiles = @('.dxmessaging-ci-project', 'DxMessaging.CiProject.editorconfig')
 
 # Validate every candidate before the first removal; unexpected data remains available for review.
 foreach ($row in $retired) {
     $project = Join-Path $root $row.project
     foreach ($entry in @(Get-ChildItem -LiteralPath $project -Force)) {
         if (($entry.PSIsContainer -and $entry.Name -cin $expectedDirectories) -or
-            (-not $entry.PSIsContainer -and $entry.Name -ceq '.dxmessaging-ci-project')) { continue }
+            (-not $entry.PSIsContainer -and $entry.Name -cin $expectedFiles)) { continue }
         throw "Unexpected contents in retired test project; no project was removed: $($entry.FullName)"
     }
 }
