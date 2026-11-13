@@ -124,7 +124,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         )
             where TMessage : IValue
         {
-            using Workload<TMessage> state = new(benchmarkCase, message);
+            using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
+            MessageBus bus = new() { DiagnosticsMode = false };
+            using Workload<TMessage> state = new(benchmarkCase, message, bus);
             BenchmarkMeasurement measurement = BenchmarkProtocol.Measure(
                 () => state.RunMany(BenchmarkProtocol.WarmupEmits),
                 () =>
@@ -157,7 +159,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         )
             where TMessage : IValue
         {
-            using Workload<TMessage> state = new(benchmarkCase, message);
+            using IDisposable registry = BenchmarkProtocol.IsolateIdleSweepRegistry();
+            MessageBus bus = new() { DiagnosticsMode = false };
+            using LeakWatcher leaks = new(bus, label: benchmarkCase.Key);
+            using Workload<TMessage> state = new(benchmarkCase, message, bus);
             state.RunMany(3);
             state.RunMany(7);
             state.Verify(10);
@@ -195,23 +200,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             where TMessage : IValue
         {
             private readonly StickyBenchmarkCase _case;
-            private readonly IDisposable _registryScope;
             private readonly MessageBus _bus;
             private readonly MessageRegistrationToken _token;
-            private readonly LeakWatcher _leaks;
             private TMessage _message;
             private TMessage _observed;
             private long _calls;
             private long _sum;
             private long _found;
 
-            internal Workload(StickyBenchmarkCase benchmarkCase, TMessage message)
+            internal Workload(StickyBenchmarkCase benchmarkCase, TMessage message, MessageBus bus)
             {
                 _case = benchmarkCase;
                 _message = message;
-                _registryScope = BenchmarkProtocol.IsolateIdleSweepRegistry();
-                _bus = new MessageBus { DiagnosticsMode = false };
-                _leaks = new LeakWatcher(_bus, label: benchmarkCase.Key);
+                _bus = bus;
                 MessageHandler handler = new(new InstanceId(74901), _bus) { active = true };
                 _token = MessageRegistrationToken.Create(handler, _bus);
                 _token.DiagnosticMode = false;
@@ -342,19 +343,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 try
                 {
                     _token.Dispose();
-                    _bus.ClearLatest<TMessage>();
-                    _bus.ClearLatest<OtherMessage>();
                 }
                 finally
                 {
-                    try
-                    {
-                        _leaks.Dispose();
-                    }
-                    finally
-                    {
-                        _registryScope.Dispose();
-                    }
+                    _bus.ClearLatest<TMessage>();
+                    _bus.ClearLatest<OtherMessage>();
                 }
             }
         }
