@@ -32,7 +32,7 @@ try {
         finally { $pe.Dispose(); $stream.Dispose() }
         $modules += @{ Name = $name; FullName = ([Reflection.AssemblyName]::GetAssemblyName($file)).FullName; ModuleVersionId = $mvid; LoadedPath = $file; SavedPath = "assemblies/$name.dll"; SymbolsPath = $null }
     }
-    $cases = @('valid', 'wrong-pid', 'wrong-project', 'wrong-unity', 'missing-source', 'source-bytes', 'source-count', 'package-version', 'lock-version', 'missing-module', 'duplicate-module', 'module-mvid', 'module-name', 'wrong-assembly-payload', 'unlisted-source', 'capture-error', 'missing-snapshot')
+    $cases = @('valid', 'trailing-project', 'wrong-pid', 'wrong-project', 'wrong-unity', 'missing-source', 'source-bytes', 'source-count', 'package-version', 'lock-version', 'missing-module', 'duplicate-module', 'module-mvid', 'module-name', 'wrong-assembly-payload', 'unlisted-source', 'capture-error', 'missing-snapshot')
     foreach ($case in $cases) {
         $directory = Join-Path $scratch $case
         $snapshot = Join-Path $directory 'snapshot'
@@ -93,8 +93,10 @@ try {
         }
         if ($case -ne 'missing-snapshot') { $receipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $snapshot 'receipt.json') }
         $failure = $null
-        try { Assert-UnityTestFrameworkEvidence -Directory $directory -ProcessId 504 -Project $scratch -UnityVersion '6000.4.6f1' } catch { $failure = $_.Exception.Message }
-        Assert-EvidenceControl (($case -eq 'valid' -and $null -eq $failure) -or ($case -ne 'valid' -and $null -ne $failure)) "Framework evidence $case control failed: $failure"
+        $expectedProject = if ($case -eq 'trailing-project') { $scratch + [IO.Path]::DirectorySeparatorChar } else { $scratch }
+        try { Assert-UnityTestFrameworkEvidence -Directory $directory -ProcessId 504 -Project $expectedProject -UnityVersion '6000.4.6f1' } catch { $failure = $_.Exception.Message }
+        $valid = $case -cin @('valid', 'trailing-project')
+        Assert-EvidenceControl (($valid -and $null -eq $failure) -or (-not $valid -and $null -ne $failure)) "Framework evidence $case control failed: $failure"
         ++$checks
     }
     $project = Join-Path $scratch 'generated-project'

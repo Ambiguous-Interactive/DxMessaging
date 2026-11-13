@@ -10,13 +10,15 @@ function Assert-UnityTestFrameworkEvidence {
         [Parameter(Mandatory = $true)][string]$UnityVersion
     )
     $pathComparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $expectedProject = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($Project))
     $snapshots = @(Get-ChildItem -LiteralPath $Directory -Directory -ErrorAction Stop)
     if ($snapshots.Count -lt 1) { throw 'No loaded Test Framework snapshot was captured.' }
     foreach ($snapshot in $snapshots) {
         if (Test-Path -LiteralPath (Join-Path $snapshot.FullName 'capture-error.txt')) { throw 'Test Framework source capture was incomplete.' }
         $receipt = Get-Content -LiteralPath (Join-Path $snapshot.FullName 'receipt.json') -Raw | ConvertFrom-Json -AsHashtable
+        $capturedProject = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($receipt.ProjectPath))
         if ($receipt.SchemaVersion -ne 3 -or $receipt.UnityVersion -cne $UnityVersion -or $receipt.ProcessId -ne $ProcessId -or $ProcessId -le 0 -or
-            -not [string]::Equals([IO.Path]::GetFullPath($receipt.ProjectPath), [IO.Path]::GetFullPath($Project), $pathComparison)) {
+            -not [string]::Equals($capturedProject, $expectedProject, $pathComparison)) {
             throw 'Test Framework snapshot does not match this Unity process/project.'
         }
         $archive = $null
