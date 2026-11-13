@@ -235,8 +235,11 @@ The two collector template paths participate in the correctness source-set key. 
 be tracked alongside nonempty package inputs. A new collector layout therefore uses its
 own generated project generation. Unchanged inputs keep their timestamps on reuse.
 
-Each `test-framework/<build>/<snapshot>/receipt.json` records the actual Editor PID, project, Unity
-version, resolved package identity and three loaded module MVIDs. A fresh build directory
+Each schema 4 `test-framework/<build>/<snapshot>/receipt.json` records the actual Editor PID,
+project fingerprint, Unity version, resolved package identity and three loaded module MVIDs.
+Module identities use numeric version parts, culture, signing-identifier bytes, flags and content type.
+Canonical absolute file-URI fingerprints identify project, package and loaded-module paths.
+These fields remain verifiable after the unchanged CI artifact processing step. A fresh build directory
 keeps earlier process snapshots separate when an artifact root is reused. Copied DLLs, optional
 symbols, manifest, lockfile and package metadata accompany it. `sources.zip` stores package
 C# and assembly-definition files; the receipt maps compact stored names to original paths

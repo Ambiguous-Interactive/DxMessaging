@@ -63,22 +63,37 @@ namespace DxMessaging.Ci
                 List<AssemblyRecord> identities = new List<AssemblyRecord>();
                 foreach (Assembly assembly in assemblies)
                 {
-                    string relative = "assemblies/" + assembly.GetName().Name + ".dll";
+                    AssemblyName identity = assembly.GetName();
+                    string relative = "assemblies/" + identity.Name + ".dll";
                     CopyFile(assembly.Location, snapshot, relative, files);
                     string symbols = Path.ChangeExtension(assembly.Location, ".pdb");
                     string savedSymbols = null;
                     if (File.Exists(symbols))
                     {
-                        savedSymbols = "assemblies/" + assembly.GetName().Name + ".pdb";
+                        savedSymbols = "assemblies/" + identity.Name + ".pdb";
                         CopyFile(symbols, snapshot, savedSymbols, files);
                     }
                     identities.Add(
                         new AssemblyRecord
                         {
-                            Name = assembly.GetName().Name,
-                            FullName = assembly.FullName,
+                            Name = identity.Name,
+                            Version = new[]
+                            {
+                                identity.Version.Major,
+                                identity.Version.Minor,
+                                identity.Version.Build,
+                                identity.Version.Revision,
+                            },
+                            Culture = identity.CultureName ?? "",
+                            SigningIdentity = Array.ConvertAll(
+                                identity.GetPublicKeyToken() ?? Array.Empty<byte>(),
+                                value => (int)value
+                            ),
+                            Flags = (int)identity.Flags,
+                            ContentType = identity.ContentType.ToString(),
                             ModuleVersionId = assembly.ManifestModule.ModuleVersionId.ToString(),
-                            LoadedPath = assembly.Location,
+                            LoadedFileName = Path.GetFileName(assembly.Location),
+                            LoadedPathSha256 = FingerprintPath(assembly.Location),
                             SavedPath = relative,
                             SymbolsPath = savedSymbols,
                         }
@@ -134,16 +149,19 @@ namespace DxMessaging.Ci
                 {
                     Receipt receipt = new Receipt
                     {
-                        SchemaVersion = 3,
+                        SchemaVersion = 4,
                         SourceArchive = "sources.zip",
                         ProcessId = process.Id,
                         DomainId = AppDomain.CurrentDomain.Id,
                         CapturedUtc = DateTime.UtcNow.ToString("o"),
                         UnityVersion = Application.unityVersion,
-                        ProjectPath = project,
+                        ProjectPathSha256 = FingerprintPath(project),
+                        PathComparison =
+                            Path.DirectorySeparatorChar == '\\' ? "OrdinalIgnoreCase" : "Ordinal",
                         PackageVersion = package.version,
                         PackageSource = package.source.ToString(),
-                        PackagePath = package.resolvedPath,
+                        PackageDirectoryName = Path.GetFileName(package.resolvedPath),
+                        PackagePathSha256 = FingerprintPath(package.resolvedPath),
                         SourceCount = sourceCount,
                         Assemblies = identities.ToArray(),
                         Files = files.ToArray(),
@@ -172,6 +190,27 @@ namespace DxMessaging.Ci
             {
                 serializer.WriteObject(stream, receipt);
                 return Encoding.UTF8.GetString(stream.ToArray());
+            }
+        }
+
+        private static string FingerprintPath(string path)
+        {
+            string canonical = new Uri(Path.GetFullPath(path)).AbsoluteUri.TrimEnd('/');
+            if (Path.DirectorySeparatorChar == '\\')
+            {
+                canonical = canonical.ToLowerInvariant();
+            }
+            return HashBytes(Encoding.UTF8.GetBytes(canonical));
+        }
+
+        private static string HashBytes(byte[] bytes)
+        {
+            using (SHA256 algorithm = SHA256.Create())
+            {
+                return BitConverter
+                    .ToString(algorithm.ComputeHash(bytes))
+                    .Replace("-", "")
+                    .ToLowerInvariant();
             }
         }
 
@@ -218,21 +257,15 @@ namespace DxMessaging.Ci
                 Directory.CreateDirectory(Path.GetDirectoryName(target));
                 File.WriteAllBytes(target, bytes);
             }
-            using (SHA256 algorithm = SHA256.Create())
-            {
-                files.Add(
-                    new FileRecord
-                    {
-                        Path = stored,
-                        OriginalPath = relative,
-                        Length = bytes.Length,
-                        Sha256 = BitConverter
-                            .ToString(algorithm.ComputeHash(bytes))
-                            .Replace("-", "")
-                            .ToLowerInvariant(),
-                    }
-                );
-            }
+            files.Add(
+                new FileRecord
+                {
+                    Path = stored,
+                    OriginalPath = relative,
+                    Length = bytes.Length,
+                    Sha256 = HashBytes(bytes),
+                }
+            );
         }
 
         [Serializable]
@@ -244,10 +277,12 @@ namespace DxMessaging.Ci
             public int DomainId;
             public string CapturedUtc;
             public string UnityVersion;
-            public string ProjectPath;
+            public string ProjectPathSha256;
+            public string PathComparison;
             public string PackageVersion;
             public string PackageSource;
-            public string PackagePath;
+            public string PackageDirectoryName;
+            public string PackagePathSha256;
             public int SourceCount;
             public AssemblyRecord[] Assemblies;
             public FileRecord[] Files;
@@ -257,9 +292,14 @@ namespace DxMessaging.Ci
         private sealed class AssemblyRecord
         {
             public string Name;
-            public string FullName;
+            public int[] Version;
+            public string Culture;
+            public int[] SigningIdentity;
+            public int Flags;
+            public string ContentType;
             public string ModuleVersionId;
-            public string LoadedPath;
+            public string LoadedFileName;
+            public string LoadedPathSha256;
             public string SavedPath;
             public string SymbolsPath;
         }

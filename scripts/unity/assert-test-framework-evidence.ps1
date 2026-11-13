@@ -1,6 +1,20 @@
 #Requires -Version 7.0
 # MIT License - Copyright (c) wallstop studios
 
+function Get-TestFrameworkPathFingerprint {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [ValidateSet('Ordinal', 'OrdinalIgnoreCase')][string]$Comparison = 'Ordinal'
+    )
+    $uri = [Uri]::new($Path, [UriKind]::Absolute)
+    if (-not $uri.IsFile) { throw 'Framework evidence requires an absolute filesystem path.' }
+    $canonical = $uri.AbsoluteUri.TrimEnd('/')
+    if ($Comparison -ceq 'OrdinalIgnoreCase') { $canonical = $canonical.ToLowerInvariant() }
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try { [BitConverter]::ToString($algorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonical))).Replace('-', '').ToLowerInvariant() }
+    finally { $algorithm.Dispose() }
+}
+
 function Assert-UnityTestFrameworkEvidence {
     [CmdletBinding()]
     param(
@@ -9,21 +23,19 @@ function Assert-UnityTestFrameworkEvidence {
         [Parameter(Mandatory = $true)][string]$Project,
         [Parameter(Mandatory = $true)][string]$UnityVersion
     )
-    $pathComparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
-    $expectedProject = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($Project))
     $snapshots = @(Get-ChildItem -LiteralPath $Directory -Directory -ErrorAction Stop)
     if ($snapshots.Count -lt 1) { throw 'No loaded Test Framework snapshot was captured.' }
     foreach ($snapshot in $snapshots) {
         if (Test-Path -LiteralPath (Join-Path $snapshot.FullName 'capture-error.txt')) { throw 'Test Framework source capture was incomplete.' }
         $receipt = Get-Content -LiteralPath (Join-Path $snapshot.FullName 'receipt.json') -Raw | ConvertFrom-Json -AsHashtable
-        $capturedProject = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($receipt.ProjectPath))
-        if ($receipt.SchemaVersion -ne 3 -or $receipt.UnityVersion -cne $UnityVersion -or $receipt.ProcessId -ne $ProcessId -or $ProcessId -le 0 -or
-            -not [string]::Equals($capturedProject, $expectedProject, $pathComparison)) {
+        $expectedProject = Get-TestFrameworkPathFingerprint -Path $Project -Comparison $receipt.PathComparison
+        if ($receipt.SchemaVersion -ne 4 -or $receipt.UnityVersion -cne $UnityVersion -or $receipt.ProcessId -ne $ProcessId -or $ProcessId -le 0 -or
+            $receipt.ProjectPathSha256 -cne $expectedProject -or $receipt.PackagePathSha256 -cnotmatch '^[0-9a-f]{64}$') {
             throw 'Test Framework snapshot does not match this Unity process/project.'
         }
         $archive = $null
         try {
-            if ($receipt.SchemaVersion -eq 3) {
+            if ($receipt.SchemaVersion -eq 4) {
                 if ($receipt.SourceArchive -cne 'sources.zip') { throw 'Malformed Test Framework source archive path.' }
                 $archive = [IO.Compression.ZipFile]::OpenRead((Join-Path $snapshot.FullName 'sources.zip'))
                 $archivePaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -92,12 +104,28 @@ function Assert-UnityTestFrameworkEvidence {
                 }
                 $assemblyPath = Join-Path $snapshot.FullName $assembly.SavedPath
                 $identity = [Reflection.AssemblyName]::GetAssemblyName($assemblyPath)
+                $version = @($identity.Version.Major, $identity.Version.Minor, $identity.Version.Build, $identity.Version.Revision)
+                $signingIdentity = @($identity.GetPublicKeyToken() | ForEach-Object { [int]$_ })
+                if (@($assembly.Version).Count -ne 4 -or $null -eq $assembly.SigningIdentity) { throw 'Malformed loaded Test Framework assembly identity.' }
+                $expectedIdentity = [Reflection.AssemblyName]::new()
+                $expectedIdentity.Name = $assembly.Name
+                $expectedIdentity.Version = [version]::new($assembly.Version[0], $assembly.Version[1], $assembly.Version[2], $assembly.Version[3])
+                $expectedIdentity.CultureName = $assembly.Culture
+                $expectedIdentity.SetPublicKeyToken([byte[]]@($assembly.SigningIdentity))
+                $expectedIdentity.Flags = [Reflection.AssemblyNameFlags]$assembly.Flags
+                $expectedIdentity.ContentType = [Enum]::Parse([Reflection.AssemblyContentType], $assembly.ContentType)
                 $stream = [IO.File]::OpenRead($assemblyPath)
                 $pe = [Reflection.PortableExecutable.PEReader]::new($stream)
                 try {
                     $reader = [Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)
                     $mvid = $reader.GetGuid($reader.GetModuleDefinition().Mvid).ToString()
-                    if ($identity.Name -cne $assembly.Name -or $identity.FullName -cne $assembly.FullName -or $mvid -cne $assembly.ModuleVersionId) {
+                    if ($identity.Name -cne $assembly.Name -or @($assembly.Version).Count -ne 4 -or
+                        [string]::Join('.', $version) -cne [string]::Join('.', @($assembly.Version)) -or
+                        [string]$identity.CultureName -cne $assembly.Culture -or $null -eq $assembly.SigningIdentity -or
+                        @($assembly.SigningIdentity).Count -ne $signingIdentity.Count -or
+                        [string]::Join(',', $signingIdentity) -cne [string]::Join(',', @($assembly.SigningIdentity)) -or
+                        $identity.FullName -cne $expectedIdentity.FullName -or $identity.ContentType.ToString() -cne $assembly.ContentType -or
+                        $mvid -cne $assembly.ModuleVersionId -or $assembly.LoadedPathSha256 -cnotmatch '^[0-9a-f]{64}$') {
                         throw 'Loaded Test Framework module differs from captured DLL bytes.'
                     }
                 } finally { $pe.Dispose(); $stream.Dispose() }
