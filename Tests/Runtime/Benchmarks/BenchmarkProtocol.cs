@@ -421,11 +421,22 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
             }
 
+            ColdLatencyTrial[] rawTrials = new ColdLatencyTrial[trials];
+            for (int index = 0; index < trials; ++index)
+            {
+                rawTrials[index] = new ColdLatencyTrial(
+                    index,
+                    wallClockSamples[index],
+                    allocatedSamples[index],
+                    allocatedByteSamples[index]
+                );
+            }
             return new ColdLatencyMeasurement(
                 Median(wallClockSamples),
                 Median(allocatedSamples),
                 MedianOfMeasured(allocatedByteSamples),
-                trials
+                trials,
+                rawTrials
             );
         }
 
@@ -814,11 +825,27 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             long medianGcAllocatedBytes,
             int trials
         )
+            : this(
+                medianWallClockMs,
+                medianGcAllocations,
+                medianGcAllocatedBytes,
+                trials,
+                Array.Empty<ColdLatencyTrial>()
+            ) { }
+
+        internal ColdLatencyMeasurement(
+            double medianWallClockMs,
+            long medianGcAllocations,
+            long medianGcAllocatedBytes,
+            int trials,
+            ColdLatencyTrial[] rawTrials
+        )
         {
             MedianWallClockMs = medianWallClockMs;
             MedianGcAllocations = medianGcAllocations;
             MedianGcAllocatedBytes = medianGcAllocatedBytes;
             Trials = trials;
+            RawTrials = Array.AsReadOnly((ColdLatencyTrial[])rawTrials.Clone());
         }
 
         public double MedianWallClockMs { get; }
@@ -841,6 +868,34 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         public long MedianGcAllocatedBytes { get; }
 
         public int Trials { get; }
+
+        /// <summary>
+        /// Every measured trial in execution order. The legacy summary-only constructor
+        /// leaves this collection empty. Sampling and probe boundaries are unchanged.
+        /// </summary>
+        public IReadOnlyList<ColdLatencyTrial> RawTrials { get; }
+    }
+
+    /// <summary>One retained single-shot observation, including unavailable allocation sentinels.</summary>
+    public readonly struct ColdLatencyTrial
+    {
+        internal ColdLatencyTrial(
+            int index,
+            double wallClockMs,
+            long gcAllocations,
+            long gcAllocatedBytes
+        )
+        {
+            Index = index;
+            WallClockMs = wallClockMs;
+            GcAllocations = gcAllocations;
+            GcAllocatedBytes = gcAllocatedBytes;
+        }
+
+        public int Index { get; }
+        public double WallClockMs { get; }
+        public long GcAllocations { get; }
+        public long GcAllocatedBytes { get; }
     }
 
     /// <summary>
