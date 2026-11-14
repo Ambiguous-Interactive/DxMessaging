@@ -77,6 +77,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
+          # cspell:ignore isinstance
           import json
           import os
           import re
@@ -179,7 +180,9 @@ jobs:
 
       - name: Run complete managed release tests
         run: |
-          dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --logger "trx;LogFileName=runtime.trx" --results-directory .artifacts/release/managed
+          dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release \
+            --logger "trx;LogFileName=runtime.trx" --results-directory .artifacts/release/managed \
+            -- RunConfiguration.TreatNoTestsAsError=true
           dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj --configuration Release /p:CopyAnalyzerPayload=false
           dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj --configuration Release
 

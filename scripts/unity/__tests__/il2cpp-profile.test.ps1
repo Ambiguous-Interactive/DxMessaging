@@ -827,11 +827,12 @@ public static class DxmRuntimeSdkMetadataFixture {
     Assert-That 'the performance standalone leg passes the canonical profile' (
         $workflowText.Contains("CanonicalProfilePath = '.github/perf/canonical-il2cpp-profile.v1.json'")
     )
-    Assert-That 'canonical profile changes invalidate historical benchmark comparison' (
-        $workflowText.Contains("|\.github/perf/canonical-il2cpp-profile\.v1\.json`$'")
+    Assert-That 'performance validation is explicitly dispatched' (
+        $workflowText -notmatch '(?m)^  (pull_request|push):' -and
+        $workflowText -match '(?m)^  workflow_dispatch:'
     )
-    Assert-That 'profile validator changes invalidate historical benchmark comparison' (
-        $workflowText.Contains('|validate-il2cpp-profile)')
+    Assert-That 'the dispatched producer runs the profile-validating harness' (
+        $workflowText.Contains('./scripts/unity/run-ci-tests.ps1')
     )
 
     & $validatorPath -ProfilePath $profilePath -ProfileOnly -ExpectedSha256 $profileSha256

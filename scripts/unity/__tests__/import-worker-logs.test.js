@@ -1,8 +1,6 @@
 "use strict";
-const { test } = require("node:test"),
-  assert = require("node:assert/strict");
-const path = require("node:path"),
-  { spawnSync } = require("node:child_process");
+// prettier-ignore
+const { test } = require("node:test"), assert = require("node:assert/strict"), path = require("node:path"), { spawnSync } = require("node:child_process");
 // prettier-ignore
 test("PowerShell import-worker-logs regression suite", () => {
   const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-File", path.join(__dirname, "import-worker-logs.test.ps1")], { cwd: path.resolve(__dirname, "../../.."), encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });

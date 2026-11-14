@@ -19,8 +19,37 @@ Retained evidence lives locally under `.artifacts/iteration-speed/`; earlier sou
 | Unity run 43568075301          | 189 minutes elapsed. Four jobs execute for 15.7-19.1 minutes; creation-to-start waits range 18.8-169.9 minutes. Those waits combine matrix serialization and runner availability.                                        |
 | Environment                    | The exact SDK pin was absent while startup tolerated installation failure. An installer can exit successfully without making the SDK resolvable.                                                                         |
 
+The expanded sample retains the latest 30 completed Unity PR runs plus their matching-head static
+and performance workflows, including failures and cancellations. Among successful observations,
+13 Unity runs have median 60.9 minutes,19 performance runs 46.2 minutes, and24 static runs 13.2 minutes.
+The raw job timestamps and step durations are retained separately from these elapsed summaries.
+
 The remedies target repeated work, serialized test discovery, redundant AST traversal and runner
 contention. They do not establish improvements to runtime dispatch or game frame time.
+
+## Local verification after the changes
+
+The current-source managed inventory has 36,631 cases. Executed ordinary behavior 29,828,
+representative retention 5,789, and exhaustive retention 1,014 are disjoint and exactly match the
+unfiltered discovered case names; all passed without skips. Three fast-lane samples total
+27.08, 24.67 and 24.56 seconds of test execution (median 24.67), excluding build, discovery and restore.
+Three script-unit runs pass 110 cases with median 1.47 seconds wall time.
+
+The remaining cache-test delay had a separate cause: 142,205 direct entries under `/tmp` made
+PowerShell's case-correcting path provider repeatedly scan ancestor siblings. Three live stack
+samples identify `GetCorrectCasedPath`. On the same retained inventory, original/candidate/candidate/
+original inspection takes 25,264/15.82/2.69/25,315 milliseconds. The output records match after
+excluding only elapsed time and observed drive free space. Standard `System.IO` calls avoid those
+ancestor scans; all 36 existing safety cases pass in 48.50 seconds with the guarded deleter unchanged.
+No unowned temporary directories were removed to obtain the result.
+
+The pinned organization analyzer reports 21 findings for both the current default-branch baseline
+and the integrated workflows, with zero added findings. Its literal-matrix acceptance and rejected
+dynamic-axis controls pass. Those existing findings remain separate audit debt.
+
+These local observations do not establish hosted PR queue time, cross-platform timings or a
+cold-install result. The original interrupted diagnostic and failed stale-contract test are retained;
+a later green run does not erase them.
 
 ## Local commands
 
@@ -32,6 +61,8 @@ contention. They do not establish improvements to runtime dispatch or game frame
 | Compiler/analyzer    | `dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj /p:CopyAnalyzerPayload=false` | Complete generator suite and `npm run check:analyzers`                                                     |
 | Documentation C#     | `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`                                                                                                  | Relevant prose checks and strict site build                                                                |
 | Unity behavior       | Affected fixture through the host MCP bridge                                                                                                                             | Affected Unity scopes; CI supplies Windows IL2CPP evidence                                                 |
+
+Repository scripts require Node 24 or later (the devcontainer and CI pin 26).
 
 `test:unit` and `test:integration` select disjoint file sets whose union is the full Node inventory.
 New files conservatively enter integration until classified. All commands use the standard Node

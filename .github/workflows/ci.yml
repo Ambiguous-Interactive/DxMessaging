@@ -60,6 +60,7 @@ jobs:
         id: filter
         env:
           GH_TOKEN: ${{ github.token }}
+          EXPECTED_FILE_COUNT: ${{ github.event.pull_request.changed_files }}
         run: |
           set -euo pipefail
 
@@ -85,9 +86,21 @@ jobs:
           }
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            if ! files="$(gh api \
+            if ! [[ "${EXPECTED_FILE_COUNT}" =~ ^[1-9][0-9]*$ ]] || ! records="$(gh api \
               "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-              --paginate --jq '.[] | .filename, (.previous_filename // empty)')"; then
+              --paginate --jq '.[] | [.filename, (.previous_filename // null)] | @json')"; then
+              emit_all
+              exit 0
+            fi
+            if [ -z "$records" ] || [ "$(printf '%s\n' "$records" | wc -l | tr -d '[:space:]')" != "$EXPECTED_FILE_COUNT" ]; then
+              emit_all
+              exit 0
+            fi
+            if ! files="$(printf '%s\n' "$records" | jq -er '
+              if type == "array" and length == 2 and
+                (.[0] | type == "string" and length > 0) and
+                (.[1] == null or (.[1] | type == "string" and length > 0))
+              then .[] | select(. != null) else error("Invalid changed path record") end')"; then
               emit_all
               exit 0
             fi
@@ -145,17 +158,17 @@ jobs:
             "(\.md$|\.markdown$|^docs/|^\.lychee\.toml$|^\.github/scripts/check-markdown-links\.ps1$|^\.github/actions/install-pinned-lychee/action\.yml$|$ci_workflow)"
           # Each managed suite follows its actual inputs. Pure documentation must not run runtime retention matrices.
           set_output dotnet \
-            "(^SourceGenerators/|^Runtime/Analyzers/|^Runtime/Core/Attributes/|^\.net-attributes/|^\.nuget-tests/|\.csproj$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^\.config/dotnet-tools\.json$|^\.github/analyzers/|$ci_workflow)"
+            "(^SourceGenerators/|^Runtime/Analyzers/|^Runtime/Attributes/|^\.net-attributes/|^\.nuget-tests/|\.csproj$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^\.config/dotnet-tools\.json$|^\.github/analyzers/|$ci_workflow)"
           set_output runtime_dotnet \
-            "(^Runtime/|^Tests/|^\.net(-tests|-testing)?/|^SourceGenerators/|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^\.github/analyzers/|$ci_workflow)"
+            "(^Runtime/|^Tests/|^Editor/Analyzers/BaseCallIlInspector\.cs$|^\.net[^/]*/|^SourceGenerators/|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^\.github/analyzers/|$ci_workflow)"
           set_output docs_dotnet \
-            "(^\.docs-tests/|^Runtime/|^Editor/|^SourceGenerators/|^docs/|^README\.md$|^CHANGELOG\.md$|^Samples~/|^scripts/unity/.*\.cs\.txt$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|$ci_workflow)"
+            "(^\.docs-tests/|^Runtime/|^Editor/|^SourceGenerators/|^docs/|^README\.md$|^CHANGELOG\.md$|^Samples~/|^scripts/unity/.*\.cs\.txt$|^scripts/mcp/DxMcpTestRunner\.cs\.txt$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|$ci_workflow)"
           # Generated benchmark publications contain no compiler snippets or source changes.
           if ! printf '%s\n' "$files" | grep -Ev '^docs/architecture/(performance\.md|perf-baseline\.csv|perf-baseline-profile\.json)$' | grep -q .; then
             echo "docs_dotnet=false" >> "$GITHUB_OUTPUT"
           fi
           set_output managed_exhaustive \
-            "(^Runtime/Core/(MessageBus/|MessageHandler|MessageRegistrationToken|Pooling/|Diagnostics/|Configuration/|DxMessagingStaticState|MessageRegistrationLease|MessageRegistrationGroup)|^Tests/Runtime/(MemoryReclaim/|Core/DiagnosticOriginAfterDisableTests\.cs)|^\.net(-tests|-testing)?/|$ci_workflow)"
+            "(^Runtime/Core/|^Tests/Runtime/(MemoryReclaim/|Core/DiagnosticOriginAfterDisableTests\.cs)|^\.net[^/]*/|$ci_workflow)"
 
           json_pattern='(\.json$|\.asmdef$|\.asmref$|(^|/)\.prettierrc[^/]*$'
           json_pattern="$json_pattern"'|(^|/)prettier\.config\.[^/]+$'
@@ -468,40 +481,6 @@ jobs:
           name: generator-coverage
           path: artifacts/coverage
 
-      - name: Check source marker policy
-        if: ${{ needs.changes.outputs.dotnet != 'false' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          source_pathspecs=(
-            'Runtime/**'
-            'Editor/**'
-            'SourceGenerators/**'
-            'Tests/**'
-            '*.cs'
-            '*.csproj'
-            '*.sln'
-          )
-          source_file_count=$(git ls-files -- "${source_pathspecs[@]}" | awk 'END { print NR + 0 }')
-          if [ "$source_file_count" -eq 0 ]; then
-            echo "No source files found for marker scan."
-            exit 0
-          fi
-          echo "Scanning ${source_file_count} tracked source files for TODO/FIXME markers."
-          set +e
-          git grep -n -E -I "(TODO|FIXME)" -- "${source_pathspecs[@]}"
-          marker_status=$?
-          set -e
-          if [ "$marker_status" -eq 0 ]; then
-            echo "::error::Found TODO/FIXME markers in source files. Please resolve or suppress them."
-            exit 1
-          elif [ "$marker_status" -eq 1 ]; then
-            echo "No TODO/FIXME markers detected in source files."
-          else
-            echo "::error::Source marker scan failed with exit code $marker_status."
-            exit "$marker_status"
-          fi
-
   docs-dotnet:
     name: Documentation C# examples
     needs: changes
@@ -539,6 +518,7 @@ jobs:
         run: >-
           dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj --configuration Release
           --logger "trx;LogFileName=docs.trx" --results-directory .artifacts/managed/docs
+          -- RunConfiguration.TreatNoTestsAsError=true
 
   runtime-dotnet:
     name: Runtime .NET regressions
@@ -578,6 +558,7 @@ jobs:
           dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release
           --filter "TestCategory!=Exhaustive&TestCategory!=MemoryReclaim"
           --logger "trx;LogFileName=fast.trx" --results-directory .artifacts/managed/runtime
+          -- RunConfiguration.TreatNoTestsAsError=true
 
       - name: Run representative retention in a fresh process
         if: ${{ needs.changes.outputs.runtime_dotnet != 'false' }}
@@ -585,6 +566,7 @@ jobs:
           dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --no-build
           --filter "TestCategory=MemoryReclaim&TestCategory!=Exhaustive"
           --logger "trx;LogFileName=retention.trx" --results-directory .artifacts/managed/runtime
+          -- RunConfiguration.TreatNoTestsAsError=true
 
       - name: Run exhaustive retention combinations for affected owners or nightly
         if: ${{ needs.changes.outputs.runtime_dotnet != 'false' && needs.changes.outputs.managed_exhaustive != 'false' }}
@@ -592,6 +574,7 @@ jobs:
           dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --no-build
           --filter "TestCategory=Exhaustive" --logger "trx;LogFileName=exhaustive.trx"
           --results-directory .artifacts/managed/runtime
+          -- RunConfiguration.TreatNoTestsAsError=true
 
       - name: Retain selected runtime case results
         if: ${{ always() && needs.changes.outputs.runtime_dotnet != 'false' }}
@@ -684,6 +667,39 @@ jobs:
           done
           echo "::error::Fix with: git add --renormalize . && git commit"
           exit 1
+
+      - name: Check source marker policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_pathspecs=(
+            'Runtime/**'
+            'Editor/**'
+            'SourceGenerators/**'
+            'Tests/**'
+            '*.cs'
+            '*.csproj'
+            '*.sln'
+          )
+          source_file_count=$(git ls-files -- "${source_pathspecs[@]}" | awk 'END { print NR + 0 }')
+          if [ "$source_file_count" -eq 0 ]; then
+            echo "No source files found for marker scan."
+            exit 0
+          fi
+          echo "Scanning ${source_file_count} tracked source files for TODO/FIXME markers."
+          set +e
+          git grep -n -E -I "(TODO|FIXME)" -- "${source_pathspecs[@]}"
+          marker_status=$?
+          set -e
+          if [ "$marker_status" -eq 0 ]; then
+            echo "::error::Found TODO/FIXME markers in source files. Please resolve or suppress them."
+            exit 1
+          elif [ "$marker_status" -eq 1 ]; then
+            echo "No TODO/FIXME markers detected in source files."
+          else
+            echo "::error::Source marker scan failed with exit code $marker_status."
+            exit "$marker_status"
+          fi
 
   spellcheck:
     name: Check spelling
