@@ -89,6 +89,112 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
+        public void ThreeTypeStateSurvivesShrinkRepopulationAndReset(
+            [Values(0, 1, 2)] int clearedType,
+            [Values(false, true)] bool throughInterface,
+            [Values(false, true)] bool warmFirstTwo,
+            [Values(false, true)] bool resetInsteadOfClear
+        )
+        {
+            using CaseState state = new CaseState();
+            IMessageBus bus = state.Bus;
+            ValueMessage first = new ValueMessage(11);
+            OtherMessage second = default;
+            ReferenceMessage third = new ReferenceMessage(new Payload { Value = 13 });
+            string context =
+                $"clear={clearedType},interface={throughInterface},warm={warmFirstTwo},reset={resetInsteadOfClear}";
+            void Publish<TMessage>(ref TMessage message)
+                where TMessage : IUntargetedMessage
+            {
+                if (throughInterface)
+                {
+                    bus.EmitSticky(ref message);
+                }
+                else
+                {
+                    state.Bus.EmitSticky(ref message);
+                }
+            }
+            bool Clear(int index)
+            {
+                switch (index)
+                {
+                    case 0:
+                        return bus.ClearLatest<ValueMessage>();
+                    case 1:
+                        return bus.ClearLatest<OtherMessage>();
+                    default:
+                        return bus.ClearLatest<ReferenceMessage>();
+                }
+            }
+            void Verify(bool firstPresent, bool secondPresent, bool thirdPresent)
+            {
+                Assert.That(
+                    bus.TryGetLatest(out ValueMessage value),
+                    Is.EqualTo(firstPresent),
+                    context
+                );
+                if (firstPresent)
+                {
+                    Assert.That(value.Value, Is.EqualTo(first.Value), context);
+                }
+                Assert.That(
+                    bus.TryGetLatest<OtherMessage>(out _),
+                    Is.EqualTo(secondPresent),
+                    context
+                );
+                Assert.That(
+                    bus.TryGetLatest(out ReferenceMessage reference),
+                    Is.EqualTo(thirdPresent),
+                    context
+                );
+                if (thirdPresent)
+                {
+                    Assert.That(reference, Is.SameAs(third), context);
+                }
+            }
+            Publish(ref first);
+            Publish(ref second);
+            if (warmFirstTwo)
+            {
+                first = new ValueMessage(17);
+                Publish(ref first);
+                Publish(ref second);
+            }
+            Verify(true, true, false);
+            Publish(ref third);
+            Verify(true, true, true);
+            Assert.That(Clear(clearedType), Is.True, context);
+            Assert.That(Clear(clearedType), Is.False, context);
+            Verify(clearedType != 0, clearedType != 1, clearedType != 2);
+            first = new ValueMessage(23);
+            third = new ReferenceMessage(new Payload { Value = 29 });
+            Publish(ref first);
+            Publish(ref second);
+            Publish(ref third);
+            Publish(ref first);
+            Verify(true, true, true);
+            if (resetInsteadOfClear)
+            {
+                state.Bus.ResetState();
+            }
+            else
+            {
+                Assert.That(Clear(0), Is.True, context);
+                Assert.That(Clear(1), Is.True, context);
+                Assert.That(Clear(2), Is.True, context);
+            }
+            Verify(false, false, false);
+            first = new ValueMessage(31);
+            Publish(ref first);
+            Verify(true, false, false);
+            MessageBus other = new MessageBus();
+            Assert.That(other.TryGetLatest<ValueMessage>(out _), Is.False, context);
+            Assert.That(Clear(0), Is.True, context);
+            Verify(false, false, false);
+        }
+
+        [Test]
         public void OrdinaryLateRegistrationDoesNotReplay()
         {
             MessageBus bus = new MessageBus();
