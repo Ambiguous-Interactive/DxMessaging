@@ -14,6 +14,81 @@ namespace DxMessaging.Tests.Runtime.Core
     public sealed partial class StickyUntargetedSpecificTests
     {
         [Test]
+        public void AlternatingTypesKeepTheirLatestStateAcrossClearAndReset(
+            [Values(false, true)] bool throughInterface,
+            [Values(0, 1, 2, 3)] int mutation
+        )
+        {
+            using CaseState state = new CaseState();
+            IMessageBus bus = state.Bus;
+            void Publish<TMessage>(ref TMessage message)
+                where TMessage : IUntargetedMessage
+            {
+                if (throughInterface)
+                {
+                    bus.EmitSticky(ref message);
+                }
+                else
+                {
+                    state.Bus.EmitSticky(ref message);
+                }
+            }
+            ValueMessage first = new ValueMessage(7);
+            OtherMessage second = default;
+            Publish(ref first);
+            first = new ValueMessage(8);
+            Publish(ref first);
+            Publish(ref second);
+            string context = $"interface={throughInterface},mutation={mutation}";
+            switch (mutation)
+            {
+                case 0:
+                    Assert.That(bus.ClearLatest<ValueMessage>(), Is.True, context);
+                    break;
+                case 1:
+                    Assert.That(bus.ClearLatest<OtherMessage>(), Is.True, context);
+                    break;
+                case 2:
+                    state.Bus.ResetState();
+                    break;
+                case 3:
+                    Assert.That(bus.ClearLatest<IUntargetedMessage>(), Is.False, context);
+                    break;
+                default:
+                    Assert.Fail(context);
+                    break;
+            }
+            ValueMessage ordinary = new ValueMessage(99);
+            bus.UntargetedBroadcast(ref ordinary);
+            bool firstPresent = bus.TryGetLatest(out ValueMessage retained);
+            Assert.That(firstPresent, Is.EqualTo(mutation != 0 && mutation != 2), context);
+            if (firstPresent)
+            {
+                Assert.That(retained.Value, Is.EqualTo(8), context);
+            }
+            Assert.That(
+                bus.TryGetLatest<OtherMessage>(out _),
+                Is.EqualTo(mutation != 1 && mutation != 2),
+                context
+            );
+            first = new ValueMessage(42);
+            Publish(ref first);
+            Publish(ref second);
+            first = new ValueMessage(43);
+            Publish(ref first);
+            Assert.That(bus.TryGetLatest(out retained), Is.True, context);
+            Assert.That(retained.Value, Is.EqualTo(43), context);
+            Assert.That(bus.TryGetLatest<OtherMessage>(out _), Is.True, context);
+            MessageBus other = new MessageBus();
+            Assert.That(other.TryGetLatest<ValueMessage>(out _), Is.False, context);
+            Assert.That(other.TryGetLatest<OtherMessage>(out _), Is.False, context);
+            Assert.That(bus.ClearLatest<ValueMessage>(), Is.True, context);
+            Assert.That(bus.TryGetLatest<OtherMessage>(out _), Is.True, context);
+            Assert.That(bus.ClearLatest<OtherMessage>(), Is.True, context);
+            Assert.That(bus.TryGetLatest<ValueMessage>(out _), Is.False, context);
+        }
+
+        [Test]
         public void OrdinaryLateRegistrationDoesNotReplay()
         {
             MessageBus bus = new MessageBus();
