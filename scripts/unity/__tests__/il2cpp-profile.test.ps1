@@ -76,6 +76,13 @@ try {
     if (@($parseErrors).Count -gt 0) {
         throw "run-ci-tests.ps1 has parse errors: $($parseErrors.Message -join '; ')"
     }
+    # Index top-level production functions once instead of traversing the whole AST per name.
+    $functionDefinitions = @{}
+    foreach ($definition in $runnerAst.EndBlock.Statements) {
+        if ($definition -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+            $functionDefinitions[$definition.Name] = $definition
+        }
+    }
     foreach ($name in @(
         'Get-ComparisonSourceEvidence',
         'Get-StandalonePlayerManifest',
@@ -91,14 +98,7 @@ try {
         'New-ShippingFidelityBuilderSource',
         'New-StandaloneTestCallbackSource'
     )) {
-        $definition = $runnerAst.FindAll(
-            {
-                param($node)
-                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-                    $node.Name -eq $name
-            },
-            $true
-        ) | Select-Object -First 1
+        $definition = $functionDefinitions[$name]
         if (-not $definition) {
             throw "Function '$name' was not found in run-ci-tests.ps1."
         }

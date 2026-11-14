@@ -155,3 +155,20 @@ devcontainer CI smoke test on both x64 and ARM64:
 ```bash
 bash .devcontainer/test-ai-backends.sh
 ```
+
+## Fast verification and SDK setup
+
+Both container creation and attachment resolve the exact SDK from `global.json`.
+A missing SDK is installed synchronously into `/usr/share/dotnet`; a failed download,
+failed installation, or unresolved version stops setup before tools run.
+
+Use `npm run test:unit` for the fast script subset. Run a changed file directly with
+`node --test scripts/__tests__/package-script-contract.test.js`. Use
+`npm run test:integration` for the remaining script tests and Python reducers, and
+`npm test` for the complete suite. Both lanes use native Node file isolation with
+at most four test processes. New test files enter the integration lane by default.
+
+The devcontainer workflow builds both supported architectures only when image,
+dependency, setup, or smoke-test inputs change. It validates SDK resolution, cache
+mounts, backend launchers, and agent setup contracts. Static CI owns the full script
+suite, so building an image does not run that suite twice again.

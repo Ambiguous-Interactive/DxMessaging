@@ -9,8 +9,8 @@
 #     - PowerShell is installed (parity with .ps1 entry points)
 #     - The asmdef-discovery node module loads and self-tests cleanly
 #     - The cache-mount contract still holds (validate-caching.sh)
-#     - The full Node and Python script suites (npm test) pass inside
-#       the devcontainer image
+#     - Agent setup contracts pass inside the devcontainer image
+#       (the complete script suites belong to static CI)
 #     - The same image and smoke suite run natively on Linux ARM64
 #
 # Local Unity verification is NOT exercised here: it runs through the
@@ -40,9 +40,13 @@ on:
       - ".devcontainer/**"
       - ".dockerignore"
       - "global.json"
-      - ".github/workflows/**"
-      - ".github/actions/**"
-      - "scripts/**"
+      - ".docs-tests/global.json"
+      - ".github/workflows/devcontainer-test.yml"
+      - ".github/workflows/devcontainer-prebuild.yml"
+      - "scripts/__tests__/devcontainer-agent-clis.test.js"
+      - "scripts/__tests__/devcontainer-agent-cli-vectors.json"
+      - "scripts/unity/lib/asmdef-discovery.js"
+      - "scripts/lib/repo-files.js"
       - "package.json"
       - "package-lock.json"
   pull_request:
@@ -94,7 +98,11 @@ jobs:
             exit 0
           fi
           files="$(printf '%s\n' "$records" | jq -er '.[] | select(. != null) | if type == "string" and length > 0 then . else error("Invalid changed path") end')"
-          if printf '%s\n' "$files" | grep -qE '(^\.devcontainer/|^\.github/(workflows|actions)/|^scripts/|^package(-lock)?\.json$|^global\.json$|^\.dockerignore$)'; then
+          relevant_pattern='(^\.devcontainer/|^\.github/workflows/devcontainer-(test|prebuild)\.yml$'
+          relevant_pattern="$relevant_pattern"'|^scripts/__tests__/devcontainer-agent-clis\.test\.js$|^scripts/__tests__/devcontainer-agent-cli-vectors\.json$'
+          relevant_pattern="$relevant_pattern"'|^scripts/unity/lib/asmdef-discovery\.js$|^scripts/lib/repo-files\.js$'
+          relevant_pattern="$relevant_pattern"'|^package(-lock)?\.json$|^(\.docs-tests/)?global\.json$|^\.dockerignore$)'
+          if printf '%s\n' "$files" | grep -qE "$relevant_pattern"; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "relevant=false" >> "$GITHUB_OUTPUT"
@@ -200,8 +208,8 @@ jobs:
             echo "=== AI backend launchers ==="
             bash .devcontainer/test-ai-backends.sh
 
-            echo "=== Node and Python script tests ==="
-            npm test
+            echo "=== Agent setup contracts ==="
+            node --test --test-concurrency=4 scripts/__tests__/devcontainer-agent-clis.test.js
 
             echo "=== All devcontainer smoke checks passed ==="
 
@@ -272,8 +280,8 @@ jobs:
             echo "=== AI backend launchers ==="
             bash .devcontainer/test-ai-backends.sh
 
-            echo "=== Node and Python script tests ==="
-            npm test
+            echo "=== Agent setup contracts ==="
+            node --test --test-concurrency=4 scripts/__tests__/devcontainer-agent-clis.test.js
 
             echo "=== All ARM64 devcontainer smoke checks passed ==="
 

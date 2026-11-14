@@ -7,6 +7,9 @@ source "${SCRIPT_DIR}/cache-contract.sh"
 cache_contract_repair_permissions
 export PATH="${HOME}/.local/bin:${PATH}"
 export NPM_CONFIG_PREFIX="${HOME}/.local"
+# shellcheck source=.devcontainer/lib/pinned-sdk.sh
+source "${SCRIPT_DIR}/lib/pinned-sdk.sh"
+ensure_pinned_sdk "${CACHE_WORKSPACE_ROOT}"
 
 # Configuration is local and works with the image's dependencies before npm
 # install. Finish it before clients start, without probing a sleeping host.

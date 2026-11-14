@@ -79,3 +79,26 @@ test("release and store media stay out of the shipped package allowlist", () => 
     assert.equal(isPackaged(packageFiles, `${asset}.meta`), false, `${asset}.meta`);
   }
 });
+
+test("script test lanes partition every native test file without a compatibility loader", () => {
+  const scripts = PACKAGE.scripts;
+  assert.equal(scripts.test, "npm run test:all");
+  const patterns = ["test:unit", "test:integration", "test:all"].map((name) => {
+    assert.match(scripts[name] || "", /node --test --test-concurrency=4 \"/);
+    const pattern = scripts[name].match(/node --test --test-concurrency=4 "([^"]+)"/)[1];
+    return new Set(fs.globSync(pattern, { cwd: REPO_ROOT }));
+  });
+  const [unit, integration, all] = patterns;
+  assert.ok(unit.size && integration.size);
+  assert.deepEqual(
+    [...unit].filter((file) => integration.has(file)),
+    []
+  );
+  assert.deepEqual([...new Set([...unit, ...integration])].sort(), [...all].sort());
+  assert.deepEqual([...all].sort(), fs.globSync("scripts/**/*.test.js", { cwd: REPO_ROOT }).sort());
+  assert.equal(fs.existsSync(path.join(REPO_ROOT, "scripts/index.js")), false);
+  for (const name of ["test:integration", "test:all"]) {
+    assert.match(scripts[name], /python3 -m unittest discover -s scripts\/__tests__/);
+    assert.match(scripts[name], /python3 -m unittest discover -s scripts\/unity\/__tests__/);
+  }
+});
