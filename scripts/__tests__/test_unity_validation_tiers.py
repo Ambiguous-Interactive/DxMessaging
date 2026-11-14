@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -52,6 +53,8 @@ class UnityValidationTiersTests(unittest.TestCase):
         publisher = self.perf["jobs"]["commit-perf-doc"]
         self.assertIn("github.event_name == 'workflow_dispatch'", publisher["if"])
         self.assertIn("github.ref == format('refs/heads/{0}', github.event.repository.default_branch)", publisher["if"])
+        self.assertIn("report-perf-deltas", publisher["needs"])
+        self.assertIn("report-perf-deltas", self.perf["jobs"])
 
     @unittest.skipIf(os.name == "nt", "bash classifier is exercised on Linux and macOS")
     def test_classifier_handles_renames_and_fails_closed(self):
@@ -106,6 +109,7 @@ class NightlyDispatcherTests(unittest.TestCase):
             ("performance", "schedule", "0 3 * * *", "current", "", "", 0, ["perf-numbers.yml"]),
             ("manual", "workflow_dispatch", "", "current", "", "", 0, ["unity-tests.yml", "perf-numbers.yml"]),
             ("duplicate", "schedule", "0 1 * * *", "current", "123\tin_progress", "", 0, []),
+            ("tag performance cannot suppress publication", "schedule", "0 3 * * *", "current", "123\tcompleted", "tag-only", 0, ["perf-numbers.yml"]),
             ("complete evidence", "schedule", "0 1 * * *", "current", "123\tcompleted", "", 0, []),
             ("consumer-only evidence", "schedule", "0 1 * * *", "current", "123\tcompleted", "incomplete", 0, ["unity-tests.yml"]),
             ("stale", "schedule", "0 1 * * *", "stale", "", "", 0, []),
@@ -126,7 +130,11 @@ case "$*" in
     if [ "$LIVE_HEAD" = current ]; then echo "$EXPECTED_SHA"; else echo stale; fi ;;
   *actions/workflows/*/runs?*)
     [ "$FAILURE" != list ] || exit 1
-    [ -z "$EXISTING" ] || echo "$EXISTING" ;;
+    if [ "$FAILURE" = tag-only ]; then
+      case "$*" in *'&branch=master&'*) ;; *) echo "$EXISTING" ;; esac
+    else
+      [ -z "$EXISTING" ] || echo "$EXISTING"
+    fi ;;
   *contents/.github/unity-versions.json*) echo "$VERSIONS_BASE64" ;;
   *actions/runs/*/artifacts*)
     if [ "$FAILURE" = incomplete ]; then echo "unity-old-consumer-install"; else printf '%s\\n' "$COMPLETE_ARTIFACTS"; fi ;;
@@ -148,6 +156,84 @@ esac
                 else:
                     self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(dispatch_log.read_text().splitlines() if dispatch_log.exists() else [], dispatched)
+
+
+class DispatchedPerformanceRegressionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.document = workflow("perf-numbers.yml")
+        cls.job = cls.document["jobs"]["report-perf-deltas"]
+        cls.script = next(step["run"] for step in cls.job["steps"] if step.get("id") == "delta")
+
+    def test_report_blocks_publication_independently_of_app_secrets(self):
+        self.assertNotIn("if", self.job)
+        self.assertEqual(self.job["needs"], ["perf-benchmarks", "perf-unity-success"])
+        self.assertIn("report-perf-deltas", self.document["jobs"]["commit-perf-doc"]["needs"])
+        self.assertTrue(any(step.get("run") == "npm ci --ignore-scripts --no-audit --no-fund" for step in self.job["steps"]))
+
+    @unittest.skipIf(os.name == "nt", "bash report is exercised on Linux and macOS")
+    def test_actual_dispatch_report_preserves_regression_and_compatibility_guards(self):
+        cases = ["stable", "throughput regression", "allocation regression", "bootstrap", "profile changed", "methodology changed", "renamed out of methodology", "wrong source", "wrong platform", "baseline platform", "missing scenario", "missing inputs", "bad baseline source"]
+        for name in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory(prefix="dxm-perf-report-") as tmp:
+                root = Path(tmp)
+                def git(*args):
+                    return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True).stdout.strip()
+                git("init", "-q")
+                git("config", "user.name", "Fixture")
+                git("config", "user.email", "fixture@example.com")
+                git("config", "commit.gpgsign", "false")
+                method = root / "Tests/Runtime/Benchmarks/original.cs"
+                method.parent.mkdir(parents=True)
+                method.write_text("methodology\n")
+                git("add", ".")
+                git("commit", "-qm", "baseline")
+                baseline_sha = git("rev-parse", "HEAD")
+                if name == "methodology changed":
+                    method.write_text("changed methodology\n")
+                elif name == "renamed out of methodology":
+                    method.rename(root / "moved.cs")
+                else:
+                    (root / "runtime.cs").write_text("runtime change\n")
+                git("add", "-A")
+                git("commit", "-qm", "candidate")
+                measured_sha = git("rev-parse", "HEAD")
+                (root / "scripts").mkdir()
+                shutil.copytree(ROOT / "scripts/unity", root / "scripts/unity")
+                artifact = root / ".artifacts/perf-download/comparisons"
+                artifact.mkdir(parents=True)
+                profile = {"executionProfileId": "profile", "affinityMask": "0xF", "priorityClass": "Normal"}
+                baseline = root / ".artifacts/reference.csv"
+                baseline_profile = root / ".artifacts/reference-profile.json"
+                baseline_profile.write_text(json.dumps(profile))
+                if name == "profile changed":
+                    profile["affinityMask"] = "0x3"
+                (artifact / "performance-cpu-profile.json").write_text(json.dumps(profile))
+                platform = "Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.5.2f1)"
+                header = "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,wallClockMs,gcAllocatedBytes\n"
+                baseline_platform = "other platform" if name == "baseline platform" else platform
+                baseline_stamp = "invalid" if name == "bad baseline source" else baseline_sha
+                baseline.write_text(header + ("" if name == "bootstrap" else f"UntargetedFlood_OneHandler,{baseline_platform},{baseline_stamp},0,1000,0,10,0\n"))
+                current_stamp = baseline_sha if name == "wrong source" else measured_sha
+                current_platform = platform.replace("WindowsPlayer", "LinuxPlayer") if name == "wrong platform" else platform
+                scenario = "TargetedFlood_OneListener" if name == "missing scenario" else "UntargetedFlood_OneHandler"
+                throughput = 500 if name == "throughput regression" else 1000
+                allocations = 1 if name == "allocation regression" else 0
+                if name != "missing inputs":
+                    (artifact / "unity.log").write_text(header + f"{scenario},{current_platform},{current_stamp},0,{throughput},{allocations},10,0\n")
+                summary = root / "summary.md"
+                delta = root / ".artifacts/delta.md"
+                env = dict(os.environ, NODE_PATH=str(ROOT / "node_modules"), LATEST_VERSION="6000.5.2f1", MEASURED_SHA=measured_sha, PERF_BASELINE=str(baseline), PERF_BASELINE_PROFILE=str(baseline_profile), PERF_DELTA=str(delta), GITHUB_STEP_SUMMARY=str(summary))
+                result = subprocess.run(["bash", "-c", self.script], cwd=root, env=env, capture_output=True, text=True)
+                omitted = name in {"bootstrap", "profile changed", "methodology changed", "renamed out of methodology"}
+                if name == "stable" or omitted:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual("omitted" in summary.read_text(), omitted)
+                else:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                if name in {"throughput regression", "allocation regression"}:
+                    self.assertIn("exceeded the existing diagnostic regression threshold", result.stdout)
+                    self.assertTrue(summary.exists())
 
 
 class ReleaseQualificationTests(unittest.TestCase):

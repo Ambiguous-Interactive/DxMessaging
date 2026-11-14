@@ -1143,9 +1143,140 @@ jobs:
             test "${UNITY_TESTS_RESULT}" = success
           fi
 
+  report-perf-deltas:
+    name: Check dispatched performance against the compatible baseline
+    needs:
+      - perf-benchmarks
+      - perf-unity-success
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LATEST_VERSION: 6000.5.2f1
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      MEASURED_SHA: ${{ github.sha }}
+      PERF_BASELINE: .artifacts/perf-reference.csv
+      PERF_BASELINE_PROFILE: .artifacts/perf-reference-profile.json
+      PERF_DELTA: .artifacts/perf-delta.md
+    steps:
+      - name: Checkout measured reporting code and baseline history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup Node.js for reporting
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.13.1"
+
+      - name: Install reporting dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Download perf benchmark artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: perf-${{ env.LATEST_VERSION }}-*
+          path: .artifacts/perf-download
+
+      - name: Read the trusted default-branch baseline
+        run: |
+          set -euo pipefail
+          git show "origin/${DEFAULT_BRANCH}:docs/architecture/perf-baseline.csv" > "${PERF_BASELINE}"
+          profile="origin/${DEFAULT_BRANCH}:docs/architecture/perf-baseline-profile.json"
+          if git cat-file -e "${profile}"; then
+            git show "${profile}" > "${PERF_BASELINE_PROFILE}"
+          fi
+
+      - name: Compare compatible historical performance before publication
+        id: delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          inputs=()
+          while IFS= read -r -d '' file; do
+            inputs+=(--input "${file}")
+          done < <(find .artifacts/perf-download -type f \( -name unity.log -o -name results.xml \) -print0)
+          if [ "${#inputs[@]}" -eq 0 ]; then
+            echo '::error::No benchmark logs or results were downloaded.'
+            exit 1
+          fi
+          current_baseline=.artifacts/perf-current-Standalone.csv
+          node scripts/unity/extract-perf-baseline.js "${inputs[@]}" --scope Standalone --output "${current_baseline}"
+          current_commits="$(awk -F, 'NR > 1 && $3 != "" { print $3 }' "${current_baseline}" | sort -u)"
+          current_platforms="$(awk -F, 'NR > 1 && $2 != "" { print $2 }' "${current_baseline}" | sort -u)"
+          expected_platform="Standalone IL2CPP x64 Release (WindowsPlayer; Unity ${LATEST_VERSION})"
+          if [ "${current_commits}" != "${MEASURED_SHA}" ] || [ "${current_platforms}" != "${expected_platform}" ]; then
+            echo '::error::Current Standalone source or platform does not match this run.'
+            exit 1
+          fi
+          baseline_rows="$(awk -F, 'NR > 1 && $1 != "" { count++ } END { print count + 0 }' "${PERF_BASELINE}")"
+          if [ "${baseline_rows}" -eq 0 ]; then
+            echo '_Historical delta omitted: the trusted baseline has no measured rows yet._' > "${PERF_DELTA}"
+            cat "${PERF_DELTA}" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          baseline_commit="$(awk -F, 'NR > 1 && $3 != "" { print $3 }' "${PERF_BASELINE}" | sort -u)"
+          [[ "${baseline_commit}" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "${baseline_commit}^{commit}"
+          methodology_pattern='^(Tests/(Runtime|Editor)/(Benchmarks|Comparisons|Allocations)/'
+          methodology_pattern+='|Tests/Runtime/Scripts/Messages/Simple(Targeted|Untargeted|Broadcast)Message\.cs$'
+          methodology_pattern+='|scripts/unity/(extract-perf-baseline|perf-scenarios|reduce-paired-bracket|render-perf|run-ci-tests|resolve-performance-cpu-profile|validate-il2cpp-profile)'
+          methodology_pattern+='|scripts/unity/(comparison-.*|paired-bracket-manifest|post-route-perf-scenarios|perf-scenario-definitions)\.json$'
+          methodology_pattern+='|scripts/unity/lib/asmdef-discovery\.js$'
+          methodology_pattern+='|\.github/comparison-packages\.json$'
+          methodology_pattern+='|\.github/perf/canonical-il2cpp-profile\.v1\.json$'
+          methodology_pattern+='|\.github/unity-versions\.json$'
+          methodology_pattern+='|\.github/actions/compute-unity-assemblies/)'
+          # Disable rename detection so changes out of a methodology path retain both endpoints.
+          changed_files="$(git diff --no-renames --name-only "${baseline_commit}" "${MEASURED_SHA}")"
+          incompatible="$(printf '%s\n' "${changed_files}" | grep -E "${methodology_pattern}" || true)"
+          : > "${PERF_DELTA}"
+          if [ -n "${incompatible}" ]; then
+            printf 'Historical delta omitted: benchmark or harness paths changed.\n%s\n' "${incompatible}" >> "${PERF_DELTA}"
+          fi
+          current_profile="$(find .artifacts/perf-download -type f -path '*comparisons*' -name performance-cpu-profile.json -print | sort | head -n1)"
+          profile_matches=false
+          if [ -f "${PERF_BASELINE_PROFILE}" ] && [ -n "${current_profile}" ]; then
+            baseline_identity="$(jq -cS '{executionProfileId,affinityMask,priorityClass}' "${PERF_BASELINE_PROFILE}")"
+            current_identity="$(jq -cS '{executionProfileId,affinityMask,priorityClass}' "${current_profile}")"
+            if [ "${baseline_identity}" = "${current_identity}" ]; then profile_matches=true; fi
+          fi
+          if [ "${profile_matches}" != true ]; then
+            echo 'Historical delta omitted: the execution profiles do not match.' >> "${PERF_DELTA}"
+          fi
+          if [ -s "${PERF_DELTA}" ]; then
+            cat "${PERF_DELTA}" >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          baseline_platforms="$(awk -F, 'NR > 1 && $2 != "" { print $2 }' "${PERF_BASELINE}" | sort -u)"
+          if [ "${baseline_platforms}" != "${expected_platform}" ]; then
+            echo '::error::The compatible baseline platform does not match this run.'
+            exit 1
+          fi
+          diff -u <(tail -n +2 "${PERF_BASELINE}" | cut -d, -f1 | sort) <(tail -n +2 "${current_baseline}" | cut -d, -f1 | sort)
+          output="$(node scripts/unity/render-perf-deltas.js "${inputs[@]}" --baseline-csv "${PERF_BASELINE}" --unity-version "${LATEST_VERSION}" --scope Standalone --output "${PERF_DELTA}")"
+          changed="$(printf '%s\n' "${output}" | sed -n 's/^changed=//p')"
+          regressed="$(printf '%s\n' "${output}" | sed -n 's/^regressed=//p')"
+          [[ "${changed}" == true || "${changed}" == false ]]
+          [[ "${regressed}" == true || "${regressed}" == false ]]
+          cat "${PERF_DELTA}" >> "${GITHUB_STEP_SUMMARY}"
+          if [ "${regressed}" = true ]; then
+            echo '::error::Standalone performance exceeded the existing diagnostic regression threshold.'
+            exit 1
+          fi
+
+      - name: Retain historical comparison diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-historical-delta
+          path: .artifacts/perf-delta.md
+          if-no-files-found: warn
+
   commit-perf-doc:
     name: Commit refreshed perf doc to the default branch
     needs:
+      - report-perf-deltas
       - runner-preflight
       - perf-benchmarks
       - perf-unity-success
@@ -1290,7 +1421,7 @@ jobs:
             "${machine_specs_args[@]}"
           npx prettier --write "${PERF_DOC}"
           # Regenerate the committed master baseline from the SAME real run so the
-          # diagnostic PR delta compares against REAL numbers after
+          # nightly diagnostic delta compares against real numbers after
           # the first master push (the committed seed is only a bootstrap).
           # --replace overwrites the existing rows with this run's Standalone rows.
           node scripts/unity/extract-perf-baseline.js \

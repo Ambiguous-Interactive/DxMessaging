@@ -52,8 +52,13 @@ jobs:
               echo "::notice::Scheduled revision is no longer the default-branch head; skipping stale dispatch."
               exit 0
             fi
+            branch_filter=''
+            if [ "${workflow}" = perf-numbers.yml ]; then
+              # Tag qualification cannot suppress the default-branch publication run.
+              branch_filter="&branch=${DEFAULT_BRANCH}"
+            fi
             existing="$(gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?event=workflow_dispatch&head_sha=${EXPECTED_SHA}&per_page=100" \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?event=workflow_dispatch&head_sha=${EXPECTED_SHA}${branch_filter}&per_page=100" \
               --jq '.workflow_runs[] | select(.status != "completed" or .conclusion == "success") | [.id, .status] | @tsv')"
             duplicate=false
             while IFS=$'\t' read -r run_id status; do

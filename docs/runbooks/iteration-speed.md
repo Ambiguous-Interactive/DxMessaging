@@ -93,6 +93,10 @@ container creation and restart verify SDK resolution synchronously.
 - Nightly correctness dispatch runs the complete supported Unity matrix. Static CI separately runs
   both managed tiers nightly. Nightly performance uses a later slot and the existing exact-source
   publication pipeline. Ordinary PRs and merges do not launch performance work.
+- Dispatched performance retains the existing historical regression threshold before publication.
+  Changed benchmark methodology or execution profiles retain an explicit non-comparable result;
+  comparable throughput or allocation regressions fail the run. Tag qualification cannot suppress
+  the default-branch nightly publication run.
 - Manual Unity dispatch retains full compatibility, shipping-fidelity and consumer-install modes.
   A release needs successful exact-revision full compatibility, all managed cases, shipping,
   consumer-install and performance evidence; a prior night's result is not qualification for a
