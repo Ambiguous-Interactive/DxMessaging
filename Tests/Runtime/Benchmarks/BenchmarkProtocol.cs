@@ -393,17 +393,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 try
                 {
                     /*
-                        Cold latency is a single first-touch operation per trial, so the
-                        allocation count is taken over the SAME region as the timing (it
-                        cannot be re-run cold). When the probe is functional its recorder
-                        adds a small overhead to this window; that is acceptable for the
-                        cold scenarios (dominated by first-touch JIT) and keeps the count
-                        honest. When non-functional, the window is a no-op and Sample
-                        returns AllocationProbe.Unmeasured. The `using` is scoped to this
-                        try block, so the recorder is released (disabled) even if
-                        timedOperation throws -- before tearDownTrial runs -- and the end
-                        timestamp is captured BEFORE Sample so the sample/disable overhead
-                        stays out of the measured time.
+                        Cold latency times one operation per trial. The allocation recorder opens
+                        before the start timestamp and remains enabled during the operation; a
+                        functional recorder can perturb its cost. SampleBoth and recorder disposal
+                        follow the end timestamp. An unavailable recorder reports Unmeasured.
+                        The scoped window is disposed before trial teardown, including when the
+                        operation throws. First-touch or JIT dominance is not assumed.
                     */
                     using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                     long startTimestamp = Stopwatch.GetTimestamp();

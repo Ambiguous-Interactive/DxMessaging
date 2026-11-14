@@ -176,54 +176,44 @@ not establish an IL2CPP optimization, an independent-build result, or a causal s
 
 ### Cold vs warm/hot modes
 
-Both registration and dispatch are covered in two modes. "Cold" is the
-JIT-inclusive first execution -- the genuine first-touch hitch under Mono. "Warm"
-or "hot" is steady state. The mode is encoded as a suffix on the scenario key; the
-7-column baseline CSV is unchanged. Every cold/warm-JIT scenario is a wall-clock
-(latency) row: it sets `emitsPerSecond=0` and puts the time in `wallClockMs`. That
-zero throughput is also what AUTO-EXCLUDES these rows from the PR throughput smoke
-(`render-perf-deltas.js` treats a baseline `emitsPerSecond<=0` as non-gating), so
-they are report-only -- rendered as wall clock, never gated.
+Scenario suffixes describe preparation, while each workload defines its own timed
+boundary. The `Cold` and `WarmJit` names remain unchanged. These latency rows use
+the common CSV schema with `emitsPerSecond=0` and duration in `wallClockMs`.
+`render-perf-deltas.js` excludes a nonpositive baseline rate from its throughput
+smoke gate. Read these rows as latency observations.
 
-- **Cold = JIT-inclusive first-touch, stabilized via distinct types, median.** A
-  single first emit of one message type is pure JIT noise: it is dominated by the
-  one-time compile of that type's dispatch path. The three
-  `*FirstDispatch_Cold` scenarios instead route through
-  `BenchmarkProtocol.MeasureColdLatency` over 32 trials, one per distinct closed
-  generic message type. Each trial spins up a FRESH bus, registers a no-op handler
-  via the READONLY-BY-REF (`FastHandler<T>`) overload (untimed), then times EXACTLY ONE emit
-  of that type. The readonly by-reference handler is deliberate: it makes the timed emit
-  JIT-compile and exercise `RunFastHandlers` -- the SAME fast dispatch path the
-  warm/hot scenarios measure -- rather than the slower by-value default path. Each
-  first emit JIT-compiles that closed type's fast dispatch path, and the reported
-  number is the MEDIAN of the 32 per-emit samples. The median rejects the single
-  outlier the very first trial carries (the one-time compile of the shared
-  dispatch infrastructure), giving a stable JIT-inclusive cold first-dispatch
-  number -- symmetric with the registration flood.
-- **Warm-JIT registration flood.** `RegistrationFlood_1000Types_WarmJit` is the
-  JIT-pre-warmed complement to the cold flood. It registers all 1000 cached flood
-  builders once on a THROWAWAY bus (disposed -- only the JIT-compiled code
-  survives), then times a fresh-bus registration of the same 1000 builders. The
-  cold flood times both the Mono JIT compile and the registration data-structure
-  work; the warm-JIT flood isolates the data-structure cost by paying the JIT bill
-  first. Under IL2CPP/AOT the generics are precompiled, so cold and warm-JIT are
-  approximately equal. Because the warm-JIT flood is repeatable (the JIT is already
-  paid and a fresh population is rebuilt per trial), it runs
-  `DispatchThroughputBenchmarks.WarmFloodTrials` trials and reports the MINIMUM wall
-  clock -- the floor when the CPU was not preempted, the most reproducible estimator
-  (the same philosophy as `AllocationProbe.MeasureMin`).
+- **First dispatch after registration.** The three `*FirstDispatch_Cold` rows use
+  `BenchmarkProtocol.MeasureColdLatency` for 32 trials, each with a distinct closed
+  message type. Setup creates a fresh bus and registers a readonly by-reference
+  `FastHandler<T>` callback outside timing. The clock covers exactly one typed bus
+  emission through `ColdTrialState.Emit`, including the wrapper and dispatch setup.
+  The bus resolves its current dispatch plans and fast invokers. First-touch work
+  can include JIT compilation under a backend that performs it; distinct types do
+  not establish separate compilation events or total metadata cost. The reported
+  wall-clock median uses all 32 samples, including the first. It discards no trial
+  and supplies no independent-build uncertainty. A functional allocation recorder
+  stays enabled during the operation; its start, sample read and disposal are
+  outside the clock.
+- **Registration floods.** `RegistrationFlood_1000Types_FromColdBus` constructs the
+  builder delegates before timing, then times scope construction, all 1000
+  registrations and scope disposal in one pass. The `WarmJit` variant first runs
+  the builders on a throwaway scope. That scope's registrations are released;
+  compiled code, metadata, type keys and other process state may remain. Each of
+  its `DispatchThroughputBenchmarks.WarmFloodTrials` trials creates a fresh scope
+  before timing and disposes it after timing. Its clock covers the registration
+  loop alone. Cold/warm differences therefore include different construction and
+  cleanup boundaries as well as preparation. The warm row reports the minimum
+  measured duration; its allocation count and bytes come from the first trial,
+  which can differ from the minimum-duration trial. This descriptive minimum is
+  not a calibrated noise-free floor or an isolated JIT/data-structure cost.
 - **Deregistration floods.** `DeregistrationFlood_1000Types_Cold` and
-  `DeregistrationFlood_1000Types_WarmJit` are the teardown mirror of the
-  registration floods. Each stages the same 1000 cached flood builders on a live
-  token UNTIMED, then times `MessageRegistrationToken.UnregisterAll()` -- the
-  production deregistration path, which drains one bus deregistration per staged
-  handler. The cold variant pays the Mono JIT compile of that path on its first
-  call; the warm-JIT variant pre-pays it on a throwaway bus (register then
-  `UnregisterAll`) and times the teardown of a fresh, fully populated token, so it
-  isolates the data-structure dismantle cost. Like the registration floods, the
-  warm-JIT deregistration flood is repeatable and reports the MINIMUM over
-  `WarmFloodTrials` trials. Both are wall-clock rows, symmetric with the
-  registration floods.
+  `DeregistrationFlood_1000Types_WarmJit` register the cached builders before timing
+  and time `MessageRegistrationToken.UnregisterAll()`. Scope disposal remains
+  outside both clocks. The cold row uses one measured pass. The warm row primes
+  registration and teardown on a throwaway scope, then reports the minimum over
+  `WarmFloodTrials` fresh populations. Its allocation count and bytes also come
+  from the first trial. Backend and prior process state affect interpretation;
+  the labels alone establish neither JIT cost nor equality under AOT.
 - **Registration-cycle attribution.** The four `RegistrationAttribution_*_131072`
   rows time complete same-type register/remove cycles through the direct bus,
   direct handler, disabled token, and active token layers. Every row reuses one
@@ -588,24 +578,24 @@ sub-millisecond single shot without changing the reported per-bus cardinality.
 | `UntargetedFlood_FourHandlers_FourPriorities`                     | Four untargeted handlers across priorities 0-3.                        |
 | `UntargetedFlood_SixteenHandlers_OnePriority`                     | Sixteen untargeted handlers sharing priority 0.                        |
 | `UntargetedFlood_OneInactiveHandler`                              | One registered but inactive untargeted handler.                        |
-| `UntargetedFirstDispatch_Cold`                                    | First untargeted dispatch per type, JIT-inclusive, median of 32 types. |
+| `UntargetedFirstDispatch_Cold`                                    | First timed untargeted dispatch; median of 32 closed types.            |
 | `TargetedFlood_NoMatchingTarget`                                  | Targeted dispatch with no handler for the emitted target.              |
 | `TargetedFlood_OneListener`                                       | One targeted listener on one target.                                   |
 | `TargetedFlood_SixteenListeners`                                  | Sixteen targeted listeners on one target.                              |
-| `TargetedFirstDispatch_Cold`                                      | First targeted dispatch per type, JIT-inclusive, median of 32 types.   |
+| `TargetedFirstDispatch_Cold`                                      | First timed targeted dispatch; median of 32 closed types.              |
 | `BroadcastFlood_OneHandler`                                       | One broadcast handler.                                                 |
-| `BroadcastFirstDispatch_Cold`                                     | First broadcast dispatch per type, JIT-inclusive, median of 32 types.  |
+| `BroadcastFirstDispatch_Cold`                                     | First timed broadcast dispatch; median of 32 closed types.             |
 | `InterceptorHeavy_FourInterceptors`                               | Four interceptors plus one handler.                                    |
 | `PostProcessingHeavy_FourPostProcessors`                          | Four post-processors plus one handler.                                 |
 | `MessageBusConstruction_1000`                                     | Constructing 1000 isolated message buses.                              |
 | `MessageRegistrationTokenConstruction_1000_PrebuiltHandlerAndBus` | Constructing 1000 tokens with prebuilt handlers and buses.             |
-| `RegistrationFlood_1000Types_FromColdBus`                         | Registering 1000 distinct message types from a cold bus (cold flood).  |
-| `RegistrationFlood_1000Types_WarmJit`                             | Registering the same 1000 types after a JIT pre-warm (warm-JIT flood). |
+| `RegistrationFlood_1000Types_FromColdBus`                         | New scope, 1000 registrations and disposal in one timed pass.          |
+| `RegistrationFlood_1000Types_WarmJit`                             | 1000 registrations after untimed priming and scope creation.           |
 | `UntargetedRegistration_Marginal`                                 | Marginal cost of 1000 more untargeted handlers on one warm type.       |
 | `TargetedRegistration_Marginal`                                   | Marginal cost of 1000 more targeted handlers on one warm type/target.  |
 | `BroadcastRegistration_Marginal`                                  | Marginal cost of 1000 more broadcast handlers on one warm type/source. |
-| `DeregistrationFlood_1000Types_Cold`                              | Tearing down 1000 live registrations, JIT-inclusive (cold flood).      |
-| `DeregistrationFlood_1000Types_WarmJit`                           | Tearing down the same 1000 registrations after a JIT pre-warm.         |
+| `DeregistrationFlood_1000Types_Cold`                              | One teardown of 1000 live registrations after untimed setup.           |
+| `DeregistrationFlood_1000Types_WarmJit`                           | Teardown of 1000 registrations after untimed priming.                  |
 | `RegistrationAttribution_DirectBus_131072`                        | Direct bus register/remove cycles for one reused handler.              |
 | `RegistrationAttribution_DirectHandler_131072`                    | Handler plus bus register/remove cycles.                               |
 | `RegistrationAttribution_TokenStage_131072`                       | Disabled-token stage/remove cycles.                                    |
