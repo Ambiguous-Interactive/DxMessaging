@@ -128,6 +128,30 @@ sample. The existing cold-latency protocol includes allocation-probe overhead in
 single-shot times on profiler-bearing backends. A stripped IL2CPP player reports
 unavailable allocation measurements as `-1`.
 
+`StickyFirstTypeBenchmarks` adds four separate distinct-type publication rows:
+ordinary and sticky emission for class and struct payloads, without callbacks.
+Each row times one publication for each of 32 disjoint closed message types on
+fresh buses. No publication, registration, or latest-value lookup for that type
+runs before its sample. Contract tests use a separate family of closed types.
+Admission reserves the entire row before timing and rejects reused types in the
+same loaded assembly. Run these rows in a fresh player or after an assembly reload;
+running them again in the same process is an admission error, not a cold sample.
+
+These rows measure the first publication after state preparation. Type
+materialization, factory/delegate creation, payload construction, and bus
+construction stay outside timing. Interface dispatch and the workload wrapper
+remain inside timing. Closed types may share generated code, and some metadata
+may already be initialized during setup. The results do not measure all metadata
+cost, retained metadata size, independent JIT compilations, or process startup.
+The cold protocol includes its existing allocation-probe overhead.
+
+Retain all 128 ordered `DXM_STICKY_FIRST_TYPE_TRIAL` records with their message
+type, first-use flag, round-trip time, allocation count, and allocated bytes.
+Summaries use the unchanged cold-latency median. Preserve the first sample and
+every adverse sample; the distinct types are observations within one process,
+not independent builds. Verify retained values and reference identity, ordinary
+absence, bus isolation, and clearing outside the timed operation.
+
 `ColdLatencyMeasurement.RawTrials` retains the ordered wall-clock, allocation-count,
 and allocation-byte samples without changing the median calculation. The sticky
 fixture writes all samples after measurement as `DXM_STICKY_LATENCY_TRIAL` records,
