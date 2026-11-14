@@ -15,9 +15,8 @@ ensure_pinned_sdk() (
         return 0
     fi
     # Create/start/attach can overlap. A subshell releases this descriptor on every exit.
-    local sdk_lock_fd
-    exec {sdk_lock_fd}>"${TMPDIR:-/tmp}/dxm-dotnet-sdk.lock"
-    flock -w 300 "${sdk_lock_fd}" || return 1
+    exec 9>"${TMPDIR:-/tmp}/dxm-dotnet-sdk.lock"
+    flock -w 300 9 || return 1
     actual_sdk="$(cd "${workspace}" && dotnet --version 2>/dev/null)" || actual_sdk=''
     if [[ "${actual_sdk}" == "${expected_sdk}" ]]; then return 0; fi
     printf 'Installing repository SDK %s before continuing.\n' "${expected_sdk}"
