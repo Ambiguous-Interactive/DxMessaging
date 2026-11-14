@@ -98,7 +98,7 @@ test("script test lanes partition every native test file without a compatibility
   assert.deepEqual([...all].sort(), fs.globSync("scripts/**/*.test.js", { cwd: REPO_ROOT }).sort());
   assert.equal(fs.existsSync(path.join(REPO_ROOT, "scripts/index.js")), false);
   for (const name of ["test:integration", "test:all"]) {
-    assert.match(scripts[name], /python3 -m unittest discover -s scripts\/__tests__/);
-    assert.match(scripts[name], /python3 -m unittest discover -s scripts\/unity\/__tests__/);
+    assert.match(scripts[name], /discover -s scripts\/__tests__ -p "test_\*\.py"/);
+    assert.match(scripts[name], /discover -s scripts\/unity\/__tests__ -p "test_\*\.py"/);
   }
 });

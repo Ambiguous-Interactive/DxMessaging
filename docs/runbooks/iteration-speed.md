@@ -34,6 +34,10 @@ representative retention 5,789, and exhaustive retention 1,014 are disjoint and 
 unfiltered discovered case names; all passed without skips. Three fast-lane samples total
 27.08, 24.67 and 24.56 seconds of test execution (median 24.67), excluding build, discovery and restore.
 Three script-unit runs pass 110 cases with median 1.47 seconds wall time.
+Three complete runs each pass 1,499 Node and 108 Python tests without skips. Node durations are
+229.90, 220.85 and 219.58 seconds; adding the two Python suites gives a median 229.26 seconds
+before npm startup overhead. That is about 86% shorter than the retained 1,595-second historical
+run, whose different source revision and cache state limit a controlled speedup claim.
 
 The remaining cache-test delay had a separate cause: 142,205 direct entries under `/tmp` made
 PowerShell's case-correcting path provider repeatedly scan ancestor siblings. Three live stack
