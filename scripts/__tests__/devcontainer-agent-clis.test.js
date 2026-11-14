@@ -263,6 +263,7 @@ for (const [mode, expected] of [
         `
       set -euo pipefail
       source "$1"
+      flock() { return 0; }
       dotnet() { if [[ -f "$TMPDIR/ready" ]]; then echo 10.0.404; else echo 10.0.401; fi; }
       curl() { [[ "$MODE" != download-fails ]]; }
       sudo() {
