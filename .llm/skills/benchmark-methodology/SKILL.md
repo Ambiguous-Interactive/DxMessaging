@@ -45,11 +45,14 @@ Never median-of-runs, never discard an outlier, never use a single untimed pass.
   operations), never `TotalOperations`. Keep fan-out assertions exact.
 - Call `AllocationProbe.SettleHeapForMeasurement()` when a window needs a settled
   heap. Do not inline `GC.Collect()` / `GC.WaitForPendingFinalizers()` in tests.
-- Cold, JIT-inclusive scenarios use `BenchmarkProtocol.MeasureColdLatency`: K
+- Cold first-touch scenarios use `BenchmarkProtocol.MeasureColdLatency`: K
   trials, no warm-up and no window, each with untimed `setUpTrial(i)` and
-  `tearDownTrial`, timing exactly one operation. It reports the MEDIAN wall clock
-  and median allocation count because cold latency is right-skewed. Cold rows
-  carry `emitsPerSecond = 0`, which auto-excludes them from the regression gate.
+  `tearDownTrial`, timing exactly one operation. It reports median wall clock
+  and allocation count. Every latency trial contributes; pauses can still move
+  the median. Setup and type materialization are untimed. A Mono timed call may
+  include remaining JIT work, but distinct types do not prove separate JIT or
+  native bodies. Cold rows carry `emitsPerSecond = 0`, which excludes them from
+  the regression gate.
 
 ### Allocation honesty
 
