@@ -1045,6 +1045,86 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        [Test]
+        public void CustomLookupCancellationPreventsStaleReplay(
+            [Values(0, 1, 2)] int form,
+            [Values(false, true)] bool enabled,
+            [Values(false, true)] bool snapshotBeforeCallback,
+            [Values(0, 1, 2, 3)] int cancellation
+        )
+        {
+            string context =
+                $"form={form},enabled={enabled},snapshotBeforeCallback={snapshotBeforeCallback},cancellation={cancellation}";
+            MessageBus inner = new MessageBus();
+            StickyBus bus = new StickyBus(inner)
+            {
+                SnapshotBeforeLookupCallback = snapshotBeforeCallback,
+            };
+            using CaseState state = new CaseState(bus);
+            ValueMessage retained = new ValueMessage(17);
+            inner.EmitSticky(ref retained);
+            if (enabled)
+            {
+                state.Token.Enable();
+            }
+            List<int> values = new List<int>();
+            int lookupCallbacks = 0;
+            bus.OnLookup = () =>
+            {
+                ++lookupCallbacks;
+                switch (cancellation)
+                {
+                    case 1:
+                        state.Token.Disable();
+                        break;
+                    case 2:
+                        state.Token.UnregisterAll();
+                        break;
+                    case 3:
+                        state.Handler.active = false;
+                        break;
+                }
+            };
+            Register(state.Token, form, values);
+            if (!enabled)
+            {
+                state.Token.Enable();
+            }
+            Assert.That(lookupCallbacks, Is.EqualTo(1), "Run the lookup callback once: " + context);
+            CollectionAssert.AreEqual(
+                cancellation == 0 ? new[] { 17 } : Array.Empty<int>(),
+                values,
+                "Only the uncancelled active owner receives captured replay: " + context
+            );
+            Assert.That(
+                inner.RegisteredUntargeted,
+                Is.EqualTo(cancellation == 0 || cancellation == 3 ? 1 : 0),
+                "Inactive handlers retain their subscription; owner cleanup removes it: " + context
+            );
+            state.Handler.active = true;
+            ValueMessage ordinary = new ValueMessage(23);
+            inner.UntargetedBroadcast(ref ordinary);
+            int[] expected =
+                cancellation == 0 ? new[] { 17, 23 }
+                : cancellation == 3 ? new[] { 23 }
+                : Array.Empty<int>();
+            CollectionAssert.AreEqual(
+                expected,
+                values,
+                "Ordinary delivery follows actual ownership after handler reactivation: " + context
+            );
+            Assert.That(
+                inner.TryGetLatest(out ValueMessage latest),
+                Is.True,
+                "Owner cancellation and ordinary delivery preserve retained state: " + context
+            );
+            Assert.That(
+                latest.Value,
+                Is.EqualTo(17),
+                "Keep the original retained value: " + context
+            );
+        }
+
         /// <summary>Retarget recovery must preserve cancellation from the failed new-bus callback.</summary>
         /// <remarks>2026-11-12: Capturing cancellation only after rollback revived disabled staging.</remarks>
         [Test]
@@ -1352,6 +1432,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             internal Action OnRegistration;
             internal Action OnLookup;
+            internal bool SnapshotBeforeLookupCallback;
             internal int RejectCleanup;
 
             internal StickyBus(IMessageBus inner)
@@ -1365,6 +1446,12 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 Action callback = OnLookup;
                 OnLookup = null;
+                if (SnapshotBeforeLookupCallback)
+                {
+                    bool present = Inner.TryGetLatest(out message);
+                    callback?.Invoke();
+                    return present;
+                }
                 callback?.Invoke();
                 return Inner.TryGetLatest(out message);
             }
