@@ -16,7 +16,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
     public sealed class StickyFirstTypeBenchmarks
     {
         internal const int Trials = 32;
-        private static readonly HashSet<Type> MeasuredTypes = new();
+        private static readonly List<Type> MeasuredTypes = new();
 
         [Test, Performance, Category("PerfBench")]
         [TestCase(false, false, TestName = "Sticky_FirstType_OrdinaryEmit_Struct")]
@@ -77,7 +77,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         internal static string Key(bool sticky, bool referencePayload) =>
             $"Sticky_FirstType_{(sticky ? "StickyEmit" : "OrdinaryEmit")}_{(referencePayload ? "Class" : "Struct")}";
 
-        internal static void ReserveTypes(HashSet<Type> used, Type[] requested)
+        internal static void ReserveTypes(List<Type> used, Type[] requested)
         {
             if (used == null)
             {
@@ -94,17 +94,35 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                     nameof(requested)
                 );
             }
-            HashSet<Type> pending = new();
-            foreach (Type type in requested)
+            for (int index = 0; index < requested.Length; ++index)
             {
-                if (type == null || used.Contains(type) || !pending.Add(type))
+                Type type = requested[index];
+                if (type == null)
                 {
                     throw new InvalidOperationException(
-                        $"First-type measurement requires unused, distinct message types: {type}."
+                        "First-type measurement requires non-null message types."
                     );
                 }
+                foreach (Type prior in used)
+                {
+                    if (ReferenceEquals(type, prior))
+                    {
+                        throw new InvalidOperationException(
+                            $"First-type measurement already reserved message type: {type}."
+                        );
+                    }
+                }
+                for (int prior = 0; prior < index; ++prior)
+                {
+                    if (ReferenceEquals(type, requested[prior]))
+                    {
+                        throw new InvalidOperationException(
+                            $"First-type measurement repeats message type: {type}."
+                        );
+                    }
+                }
             }
-            used.UnionWith(pending);
+            used.AddRange(requested);
         }
 
         internal static Type RunContract(bool sticky, bool referencePayload, int index)

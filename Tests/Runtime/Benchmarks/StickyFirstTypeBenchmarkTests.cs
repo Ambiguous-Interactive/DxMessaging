@@ -42,7 +42,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [Test]
         public void FirstUseAdmissionRejectsRepeatedTypesBeforeConsumingAnyNewType()
         {
-            HashSet<Type> used = new();
+            List<Type> used = new();
             StickyFirstTypeBenchmarks.ReserveTypes(used, new[] { typeof(int), typeof(string) });
             Assert.Throws<InvalidOperationException>(() =>
                 StickyFirstTypeBenchmarks.ReserveTypes(used, new[] { typeof(double), typeof(int) })
@@ -64,7 +64,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         [TestCase(true)]
         public void FirstUseAdmissionRejectsDuplicateOrNullTypesAtomically(bool nullType)
         {
-            HashSet<Type> used = new();
+            List<Type> used = new();
             Type[] requested = nullType
                 ? new[] { typeof(int), null }
                 : new[] { typeof(int), typeof(int) };
@@ -79,9 +79,52 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         [Test]
+        public void FirstUseAdmissionComparesReferencesWithoutHashingTypes()
+        {
+            List<Type> used = new();
+            HashObservedType first = new();
+            HashObservedType second = new();
+            StickyFirstTypeBenchmarks.ReserveTypes(used, new Type[] { first, second });
+            Assert.That(
+                used.Count,
+                Is.EqualTo(2),
+                "Separate Type objects must retain separate admission identities."
+            );
+            Assert.That(
+                ReferenceEquals(used[0], first),
+                Is.True,
+                "Admission must keep the first Type reference."
+            );
+            Assert.That(
+                ReferenceEquals(used[1], second),
+                Is.True,
+                "Admission must keep the second Type reference."
+            );
+            Assert.Throws<InvalidOperationException>(() =>
+                StickyFirstTypeBenchmarks.ReserveTypes(used, new Type[] { first })
+            );
+            Assert.That(first.HashCalls, Is.Zero, "Admission must not warm the first Type hash.");
+            Assert.That(second.HashCalls, Is.Zero, "Admission must not warm the second Type hash.");
+        }
+
+        private sealed class HashObservedType : System.Reflection.TypeDelegator
+        {
+            internal HashObservedType()
+                : base(typeof(int)) { }
+
+            internal int HashCalls { get; private set; }
+
+            public override int GetHashCode()
+            {
+                ++HashCalls;
+                return base.GetHashCode();
+            }
+        }
+
+        [Test]
         public void FirstUseAdmissionRequiresANonemptyRowAndOwner()
         {
-            HashSet<Type> used = new();
+            List<Type> used = new();
             Assert.Throws<ArgumentNullException>(() =>
                 StickyFirstTypeBenchmarks.ReserveTypes(null, new[] { typeof(int) })
             );

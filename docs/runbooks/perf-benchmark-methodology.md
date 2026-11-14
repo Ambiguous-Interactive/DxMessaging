@@ -133,8 +133,9 @@ ordinary and sticky emission for class and struct payloads, without callbacks.
 Each row times one publication for each of 32 disjoint closed message types on
 fresh buses. No publication, registration, or latest-value lookup for that type
 runs before its sample. Contract tests use a separate family of closed types.
-Admission reserves the entire row before timing and rejects reused types in the
-same loaded assembly. Run these rows in a fresh player or after an assembly reload;
+Admission uses reference comparisons, without hashing message types, to reserve
+the entire row before timing and reject reused types in the same loaded assembly.
+Run these rows in a fresh player or after an assembly reload;
 running them again in the same process is an admission error, not a cold sample.
 
 These rows measure the first publication after state preparation. Type
