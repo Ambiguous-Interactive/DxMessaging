@@ -1,0 +1,97 @@
+name: Nightly Validation
+
+# Licensed consumers admit controlled workflow_dispatch, while the central
+# enrollment policy does not admit schedule for this repository. Keep this
+# scheduler license-free and let each consumer bind evidence to its actual SHA.
+on:
+  schedule:
+    - cron: "0 1 * * *"
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch current nightly validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch missing current-revision validation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EXPECTED_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          if [ "${EVENT_NAME}" = schedule ]; then
+            case "${EVENT_SCHEDULE}" in
+              "0 1 * * *") workflows=(unity-tests.yml) ;;
+              "0 3 * * *") workflows=(perf-numbers.yml) ;;
+              *) echo "::error::Unexpected nightly schedule"; exit 1 ;;
+            esac
+          elif [ "${EVENT_NAME}" = workflow_dispatch ]; then
+            workflows=(unity-tests.yml perf-numbers.yml)
+          else
+            echo "::error::Unexpected dispatcher event"
+            exit 1
+          fi
+          for workflow in "${workflows[@]}"; do
+            live="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${DEFAULT_BRANCH}" --jq .object.sha)"
+            if [ "${live}" != "${EXPECTED_SHA}" ]; then
+              echo "::notice::Scheduled revision is no longer the default-branch head; skipping stale dispatch."
+              exit 0
+            fi
+            existing="$(gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?event=workflow_dispatch&head_sha=${EXPECTED_SHA}&per_page=100" \
+              --jq '.workflow_runs[] | select(.status != "completed" or .conclusion == "success") | [.id, .status] | @tsv')"
+            duplicate=false
+            while IFS=$'\t' read -r run_id status; do
+              [ -n "${run_id}" ] || continue
+              [[ "${run_id}" =~ ^[1-9][0-9]*$ ]]
+              if [ "${status}" != completed ]; then
+                duplicate=true
+                break
+              fi
+              # A consumer-only dispatch is successful but does not establish
+              # compatibility. Completed deduplication requires every mode artifact.
+              versions="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/unity-versions.json?ref=${EXPECTED_SHA}" --jq .content |
+                python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))' |
+                jq -er '.all[]')"
+              artifacts="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+                --jq '.artifacts[] | select(.expired == false and .size_in_bytes > 0 and (.digest | test("^sha256:[0-9a-f]{64}$"))) | .name')"
+              complete=true
+              if [ "${workflow}" = unity-tests.yml ]; then
+                while IFS= read -r version; do
+                  for mode in editmode playmode standalone; do
+                    printf '%s\n' "${artifacts}" | grep -Fx "unity-${version}-${mode}" >/dev/null || complete=false
+                  done
+                done <<< "${versions}"
+              else
+                version="$(printf '%s\n' "${versions}" | tail -n 1)"
+                for suite in internal comparisons; do
+                  printf '%s\n' "${artifacts}" | grep -Fx "perf-${version}-standalone-${suite}" >/dev/null || complete=false
+                done
+              fi
+              if [ "${complete}" = true ]; then
+                duplicate=true
+                break
+              fi
+            done <<< "${existing}"
+            if [ "${duplicate}" = true ]; then
+              echo "::notice::${workflow} already has active or complete dispatch evidence for ${EXPECTED_SHA}."
+              continue
+            fi
+            gh workflow run "${workflow}" --repo "${GITHUB_REPOSITORY}" --ref "${DEFAULT_BRANCH}"
+            echo "::notice::Dispatched ${workflow}; its run records the actual measured revision."
+          done

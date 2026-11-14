@@ -992,140 +992,6 @@ def run_script(step: str) -> str:
     return "\n".join(lines)
 
 
-def run_head_check(
-    script: str, event: str, live_head: str, changed_files: list[str] | None
-) -> dict[str, str]:
-    """Run the head/relevance script against a strict, endpoint-aware `gh` stub."""
-    with tempfile.TemporaryDirectory() as directory:
-        root = Path(directory)
-        stub = root / "gh"
-        files_response = "\n".join(changed_files or [])
-        files_exit = 0 if changed_files is not None else 1
-        # Answer both API calls made by the production script. Keeping the
-        # endpoints distinct prevents a missing changed-file fixture from
-        # quietly exercising only the fail-closed fallback.
-        stub.write_text(
-            "#!/bin/sh\n"
-            'case "$*" in\n'
-            "  *repos/Ambiguous-Interactive/DxMessaging/pulls/1/files*)\n"
-            f"    cat <<'FILES'\n{files_response}\nFILES\n"
-            f"    exit {files_exit} ;;\n"
-            "  *repos/Ambiguous-Interactive/DxMessaging/pulls/1*.head.sha*)\n"
-            f'    [ -n "{live_head}" ] || exit 1\n    echo "{live_head}"\n    exit 0 ;;\n'
-            '  *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;\n'
-            "esac\n",
-            encoding="utf-8",
-        )
-        stub.chmod(0o755)
-        output = root / "output"
-        output.touch()
-        environment = os.environ.copy()
-        environment.update(
-            {
-                "PATH": f"{root}{os.pathsep}{environment['PATH']}",
-                "GH_TOKEN": "stub",
-                "EVENT_NAME": event,
-                "PR_NUMBER": "1",
-                "EVENT_HEAD_SHA": "current",
-                "GITHUB_REPOSITORY": "Ambiguous-Interactive/DxMessaging",
-                "GITHUB_OUTPUT": str(output),
-            }
-        )
-        result = subprocess.run(
-            ["bash", "-c", script], env=environment, capture_output=True, text=True, check=False
-        )
-        require(result.returncode == 0, f"head-check script failed: {result.stderr}")
-        written = output.read_text(encoding="utf-8").strip()
-        decisions = {}
-        for line in written.splitlines():
-            key, separator, value = line.partition("=")
-            require(separator == "=" and key, f"head-check wrote malformed output: {line!r}")
-            require(key not in decisions, f"head-check wrote duplicate output: {key}")
-            decisions[key] = value
-        require(
-            set(decisions) == {"relevant", "superseded"},
-            f"head-check must write exactly relevant and superseded: {written!r}",
-        )
-        require(
-            all(value in {"true", "false"} for value in decisions.values()),
-            f"head-check decisions must be booleans: {written!r}",
-        )
-        return decisions
-
-
-def validate_head_check_truth_table(script: str, workflow_name: str) -> None:
-    """Exercise current, renamed, mixed, empty, failed, and superseded PR shapes."""
-    if os.name == "nt":
-        return
-    # A rename is represented by both values emitted by the workflow's
-    # `.filename, (.previous_filename // empty)` query.
-    cases = (
-        ("push", "push", "", None, {"superseded": "false", "relevant": "true"}),
-        (
-            "current documentation PR",
-            "pull_request",
-            "current",
-            ["docs/guide.md"],
-            {"superseded": "false", "relevant": "false"},
-        ),
-        (
-            "renamed documentation file",
-            "pull_request",
-            "current",
-            ["docs/new-name.md", "docs/old-name.md"],
-            {"superseded": "false", "relevant": "false"},
-        ),
-        (
-            "code PR",
-            "pull_request",
-            "current",
-            ["Runtime/Core/MessageBus.cs"],
-            {"superseded": "false", "relevant": "true"},
-        ),
-        (
-            "mixed PR",
-            "pull_request",
-            "current",
-            ["docs/guide.md", "Tests/Runtime/MessageBusTests.cs"],
-            {"superseded": "false", "relevant": "true"},
-        ),
-        (
-            "empty file response",
-            "pull_request",
-            "current",
-            [],
-            {"superseded": "false", "relevant": "true"},
-        ),
-        (
-            "failed file lookup",
-            "pull_request",
-            "current",
-            None,
-            {"superseded": "false", "relevant": "true"},
-        ),
-        (
-            "failed live-head lookup",
-            "pull_request",
-            "",
-            ["docs/guide.md"],
-            {"superseded": "false", "relevant": "false"},
-        ),
-        (
-            "superseded documentation PR",
-            "pull_request",
-            "moved-on",
-            ["docs/guide.md"],
-            {"superseded": "true", "relevant": "false"},
-        ),
-    )
-    for name, event, live, files, expected in cases:
-        actual = run_head_check(script, event, live, files)
-        require(
-            actual == expected,
-            f"{workflow_name} head-check {name}: expected {expected}, got {actual}",
-        )
-
-
 def watchdog_gh_stub(routes: dict[str, tuple[int, object]], cancel_ok: bool) -> str:
     """A `gh` that answers only the stubbed endpoints and rejects the rest.
 
@@ -2892,7 +2758,8 @@ def validate_grouped_unity_correctness() -> None:
 
         upload = step_block(job, f"Upload {display} test artifacts")
         require(
-            f"unity-${{{{ matrix.unity-version }}}}-{mode}" in upload
+            (f"unity-${{{{ matrix.unity-version }}}}-{mode}" in upload
+             or (mode == "editmode" and "inputs.consumer_install_validation && 'consumer-install' || 'editmode'" in upload))
             and f".artifacts/unity/${{{{ matrix.unity-version }}}}-{mode}" in upload,
             f"{mode}: artifact evidence must remain isolated",
         )
@@ -3532,188 +3399,36 @@ def repository_unity_automation(github: Path = Path(".github")) -> dict[str, str
     }
 
 
-def performance_evidence_script(render_script: str) -> str:
-    start = render_script.find(": > .artifacts/perf-target-map-current.txt")
-    end = render_script.find("\nshort_sha=", start)
-    require(start >= 0 and end > start, "could not isolate performance evidence guards")
-    return "set -euo pipefail\n" + render_script[start:end]
-
-
-def performance_baseline_script(render_script: str) -> str:
-    start = render_script.find("baseline_rows=0")
-    end = render_script.find('if [ "${baseline_rows}" -eq 0 ]; then', start)
-    require(start >= 0 and end > start, "could not isolate performance baseline classifier")
-    return (
-        "set -euo pipefail\n"
-        + render_script[start:end]
-        + '\ntest "${baseline_rows}" -eq "${EXPECTED_BASELINE_ROWS}"'
-    )
-
-
-def target_map_rows(metric: str = "operationsPerSecond=1000") -> list[str]:
-    rows: list[str] = []
-    for key_count in (1, 4, 16, 256, 4096):
-        for operation in ("Hit", "Miss", "ChurnWithTrim"):
-            rows.append(
-                "DXM_TARGET_MAP_BENCHMARK "
-                f"scenario=TargetMap_{key_count}_{operation} "
-                f"keyCount={key_count} operation={operation} {metric}"
-            )
-        rows.append(
-            f"DXM_INT_KEY_MAP_CONSTRUCTION keyCount={key_count} wallClockMs=1 {metric}"
-        )
-    return rows
-
-
-def run_performance_evidence_fixture(
-    script: str,
-    standalone_rows: list[str],
-) -> subprocess.CompletedProcess[str]:
-    with tempfile.TemporaryDirectory() as directory:
-        root = Path(directory)
-        artifacts = root / ".artifacts"
-        standalone = artifacts / "perf-download" / "perf-6000.3.16f1-standalone"
-        standalone.mkdir(parents=True)
-        (standalone / "unity.log").write_text(
-            "standalone editor noise\n", encoding="utf-8"
-        )
-        (standalone / "player.log").write_text(
-            "\n".join(standalone_rows) + "\n", encoding="utf-8"
-        )
-        return subprocess.run(
-            ["bash", "-c", script],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-
-def validate_performance_evidence_guards(render_script: str) -> None:
-    if os.name == "nt":
-        return
-    rows = target_map_rows()
-    script = performance_evidence_script(render_script)
-    cases = (
-        ("complete evidence", rows, 0, ""),
-        (
-            "retired exact-slot churn workload",
-            [row.replace("ChurnWithTrim", "Churn") for row in rows],
-            1,
-            "does not exactly match",
-        ),
-        (
-            "retired context-map constructor workload",
-            [row.replace("DXM_INT_KEY_MAP_CONSTRUCTION", "DXM_TARGET_MAP_CONSTRUCTION") for row in rows],
-            1,
-            "does not exactly match",
-        ),
-        (
-            "missing Standalone identity",
-            rows[1:],
-            1,
-            "does not exactly match",
-        ),
-        (
-            "conflicting duplicate",
-            rows + [target_map_rows("operationsPerSecond=2000")[0]],
-            1,
-            "repeated scenario identities",
-        ),
-        (
-            "identical duplicate",
-            rows + [rows[0]],
-            1,
-            "repeated scenario identities",
-        ),
-        (
-            "unexpected identity",
-            rows + ["DXM_TARGET_MAP_BENCHMARK scenario=TargetMap_32_Hit keyCount=32 operation=Hit operationsPerSecond=1000"],
-            1,
-            "does not exactly match",
-        ),
-    )
-    for name, standalone, expected, diagnostic in cases:
-        result = run_performance_evidence_fixture(script, standalone)
-        require(
-            result.returncode == expected
-            and (not diagnostic or diagnostic in result.stdout + result.stderr),
-            f"performance evidence {name}: expected {expected} and {diagnostic!r}, got "
-            f"{result.returncode}\n{result.stdout}\n{result.stderr}",
-        )
-
-    baseline_script = performance_baseline_script(render_script)
-    header = (
-        "scenario,platform,commit,runIndex,emitsPerSecond,gcAllocations,"
-        "wallClockMs,gcAllocatedBytes\n"
-    )
-    with tempfile.TemporaryDirectory() as directory:
-        root = Path(directory)
-        baseline = root / "perf-baseline.csv"
-        for contents, expected_rows in (
-            (None, "0"),
-            (header, "0"),
-            (
-                header
-                + "EmptyBus_Dispatch,Standalone IL2CPP x64 Release,abc123,"
-                "0,1000,0,1.0,-1\n",
-                "1",
-            ),
-        ):
-            if contents is None:
-                baseline.unlink(missing_ok=True)
-            else:
-                baseline.write_text(contents, encoding="utf-8")
-            environment = os.environ.copy()
-            environment.update(
-                {
-                    "EXPECTED_BASELINE_ROWS": expected_rows,
-                    "PERF_BASELINE": str(baseline),
-                }
-            )
-            result = subprocess.run(
-                ["bash", "-c", baseline_script],
-                cwd=root,
-                env=environment,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            require(
-                result.returncode == 0,
-                "performance baseline classifier rejected a valid fixture:\n"
-                + result.stdout
-                + result.stderr,
-            )
-
-
 def validate_perf_pr_policy() -> None:
-    """Keep PR performance evidence trusted, current, and credential-free."""
-    perf_path = Path(".github/workflows/perf-numbers.yml")
-    source = perf_path.read_text(encoding="utf-8")
+    """Keep dispatched performance evidence exact, isolated, and licensed safely."""
+    source = Path(".github/workflows/perf-numbers.yml").read_text(encoding="utf-8")
     validate_workflow_concurrency_group(source, "perf-numbers.yml", "${{ github.workflow }}-")
     preflight = job_block(source, "runner-preflight")
     benchmark = job_block(source, "perf-benchmarks")
-    comment = job_block(source, "comment-perf-doc")
+    trigger = source.split("\non:", 1)[1].split("\nconcurrency:", 1)[0]
+    require(re.search(r"^  workflow_dispatch:", trigger, re.MULTILINE) is not None,
+            "performance must permit controlled dispatch")
+    require(re.search(r"^  (push|pull_request|schedule):", trigger, re.MULTILINE) is None,
+            "performance must not automatically compete with PR correctness")
+    require("  comment-perf-doc:" not in source and "  head-check:" not in source,
+            "automatic PR reporting and classification are retired")
     checks = (
-        (source, r"\n  pull_request:\n[\s\S]*?branches:\n\s+- master", "master PR trigger"),
-        (source, r"\n  head-check:", "head-check job"),
         (preflight, r"github\.event\.pull_request\.head\.repo\.full_name == github\.repository", "same-repository guard"),
         (preflight, r"github\.event\.pull_request\.user\.login != 'dependabot\[bot\]'", "Dependabot guard"),
         (benchmark, r"runs-on: \[self-hosted, Windows, RAM-64GB, fast\]", "pinned benchmark runner labels"),
         (
             benchmark,
-            r"ref: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}",
+            r"ref: \$\{\{ github\.sha \}\}",
             "exact measured checkout",
         ),
         (
             benchmark,
-            r"DX_PERF_COMMIT: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}",
+            r"DX_PERF_COMMIT: \$\{\{ github\.sha \}\}",
             "exact result commit",
         ),
         (
             benchmark,
-            r"commit = '\$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}'",
+            r"commit = '\$\{\{ github\.sha \}\}'",
             "exact player manifest commit",
         ),
         (benchmark, r"executablePath = \$playerExecutable\.FullName", "player executable path"),
@@ -3802,144 +3517,29 @@ def validate_perf_pr_policy() -> None:
             r"COMPARISON_SUPPORTED_SCENARIO_IDS\.forEach\(\(id\) => console\.log\(id\)\)",
             "default-branch comparison row rendering",
         ),
-        (comment, r"pull-requests: write", "comment permission"),
-        (
-            comment,
-            r"name: Checkout trusted PR base reporting code",
-            "trusted base reporting checkout",
-        ),
-        (comment, r"<!-- dxmessaging-performance-numbers -->", "sticky comment marker"),
-        (comment, r"BENCHMARK_RESULT:.*needs\.perf-benchmarks\.result", "current benchmark status"),
-        (comment, r"needs\.head-check\.outputs\.superseded != 'true'", "superseded-report guard"),
-        (comment, r"ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}", "trusted base checkout"),
-        (comment, r"GITHUB_SERVER_URL.*GITHUB_REPOSITORY.*commit.*MEASURED_SHA", "measured commit link"),
-        (comment, r"Trusted reporting code \(PR base\).*BASE_SHA", "reporting-code commit link"),
-        (comment, r"Measured historical baseline:.*baseline_commit", "measured baseline provenance"),
-        (comment, r"actions/runs.*GITHUB_RUN_ID.*attempts.*GITHUB_RUN_ATTEMPT", "exact run-attempt link"),
-        (comment, r"Require current PR head before reporting", "report freshness guard"),
-        (comment, r"Classify benchmark comparison compatibility", "methodology compatibility guard"),
-        (comment, r"perf-numbers\.yml itself is intentionally not a blanket incompatibility", "workflow comparability rationale"),
-        (comment, r"\.previous_filename", "renamed methodology path guard"),
-        (comment, r"Current Standalone scenario set does not match", "complete scenario-set guard"),
-        (comment, r"Current Standalone rows were not stamped only with", "artifact commit guard"),
-        (comment, r"expected_platform=\"Standalone IL2CPP x64 Release \(WindowsPlayer; Unity \$\{LATEST_VERSION\}\)\"", "exact Standalone platform guard"),
-        (comment, r"Standalone baseline platform did not match", "baseline platform guard"),
-        (comment, r"\\\.github/unity-versions\\\.json", "Unity version compatibility guard"),
-        (comment, r"Delta direction: \*\*\+ is better; - is worse\.\*\*", "human-readable delta direction"),
-        (comment, r"-name player\.log", "Standalone player TargetMap evidence"),
-        (comment, r"TargetMap evidence repeated scenario identities", "unique TargetMap identities"),
-        (comment, r"TargetMap identity set does not exactly match", "exact TargetMap identities"),
-        (comment, r"Require current PR head before comment update", "final report freshness guard"),
-        (comment, r"steps\.report-freshness\.outcome == 'success'[\s\S]*uses: actions/github-script@", "fresh sticky comment update"),
     )
     for block, pattern, label in checks:
-        require(re.search(pattern, block) is not None, f"performance PR policy: missing {label}")
+        require(re.search(pattern, block) is not None, f"performance dispatch policy: missing {label}")
     require(
         not re.search(r"id: run_contracts|perf-contracts|comparison-contracts", benchmark),
-        "performance PR policy: backend-independent comparison contracts must share the canonical player",
+        "backend-independent comparison contracts must share the canonical player",
     )
-    require(
-        "${{ env.MEASURED_SHA }}" not in benchmark,
-        "performance PR policy: benchmark steps must not read MEASURED_SHA from their own env map",
-    )
-    head_check = job_block(source, "head-check")
-    require(
-        "      relevant: ${{ steps.head.outputs.relevant }}\n" in head_check
-        and "      superseded: ${{ steps.head.outputs.superseded }}\n" in head_check,
-        "performance head-check must publish relevance and freshness",
-    )
-    head_script = run_script(
-        step_block(head_check, "Compare the event head against the live pull-request head")
-    )
-    validate_head_check_truth_table(head_script, "performance")
-
-    aggregate = job_block(source, "perf-unity-success")
-    aggregate_step = step_block(aggregate, "Require complete performance validation")
-    expected_perf_bindings = {
-        "RUNNER_PREFLIGHT_RESULT": "${{ needs.runner-preflight.result }}",
-        "UNITY_TESTS_RESULT": "${{ needs.perf-benchmarks.result }}",
-        "FORK_PR": (
-            "${{ github.event_name == 'pull_request' && "
-            "github.event.pull_request.head.repo.full_name != github.repository }}"
-        ),
-        "DEPENDABOT_PR": (
-            "${{ github.event_name == 'pull_request' && "
-            "github.event.pull_request.user.login == 'dependabot[bot]' }}"
-        ),
-    }
-    for variable, value in expected_perf_bindings.items():
-        require(
-            re.findall(rf"^          {variable}:.*$", aggregate_step, re.MULTILINE)
-            == [f"          {variable}: {value}"],
-            f"performance aggregate must bind exact {variable}",
-        )
-    aggregate_script = run_script(aggregate_step).rstrip()
-    require(
-        "set -euo pipefail" in aggregate_script
-        and 'if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then'
-        in aggregate_script,
-        "performance aggregate must keep the closed trusted-skip shape",
-    )
-    executable_aggregate = aggregate_script
-    aggregate_cases = (
-        ("trusted PR", "success", "success", "false", "false", 0),
-        ("fork PR", "skipped", "skipped", "true", "false", 0),
-        ("Dependabot PR", "skipped", "skipped", "false", "true", 0),
-        ("trusted PR skipped benchmarks", "success", "skipped", "false", "false", 1),
-        ("trusted PR skipped preflight", "skipped", "success", "false", "false", 1),
-        ("fork unexpectedly ran", "skipped", "success", "true", "false", 1),
-        ("Dependabot unexpectedly ran", "skipped", "success", "false", "true", 1),
-        ("fork preflight red", "failure", "skipped", "true", "false", 1),
-        ("trusted preflight red", "failure", "success", "false", "false", 1),
-    )
-    if os.name != "nt":
-        for name, preflight_result, benchmark_result, fork, dependabot, expected in aggregate_cases:
-            environment = os.environ.copy()
-            environment.update(
-                {
-                    "RUNNER_PREFLIGHT_RESULT": preflight_result,
-                    "UNITY_TESTS_RESULT": benchmark_result,
-                    "FORK_PR": fork,
-                    "DEPENDABOT_PR": dependabot,
-                }
-            )
-            result = subprocess.run(
-                ["bash", "-c", executable_aggregate],
-                env=environment,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            require(
-                result.returncode == expected,
-                f"performance aggregate {name}: expected {expected}, got {result.returncode}",
-            )
-    modes_block = re.search(
-        r"^        test-mode:\n((?:          - \w+\n)+)", benchmark, re.M
-    )
-    require(
-        modes_block is not None
-        and re.findall(r"- (\w+)", modes_block.group(1)) == ["standalone"],
-        "performance PR policy: benchmark matrix must contain only standalone",
-    )
-    require("AUTO_COMMIT_APP_PRIVATE_KEY" not in comment, "performance PR comment must not receive the auto-commit App key")
-    require("startsWith(github.event.pull_request.head.ref, 'ci/perf-auto-update-')" not in preflight, "performance PR policy: branch names must not bypass benchmarks")
-    require(
-        re.search(r'PERF_COMMENT="\$\{RUNNER_TEMP\}/', comment) is not None,
-        "performance PR policy: fallback comment must survive checkout cleanup",
-    )
-    require(
-        comment.index("Initialize current-head performance status")
-        < comment.index("Checkout trusted PR base reporting code"),
-        "performance PR policy: fallback comment must exist before checkout can fail",
-    )
-    template = Path(".github/pull_request_template.md").read_text(encoding="utf-8")
-    require(re.search(r"Performance Numbers[\s\S]*pull_request[\s\S]*run-linked evidence comment", template) is not None, "PR template must describe automatic performance evidence")
-    render_script = run_script(
-        step_block(comment, "Render current PR performance evidence")
-    )
-    validate_performance_evidence_guards(render_script)
-
+    require("${{ env.MEASURED_SHA }}" not in benchmark,
+            "benchmark steps must not read MEASURED_SHA from their own env map")
+    modes = re.search(r"^        test-mode:\n((?:          - \w+\n)+)", benchmark, re.MULTILINE)
+    require(modes is not None and re.findall(r"- (\w+)", modes[1]) == ["standalone"],
+            "performance matrix must contain only standalone")
+    publisher = job_block(source, "commit-perf-doc")
+    require("github.event_name == 'workflow_dispatch'" in publisher and
+            "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)" in publisher,
+            "performance publication must require a default-branch dispatch")
+    for marker in (
+        'latest_sha="$(git rev-parse',
+        '"${latest_sha}" != "${GITHUB_SHA}"',
+        'git diff --cached --quiet',
+        'PERF_BASELINE_PROFILE',
+    ):
+        require(marker in publisher, f"performance publication missing {marker!r}")
     for path, job_id in LICENSED_LOCK_WINDOWS:
         workflow = path.read_text(encoding="utf-8")
         licensed_job = job_block(workflow, job_id)
@@ -4002,7 +3602,8 @@ def validate_unity_docs_gate() -> None:
         )
     require(
         "--jq '.[] | [.filename, (.previous_filename // null)] | @json'" in classify_script
-        and "jq -r '.[] | select(. != null)'" in classify_script,
+        and "Invalid changed-file record" in classify_script
+        and "Invalid changed path" in classify_script,
         "the docs gate must count entries and include renamed files in its allowlist evaluation",
     )
     report = job_block(source, "report")
@@ -4880,27 +4481,12 @@ steps:
             f"acquire {key} binding",
         )
 
-    push = re.search(
-        r"^  push:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n)",
-        source,
-        re.MULTILINE | re.DOTALL,
-    )
-    require(push is not None, "missing push trigger")
-    assert push is not None
-    paths_ignore = re.search(
-        r"^    paths-ignore:\n(?P<body>.*?)(?=^    [A-Za-z0-9_-]+:|\Z)",
-        push.group("body"),
-        re.MULTILINE | re.DOTALL,
-    )
-    require(paths_ignore is not None, "push trigger must use paths-ignore")
-    assert paths_ignore is not None
-    require(
-        paths_ignore.group("body")
-        == '      - "docs/architecture/performance.md"\n'
-        '      - "docs/architecture/perf-baseline.csv"\n'
-        '      - "docs/architecture/perf-baseline-profile.json"\n',
-        "Unity push trigger must ignore only the three CI-generated performance files",
-    )
+    require(re.search(r"^  push:", source, re.MULTILINE) is None,
+            "Unity correctness must not repeat the licensed matrix after each merge")
+    canonical = json.loads(Path(".github/unity-versions.json").read_text(encoding="utf-8"))["all"]
+    for version in canonical[:-1]:
+        require("- unity-version: ${{ github.event_name == 'pull_request' && '" + version + "' || '' }}" in licensed,
+                f"PR matrix must exclude compatibility-only {version}")
     pull_request = re.search(
         r"^  pull_request:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n)",
         source,

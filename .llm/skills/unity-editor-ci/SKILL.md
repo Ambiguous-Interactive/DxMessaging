@@ -9,11 +9,11 @@ metadata:
 # Unity Editor CI
 
 The active Unity workflows run `scripts/unity/run-ci-tests.ps1` directly on self-hosted
-Windows runners. `unity-tests.yml` is a four-version matrix. Each editor-scoped
-job runs `editmode`, `playmode`, and `standalone` as separate invocations under
-one lock and cleanup window. The oldest and current endpoint jobs also run the
-Minimal, Low, Medium, and High shipping-fidelity cells only for a manual dispatch with
-`shipping_fidelity` enabled. All player modes build
+Windows runners. `unity-tests.yml` declares four literal versions and excludes the
+oldest three on pull requests. Nightly and manual dispatches run every version.
+Each selected job runs `editmode`, `playmode`, and `standalone` under one lock and
+cleanup window. Endpoint shipping-fidelity cells run only when a manual dispatch
+explicitly selects `shipping_fidelity`. All player modes build
 `StandaloneWindows64` IL2CPP players from runner-local projects under
 `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>-<source-set-key>/` for ordinary correctness runs.
 The workflow derives the short key from tracked Runtime, Editor, Tests, and Samples input paths.
@@ -46,6 +46,32 @@ manual shipping project paths keep their separate cache scopes.
   organization lock analyzer can attest every matrix identity.
 - `.github/workflows-disabled/` and the canonical file itself are excluded from scanning.
   `ci.yml` runs the validator in the `Lint GitHub Actions workflows` job, so drift blocks merge.
+
+### Validation tiers
+
+- Required code PRs run only the latest supported editor in all three correctness modes.
+  Documentation-only PRs retain the reviewed `unity-docs-gate.yml` companion; both producers
+  report the existing `Unity CI Success` context. The classifier validates complete API
+  listings and both rename endpoints before declaring a documentation-only change.
+- Keep all four version literals in the matrix. Conditional `exclude` entries remove the
+  oldest three on PRs without introducing dynamic lock-holder identities. A version bump
+  must update these exclusions as well as the literal axis.
+- `nightly-validation.yml` runs on hosted infrastructure and dispatches correctness at
+  01:00 UTC and performance at 03:00 UTC. It rejects stale scheduled revisions, skips
+  active or successful dispatches for the same revision, and fails on API or dispatch errors.
+  Licensed workflows have no schedule or push trigger: the central enrollment registry
+  currently permits controlled dispatch, but does not enroll this repository for schedules.
+- Performance numbers run only through nightly or manual dispatch. Publication still requires
+  successful exact-revision evidence and a current default-branch head. PR comments and
+  merge-triggered benchmarks are retired.
+- Release publication requires successful compatibility, shipping, consumer-install, and
+  performance dispatch evidence for the exact release commit, plus complete managed tests.
+  Consumer artifacts have distinct `consumer-install` names. The release receipt validates
+  producer outcomes and artifact metadata; it does not claim to replay artifact contents.
+- Keep the docs companion while the pinned central audit accepts only its reviewed skip shape.
+  The alternative typed classifier/gate requires a literal fallback holder identity; it cannot
+  represent this matrix's version/mode holder suffix. A custom aggregate or dynamic matrix axis
+  would require a separately reviewed central contract change. Do not bypass that contract.
 
 ### License seat, lock, and timeouts
 

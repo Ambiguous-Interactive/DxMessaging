@@ -61,6 +61,128 @@ jobs:
             echo "tag=${tag}"
           } >> "${GITHUB_OUTPUT}"
 
+  release-qualification:
+    name: Require exact-revision release qualification
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Require complete current-revision evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          revision = os.environ["GITHUB_SHA"]
+          if not re.fullmatch(r"[0-9a-f]{40}", revision):
+              raise SystemExit("Release qualification requires an exact commit SHA")
+          versions = json.loads(Path(".github/unity-versions.json").read_text())["all"]
+
+          def api(endpoint, field):
+              result = subprocess.run(
+                  ["gh", "api", "--paginate", "--slurp", f"repos/{repository}/{endpoint}"],
+                  check=True, capture_output=True, text=True,
+              )
+              pages = json.loads(result.stdout)
+              if not isinstance(pages, list) or not pages:
+                  raise ValueError("Missing paginated API response")
+              records = []
+              for page in pages:
+                  if not isinstance(page, dict) or not isinstance(page.get(field), list):
+                      raise ValueError(f"Invalid {field} response")
+                  records.extend(page[field])
+              return records
+
+          artifact_cache = {}
+          qualifications = {}
+          for workflow, groups in (
+              ("unity-tests.yml", {
+                  "compatibility": {f"unity-{version}-{mode}" for version in versions for mode in ("editmode", "playmode", "standalone")},
+                  "shipping": {f"unity-{version}-shipping" for version in (versions[0], versions[-1])},
+                  "consumer-install": {f"unity-{version}-consumer-install" for version in versions},
+              }),
+              ("perf-numbers.yml", {
+                  "performance": {f"perf-{versions[-1]}-standalone-{suite}" for suite in ("internal", "comparisons")},
+              }),
+          ):
+              runs = api(f"actions/workflows/{workflow}/runs?event=workflow_dispatch&head_sha={revision}&status=completed&per_page=100", "workflow_runs")
+              for label, expected in groups.items():
+                  for run in runs:
+                      if run.get("head_sha") != revision or run.get("event") != "workflow_dispatch" or run.get("status") != "completed" or run.get("conclusion") != "success":
+                          continue
+                      run_id = run.get("id")
+                      if type(run_id) is not int or run_id <= 0:
+                          raise ValueError("Invalid qualification run identity")
+                      if run_id not in artifact_cache:
+                          artifact_cache[run_id] = api(f"actions/runs/{run_id}/artifacts?per_page=100", "artifacts")
+                      selected = {}
+                      for artifact in artifact_cache[run_id]:
+                          name = artifact.get("name")
+                          if name not in expected:
+                              continue
+                          provenance = artifact.get("workflow_run", {})
+                          if (
+                              name in selected
+                              or artifact.get("expired") is not False
+                              or type(artifact.get("size_in_bytes")) is not int
+                              or artifact["size_in_bytes"] <= 0
+                              or not re.fullmatch(r"sha256:[0-9a-f]{64}", str(artifact.get("digest", "")))
+                              or provenance.get("id") != run_id
+                              or provenance.get("head_sha") != revision
+                          ):
+                              raise ValueError(f"Invalid {label} artifact metadata: {name}")
+                          selected[name] = {key: artifact[key] for key in ("id", "name", "digest", "size_in_bytes")}
+                      if set(selected) == expected:
+                          qualifications[label] = {"run_id": run_id, "artifacts": list(selected.values())}
+                          break
+                  else:
+                      raise SystemExit(f"Missing successful {label} qualification for exact release revision {revision}; dispatch {workflow} from this tag with the corresponding validation input")
+          target = Path(".artifacts/release/qualification.json")
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(json.dumps({"source_commit": revision, "verification": "successful-producers-and-artifact-metadata", "qualifications": qualifications}, indent=2) + "\n")
+          print(f"Qualified all release validation lanes at {revision}")
+          PY
+
+      - name: Upload release qualification receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-qualification
+          path: .artifacts/release/qualification.json
+          if-no-files-found: error
+
+  managed-release-tests:
+    name: Complete managed release tests
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - name: Run complete managed release tests
+        run: |
+          dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --logger "trx;LogFileName=runtime.trx" --results-directory .artifacts/release/managed
+          dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj --configuration Release /p:CopyAnalyzerPayload=false
+          dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj --configuration Release
+
   validate:
     name: Validate package
     needs: verify-tag
@@ -101,7 +223,7 @@ jobs:
       - name: Run release validation
         run: |
           set -euo pipefail
-          node --test scripts/
+          npm test
           npm run validate:all
 
       - name: Pack npm package
@@ -543,6 +665,8 @@ jobs:
     name: Publish npm package and GitHub Release
     needs:
       - verify-tag
+      - release-qualification
+      - managed-release-tests
       - validate
       - unity-checks
       - unitypackage
