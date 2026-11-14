@@ -2453,11 +2453,20 @@ def run_maintenance_push_loop(
     bin_dir, origin, work, other = (root / n for n in ("bin", "origin.git", "work", "other"))
     bin_dir.mkdir()
     subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+    # TemporaryDirectory removes these repositories as soon as the fixture returns.
+    # Keep automatic housekeeping in the foreground so it cannot race that cleanup.
+    for key in ("gc.autoDetach", "maintenance.autoDetach"):
+        subprocess.run(["git", "-C", str(origin), "config", key, "false"], check=True)
     for clone in (work, other):
         subprocess.run(
             ["git", "clone", "-q", str(origin), str(clone)], check=True, capture_output=True
         )
-        for key, value in (("user.email", "t@t"), ("user.name", "t")):
+        for key, value in (
+            ("user.email", "t@t"),
+            ("user.name", "t"),
+            ("gc.autoDetach", "false"),
+            ("maintenance.autoDetach", "false"),
+        ):
             subprocess.run(["git", "-C", str(clone), "config", key, value], check=True)
     (work / ".github" / "ISSUE_TEMPLATE").mkdir(parents=True)
     for name, body in (("llms.txt", "a"), ("README.md", "b"), (".github/ISSUE_TEMPLATE/bug_report.yml", "c")):
