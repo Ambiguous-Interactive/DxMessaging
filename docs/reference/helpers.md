@@ -404,6 +404,32 @@ Parameters from enabled contexts keep their nullable or nonnullable checks.
 
 > **Changed in 4.0.0:** Generated constructors retain nullable annotations and preserve valid constant conversions, numeric types, non-finite defaults, and signed zero.
 
+#### Nullable value defaults
+
+Use a nullable value type when an omitted value differs from zero. A null default
+leaves `HasValue` false; supplying zero keeps it true.
+
+```csharp
+using DxMessaging.Core.Attributes;
+
+[DxUntargetedMessage]
+[DxAutoConstructor]
+public readonly partial struct ProgressChanged
+{
+    public readonly int total;
+    [DxOptionalParameter(null)]
+    public readonly int? completed;
+}
+
+ProgressChanged unknown = new ProgressChanged(10);
+ProgressChanged zero = new ProgressChanged(10, completed: 0);
+// unknown.completed.HasValue is false; zero.completed.HasValue is true.
+```
+
+`[DxOptionalParameter(Expression = "null")]` and the type default from
+`[DxOptionalParameter]` also leave a nullable value absent. An explicit null default
+on a nonnullable value type, such as `int`, produces `DXMSG005`.
+
 #### Advanced: Custom Constant Expressions
 
 Use the `Expression` property for compile-time constants that cannot be passed directly to an attribute constructor, such as enum values or named constants. The generator resolves the expression in the field's own declaration scope, including imports, aliases, and `using static` directives. It qualifies bound names for the generated file and preserves the original string returned by `nameof`. Ordinary C# optional-parameter rules still apply. Use `[DxOptionalParameter]` without an expression when a struct should use its default value.
