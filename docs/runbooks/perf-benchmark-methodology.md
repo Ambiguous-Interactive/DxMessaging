@@ -110,6 +110,15 @@ for both payload kinds. Each row uses the continuous-window protocol and its
 separate allocation batch. Callback counts, payload values, retained reference
 identity, registration counts, and cleanup are checked outside the measured window.
 
+`StickyAlternatingTypeBenchmarks` adds four warmed rows that alternate two
+distinct types on one bus: ordinary and sticky publication for class and struct
+payloads, without callbacks. Both arms seed the same two retained values before
+warmup. Each publication counts as one operation, including both types. The loop
+keeps its alternation across batch boundaries. Verify the public emission counter
+against warmup, timed, and allocation-probe operations, then verify both values,
+reference identities, bus isolation, and clearing. Short contracts add observers
+to check actual type order; throughput rows have no observers or subscriptions.
+
 `StickyMessageLatencyBenchmarks` adds 28 latency rows with 32 raw trials per row:
 
 - Twelve first-publication rows cover ordinary and sticky emission, class and
