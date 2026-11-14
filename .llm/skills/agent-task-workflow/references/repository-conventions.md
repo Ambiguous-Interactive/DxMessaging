@@ -28,7 +28,7 @@ Read the sections relevant to the changed language and subsystem.
 
 ## Script and Automation Conventions
 
-- Before writing any new script, re-read the Tooling Philosophy section; an off-the-shelf tool or a few lines in an existing kept script is almost always the right answer.
+- Before writing any new script, re-read [Tooling](../../../context.md#tooling); an off-the-shelf tool or a few lines in an existing kept script is almost always the right answer.
 - Reuse shared helpers in `scripts/lib/` (`repo-files.js`, `path-classifier.js`, `line-endings.js`, `shell-command.js`) before duplicating parsing logic.
 - For Node child-process calls in `scripts/*.js`, prefer argument-array invocations (`spawnSync` / `execFileSync`) and `stdio` options instead of shell redirection; for `npm`/`npx` calls use `spawnPlatformCommandSync()` from `scripts/lib/shell-command.js` (Windows shims must not be spawned directly).
 - For local tar archive operands, never pass a raw absolute path to `tar -f`; Windows drive-letter paths are parsed as remote archive specs by GNU tar. Use `buildLocalTarArchiveSpec()` in `scripts/validate-npm-meta.js` or the same `cwd` + `./basename` pattern, and cover `path.win32` in tests.

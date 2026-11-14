@@ -43,8 +43,9 @@
 - Script tests use native `node --test` file isolation. `npm run test:unit` is the fast subset;
   `npm run test:integration` is its complement; `npm test` runs all Node and Python tests.
   Run the complete suite before delivery when scripts or composite-action code changes.
-- Run `dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --filter
-"TestCategory!=Exhaustive"` for fast managed regressions. The unfiltered command runs all cases.
+- Run managed behavior and representative retention in separate processes using the
+  [two local lanes](../docs/runbooks/iteration-speed.md#local-commands). Combining them recreates
+  costly GC scans of accumulated result graphs. The unfiltered command runs all cases.
 - Source-generator tests require `/p:CopyAnalyzerPayload=false`, preserving the tracked analyzer DLLs.
   Documentation compiler tests live in `.docs-tests/`.
 - Restore tools with `dotnet tool restore`. Format changed C# with

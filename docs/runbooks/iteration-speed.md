@@ -33,6 +33,10 @@ The current-source managed inventory has 36,631 cases. Executed ordinary behavio
 representative retention 5,789, and exhaustive retention 1,014 are disjoint and exactly match the
 unfiltered discovered case names; all passed without skips. Three fast-lane samples total
 27.08, 24.67 and 24.56 seconds of test execution (median 24.67), excluding build, discovery and restore.
+The documented combined fast filter took 68.92 seconds end to end. Running behavior and retention
+in separate processes passes the same 35,617 cases in 34.84, 34.86 and 33.50 seconds (median 34.84),
+including warm restore, build and discovery. The combined control has one observation; cold setup
+remains unmeasured. The local commands below retain this process split.
 Three script-unit runs pass 110 cases with median 1.47 seconds wall time.
 Three complete runs each pass 1,499 Node and 108 Python tests without skips. Node durations are
 229.90, 220.85 and 219.58 seconds; adding the two Python suites gives a median 229.26 seconds
@@ -57,14 +61,24 @@ a later green run does not erase them.
 
 ## Local commands
 
-| Change               | First feedback                                                                                                                                                           | Before delivery                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| Script unit behavior | `npm run test:unit` or `node --test <changed-test>`                                                                                                                      | `npm test`                                                                                                 |
-| Script integration   | `node --test <integration-test>`                                                                                                                                         | `npm run test:integration`, then the complete suite once                                                   |
-| Runtime C#           | `dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --filter 'TestCategory!=Exhaustive'`                                                        | Affected fixtures without a tier filter; complete managed validation for shared lifecycle or memory owners |
-| Compiler/analyzer    | `dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj /p:CopyAnalyzerPayload=false` | Complete generator suite and `npm run check:analyzers`                                                     |
-| Documentation C#     | `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`                                                                                                  | Relevant prose checks and strict site build                                                                |
-| Unity behavior       | Affected fixture through the host MCP bridge                                                                                                                             | Affected Unity scopes; CI supplies Windows IL2CPP evidence                                                 |
+| Change               | First feedback                                                                                                                                                           | Before delivery                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Script unit behavior | `npm run test:unit` or `node --test <changed-test>`                                                                                                                      | `npm test`                                                                                    |
+| Script integration   | `node --test <integration-test>`                                                                                                                                         | `npm run test:integration`, then the complete suite once                                      |
+| Runtime C#           | `dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --filter 'TestCategory!=Exhaustive&TestCategory!=MemoryReclaim'`                            | Both fast lanes below; affected fixtures without tier filters for lifecycle or memory changes |
+| Compiler/analyzer    | `dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj /p:CopyAnalyzerPayload=false` | Complete generator suite and `npm run check:analyzers`                                        |
+| Documentation C#     | `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`                                                                                                  | Relevant prose checks and strict site build                                                   |
+| Unity behavior       | Affected fixture through the host MCP bridge                                                                                                                             | Affected Unity scopes; CI supplies Windows IL2CPP evidence                                    |
+
+Run both managed fast lanes in separate test processes before delivery:
+
+```sh
+dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --filter 'TestCategory!=Exhaustive&TestCategory!=MemoryReclaim'
+dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --filter 'TestCategory!=Exhaustive&TestCategory=MemoryReclaim'
+```
+
+Combining them under one `TestCategory!=Exhaustive` filter recreates the retained-result GC cost.
+The two commands execute the same 35,617 fast cases, with retention starting in a fresh process.
 
 Repository scripts require Node 24 or later (the devcontainer and CI pin 26).
 
