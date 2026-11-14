@@ -34,24 +34,24 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                         {
                             foreach (int cap in new[] { 0, 1, 4 })
                             {
-                                yield return new TestCaseData(
-                                    scenario,
-                                    shape,
-                                    count,
-                                    throwing,
-                                    cap
-                                ).SetName(
-                                    "GlobalSnapshotReclaim_"
-                                        + scenario
-                                        + "_shape"
-                                        + shape
-                                        + "_count"
-                                        + count
-                                        + "_throw"
-                                        + throwing
-                                        + "_cap"
-                                        + cap
-                                );
+                                yield return new TestCaseData(scenario, shape, count, throwing, cap)
+                                    .SetName(
+                                        "GlobalSnapshotReclaim_"
+                                            + scenario
+                                            + "_shape"
+                                            + shape
+                                            + "_count"
+                                            + count
+                                            + "_throw"
+                                            + throwing
+                                            + "_cap"
+                                            + cap
+                                    )
+                                    .SetCategory(
+                                        throwing == (cap == 0) && count == (shape == 0 ? 3 : 8)
+                                            ? "FastRetention"
+                                            : "Exhaustive"
+                                    );
                             }
                         }
                     }

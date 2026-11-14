@@ -23,6 +23,13 @@ protection treats a skipped required check as passing. So the requirement is not
 absent". A workflow that path-filters its whole trigger is absent on
 non-matching pull requests and cannot be required as written.
 
+## Validation lanes
+
+[The iteration runbook](iteration-speed.md) describes fast PR, nightly and exact-source release
+qualification. The three required check names below remain unchanged. Generator, documentation
+compiler and runtime tests run as separate jobs; ordinary runtime cases and representative retention
+use separate processes, with exhaustive retention selected by owning changes or nightly runs.
+
 ## Current state
 
 Auto-merge is enabled. The aggregate CI gate is **applied and live

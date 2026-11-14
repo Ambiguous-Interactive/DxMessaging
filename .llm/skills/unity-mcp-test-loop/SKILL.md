@@ -78,6 +78,11 @@ Do not use it for source-generator or analyzer tests under `SourceGenerators/` (
 
 ### Topology
 
+Prefer a dedicated generated package host for repeated tests; see the
+[iteration runbook](../../../docs/runbooks/iteration-speed.md#dedicated-unity-package-host).
+Generate it from the host checkout so its local package path resolves on the host, and keep its
+bridge port/token separate from the game project. One integration owner controls editor mutations.
+
 The devcontainer workspace is the same directory as the embedded package inside the host Unity project, so in-container edits are immediately visible to the host editor. Compilation and test execution happen in the host editor; the container only edits files and drives the editor over MCP.
 
 ### The loop

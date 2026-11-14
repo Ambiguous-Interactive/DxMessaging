@@ -70,9 +70,15 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                                     newPost,
                                     sameType,
                                     mode
-                                ).SetName(
-                                    $"ConsumedContextHandle_{scenario.Kind}_OldPost{oldPost}_NewPost{newPost}_SameType{sameType}_Mode{mode}"
-                                );
+                                )
+                                    .SetName(
+                                        $"ConsumedContextHandle_{scenario.Kind}_OldPost{oldPost}_NewPost{newPost}_SameType{sameType}_Mode{mode}"
+                                    )
+                                    .SetCategory(
+                                        newPost == oldPost && sameType == (mode != 0)
+                                            ? "FastRetention"
+                                            : "Exhaustive"
+                                    );
                             }
                         }
                     }

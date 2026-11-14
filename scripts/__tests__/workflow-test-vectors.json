@@ -71,6 +71,8 @@
     ["markdownlint", "markdown"],
     ["csharpier", "csharpier"],
     ["dotnet", "dotnet"],
+    ["docs-dotnet", "docs_dotnet"],
+    ["runtime-dotnet", "runtime_dotnet"],
     ["json-format", "json"],
     ["spellcheck", "spellcheck"],
     ["validate-banner", "banner"],

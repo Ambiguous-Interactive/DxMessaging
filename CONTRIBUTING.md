@@ -12,6 +12,14 @@ Developer setup (run these steps in order):
 
 Git hooks are managed solely by the standard [pre-commit framework](https://pre-commit.com); the hook set lives in `.pre-commit-config.yaml`. If you contributed before the tooling simplification and your local clone still points `core.hooksPath` at the removed `scripts/hooks` directory, clear it once with `git config --local --unset core.hooksPath` and re-run `pre-commit install`, or commits will fail looking for deleted hook scripts.
 
+## Fast feedback
+
+Use [the iteration runbook](docs/runbooks/iteration-speed.md) for focused checks, full validation,
+Unity host isolation and the coordinator pilot. Start with `npm run test:unit` for script units;
+`npm test` remains the complete suite. Managed runtime regressions use
+`dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --filter 'TestCategory!=Exhaustive'`.
+Run affected exhaustive fixtures before delivery when memory or lifecycle owners change.
+
 ## Before you push
 
 - Script tests: `npm test` (the built-in `node --test` runner; no jest)

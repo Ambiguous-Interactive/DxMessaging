@@ -845,7 +845,14 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             foreach (TestCaseData testCase in LifecycleCases())
             {
-                yield return testCase.SetName(testCase.TestName + "_BindingLifetime");
+                bool action = (bool)testCase.Arguments[1];
+                bool global = (bool)testCase.Arguments[2];
+                int lifecycle = (int)testCase.Arguments[3];
+                bool diagnostics = (bool)testCase.Arguments[4];
+                bool fastLane = action == global && diagnostics == (lifecycle != 0);
+                yield return testCase
+                    .SetName(testCase.TestName + "_BindingLifetime")
+                    .SetCategory(fastLane ? "FastRetention" : "Exhaustive");
             }
         }
 
