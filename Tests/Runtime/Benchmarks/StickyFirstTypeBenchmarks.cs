@@ -272,6 +272,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             {
                 string context = $"sticky={_sticky}, type={typeof(TMessage)}";
                 Assert.That(_executions, Is.EqualTo(1), context);
+                Assert.That(_bus.EmissionId, Is.EqualTo(1), context);
                 Assert.That(_message.Value, Is.EqualTo(7), context);
                 bool present = _bus.TryGetLatest(out TMessage latest);
                 Assert.That(present, Is.EqualTo(_sticky), context);
