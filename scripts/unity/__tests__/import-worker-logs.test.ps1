@@ -8,7 +8,8 @@ $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($runner, [ref]$tokens, [ref]$errors)
 if (@($errors).Count) { throw ($errors.Message -join '; ') }
 foreach ($definition in $ast.EndBlock.Statements) {
-    if ($definition -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+    if ($definition -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $definition.Name -in @('Copy-UnityImportWorkerLogs', 'Write-JsonArtifact')) {
         Invoke-Expression $definition.Extent.Text
     }
 }

@@ -2,7 +2,10 @@
 
 # Unity CI Matrix
 
-> **One-line summary**: The active Unity workflows under `.github/workflows/` run `scripts/unity/run-ci-tests.ps1` on self-hosted Windows runners: `unity-tests.yml` has four editor-scoped jobs, each job invokes editmode, playmode, and standalone, and the oldest and current endpoint jobs also invoke shipping under one lock and cleanup window.
+The active Unity workflows run on self-hosted Windows runners. Code PRs select the newest
+supported editor; nightly and manual compatibility dispatches select all four. Each selected
+job runs EditMode, PlayMode, and Standalone IL2CPP under one cleanup window. Stripping cells
+remain an explicit manual qualification input.
 
 ## When to Use
 
@@ -24,10 +27,11 @@
 | --------------- | --------------------------------------------------------- |
 | `unity-version` | `2021.3.45f1`, `2022.3.45f1`, `6000.3.16f1`, `6000.5.2f1` |
 
-Four jobs each run three independent test modes. `editmode`/`playmode` run in-editor
+The literal matrix lists four versions. Its conditional exclusions select only the newest
+version on PRs; a dispatch selects all four. Each selected job runs three independent test modes. `editmode`/`playmode` run in-editor
 on Mono; `standalone` builds and runs a `StandaloneWindows64` IL2CPP test player.
-The oldest and current endpoint jobs also build and run Minimal, Low, Medium,
-and High `StandaloneWindows64` IL2CPP shipping-fidelity players. Each level
+When `shipping_fidelity` is explicitly selected on a dispatch, the oldest and current
+endpoint jobs also build Minimal, Low, Medium, and High IL2CPP shipping-fidelity players. Each level
 keeps its own result evidence and runner-local project inside the grouped
 shipping step and artifact. A failed level is recorded while the later levels
 continue only when the wrapper catches its terminating failure, then the group
@@ -42,7 +46,9 @@ the group. The direct runner generates a package host project under
 `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>-<source-set-key>/`, imports the repo package with a
 `file:` dependency, and configures IL2CPP before either player build. Test hosts
 set `testables`; the shipping host omits test packages and `testables`. Dispatch
-runs use the same complete static matrix.
+runs use the complete static matrix. `nightly-validation.yml` dispatches compatibility at
+01:00 UTC and performance at 03:00 UTC without using licensed resources itself. Ordinary
+merges never launch a second correctness matrix or performance run.
 
 The Unity version list is canonical in `.github/unity-versions.json`;
 `unity-tests.yml` carries a static literal mirror so the organization analyzer
@@ -62,13 +68,38 @@ and returns the license on every exit path through four redundant layers
 inside the org-lock window, and the next run's return-at-start) -- see
 [unity-license-return-guarantee](../../unity-licensing/references/unity-license-return-guarantee.md).
 
+## Required contexts and release qualification
+
+`Unity CI Success` keeps its reviewed trusted/untrusted aggregate shape. The inexpensive
+`unity-docs-gate.yml` companion reports that context for the closed documentation allowlist.
+It counts all API file records and includes both rename endpoints; failed, incomplete, or
+malformed records cannot authorize a skip.
+
+The pinned organization audit rejects dynamic matrix axes and custom skip aggregates.
+Its typed classifier/gate alternative requires a literal fallback holder suffix, whereas
+these jobs identify holders by version and mode. Retaining the existing companion avoids
+an unsupported aggregate or four copied licensed jobs.
+
+The central registry permits manual dispatches for this repository, but not licensed
+schedule events. A hosted scheduler calls the supported dispatch entry points instead.
+It checks the default-branch head and skips an already active or successful dispatch for
+that revision. The dispatched workflow owns its actual source identity; a scheduler's
+starting SHA is never substituted for the revision a producer measured.
+
+Release qualification needs successful dispatched runs for the exact tag commit and complete,
+nonexpired, nonempty artifacts with SHA-256 digests: twelve ordinary mode artifacts, two
+endpoint shipping artifacts, four distinct consumer-install artifacts, and two performance
+artifacts. The release gate saves a producer/metadata receipt and blocks publication when
+any lane is missing. It does not substitute metadata checks for content replay in the
+producer's evidence checks.
+
 ## Capacity + Timeout Invariant
 
 The Unity serial has two activation seats shared across the organization and no server-side reclaim. Two complementary controls keep that capacity safe and fair.
 
 **Matrix serialization and organization admission.** `strategy.max-parallel: 1` serializes matrix cells WITHIN a single run. The external `ambiguous-organization-build-lock` action admits at most two distinct runners ACROSS runs, workflows, and repositories while accounting for cooldowns, quarantines, and account incidents.
 
-- `max-parallel: 1` only: cannot prevent two separate runs (two pushes, `unity-tests` plus `unity-benchmarks`, or another org repo) from racing for the seat.
+- `max-parallel: 1` only: cannot prevent two separate runs (two dispatches, `unity-tests` plus `unity-benchmarks`, or another org repo) from racing for the seat.
 - The lock only: leaves all four editor jobs spawning at once, so idle jobs burn their job-timeout clocks, one repository can occupy both seats, and logs become noisy without useful per-run throughput.
 
 With both controls, a run consumes at most one seat while another repository can use the second. This is `max-parallel: 1` ONLY -- it is NOT a native concurrency group. A native `concurrency.group: wallstop-organization-builds` is repository-scoped, serializes whole jobs, and is forbidden. Add `max-parallel: 1` under `strategy:` (sibling of `fail-fast`/`matrix`) on the matrix workflows (`unity-tests.yml`, `unity-benchmarks.yml`, `perf-numbers.yml`); single-job release workflows rely on the lock for cross-run admission.
@@ -222,7 +253,7 @@ For `standalone` runs, the direct runner first configures the generated project 
 - Unity CLI docs: https://docs.unity.com/en-us/hub/unity-cli
 - Unity LTS roadmap: https://unity.com/releases/lts
 - Unity managed code stripping: https://docs.unity3d.com/Manual/ManagedCodeStripping.html
-- Active workflows: `.github/workflows/unity-tests.yml` (direct Unity on self-hosted Windows; editmode/playmode/standalone on all versions and shipping on the oldest/current endpoints), `.github/workflows/unity-benchmarks.yml`, `.github/workflows/perf-numbers.yml`, and `.github/workflows/release.yml`; ubuntu reference mirrors: `.github/workflows-disabled/`
+- Active workflows: `.github/workflows/unity-tests.yml` (direct Unity on self-hosted Windows; latest-version PR correctness, full dispatched compatibility, and opt-in endpoint shipping), `.github/workflows/unity-benchmarks.yml`, `.github/workflows/perf-numbers.yml`, and `.github/workflows/release.yml`; ubuntu reference mirrors: `.github/workflows-disabled/`
 
 ## Bind the installed Test Framework
 

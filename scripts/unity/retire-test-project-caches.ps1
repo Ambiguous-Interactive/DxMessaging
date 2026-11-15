@@ -32,8 +32,8 @@ if (-not $evidence.StartsWith($workspace.TrimEnd($separator) + $separator, $comp
 }
 $ancestor = $evidence
 while (-not $ancestor.Equals($workspace, $comparison)) {
-    if (-not (Test-Path -LiteralPath $ancestor -PathType Container) -or
-        ((Get-Item -LiteralPath $ancestor -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+    if (-not [System.IO.Directory]::Exists($ancestor) -or
+        ([System.IO.File]::GetAttributes($ancestor) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
         throw 'Retained evidence must have an existing, plain path inside the workspace.'
     }
     $ancestor = [System.IO.Path]::GetDirectoryName($ancestor)
@@ -56,9 +56,10 @@ $expectedFiles = @('.dxmessaging-ci-project', 'DxMessaging.CiProject.editorconfi
 # Validate every candidate before the first removal; unexpected data remains available for review.
 foreach ($row in $retired) {
     $project = Join-Path $root $row.project
-    foreach ($entry in @(Get-ChildItem -LiteralPath $project -Force)) {
-        if (($entry.PSIsContainer -and $entry.Name -cin $expectedDirectories) -or
-            (-not $entry.PSIsContainer -and $entry.Name -cin $expectedFiles)) { continue }
+    foreach ($entry in @([System.IO.DirectoryInfo]::new($project).EnumerateFileSystemInfos())) {
+        $isDirectory = ($entry.Attributes -band [System.IO.FileAttributes]::Directory) -ne 0
+        if (($isDirectory -and $entry.Name -cin $expectedDirectories) -or
+            (-not $isDirectory -and $entry.Name -cin $expectedFiles)) { continue }
         throw "Unexpected contents in retired test project; no project was removed: $($entry.FullName)"
     }
 }
@@ -68,7 +69,7 @@ $removedBytes = 0L
 foreach ($row in $retired) {
     $project = Join-Path $root $row.project
     Remove-Item -LiteralPath $project -Recurse -Force
-    if (Test-Path -LiteralPath $project) { throw "Retired project still exists after removal: $project" }
+    if ([System.IO.Directory]::Exists($project) -or [System.IO.File]::Exists($project)) { throw "Retired project still exists after removal: $project" }
     $removedBytes += $row.totalBytes
     Write-Output ('DXM_TEST_CACHE_RETIRED ' + ($row | ConvertTo-Json -Compress))
 }

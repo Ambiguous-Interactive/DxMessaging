@@ -102,7 +102,11 @@ jobs:
             echo "::error::Changed-file listing is incomplete: expected ${EXPECTED_FILE_COUNT}, received ${listed_file_count}."
             exit 1
           fi
-          files="$(printf '%s\n' "${records}" | jq -r '.[] | select(. != null)')"
+          files="$(printf '%s\n' "${records}" | jq -er '
+            if type != "array" or length != 2 or (.[0] | type != "string" or length == 0) then
+              error("Invalid changed-file record")
+            else .[] | if . == null then empty elif type == "string" and length > 0 then . else error("Invalid changed path") end end
+          ')"
           # SYNC: this allowlist must stay equivalent to the pull_request
           # paths-ignore list in unity-tests.yml, so this gate reports green
           # exactly when that workflow is absent. scripts/__tests__/ci-aggregate-workflow.test.js

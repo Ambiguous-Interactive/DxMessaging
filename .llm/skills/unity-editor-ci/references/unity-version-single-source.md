@@ -86,6 +86,11 @@ The three licensed matrix workflows use literal matrices. Their policy entries
 make a canonical-version bump fail until every static mirror is updated in the
 same change.
 
+The correctness matrix keeps all literals and conditionally excludes every version except
+`latest` on PRs. `validate:unity-pr-policy` checks those exclusions against the canonical
+list. Add or update each exclusion when a new latest version is introduced; never replace
+the literal matrix with a dynamic axis that the organization audit cannot enumerate.
+
 ## How to Bump a Version
 
 1. Edit `.github/unity-versions.json`. Append or change entries in `all` (keep

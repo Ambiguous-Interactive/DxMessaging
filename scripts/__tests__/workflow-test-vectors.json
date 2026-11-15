@@ -71,6 +71,8 @@
     ["markdownlint", "markdown"],
     ["csharpier", "csharpier"],
     ["dotnet", "dotnet"],
+    ["docs-dotnet", "docs_dotnet"],
+    ["runtime-dotnet", "runtime_dotnet"],
     ["json-format", "json"],
     ["spellcheck", "spellcheck"],
     ["validate-banner", "banner"],
@@ -86,5 +88,19 @@
     ],
     "playmode": ["!(Stress|Performance|Allocation|MemoryReclaim|PerfBench|PerfGate|PerfBaseline)"],
     "standalone": ["!(Stress|Performance|Allocation|MemoryReclaim|PerfBench|PerfGate|PerfBaseline)"]
-  }
+  },
+  "STATIC_SCRIPT_INPUTS": [
+    ".llm/index.md",
+    ".llm/skills/github-workflow-consistency/references/workflow-consistency.md",
+    "scripts/llm/harness.js",
+    "scripts/validate-unity-pr-policy.py",
+    ".github/analyzers/manifest.json",
+    ".github/analyzers/LICENSE.txt",
+    ".github/comparison-packages.json",
+    ".github/actions/example/metadata.yaml",
+    ".github/ISSUE_TEMPLATE/bug_report.yml",
+    "docs/ops/release-operations.md",
+    ".llm/context.md",
+    ".llm/skills/package-publishing/references/unity-analyzer-shipping.md"
+  ]
 }

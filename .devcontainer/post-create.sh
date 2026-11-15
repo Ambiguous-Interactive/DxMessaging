@@ -173,7 +173,7 @@ validate_dotnet() {
     fi
 
     local dotnet_version
-    dotnet_version="$(dotnet --version 2>/dev/null || echo unknown)"
+    dotnet_version="$(dotnet --version)" || return 1
     log_success "Active .NET SDK: ${dotnet_version}"
 
     log_info "Installed .NET SDKs:"
@@ -191,39 +191,8 @@ validate_dotnet() {
     return 0
 }
 
-# Install the exact SDK pinned in global.json
-# (rollForward: disable) so `npm run check:analyzers` — and therefore
-# `npm run validate:all` — works out of the box. The base image ships
-# other 10.0 feature bands, which do not satisfy an exact-version pin.
-ensure_pinned_sdk() {
-    log_header "Ensuring pinned .NET SDK (global.json)"
-
-    local global_json="${WORKSPACE_DIR}/global.json"
-    if [[ ! -f "${global_json}" ]]; then
-        log_warning "global.json not found; skipping"
-        return 0
-    fi
-
-    if (cd "${WORKSPACE_DIR}" && dotnet --version >/dev/null 2>&1); then
-        log_success "Pinned SDK already resolvable"
-        return 0
-    fi
-
-    log_info "Pinned SDK missing; installing into /usr/share/dotnet"
-    local installer=/tmp/dotnet-install.sh
-    if ! wget -q https://dot.net/v1/dotnet-install.sh -O "${installer}"; then
-        log_warning "Could not download dotnet-install.sh (offline?); see the pinned-SDK remediation in CONTRIBUTING.md"
-        return 0
-    fi
-    # --install-dir must match the existing dotnet host location; the default
-    # ~/.dotnet is not consulted by the /usr/share/dotnet host on PATH.
-    if sudo bash "${installer}" --jsonfile "${global_json}" --install-dir /usr/share/dotnet; then
-        log_success "Pinned SDK installed: $(cd "${WORKSPACE_DIR}" && dotnet --version 2>/dev/null || echo unknown)"
-    else
-        log_warning "Pinned SDK install failed (continuing); check:analyzers will not run until it is installed"
-    fi
-    return 0
-}
+# shellcheck source=.devcontainer/lib/pinned-sdk.sh
+source "${SCRIPT_DIR}/lib/pinned-sdk.sh"
 
 # -----------------------------------------------------------------------------
 # Workspace Validation (UPM package — no Assets/ or ProjectSettings/ at root)
@@ -362,7 +331,7 @@ main() {
     cd "${WORKSPACE_DIR}"
 
     # Resolve the repository SDK before any command that requires its exact pin.
-    ensure_pinned_sdk
+    ensure_pinned_sdk "${WORKSPACE_DIR}" || return 1
     run_optional "Restoring .NET local tools" dotnet tool restore
     # npm install reuses the persistent modules tree; npm ci would remove it.
     run_optional "Installing workspace npm dependencies" npm install --prefer-offline --no-audit --no-fund

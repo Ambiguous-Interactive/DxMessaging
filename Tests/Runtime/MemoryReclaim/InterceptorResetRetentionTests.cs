@@ -83,6 +83,20 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
             foreach (bool inside in new[] { false, true })
             foreach (bool diagnostics in new[] { false, true })
             {
+                bool fastLane =
+                    remove == (hold ^ reset)
+                    && trim == (reset ^ warm)
+                    && inside == (hold ^ warm)
+                    && diagnostics == (hold ^ reset ^ warm);
+                // Preserve the two reported Mono failures in the representative lane.
+                fastLane |=
+                    !hold
+                    && !reset
+                    && inside
+                    && (
+                        (custom && !warm && !remove && !trim && diagnostics)
+                        || (!custom && warm && remove && trim && !diagnostics)
+                    );
                 yield return new TestCaseData(
                     scenario,
                     custom,
@@ -93,9 +107,11 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                     trim,
                     inside,
                     diagnostics
-                ).SetName(
-                    $"InterceptorResetRetention_{scenario}_custom{custom}_hold{hold}_reset{reset}_warm{warm}_remove{remove}_trim{trim}_inside{inside}_diagnostics{diagnostics}"
-                );
+                )
+                    .SetName(
+                        $"InterceptorResetRetention_{scenario}_custom{custom}_hold{hold}_reset{reset}_warm{warm}_remove{remove}_trim{trim}_inside{inside}_diagnostics{diagnostics}"
+                    )
+                    .SetCategory(fastLane ? "FastRetention" : "Exhaustive");
             }
         }
 

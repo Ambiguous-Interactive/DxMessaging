@@ -14,6 +14,7 @@ const {
   UNITY_EDITOR_CONSUMERS,
   DOCS_ONLY_PATH_IGNORES,
   STATIC_CHILD_JOBS,
+  STATIC_SCRIPT_INPUTS,
   CORRECTNESS_CATEGORY_FILTERS
 } = require("./workflow-test-vectors.json");
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -49,7 +50,7 @@ const CLEANUP_POLICY_SHA = CLEANUP_POLICY_PIN.sha;
 // prettier-ignore
 const CONSOLIDATED_WORKFLOWS = ["actionlint.yml", "csharpier-check.yml", "dotnet-tests.yml", "json-format-check.yml", "lint-doc-links.yml", "markdownlint.yml", "script-tests.yml", "spellcheck.yml", "validate-banner.yml", "validate-docs.yml", "validate-llms-txt.yml", "yaml-format-lint.yml"];
 // prettier-ignore
-const AGGREGATED_JOBS = ["changes", "actionlint", "markdownlint", "csharpier", "dotnet", "json-format", "line-endings", "spellcheck", "validate-banner", "validate-llms-txt", "yaml-format-lint", "script-tests", "validate-docs", "lint-doc-links"];
+const AGGREGATED_JOBS = ["changes", "actionlint", "markdownlint", "csharpier", "dotnet", "docs-dotnet", "runtime-dotnet", "json-format", "line-endings", "spellcheck", "validate-banner", "validate-llms-txt", "yaml-format-lint", "script-tests", "validate-docs", "lint-doc-links"];
 const readWorkflow = (file = "ci.yml") => fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
 const readWorkflowDocument = (file) => YAML.parseDocument(readWorkflow(file));
 function escapeRegExp(value) {
@@ -214,7 +215,10 @@ test("static CI checks stay consolidated behind CI Success", () => {
 });
 test("change detector considers current and previous paths", () => {
   const source = readWorkflow();
-  assert.match(source, /--jq '\.\[\] \| \.filename, \(\.previous_filename \/\/ empty\)'/);
+  assert.match(
+    source,
+    /--jq '\.\[\] \| \[\.filename, \(\.previous_filename \/\/ null\)\] \| @json'/
+  );
   assert.match(
     source,
     /git diff --name-status --find-renames --diff-filter=(?=[A-Z]*A)(?=[A-Z]*C)(?=[A-Z]*D)(?=[A-Z]*M)(?=[A-Z]*R)(?=[A-Z]*T)[A-Z]+\b/
@@ -232,22 +236,8 @@ test("change detectors cover harness, package, and changelog contract inputs", (
   const source = readWorkflow();
   const scriptsPattern = new RegExp(extractShellPatternVariable(source, "scripts_pattern"));
   // prettier-ignore
-  for (const file of ["CHANGELOG.md", "scripts/unity/DxmNUnitResultWriter.cs.txt"]) assert.match(file, new RegExp(/set_output dotnet \\\s*"([^"]+)"/.exec(source)[1]), "Contract inputs must run the documentation and NUnit compatibility tests");
-  for (const path of [
-    ".llm/index.md",
-    ".llm/skills/github-workflow-consistency/references/workflow-consistency.md",
-    "scripts/llm/harness.js",
-    "scripts/validate-unity-pr-policy.py",
-    ".github/analyzers/manifest.json",
-    ".github/analyzers/LICENSE.txt",
-    ".github/comparison-packages.json",
-    ".github/actions/example/metadata.yaml",
-    ".github/ISSUE_TEMPLATE/bug_report.yml",
-    "docs/ops/release-operations.md",
-    ".llm/context.md",
-    ".llm/skills/package-publishing/references/unity-analyzer-shipping.md"
-  ])
-    assert.match(path, scriptsPattern);
+  for (const file of ["CHANGELOG.md", "scripts/unity/DxmNUnitResultWriter.cs.txt"]) assert.match(file, new RegExp(/set_output docs_dotnet \\\s*"([^"]+)"/.exec(source)[1]), "Contract inputs must run the documentation and NUnit compatibility tests");
+  for (const path of STATIC_SCRIPT_INPUTS) assert.match(path, scriptsPattern);
 });
 test("static child jobs always report and fail closed on bad change detection", () => {
   const source = readWorkflow();
@@ -331,30 +321,13 @@ test("the stuck-job watchdog never materializes the default branch", () => {
     "switching between two populated trees is the failure mode being retired"
   );
 });
+// prettier-ignore
 test("source marker scan is tracked-file scoped and cannot self-match workflow text", () => {
-  const source = readWorkflow();
-  const dotnet = getJobBlock(source, "dotnet");
-  const markerScan = getStepBlock(dotnet, "Check source marker policy");
-  const includedPathspecs = [
-    "Runtime/**",
-    "Editor/**",
-    "SourceGenerators/**",
-    "Tests/**",
-    "*.cs",
-    "*.csproj",
-    "*.sln"
-  ];
-  const excludedScopes = ["--no-ignore", ".github", ".llm"];
-  assert.match(markerScan, /source_pathspecs=\(/);
-  assert.match(markerScan, /source_file_count=\$\(git ls-files -- "\$\{source_pathspecs\[@\]\}"/);
-  assert.match(markerScan, /Scanning \$\{source_file_count\} tracked source files/);
-  assert.match(markerScan, /git grep -n -E -I "\(TODO\|FIXME\)" -- "\$\{source_pathspecs\[@\]\}"/);
-  for (const pathspec of includedPathspecs) {
-    assert.match(markerScan, new RegExp(`'${escapeRegExp(pathspec)}'`));
-  }
-  for (const scope of excludedScopes) {
-    assert.doesNotMatch(markerScan, new RegExp(escapeRegExp(scope)));
-  }
+  const markerScan = getStepBlock(getJobBlock(readWorkflow(), "line-endings"), "Check source marker policy");
+  const included = ["Runtime/**", "Editor/**", "SourceGenerators/**", "Tests/**", "*.cs", "*.csproj", "*.sln"];
+  for (const pattern of [/source_pathspecs=\(/, /source_file_count=\$\(git ls-files -- "\$\{source_pathspecs\[@\]\}"/, /Scanning \$\{source_file_count\} tracked source files/, /git grep -n -E -I "\(TODO\|FIXME\)" -- "\$\{source_pathspecs\[@\]\}"/]) assert.match(markerScan, pattern);
+  for (const pathspec of included) assert.match(markerScan, new RegExp(`'${escapeRegExp(pathspec)}'`));
+  for (const scope of ["--no-ignore", ".github", ".llm"]) assert.doesNotMatch(markerScan, new RegExp(escapeRegExp(scope)));
 });
 test("script validators run once while script tests stay cross-platform", () => {
   const source = readWorkflow();
@@ -369,7 +342,7 @@ test("script validators run once while script tests stay cross-platform", () => 
     /os:\n          - ubuntu-latest\n          - macos-latest\n          - windows-latest/
   );
   assert.match(getStepBlock(scriptTests, "Setup .NET"), /matrix\.os == 'ubuntu-latest'/);
-  assert.match(runScriptTests, /node --test 'scripts\/\*\*\/\*\.test\.js'/);
+  assert.match(runScriptTests, /npm run test:all/);
   assert.doesNotMatch(runScriptTests, /node --test scripts\//);
   assert.match(validators, /matrix\.os == 'ubuntu-latest'/);
   assert.match(validators, /\n        run: npm run validate:all\n/);
@@ -617,7 +590,6 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     assert.doesNotMatch(job, /Delete private Unity cleanup evidence/, label);
   }
 });
-
 test("Unity scripts retain bounded return-at-start evidence", () => {
   const sources = [
     path.join("scripts", "unity", "run-ci-tests.ps1"),
@@ -637,7 +609,6 @@ test("Unity scripts retain bounded return-at-start evidence", () => {
     /validate:unity-license-classifiers/
   );
 });
-
 test("Unity CI defers every post-activation return to the central action", () => {
   for (const file of ["run-ci-tests.ps1", "export-unitypackage.ps1"]) {
     const source = fs.readFileSync(path.join(REPO_ROOT, "scripts", "unity", file), "utf8");
@@ -651,175 +622,55 @@ test("Unity CI defers every post-activation return to the central action", () =>
   }
 });
 
-test("licensed PR workflows fail closed and skip only documented non-code paths", () => {
-  // Documentation-only pull requests are skipped by the trigger filter itself.
-  // The allowlist must stay closed and mechanical.
-  const unityDocument = readWorkflowDocument("unity-tests.yml").toJS();
-  assert.deepEqual(unityDocument.on.pull_request["paths-ignore"], DOCS_ONLY_PATH_IGNORES);
-
-  // unity-tests.yml is absent for those pull requests, so the companion gate
-  // keeps the required "Unity CI Success" context present. Mixed changes use
-  // a distinct report name and leave that context to the licensed workflow.
-  const gateSource = readWorkflow("unity-docs-gate.yml");
-  const gateDocument = readWorkflowDocument("unity-docs-gate.yml").toJS();
-  const { classify: classifyJob, report: reportJob } = gateDocument.jobs;
-  // prettier-ignore
-  assert.deepEqual(
-    { paths: gateDocument.on.pull_request.paths, pathsIgnore: gateDocument.on.pull_request["paths-ignore"], classifySteps: classifyJob.steps.length, classifyOutput: classifyJob.outputs.documentation_only, reportName: reportJob.name, reportIf: reportJob.if, reportSteps: reportJob.steps.length, reportNeeds: reportJob.needs },
-    { paths: [".github/workflows/**", ...DOCS_ONLY_PATH_IGNORES], pathsIgnore: undefined, classifySteps: 1, classifyOutput: "${{ steps.classify.outputs.documentation_only }}", reportName: "${{ (needs.classify.result != 'success' || needs.classify.outputs.documentation_only != 'false') && 'Unity CI Success' || 'Unity docs gate not applicable' }}", reportIf: "${{ always() }}", reportSteps: 1, reportNeeds: ["classify"] }
-  );
-  const pattern = /documentation_only_pattern='([^']+)'/.exec(gateSource);
-  const allowed = new RegExp(pattern[1]);
-  // prettier-ignore
-  for (const file of ["docs/index.md", "docs/index.md.meta", ".docs-tests/DocsSnippetCompilationTests.cs", ".docs-tests/global.json", ".llm/context.md", "Samples~/Mini Combat/README.md", ".agents/skills/example/SKILL.md", ".claude/settings.json", "progress/2026-08-01-run.md", "GOAL.md", "llms.txt", "mkdocs.yml", "requirements-docs.in", "requirements-docs.txt", "requirements-brand.in", "requirements-brand.txt"])
-    assert.match(file, allowed, `docs-only ${file}`);
-  // The exact-name globs do not ignore .meta siblings: a pull request adding
-  // one of those touches a path unity-tests.yml still covers.
-  // prettier-ignore
-  for (const file of [".github/workflows/unity-tests.yml", "Runtime/Core/MessageBus.cs", "Samples~/Mini Combat/Player.cs", "AGENTS.md.meta", "requirements-docs.in.meta", "Samples~/Mini Combat/README.md.meta"])
-    assert.doesNotMatch(file, allowed, `non-ignored ${file}`);
-
-  // perf-numbers.yml keeps its in-band head freshness and relevance decisions.
-  const perfSource = readWorkflow("perf-numbers.yml");
-  const head = getJobBlock(perfSource, "head-check", "perf-numbers.yml");
-  assert.match(head, /relevant: \$\{\{ steps\.head\.outputs\.relevant \}\}/);
-  assert.match(head, /Changed-file lookup failed; running licensed/);
-  assert.match(head, /echo "relevant=\$\{relevant\}" >> "\$\{GITHUB_OUTPUT\}"/);
-  const perfAllowed = new RegExp(/documentation_only_pattern='([^']+)'/.exec(head)[1]);
-  assert.match("docs/index.md", perfAllowed);
-  assert.doesNotMatch("Runtime/Core/MessageBus.cs", perfAllowed);
-
-  const unitySource = readWorkflow("unity-tests.yml");
-  for (const jobId of ["runner-preflight", "unity-tests"]) {
-    const job = getJobBlock(unitySource, jobId, "unity-tests.yml");
+// The behavioral classifier, malformed-record and matrix cases run in test_validate_unity_pr_policy.py.
+// Keep only the cross-workflow invariants here; performance has no automatic PR lane.
+// prettier-ignore
+test("documentation-only PRs retain the centrally enrolled Unity skip contract", () => {
+  const unity = readWorkflowDocument("unity-tests.yml").toJS(), gate = readWorkflowDocument("unity-docs-gate.yml").toJS();
+  assert.deepEqual(unity.on.pull_request["paths-ignore"], DOCS_ONLY_PATH_IGNORES);
+  assert.deepEqual(gate.on.pull_request.paths, [".github/workflows/**", ...DOCS_ONLY_PATH_IGNORES]);
+  assert.equal(gate.jobs.report.if, "${{ always() }}");
+  assert.equal(gate.jobs.report.name, "${{ (needs.classify.result != 'success' || needs.classify.outputs.documentation_only != 'false') && 'Unity CI Success' || 'Unity docs gate not applicable' }}");
+  assert.deepEqual(gate.jobs.report.needs, ["classify"]);
+  const source = readWorkflow("unity-tests.yml");
+  for (const id of ["runner-preflight", "unity-tests"]) {
+    const job = getJobBlock(source, id, "unity-tests.yml");
     assert.match(job, /github\.event\.pull_request\.user\.login != 'dependabot\[bot\]'/);
     assert.doesNotMatch(job, /github\.actor != 'dependabot\[bot\]'/);
   }
-  // prettier-ignore
-  assert.doesNotMatch(getJobBlock(unitySource, "unity-ci-success", "unity-tests.yml"), /github\.actor == 'dependabot\[bot\]'/);
-  assert.match(
-    getStepBlock(
-      getJobBlock(unitySource, "unity-tests", "unity-tests.yml"),
-      "Upload shipping-fidelity artifacts"
-    ),
-    /always\(\) &&[\s\S]*!cancelled\(\) &&[\s\S]*steps\.acquire_lock\.outputs\.acquired == 'true'[\s\S]*if-no-files-found: error/
-  );
+  assert.match(getStepBlock(getJobBlock(source, "unity-tests", "unity-tests.yml"), "Upload shipping-fidelity artifacts"), /always\(\) &&[\s\S]*!cancelled\(\) &&[\s\S]*steps\.acquire_lock\.outputs\.acquired == 'true'[\s\S]*if-no-files-found: error/);
 });
 
-test("Unity-independent changes skip both licensed workflows with matching classification", () => {
-  const gate = readWorkflowDocument("unity-docs-gate.yml").toJS();
-  const allowed = new RegExp(
-    /documentation_only_pattern='([^']+)'/.exec(gate.jobs.classify.steps[0].run)[1]
-  );
-  const cases = [
-    ["README.md", true],
-    [".devcontainer/Dockerfile", true],
-    [".github/ISSUE_TEMPLATE/bug_report.yml", true],
-    ["scripts/llm/harness.js", true],
-    ["scripts/__tests__/llm-harness.test.js", true],
-    ["scripts/wiki/wiki-navigation.json", true],
-    ["package.json", false],
-    ["package-lock.json", false],
-    ["Editor/Tool.cs", false],
-    ["Tests/Runtime/EmitTests.cs", false],
-    ["SourceGenerators/Generator.cs", false],
-    ["scripts/unity/run-ci-tests.ps1", false],
-    [".github/actions/build/action.yml", false],
-    [".github/workflows/unity-tests.yml", false],
-    ["Samples~/Demo/Test.cs", false],
-    ["Runtime/README.md", false],
-    ["unknown/file.bin", false]
-  ];
-  for (const file of ["unity-tests.yml", "perf-numbers.yml"]) {
-    const filters = readWorkflowDocument(file).toJS().on.pull_request["paths-ignore"];
-    for (const [changed, expected] of cases) {
-      assert.equal(
-        filters.some((glob) => path.matchesGlob(changed, glob)),
-        expected,
-        `${file}: ${changed}`
-      );
-      assert.equal(allowed.test(changed), expected, `classifier: ${changed}`);
-    }
-  }
-});
-
-test("devcontainer classification covers build inputs and fails safe on incomplete listings", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-devcontainer-filter-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const workflow = readWorkflowDocument("devcontainer-test.yml").toJS();
-  const step = workflow.jobs.changes.steps[0];
-  const bash =
-    process.platform === "win32"
-      ? path.join(process.env.ProgramFiles, "Git", "bin", "bash.exe")
-      : "bash";
-  const cases = [
-    ["Dockerfile", [".devcontainer/Dockerfile"], true],
-    ["workflow", [".github/workflows/ci.yml"], true],
-    ["action", [".github/actions/install-pinned-lychee/action.yml"], true],
-    ["image dependency", ["package.json"], true],
-    ["SDK build input", ["global.json"], true],
-    ["build context", [".dockerignore"], true],
-    ["dependency lock", ["package-lock.json"], true],
-    ["smoke suite", ["scripts/__tests__/llm-harness.test.js"], true],
-    ["tool script", ["scripts/llm/harness.js"], true],
-    ["issue template", [".github/ISSUE_TEMPLATE/bug_report.yml"], false],
-    ["docs", ["docs/index.md"], false],
-    ["runtime", ["Runtime/Core/MessageBus.cs"], false],
-    ["rename out", ["docs/example.txt", ".devcontainer/old.sh"], true]
-  ];
-  assert.equal(step.env.EXPECTED_FILE_COUNT, "${{ github.event.pull_request.changed_files }}");
-  for (const [name, files, relevant] of cases) {
-    const output = path.join(root, "output");
-    fs.writeFileSync(output, "");
-    const result = spawnSync(bash, ["-c", 'gh() { printf "%s\\n" "$RECORDS"; };\n' + step.run], {
-      env: {
-        ...process.env,
-        EVENT_NAME: "pull_request",
-        EXPECTED_FILE_COUNT: "1",
-        PR_NUMBER: "1",
-        GITHUB_REPOSITORY: "test/repo",
-        RECORDS: JSON.stringify(files),
-        GITHUB_OUTPUT: output
-      }
+// prettier-ignore
+test("devcontainer classification covers image inputs and fails safe on incomplete listings", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-devcontainer-filter-")); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const workflow = readWorkflowDocument("devcontainer-test.yml").toJS(), step = workflow.jobs.changes.steps[0];
+  const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles, "Git", "bin", "bash.exe") : "bash";
+  const classify = (records, count = "1", event = "pull_request", ghStatus = 0) => {
+    const output = path.join(root, "output"); fs.writeFileSync(output, "");
+    const result = spawnSync(bash, ["-c", 'gh() { printf "%s\\n" "$RECORDS"; return "$GH_STATUS"; };\n' + step.run], {
+      env: { ...process.env, EVENT_NAME: event, EXPECTED_FILE_COUNT: count, PR_NUMBER: "1", GITHUB_REPOSITORY: "test/repo", RECORDS: records, GH_STATUS: String(ghStatus), GITHUB_OUTPUT: output }
     });
-    assert.equal(result.status, 0, `${name}: ${result.stderr}`);
-    assert.equal(fs.readFileSync(output, "utf8").trim(), `relevant=${relevant}`, name);
-    assert.equal(
-      files.some((file) => workflow.on.push.paths.some((glob) => path.matchesGlob(file, glob))),
-      relevant,
-      `push: ${name}`
-    );
-  }
-  for (const [name, records, count, event, ghStatus] of [
-    ["empty", "", "1", "pull_request", 0],
-    ["truncated", '["docs/a.md"]', "2", "pull_request", 0],
-    ["malformed JSON", "bad", "1", "pull_request", 0],
-    ["missing count", '["docs/a.md"]', "", "pull_request", 0],
-    ["API failure", '["docs/a.md"]', "1", "pull_request", 1],
-    ["manual", "", "", "workflow_dispatch", 0]
+    return { status: result.status, stderr: result.stderr, output: fs.readFileSync(output, "utf8").trim() };
+  };
+  assert.equal(step.env.EXPECTED_FILE_COUNT, "${{ github.event.pull_request.changed_files }}");
+  for (const [name, files, relevant] of [
+    ["Dockerfile", [".devcontainer/Dockerfile"], true], ["workflow", [".github/workflows/ci.yml"], false],
+    ["action", [".github/actions/install-pinned-lychee/action.yml"], false], ["image dependency", ["package.json"], true],
+    ["SDK build input", ["global.json"], true], ["build context", [".dockerignore"], true], ["dependency lock", ["package-lock.json"], true],
+    ["unrelated script suite", ["scripts/__tests__/llm-harness.test.js"], false], ["tool script", ["scripts/llm/harness.js"], false],
+    ["image workflow", [".github/workflows/devcontainer-test.yml"], true], ["smoke dependency", ["scripts/unity/lib/asmdef-discovery.js"], true],
+    ["docs SDK", [".docs-tests/global.json"], true], ["issue template", [".github/ISSUE_TEMPLATE/bug_report.yml"], false],
+    ["docs", ["docs/index.md"], false], ["runtime", ["Runtime/Core/MessageBus.cs"], false], ["rename out", ["docs/example.txt", ".devcontainer/old.sh"], true]
   ]) {
-    const output = path.join(root, "output");
-    fs.writeFileSync(output, "");
-    const result = spawnSync(
-      bash,
-      ["-c", 'gh() { printf "%s\\n" "$RECORDS"; return "$GH_STATUS"; };\n' + step.run],
-      {
-        env: {
-          ...process.env,
-          EVENT_NAME: event,
-          EXPECTED_FILE_COUNT: count,
-          PR_NUMBER: "1",
-          GITHUB_REPOSITORY: "test/repo",
-          RECORDS: records,
-          GH_STATUS: String(ghStatus),
-          GITHUB_OUTPUT: output
-        }
-      }
-    );
-    assert.ok(
-      result.status !== 0 || fs.readFileSync(output, "utf8").trim() === "relevant=true",
-      name
-    );
+    const result = classify(JSON.stringify(files)); assert.equal(result.status, 0, String(result.stderr)); assert.equal(result.output, `relevant=${relevant}`, name);
+    assert.equal(files.some((file) => workflow.on.push.paths.some((glob) => path.matchesGlob(file, glob))), relevant, `push: ${name}`);
+  }
+  for (const [name, records, count, event, status] of [
+    ["empty", "", "1", "pull_request", 0], ["truncated", '["docs/a.md"]', "2", "pull_request", 0], ["malformed", "bad", "1", "pull_request", 0],
+    ["missing count", '["docs/a.md"]', "", "pull_request", 0], ["API failure", '["docs/a.md"]', "1", "pull_request", 1], ["manual", "", "", "workflow_dispatch", 0]
+  ]) {
+    const result = classify(records, count, event, status); assert.ok(result.status !== 0 || result.output === "relevant=true", name);
   }
 });
 // prettier-ignore
@@ -883,11 +734,10 @@ test("active automation rejects direct Unity Helpers dependencies and pins exter
   }
   for (const [file, jobId] of UNITY_LOCK_WINDOWS.filter(([file]) => ["perf-numbers.yml", "unity-tests.yml"].includes(file))) {
     const source = fs.readFileSync(path.join(WORKFLOW_DIR, file), "utf8");
-    if (file === "perf-numbers.yml") { const steps = YAML.parse(source).jobs["perf-benchmarks"].steps; const honesty = fs.readFileSync(path.join(REPO_ROOT, "Tests/Runtime/Comparisons/ComparisonAllocationHonestyTests.cs"), "utf8"); const atoms = fs.readFileSync(path.join(REPO_ROOT, "Tests/Runtime/Comparisons/UnityAtoms/UnityAtomsComparisonContractTests.cs"), "utf8"); const payloadAbi = fs.readFileSync(path.join(REPO_ROOT, "Tests/Runtime/Comparisons/PayloadAbiBenchmarkContractTests.cs"), "utf8"); assert.match(source, /\n  pull_request:/, file); assert.match(source, /\n  comment-perf-doc:/, file); assert.doesNotMatch(source, /id: run_contracts|perf-contracts|comparison-contracts/); assert.equal(steps.find((step) => step.id === "run_tests").env.DXM_UNITY_TEST_CATEGORY, "${{ matrix.benchmark-suite == 'internal' && 'PerfBench' || 'PerfComparison;ComparisonContract' }}"); assert.equal(steps.find((step) => step.id === "run_allocation_contracts").env.DXM_UNITY_TEST_CATEGORY, "ComparisonAllocationContract"); assert.match(honesty, /\[Category\("ComparisonAllocationContract"\), Category\("Allocation"\)\]/); assert.doesNotMatch(honesty, /Category\("ComparisonContract"\)/); assert.doesNotMatch(atoms, /\[Category\("ComparisonContract"\)\]\s*public sealed class/); assert.match(atoms, /\[Category\("ComparisonAllocationContract"\)\]\s*\[Category\("Allocation"\)\]\s*public void StructDispatchAllocatesLessThanOneObjectPerEmit/); assert.match(payloadAbi, /\[Category\("ComparisonContract"\)\]\s*public sealed class PayloadAbiBenchmarkContractTests/); assert.doesNotMatch(payloadAbi, /\[Category\("PerfBench"\)\]\s*public sealed class PayloadAbiBenchmarkContractTests/); }
+    if (file === "perf-numbers.yml") { const steps = YAML.parse(source).jobs["perf-benchmarks"].steps; const honesty = fs.readFileSync(path.join(REPO_ROOT, "Tests/Runtime/Comparisons/ComparisonAllocationHonestyTests.cs"), "utf8"); const atoms = fs.readFileSync(path.join(REPO_ROOT, "Tests/Runtime/Comparisons/UnityAtoms/UnityAtomsComparisonContractTests.cs"), "utf8"); const payloadAbi = fs.readFileSync(path.join(REPO_ROOT, "Tests/Runtime/Comparisons/PayloadAbiBenchmarkContractTests.cs"), "utf8"); assert.doesNotMatch(source, /\n  pull_request:/, file); assert.doesNotMatch(source, /\n  comment-perf-doc:/, file); assert.doesNotMatch(source, /id: run_contracts|perf-contracts|comparison-contracts/); assert.equal(steps.find((step) => step.id === "run_tests").env.DXM_UNITY_TEST_CATEGORY, "${{ matrix.benchmark-suite == 'internal' && 'PerfBench' || 'PerfComparison;ComparisonContract' }}"); assert.equal(steps.find((step) => step.id === "run_allocation_contracts").env.DXM_UNITY_TEST_CATEGORY, "ComparisonAllocationContract"); assert.match(honesty, /\[Category\("ComparisonAllocationContract"\), Category\("Allocation"\)\]/); assert.doesNotMatch(honesty, /Category\("ComparisonContract"\)/); assert.doesNotMatch(atoms, /\[Category\("ComparisonContract"\)\]\s*public sealed class/); assert.match(atoms, /\[Category\("ComparisonAllocationContract"\)\]\s*\[Category\("Allocation"\)\]\s*public void StructDispatchAllocatesLessThanOneObjectPerEmit/); assert.match(payloadAbi, /\[Category\("ComparisonContract"\)\]\s*public sealed class PayloadAbiBenchmarkContractTests/); assert.doesNotMatch(payloadAbi, /\[Category\("PerfBench"\)\]\s*public sealed class PayloadAbiBenchmarkContractTests/); }
     else assert.match(getJobBlock(source, jobId, file), /github\.event_name != 'pull_request'/, `${file}:${jobId}`);
   }
 });
-
 test("release workflows pin App write scopes and denied-push diagnostics", () => {
   const release = fs.readFileSync(path.join(WORKFLOW_DIR, "release.yml"), "utf8");
   const prepare = fs.readFileSync(path.join(WORKFLOW_DIR, "release-prepare.yml"), "utf8");
@@ -954,4 +804,37 @@ test("container SDK smoke checks accept allowed docs feature bands", { skip: pro
       }
     } finally { fs.rmSync(temp, { recursive: true, force: true }); }
   }
+});
+
+// Run the production detector with recorded paths, including rename endpoints.
+// prettier-ignore
+test("managed suites follow their inputs and retain both validation tiers", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-managed-filter-")); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const workflow = readWorkflowDocument("ci.yml").toJS(), step = workflow.jobs.changes.steps[1];
+  const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles, "Git", "bin", "bash.exe") : "bash";
+  const run = step.run.replaceAll("${{ github.event_name }}", "pull_request").replaceAll("${{ github.repository }}", "test/repo").replaceAll("${{ github.event.pull_request.number }}", "1");
+  for (const [file, expected] of [
+    ["docs/architecture/performance.md", [false, false, false, false]], ["docs/guides/testing.md", [false, true, false, false]],
+    ["SourceGenerators/Generator.cs", [true, true, true, false]], ["Runtime/Core/MessageBus/MessageBus.cs", [false, true, true, true]],
+    ["Tests/Runtime/MemoryReclaim/DisabledTokenRetentionTests.cs", [false, false, true, true]], ["Tests/Runtime/Core/MessageRecorderTests.cs", [false, false, true, false]],
+    ["Editor/Analyzers/BaseCallIlInspector.cs", [false, true, true, false]], ["scripts/mcp/DxMcpTestRunner.cs.txt", [false, true, false, false]],
+    ["Runtime/Core/Helper/MessageCache.cs", [false, true, true, true]], [".github/workflows/ci.yml", [true, true, true, true]]
+  ]) {
+    const output = path.join(root, "output"); fs.writeFileSync(output, "");
+    const result = spawnSync(bash, ["-c", 'gh() { printf "%s\\n" "$CHANGED_FILE"; };\n' + run], { encoding: "utf8", env: { ...process.env, CHANGED_FILE: JSON.stringify([file, null]), EXPECTED_FILE_COUNT: "1", GITHUB_OUTPUT: output } });
+    assert.equal(result.status, 0, result.stderr);
+    const outputs = Object.fromEntries(fs.readFileSync(output, "utf8").trim().split("\n").map((line) => line.split("=")));
+    assert.deepEqual(["dotnet", "docs_dotnet", "runtime_dotnet", "managed_exhaustive"].map((key) => outputs[key]), expected.map(String), file);
+  }
+  for (const [record, count] of [["", "1"], ["bad", "1"], ['["docs/a.md",null]', "2"], ['["docs/a.md",null]', ""], ['[null,null]', "1"]]) {
+    const output = path.join(root, "output"); fs.writeFileSync(output, "");
+    const result = spawnSync(bash, ["-c", 'gh() { printf "%s\\n" "$CHANGED_FILE"; };\n' + run], { encoding: "utf8", env: { ...process.env, CHANGED_FILE: record, EXPECTED_FILE_COUNT: count, GITHUB_OUTPUT: output } });
+    assert.equal(result.status, 0, result.stderr); assert.ok(fs.readFileSync(output, "utf8").trim().split("\n").every((line) => line.endsWith("=true")), `uncertain listing: ${record}`);
+  }
+  assert.ok(workflow.on.schedule.length > 0);
+  const runtime = workflow.jobs["runtime-dotnet"], commands = runtime.steps.filter((step) => step.run).map((step) => step.run).join("\n");
+  for (const pattern of [/TestCategory!=Exhaustive/, /TestCategory=Exhaustive/, /--logger "trx;LogFileName=fast.trx"/, /--logger "trx;LogFileName=exhaustive.trx"/]) assert.match(commands, pattern);
+  assert.match(runtime.steps.find((step) => step.name.startsWith("Run exhaustive")).if, /managed_exhaustive/);
+  assert.equal((commands.match(/RunConfiguration.TreatNoTestsAsError=true/g) || []).length, 3);
+  assert.equal(runtime.steps.find((step) => step.with?.name === "managed-runtime-results").with["if-no-files-found"], "error");
 });

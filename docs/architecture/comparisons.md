@@ -28,7 +28,7 @@
 
 ## Performance Benchmarks
 
-The live cross-library comparison matrix is now CI-generated into [Performance Benchmarks](./performance.md) on every push (Standalone IL2CPP Release, the build shape shipped games run); see the [comparison suite source](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons) for the scenario bridges. The [live tables](./performance.md) are the source of truth; the snapshot below is retained only as dated historical context.
+The live cross-library comparison matrix is now CI-generated into [Performance Benchmarks](./performance.md) on nightly or manual runs (Standalone IL2CPP Release, the build shape shipped games run); see the [comparison suite source](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Tests/Runtime/Comparisons) for the scenario bridges. The [live tables](./performance.md) are the source of truth; the snapshot below is retained only as dated historical context.
 
 ### Historical snapshot (early PlayMode Mono run, Windows)
 

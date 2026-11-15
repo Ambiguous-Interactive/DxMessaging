@@ -12,6 +12,14 @@ Developer setup (run these steps in order):
 
 Git hooks are managed solely by the standard [pre-commit framework](https://pre-commit.com); the hook set lives in `.pre-commit-config.yaml`. If you contributed before the tooling simplification and your local clone still points `core.hooksPath` at the removed `scripts/hooks` directory, clear it once with `git config --local --unset core.hooksPath` and re-run `pre-commit install`, or commits will fail looking for deleted hook scripts.
 
+## Fast feedback
+
+Use [the iteration runbook](docs/runbooks/iteration-speed.md) for focused checks, full validation,
+Unity host isolation and the coordinator pilot. Start with `npm run test:unit` for script units;
+`npm test` remains the complete suite. Run the managed behavior and representative-retention
+commands from that runbook in separate processes before delivery. Run affected exhaustive fixtures
+when memory or lifecycle owners change.
+
 ## Before you push
 
 - Script tests: `npm test` (the built-in `node --test` runner; no jest)
@@ -48,7 +56,7 @@ What runs locally (via `pre-commit`, see `.pre-commit-config.yaml`):
 - Banner SVG sync, llms.txt freshness, spelling (cspell), asmdef reference
   validation, and the `node --test` script suite
 
-On pull requests, CI checks markdown links with lychee in two passes. An offline pass validates relative/local links and in-repo `#anchor` fragments against the working tree and blocks the PR on any broken one. A lenient external-liveness pass fails only on genuinely-dead links (404/410 or a DNS/connection failure); bot-detection and throttling responses (401/403/405/406/408/415/429/5xx) are accepted, so a `w3.org` 403 never reds a PR. The fix for a flaky external link is to widen `accept` in `.lychee.toml`, never to add a per-domain `exclude` or swap to a "more stable" URL. Deep external rot is caught by a scheduled advisory scan that opens a tracking issue instead of failing CI.
+On pull requests, CI checks markdown links with lychee in one offline pass. It validates local links and in-repo `#anchor` fragments against the working tree and blocks the PR on broken ones. External URLs are checked by the scheduled advisory scan, which opens a tracking issue instead of failing CI. For flaky external responses, widen `accept` in `.lychee.toml`; do not add per-domain `exclude` entries or substitute a different URL.
 
 Handy commands:
 

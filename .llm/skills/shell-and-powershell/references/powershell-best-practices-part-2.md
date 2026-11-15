@@ -189,7 +189,7 @@ PowerShell scripts are covered by the node --test suite (`npm test`), which spaw
 
 - [Cross-Platform Compatibility](./cross-platform-compatibility.md) - Case sensitivity patterns
 - [Git Workflow Robustness](../../github-workflow-consistency/references/git-workflow-robustness.md) - Git command patterns
-- [Script and Automation Conventions](../../../context.md#script-and-automation-conventions) - Main context file patterns
+- [Script and Automation Conventions](../../agent-task-workflow/references/repository-conventions.md#script-and-automation-conventions) - Main context file patterns
 
 ## Changelog
 

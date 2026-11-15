@@ -13,10 +13,10 @@ $root = Join-Path $workspace 'dxm-u/t'
 
 function Assert-PlainCacheDirectory {
     param([string]$Path)
-    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+    if (-not [System.IO.Directory]::Exists($Path)) {
         throw "The managed test cache directory is missing: $Path"
     }
-    if (((Get-Item -LiteralPath $Path -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+    if (([System.IO.File]::GetAttributes($Path) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
         throw "Refusing a redirected cache directory: $Path"
     }
 }
@@ -24,7 +24,7 @@ function Assert-PlainCacheDirectory {
 Assert-PlainCacheDirectory $workspace
 Assert-PlainCacheDirectory (Join-Path $workspace 'dxm-u')
 Assert-PlainCacheDirectory $root
-$projects = @(Get-ChildItem -LiteralPath $root -Directory)
+$projects = @([System.IO.DirectoryInfo]::new($root).EnumerateDirectories())
 if (-not [string]::IsNullOrEmpty($UnityVersion)) {
     $projects = @($projects | Where-Object { $_.Name.StartsWith("$UnityVersion-", [System.StringComparison]::Ordinal) })
 }
@@ -42,8 +42,8 @@ foreach ($project in @($projects | Sort-Object Name)) {
     Assert-PlainCacheDirectory $project.FullName
     $marker = Join-Path $project.FullName '.dxmessaging-ci-project'
     $current = $project.Name.EndsWith("-$RetainedSourceSetKey", [System.StringComparison]::Ordinal)
-    if (-not (Test-Path -LiteralPath $marker -PathType Leaf) -or
-        (Get-Content -LiteralPath $marker -Raw).Trim() -cne 'com.wallstop-studios.dxmessaging unity ci ephemeral project') {
+    if (-not [System.IO.File]::Exists($marker) -or
+        [System.IO.File]::ReadAllText($marker).Trim() -cne 'com.wallstop-studios.dxmessaging unity ci ephemeral project') {
         if ($current) { throw 'The retained source-set project is not owned; inventory is incomplete.' }
         Write-Host "Skipping unowned project: $($project.Name)"
         continue
@@ -63,11 +63,11 @@ foreach ($project in @($projects | Sort-Object Name)) {
     $pending = [System.Collections.Generic.Stack[string]]::new()
     $pending.Push($project.FullName)
     while ($pending.Count -ne 0) {
-        foreach ($entry in @(Get-ChildItem -LiteralPath $pending.Pop() -Force)) {
+        foreach ($entry in @([System.IO.DirectoryInfo]::new($pending.Pop()).EnumerateFileSystemInfos())) {
             if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
                 throw "Refusing redirected cache contents: $($entry.FullName)"
             }
-            if ($entry.PSIsContainer) {
+            if (($entry.Attributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
                 $pending.Push($entry.FullName)
                 continue
             }

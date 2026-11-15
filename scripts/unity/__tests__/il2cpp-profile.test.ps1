@@ -76,6 +76,13 @@ try {
     if (@($parseErrors).Count -gt 0) {
         throw "run-ci-tests.ps1 has parse errors: $($parseErrors.Message -join '; ')"
     }
+    # Index top-level production functions once instead of traversing the whole AST per name.
+    $functionDefinitions = @{}
+    foreach ($definition in $runnerAst.EndBlock.Statements) {
+        if ($definition -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+            $functionDefinitions[$definition.Name] = $definition
+        }
+    }
     foreach ($name in @(
         'Get-ComparisonSourceEvidence',
         'Get-StandalonePlayerManifest',
@@ -91,14 +98,7 @@ try {
         'New-ShippingFidelityBuilderSource',
         'New-StandaloneTestCallbackSource'
     )) {
-        $definition = $runnerAst.FindAll(
-            {
-                param($node)
-                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-                    $node.Name -eq $name
-            },
-            $true
-        ) | Select-Object -First 1
+        $definition = $functionDefinitions[$name]
         if (-not $definition) {
             throw "Function '$name' was not found in run-ci-tests.ps1."
         }
@@ -827,11 +827,12 @@ public static class DxmRuntimeSdkMetadataFixture {
     Assert-That 'the performance standalone leg passes the canonical profile' (
         $workflowText.Contains("CanonicalProfilePath = '.github/perf/canonical-il2cpp-profile.v1.json'")
     )
-    Assert-That 'canonical profile changes invalidate historical benchmark comparison' (
-        $workflowText.Contains("|\.github/perf/canonical-il2cpp-profile\.v1\.json`$'")
+    Assert-That 'performance validation is explicitly dispatched' (
+        $workflowText -notmatch '(?m)^  (pull_request|push):' -and
+        $workflowText -match '(?m)^  workflow_dispatch:'
     )
-    Assert-That 'profile validator changes invalidate historical benchmark comparison' (
-        $workflowText.Contains('|validate-il2cpp-profile)')
+    Assert-That 'the dispatched producer runs the profile-validating harness' (
+        $workflowText.Contains('./scripts/unity/run-ci-tests.ps1')
     )
 
     & $validatorPath -ProfilePath $profilePath -ProfileOnly -ExpectedSha256 $profileSha256

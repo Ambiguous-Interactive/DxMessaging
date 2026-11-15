@@ -23,6 +23,13 @@ protection treats a skipped required check as passing. So the requirement is not
 absent". A workflow that path-filters its whole trigger is absent on
 non-matching pull requests and cannot be required as written.
 
+## Validation lanes
+
+[The iteration runbook](iteration-speed.md) describes fast PR, nightly and exact-source release
+qualification. The three required check names below remain unchanged. Generator, documentation
+compiler and runtime tests run as separate jobs; ordinary runtime cases and representative retention
+use separate processes, with exhaustive retention selected by owning changes or nightly runs.
+
 ## Current state
 
 Auto-merge is enabled. The aggregate CI gate is **applied and live
@@ -32,7 +39,7 @@ Auto-merge is enabled. The aggregate CI gate is **applied and live
 two aggregates before their 2026-07-30 switch. PR #382 verified the devcontainer
 aggregate with both architecture jobs relevant and successful; PR #385 verified
 the unrelated-change path with both architecture jobs skipped and the aggregate
-successful. The 14 individual static contexts remain dependencies of
+successful. The individual static contexts remain dependencies of
 `CI Success`, but the ruleset does not require their literal names.
 
 The `bot-auto-commit` App (id `3977200`) stays in `bypass_actors` (mode
@@ -66,7 +73,9 @@ every context present without allowing skipped dependencies in `CI Success`.
 
 - `Lint repository Markdown`
 - `Check C# formatting`
-- `dotnet tests`
+- `dotnet tests` (generators and attribute packaging)
+- `Documentation C# examples`
+- `Runtime .NET regressions`
 - `Check JSON/.asmdef formatting`
 - `Check spelling`
 - `Validate banner SVG`
@@ -112,10 +121,10 @@ The allowlist includes documentation, root Markdown, agent context, `.devcontain
 issue templates, `scripts/llm/`, its harness test, and `scripts/wiki/`.
 Runtime, editor, generator, Unity harness, package configuration, workflow, and
 unknown paths still run Unity. Static checks continue to validate their relevant
-inputs. A tooling-only PR avoids four editor jobs and two benchmark jobs;
-this is a job-count saving, not a measured wall-clock speedup. Default-branch
-pushes and manual runs retain full validation, except for the existing generated
-performance-file push loop break.
+inputs. A tooling-only PR avoids the newest-version Unity job; runtime PRs retain it.
+Default-branch pushes retain the applicable static checks; they do not supply Unity compatibility or
+performance qualification. Nightly and manual dispatches supply those lanes. Release preparation
+requires successful full compatibility and performance evidence for the exact release revision.
 
 Keep the trigger filters and the companion classifier in sync. GitHub limits
 [trigger diff evaluation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons)
@@ -209,10 +218,8 @@ Lint docs links
 
 These never gate a pull request:
 
-- `perf-numbers.yml`. Eligible same-repository pull requests run it and receive
-  a current-evidence comment, but fork and Dependabot pull requests skip its licensed jobs,
-  and generated performance-doc-only pull requests do not trigger it. Requiring
-  its aggregate would leave those pull requests waiting for an absent check.
+- `perf-numbers.yml`. It runs only by nightly or manual dispatch. It supplies release evidence,
+  not a PR status. Requiring its aggregate would leave ordinary PRs waiting for an absent check.
 - Auto-fix workflows `csharpier-autofix.yml` and `prettier-autofix.yml`. Their
   visible `Format and propose changes` check is path-filtered (`**/*.cs`;
   `**/*.md` etc.), so it is absent on non-matching pull requests -- the same
