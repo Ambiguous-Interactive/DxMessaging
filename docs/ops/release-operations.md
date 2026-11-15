@@ -39,8 +39,10 @@ Canonical public identifiers:
   cancellation. Inspect recent Actions runs for the actual scheduling and
   recovery outcome. To target one queued run, dispatch
   `.github/workflows/unstick-run.yml` with its run ID. That workflow uses its
-  own minimum-age and exclusion checks. Read its summary for redispatch or
-  manual rerun instructions.
+  own minimum-age and exclusion checks. For a manually dispatched run, select
+  **Re-run all jobs** on the original run to retain its input choices. A fresh
+  REST dispatch cannot recover those inputs; automatic redispatch is limited to
+  push and schedule recovery. Read the workflow summary for the next step.
 
 Tracked pages:
 
