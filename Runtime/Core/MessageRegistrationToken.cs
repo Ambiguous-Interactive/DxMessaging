@@ -1625,6 +1625,7 @@ namespace DxMessaging.Core
         /// registrations use the current override. Nested recovery preserves the owning replay.
         /// A registration accepted during old-bus cleanup remains on its accepting bus until a
         /// later cleanup pass. Retarget replay does not activate that still-live registration again.
+        /// Calling Disable or UnregisterAll during rollback cleanup prevents restoration of staging.
         /// Calling Disable or UnregisterAll during old-bus cleanup cancels this call's pending activation.
         /// Successful cleanup keeps the selected destination for a later explicit Enable. Failed cleanup
         /// keeps the previous bus and failed obligations retryable without restoring canceled registrations.
@@ -1722,18 +1723,20 @@ namespace DxMessaging.Core
                         */
                         QueueRegistrationsWithoutRetryableDeregistrationsInOrder();
                     }
-                    bool cleanupCompletedDuringLogging = false;
+                    bool activationCanceledDuringRollback = false;
                     try
                     {
                         _enabled =
-                            InvokeRegistrationQueueWithRollback(out cleanupCompletedDuringLogging)
+                            InvokeRegistrationQueueWithRollback(
+                                out activationCanceledDuringRollback
+                            )
                             || 0 < _deregistrationCount;
                     }
                     catch (Exception exception)
                     {
                         RestoreRegistrationsAfterRetargetFailure(
                             previousMessageBus,
-                            cleanupCompletedDuringLogging,
+                            activationCanceledDuringRollback,
                             stickyCancellationVersion,
                             replayWasInProgress ? activeRetargetHandles : null
                         );
@@ -2073,14 +2076,14 @@ namespace DxMessaging.Core
 
         private void RestoreRegistrationsAfterRetargetFailure(
             IMessageBus previousMessageBus,
-            bool cleanupCompletedDuringLogging,
+            bool activationCanceledDuringRollback,
             long stickyCancellationVersion,
             List<MessageRegistrationHandle> activeRetargetHandles
         )
         {
             _messageBus = previousMessageBus;
             if (
-                cleanupCompletedDuringLogging
+                activationCanceledDuringRollback
                 || _registrationCount == 0
                 || stickyCancellationVersion != (_stickyReplay?.CancellationVersion ?? 0)
             )
@@ -2408,9 +2411,9 @@ namespace DxMessaging.Core
         }
 
         /// <summary>Replays staged registrations with rollback and diagnostic cleanup tracking.</summary>
-        private bool InvokeRegistrationQueueWithRollback(out bool cleanupCompletedDuringLogging)
+        private bool InvokeRegistrationQueueWithRollback(out bool activationCanceledDuringRollback)
         {
-            cleanupCompletedDuringLogging = false;
+            activationCanceledDuringRollback = false;
             HashSet<TeardownIdentity> rollbackBaseline = _rollbackBaseline
                 ?? new HashSet<TeardownIdentity>();
             _rollbackBaseline = null;
@@ -2425,7 +2428,7 @@ namespace DxMessaging.Core
                 {
                     RollBackDeregistrationsAfterRegistrationFailure(
                         rollbackBaseline,
-                        out cleanupCompletedDuringLogging
+                        out activationCanceledDuringRollback
                     );
                     _enabled = 0 < _deregistrationCount;
                     ExceptionDispatchInfo.Capture(exception).Throw();
@@ -2441,15 +2444,16 @@ namespace DxMessaging.Core
 
         private void RollBackDeregistrationsAfterRegistrationFailure(
             HashSet<TeardownIdentity> rollbackBaseline,
-            out bool cleanupCompletedDuringLogging
+            out bool activationCanceledDuringRollback
         )
         {
-            cleanupCompletedDuringLogging = false;
+            activationCanceledDuringRollback = false;
             if (_deregistrationCount == 0)
             {
                 return;
             }
 
+            long activationCancellationVersion = _activationCancellationVersion;
             Exception rollbackException = InvokeDeregistrationQueue(rollbackBaseline);
             /*
                 Diagnostic formatting and receivers can throw or reenter this token.
@@ -2471,11 +2475,14 @@ namespace DxMessaging.Core
             finally
             {
                 /*
-                    A logger can finish pending cleanup and then throw. Preserve that completed
-                    cleanup in outer retarget recovery without suppressing the logger exception.
-                    Natural rollback completion occurred before logging and still restores staging.
+                    Lifecycle cancellation during rollback belongs to this cleanup window,
+                    not to an earlier registration callback. A logger can also finish pending
+                    cleanup and then throw. Preserve either cancellation in retarget recovery;
+                    natural rollback completion without cancellation still restores staging.
                 */
-                cleanupCompletedDuringLogging = pendingBeforeLogging && _deregistrationCount == 0;
+                activationCanceledDuringRollback =
+                    activationCancellationVersion != _activationCancellationVersion
+                    || (pendingBeforeLogging && _deregistrationCount == 0);
             }
         }
 

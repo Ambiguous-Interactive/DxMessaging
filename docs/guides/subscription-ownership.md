@@ -197,6 +197,10 @@ If old-bus cleanup throws, the token keeps the previous bus for later activation
 cleanup for retry. Recovery does not reactivate registrations canceled by the callback.
 `Enabled` stays true while any cleanup obligation remains; retry cleanup before enabling again.
 
+If new-bus activation fails, `Disable()` or `UnregisterAll()` during rollback cleanup also
+prevents recovery from reactivating staging. Natural rollback completion restores the previous
+bus when rollback cleanup callbacks do not cancel activation.
+
 ## Pass state to a static callback
 
 Explicit-state overloads cover untargeted, targeted, source-bound broadcast, all-target, and all-source handlers and post-processors.
