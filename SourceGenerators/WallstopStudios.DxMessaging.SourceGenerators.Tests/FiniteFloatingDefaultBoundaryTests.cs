@@ -104,6 +104,7 @@ public static class Consumer
     }
 
     /// <summary>Declares finite boundary representations independently of emitted source.</summary>
+    // SYNC: GeneratedFloatingDefaultTests.FiniteDefaultCases consumes the same fixed boundary roster.
     private static IEnumerable<TestCaseData> Cases()
     {
         (string Label, string Type, string Expression, string Bits)[] values =
