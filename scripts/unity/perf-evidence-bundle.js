@@ -15,7 +15,7 @@ const {
   reduceDifferentialReplayFailure,
   reduceEditorSettingsCache,
   reduceShippingFidelityMatrix,
-  reduceOpenLoopEditorCapture,
+  reduceCapture,
   reducePairedThroughputScreen,
   reduceSubUnsubObservations
 } = require("./perf-evidence-reducers.js");
@@ -34,11 +34,9 @@ const REDUCERS = Object.freeze(
       ["allocation-subunsub-observations", reduceSubUnsubObservations],
       ["paired-throughput-screen", reducePairedThroughputScreen],
       ["shipping-fidelity-matrix", reduceShippingFidelityMatrix],
-      ["open-loop-editor-capture", reduceOpenLoopEditorCapture],
-      [
-        "editor-latency-clock-capture",
-        (contents, options) => reduceOpenLoopEditorCapture(contents, options, true)
-      ]
+      ["open-loop-editor-capture", (contents, options) => reduceCapture(contents, options)],
+      ["editor-latency-clock-capture", (contents, options) => reduceCapture(contents, options, "editor-latency-clock-capture")],
+      ["managed-clock-fault-identity", (contents, options) => reduceCapture(contents, options, "managed-clock-fault-identity")]
     ].map(([artifactClass, reduce]) => [`${artifactClass}-v1`, { artifactClass, reduce }])
   )
 );
@@ -457,10 +455,7 @@ function replayBundle(manifestPath, root = path.dirname(manifestPath)) {
   const replayedJson = JSON.stringify(replayed);
   const publishedJson = JSON.stringify(manifest.normalized);
   if (replayedJson !== publishedJson) {
-    fail(
-      `Replaying ${manifest.reducer} over the sealed bytes produced a different normalized ` +
-        `result.\n  published: ${publishedJson}\n  replayed:  ${replayedJson}`
-    );
+    fail(`Replaying ${manifest.reducer} over the sealed bytes produced a different normalized result.`);
   }
   return { manifest, normalized: replayed };
 }
