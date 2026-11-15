@@ -209,5 +209,5 @@ The approach uses native isolation, short context entry points and optional para
 [OpenAI's harness-engineering account](https://openai.com/index/harness-engineering/), and
 [Anthropic's coordination findings](https://www.anthropic.com/research/multi-agent-research-system).
 Unity's [assembly boundaries](https://docs.unity.com/en-us/engine/6000.0/manual/programming-environment/script-compilation/assembly-definition-files)
-and [configurable Play Mode](https://docs.unity.com/en-us/engine/6000.0/manual/scripting/compilation-and-code-reload/code-reloading-editor/configurable-enter-play-mode)
+and [configurable Play Mode](https://docs.unity.com/en-us/engine/6000.0/manual/programming-environment/code-reload-serialization/code-reloading-editor/configurable-enter-play-mode)
 keep engine iteration focused; static-reset tests are required when reload is disabled.
