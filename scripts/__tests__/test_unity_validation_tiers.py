@@ -57,6 +57,31 @@ class UnityValidationTiersTests(unittest.TestCase):
         self.assertIn("report-perf-deltas", self.perf["jobs"])
 
     @unittest.skipIf(os.name == "nt", "bash classifier is exercised on Linux and macOS")
+    def test_large_changed_path_lists_keep_relevant_managed_and_script_lanes(self):
+        document = workflow("ci.yml")
+        script = next(step["run"] for step in document["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+        for expression, value in (("github.event_name", "pull_request"), ("github.repository", "example/repo"), ("github.event.pull_request.number", "1")):
+            script = script.replace("${{ " + expression + " }}", value)
+        scripts = [f"scripts/{index:04d}-{'x' * 160}.js" for index in range(2000)]
+        cases = [
+            ("documentation last", scripts + ["docs/guides/testing.md"], "true", "true"),
+            ("documentation first", ["docs/guides/testing.md"] + scripts, "true", "true"),
+            ("publication only", ["docs/architecture/performance.md", "docs/architecture/perf-baseline.csv", "docs/architecture/perf-baseline-profile.json"], "false", "true"),
+        ]
+        for name, paths, docs_expected, scripts_expected in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory(prefix="dxm-large-pr-filter-") as tmp:
+                root = Path(tmp)
+                records = root / "records.jsonl"
+                records.write_text("".join(json.dumps([path, None]) + "\n" for path in paths))
+                output = root / "output"
+                env = dict(os.environ, CHANGED_RECORDS=str(records), EXPECTED_FILE_COUNT=str(len(paths)), GITHUB_OUTPUT=str(output))
+                result = subprocess.run(["bash", "-c", 'gh() { cat "$CHANGED_RECORDS"; };\n' + script], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                outputs = dict(line.split("=", 1) for line in output.read_text().splitlines())
+                self.assertEqual(outputs["docs_dotnet"], docs_expected)
+                self.assertEqual(outputs["scripts"], scripts_expected)
+
+    @unittest.skipIf(os.name == "nt", "bash classifier is exercised on Linux and macOS")
     def test_classifier_handles_renames_and_fails_closed(self):
         script = next(step["run"] for step in self.docs["jobs"]["classify"]["steps"] if step.get("id") == "classify")
         cases = [
@@ -97,7 +122,8 @@ class NightlyDispatcherTests(unittest.TestCase):
         cls.script = cls.document["jobs"]["dispatch"]["steps"][0]["run"]
 
     def test_scheduler_has_no_unity_credentials(self):
-        self.assertEqual(self.document["permissions"], {"actions": "write", "contents": "read"})
+        self.assertEqual(self.document["permissions"], {"contents": "read"})
+        self.assertEqual(self.document["jobs"]["dispatch"]["permissions"], {"actions": "write", "contents": "read"})
         self.assertEqual(self.document["on"]["schedule"], [{"cron": "0 1 * * *"}, {"cron": "0 3 * * *"}])
         self.assertNotIn("UNITY_SERIAL", json.dumps(self.document))
         self.assertNotIn("BUILD_LOCK_APP", json.dumps(self.document))
@@ -247,6 +273,8 @@ class ReleaseQualificationTests(unittest.TestCase):
         needs = self.document["jobs"]["publish"]["needs"]
         self.assertIn("release-qualification", needs)
         self.assertIn("managed-release-tests", needs)
+        receipt = next(step for step in self.document["jobs"]["release-qualification"]["steps"] if step.get("name") == "Upload release qualification receipt")
+        self.assertTrue(receipt["with"].get("overwrite"))
         managed = self.document["jobs"]["managed-release-tests"]["steps"][-1]["run"]
         self.assertIn("dotnet test .net-tests/DxMessaging.Net.Tests.csproj", managed)
         self.assertNotIn("--filter", managed)

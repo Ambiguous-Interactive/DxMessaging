@@ -32,7 +32,8 @@
   verification is complete. Do not push after every commit or run unrelated audits per edit.
 - Use the GitHub connector/extension first, local git second, and `gh` last. Follow
   [GitHub access](./skills/github-access/SKILL.md). Never print credentials.
-- Human review and the broader release criteria in `GOAL.md` remain required.
+- Human review remains required. Where present, `GOAL.md` adds maintainer-local release criteria;
+  it is git-ignored and absent from fresh checkouts.
 
 ## Tooling
 
@@ -66,7 +67,8 @@
   project. Only the integration owner changes the shared host or launches tests.
 - Preserve clean scenes, current loaded assemblies, run GUID and raw-result/framework-cleanup gates.
   During active tests poll result sidecars only. Never restart solely because observation times out.
-- Result paths resolve against the host project. Use
+- Result paths resolve against the host project. Prepare the shared-checkout package link in
+  [the host runbook](../docs/runbooks/iteration-speed.md#dedicated-unity-package-host) before using
   `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<run>.json`.
 - Ordinary PR validation uses the newest supported Unity editor in EditMode, PlayMode and IL2CPP.
   Full compatibility, exhaustive managed matrices and performance use nightly/manual lanes;

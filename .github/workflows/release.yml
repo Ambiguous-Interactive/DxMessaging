@@ -161,6 +161,7 @@ jobs:
           name: release-qualification
           path: .artifacts/release/qualification.json
           if-no-files-found: error
+          overwrite: true
 
   managed-release-tests:
     name: Complete managed release tests

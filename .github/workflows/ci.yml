@@ -137,7 +137,7 @@ jobs:
           set_output() {
             name="$1"
             pattern="$2"
-            if printf '%s\n' "$files" | grep -qE "$pattern"; then
+            if printf '%s\n' "$files" | grep -E "$pattern" > /dev/null; then
               echo "$name=true" >> "$GITHUB_OUTPUT"
             else
               echo "$name=false" >> "$GITHUB_OUTPUT"
@@ -164,7 +164,7 @@ jobs:
           set_output docs_dotnet \
             "(^\.docs-tests/|^Runtime/|^Editor/|^SourceGenerators/|^docs/|^README\.md$|^CHANGELOG\.md$|^Samples~/|^scripts/unity/.*\.cs\.txt$|^scripts/mcp/DxMcpTestRunner\.cs\.txt$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|$ci_workflow)"
           # Generated benchmark publications contain no compiler snippets or source changes.
-          if ! printf '%s\n' "$files" | grep -Ev '^docs/architecture/(performance\.md|perf-baseline\.csv|perf-baseline-profile\.json)$' | grep -q .; then
+          if ! printf '%s\n' "$files" | grep -Ev '^docs/architecture/(performance\.md|perf-baseline\.csv|perf-baseline-profile\.json)$' | grep . > /dev/null; then
             echo "docs_dotnet=false" >> "$GITHUB_OUTPUT"
           fi
           set_output managed_exhaustive \

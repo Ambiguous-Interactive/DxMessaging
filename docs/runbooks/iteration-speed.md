@@ -148,6 +148,30 @@ The generated correctness manifest contains only the test framework and the pack
 hosts additionally compile pinned DI samples; comparison packages require `-IncludeComparisons`.
 The existing committed comparison host remains available for parity checks.
 
+Before opening the generated host, link its physical package directory to the shared checkout.
+A manifest `file:` dependency alone does not create this filesystem entry. From the host checkout,
+using PowerShell 7:
+
+```powershell
+$checkout = (Get-Location).Path
+$packageLink = Join-Path $checkout '.artifacts/u/local-playmode/Packages/com.wallstop-studios.dxmessaging'
+if (Test-Path -LiteralPath $packageLink) {
+    throw 'Inspect the existing package entry before proceeding; do not replace it blindly.'
+}
+$linkType = if ($IsWindows) { 'Junction' } else { 'SymbolicLink' }
+New-Item -ItemType $linkType -Path $packageLink -Target $checkout | Out-Null
+```
+
+This preserves the manifest while making the embedded package entry resolve to the same checkout.
+Adjust the project directory if a different `-ProjectPath` was used. Do not run this setup during
+an editor test or against an existing foreign package directory.
+
+With that mapping, `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<name>.json`
+resolves to the checkout's `.artifacts/unity-mcp/<name>.json`, which the container can poll. Before
+launching tests, write a unique probe file through that host path and confirm the container reads
+the same bytes at the checkout path, then remove the probe. Do not start a run until both views
+agree. An unresolved result path can otherwise create an unrelated directory inside the host.
+
 On the host, open the generated project with its matching installed editor. Connect it through the
 [existing MCP setup](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/scripts/mcp/README.md#prepare-the-host), using a separate port, token and
 project path from the game project's connection. Pipeline setup is an explicit host operation;

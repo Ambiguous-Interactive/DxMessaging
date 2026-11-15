@@ -121,10 +121,10 @@ The allowlist includes documentation, root Markdown, agent context, `.devcontain
 issue templates, `scripts/llm/`, its harness test, and `scripts/wiki/`.
 Runtime, editor, generator, Unity harness, package configuration, workflow, and
 unknown paths still run Unity. Static checks continue to validate their relevant
-inputs. A tooling-only PR avoids four editor jobs and two benchmark jobs;
-this is a job-count saving, not a measured wall-clock speedup. Default-branch
-pushes and manual runs retain full validation, except for the existing generated
-performance-file push loop break.
+inputs. A tooling-only PR avoids the newest-version Unity job; runtime PRs retain it.
+Default-branch pushes retain the applicable static checks; they do not supply Unity compatibility or
+performance qualification. Nightly and manual dispatches supply those lanes. Release preparation
+requires successful full compatibility and performance evidence for the exact release revision.
 
 Keep the trigger filters and the companion classifier in sync. GitHub limits
 [trigger diff evaluation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons)

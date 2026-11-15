@@ -14,7 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  actions: write
   contents: read
 
 jobs:
@@ -22,6 +21,10 @@ jobs:
     name: Dispatch current nightly validation
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Only this hosted job needs actions: write to dispatch the existing workflows.
+    permissions:
+      actions: write
+      contents: read
     steps:
       - name: Dispatch missing current-revision validation
         shell: bash

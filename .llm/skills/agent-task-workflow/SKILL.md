@@ -48,4 +48,5 @@ One successful coordinated session is feasibility evidence, not that evaluation.
 
 Verify selected versus executed cases and preserve the source revision for each result. Report
 changes, why they help, measured results and remaining limitations. Publish one prepared PR only
-after practical local checks. Human acceptance and release-readiness remain separate GOAL.md gates.
+after practical local checks. Human acceptance and release-readiness remain separate gates.
+`GOAL.md`, when present, adds maintainer-local criteria; it is git-ignored and absent from fresh checkouts.

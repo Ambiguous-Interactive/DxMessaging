@@ -169,17 +169,16 @@ App just needs the **Pull requests: Read and write** permission from Step 1.
 
 ## How to verify it worked
 
-1. Merge a small pull request that meaningfully changes dispatch throughput (for
-   example a change under `Runtime/Core/MessageBus/`). The merge commit touches
-   non-ignored paths, so it triggers the workflow; the doc only changes when the
-   measured numbers move beyond the render tolerance.
-1. Watch the `push` run of the Performance Numbers workflow on the default
-   branch.
+1. Dispatch **Performance Numbers** from the default branch using
+   Actions -> Performance Numbers -> Run workflow. Merging a PR does not start
+   this workflow. The doc only changes when measured numbers move beyond the
+   render tolerance.
+1. Watch that `workflow_dispatch` run on the default branch.
 1. If the numbers moved, confirm that a commit with subject
    `docs(perf): auto-update dispatch throughput numbers` lands on the default
    branch.
 1. Confirm that doc-only commit does **not** start a follow-up Performance
-   Numbers run (this proves the `paths-ignore` loop break works).
+   Numbers run: the workflow has no pull-request or push triggers.
 1. Confirm the run did **not** warn about a fallback pull request -- a
    `GH006`-triggered fallback means the App is not yet allowed to bypass the
    protection (Step 3); if the branch requires status checks, see the

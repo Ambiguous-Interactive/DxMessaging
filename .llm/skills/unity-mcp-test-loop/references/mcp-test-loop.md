@@ -103,8 +103,11 @@ testNames, categoryNames, resultPath)` via Pipeline `eval` or legacy `Unity_RunC
      working directory), NOT the embedded package. To land in the container-visible,
      gitignored `.artifacts/unity-mcp/`, prefix it with the package path:
      `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<name>.json`. A
-     bare `.artifacts/unity-mcp/<name>.json` writes to the host project root instead,
-     where the container cannot see it.
+     bare `.artifacts/unity-mcp/<name>.json` writes to the host project's artifact directory
+     instead of the checkout's designated result directory.
+     This prefix requires the physical package entry to map to the shared checkout. For a
+     generated `file:` host, first prepare the link and probe from the
+     [host runbook](../../../../docs/runbooks/iteration-speed.md#dedicated-unity-package-host).
    - `testNames` accepts a fixture's full type name (for example
      `DxMessaging.Tests.Runtime.Core.TestAttributeContractTests`) to run just that
      fixture -- handy for a fast red-green loop on a single contract test.
