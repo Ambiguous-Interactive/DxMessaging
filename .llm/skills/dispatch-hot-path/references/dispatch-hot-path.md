@@ -39,18 +39,22 @@ The flat-dispatch redesign replaced the older per-priority `*DispatchLink`
 virtual-hop chain with resolved `FlatDispatchEntry` arrays; steady-state
 dispatch is now a direct delegate call per entry (see `FlatDispatch.cs`).
 
-Any PR touching these files has its dispatch-throughput numbers regenerated
-automatically by the `perf-numbers.yml` workflow. It re-runs the single
-published leg at the latest Unity version on every PR change -- a Standalone
-IL2CPP Release player, the headline scope (`Debug.isDebugBuild` false) -- and
-posts the refreshed numbers as a non-blocking sticky PR comment. The comment's
-provenance line carries privacy-safe machine specs (CPU, cores, clock, RAM, GPU,
+Dispatch-throughput measurements run through `perf-numbers.yml` on manual or
+nightly dispatch. Ordinary PRs and merges do not launch these benchmarks or
+receive a sticky performance comment. Link separately measured exact-source
+evidence for performance claims; see the
+[CI lanes](../../../../docs/runbooks/iteration-speed.md#ci-lanes).
+The published scope remains a Standalone IL2CPP Release player at the latest
+supported Unity version (`Debug.isDebugBuild` false).
+
+The workflow retains privacy-safe machine specs (CPU, cores, clock, RAM, GPU,
 OS) gathered by `scripts/unity/collect-machine-specs.ps1`, never a hostname or
-runner name. After merge, the push run commits the refreshed
-`docs/architecture/performance.md` table AND the regenerated master baseline
-`docs/architecture/perf-baseline.csv` directly to the default branch via a
-GitHub App token push when the App is provisioned and the measured commit is
-still the branch tip (no PR); see the
+runner name. Compatible historical comparisons appear in the job summary and
+the `perf-historical-delta` artifact. A default-branch dispatch may publish the
+refreshed `docs/architecture/performance.md` table and
+`docs/architecture/perf-baseline.csv` through the configured GitHub App only
+while the measured commit remains current. Other refs retain artifacts without
+publishing default-branch numbers. See the
 [performance numbers auto-commit runbook](../../../../docs/runbooks/perf-numbers-auto-commit.md)
 for the App + bypass prerequisite. There is no manual PR-body number requirement.
 
@@ -158,8 +162,8 @@ load-bearing.
 The budget is interpreted in per-emit nanoseconds (convert throughput with
 `1e9 / emits_per_second`). The live numbers live in the rendered tables in
 `docs/architecture/performance.md` and the committed master baseline
-`docs/architecture/perf-baseline.csv`; rely on the workflow output and the PR
-delta comment for before/after numbers rather than a hand-captured table.
+`docs/architecture/perf-baseline.csv`; use the workflow artifacts and historical
+diagnostics in the job summary, retaining their source revision and execution profile.
 
 ### Regression analysis: the dispatch number moved, the code did not
 
@@ -187,19 +191,17 @@ mirrors that policy for the comparison bridges. The
 
 - `Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs` -- the harness.
 - `.github/workflows/perf-numbers.yml` plus
-  `scripts/unity/render-perf-deltas.js` -- the PERMANENT regression gate. The
-  workflow runs the single published Standalone IL2CPP Release leg at the
-  latest Unity version on every pull_request change, posts the regenerated
-  numbers as a non-blocking sticky PR comment, then runs
-  `render-perf-deltas.js --scope Standalone` against the committed master
-  baseline. The script emits `changed=true|false` and `regressed=true|false`;
-  the PR job posts a DxMessaging-only delta comment when either signal is true,
-  then fails after the comment when a gated Standalone scenario dropped
-  throughput beyond the threshold (default 0.33) or increased allocation. A missing or header-only baseline prints both signals false,
-  skipping the comment/gate gracefully on first rollout. After the PR merges, the
-  push run commits `performance.md` AND `perf-baseline.csv` to the default branch
-  via GitHub App, skipping with a warning if App credentials are missing or
-  the branch advanced past the measured commit.
+  `scripts/unity/render-perf-deltas.js` -- compare compatible Standalone IL2CPP
+  Release observations at the latest supported Unity version after manual or
+  nightly dispatch. The workflow retains historical diagnostics in its job
+  summary and the `perf-historical-delta` artifact. For a compatible baseline,
+  the script emits `changed=true|false` and `regressed=true|false`; the workflow
+  fails when a gated scenario drops throughput beyond the existing diagnostic
+  threshold (default 0.33) or increases comparable measured allocation counts.
+  Ordinary PR updates and merges do not launch benchmarks, receive this gate
+  or refresh the published files. Publishing `performance.md` and
+  `perf-baseline.csv` requires a default-branch dispatch with the configured
+  GitHub App and a measured commit that remains current.
 - `Tests/Editor/Benchmarks/PerfRegressionSmokeTests.cs` -- a LOCAL tool only,
   `[Explicit, Category("PerfGate")]`, opt-in via `DX_PERF_GATE=1`. It calls
   `DispatchThroughputBenchmarks.RunScenario` (a single continuous

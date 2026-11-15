@@ -196,6 +196,91 @@ namespace DxMessaging.Tests.Runtime.Core
             state.VerifyLaterRecovery();
         }
 
+        /// <summary>Preserves cancellation requested inside new-bus rollback cleanup.</summary>
+        /// <remarks>2026-11-15: Registration callbacks and rollback cleanup own different cancellation windows.</remarks>
+        [Test]
+        public void RetargetRecoveryPreservesRollbackCleanupCancellation(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(0, 1, 2)] int family,
+            [Values(false, true)] bool debug,
+            [Values(false, true)] bool after,
+            [Values(false, true)] bool rejected,
+            [Values(CleanupAction.None, CleanupAction.Disable, CleanupAction.Clear)]
+                CleanupAction cleanup
+        )
+        {
+            using CaseState state = new CaseState(
+                scenario,
+                family,
+                false,
+                CleanupAction.None,
+                false,
+                false
+            );
+            state.Prepare(failedRollback: rejected, debug);
+            int callbacks = 0;
+            state.NewBus.AfterDeregistration = after;
+            state.NewBus.OnDeregistration = () =>
+            {
+                ++callbacks;
+                if (cleanup == CleanupAction.Disable)
+                {
+                    state.Token.Disable();
+                }
+                else if (cleanup == CleanupAction.Clear)
+                {
+                    state.Token.UnregisterAll();
+                }
+            };
+            Exception failure = Assert.Catch<Exception>(state.Retarget);
+            state.StopLogging();
+            string label = state.Label + $", after={after},rejected={rejected},cleanup={cleanup}";
+            Assert.That(failure, Is.SameAs(state.NewBus.RegistrationFailure), label);
+            Assert.That(callbacks, Is.EqualTo(1), label);
+            Assert.That(
+                state.Token.Enabled,
+                Is.EqualTo(rejected || cleanup == CleanupAction.None),
+                label
+            );
+            Assert.That(
+                state.Token._metadata.Count,
+                Is.EqualTo(cleanup == CleanupAction.Clear ? 0 : 2),
+                label
+            );
+            Assert.That(
+                state.Deliver(state.OldInner),
+                Is.EqualTo(
+                    cleanup == CleanupAction.None
+                        ? rejected
+                            ? new[] { 0, 1 }
+                            : new[] { 1, 1 }
+                        : new[] { 0, 0 }
+                ),
+                label
+            );
+            Assert.That(
+                state.Deliver(state.NewInner),
+                Is.EqualTo(rejected ? new[] { 1, 0 } : new[] { 0, 0 }),
+                label
+            );
+            state.OldBus.AllowDeregistrations = true;
+            state.NewBus.AllowDeregistrations = true;
+            state.Token.Disable();
+            Assert.That(state.Token.Enabled, Is.False, label + ": public retry drains cleanup");
+            state.Token.Enable();
+            Assert.That(
+                state.Deliver(state.OldInner),
+                Is.EqualTo(cleanup == CleanupAction.Clear ? new[] { 0, 0 } : new[] { 1, 1 }),
+                label + ": later activation uses the previous bus"
+            );
+            Assert.That(state.Deliver(state.NewInner), Is.EqualTo(new[] { 0, 0 }), label);
+            state.Token.UnregisterAll();
+            Assert.That(state.Token._metadata.Count, Is.Zero, label);
+            Assert.That(state.Token._callCounts.Count, Is.Zero, label);
+            Assert.That(state.Token._emissionBuffer.Count, Is.Zero, label);
+        }
+
         [TestCaseSource(nameof(NaturalRollbackCases))]
         public void NaturalRollbackCompletionStillRestoresOldBus(
             MessageScenario scenario,
@@ -609,6 +694,8 @@ namespace DxMessaging.Tests.Runtime.Core
             internal int FailDeregistrationAt = int.MaxValue;
             internal int DeregistrationAttempts;
             internal bool AllowDeregistrations = true;
+            internal Action OnDeregistration;
+            internal bool AfterDeregistration;
 
             internal FaultBus(IMessageBus inner)
                 : base(inner) { }
@@ -687,11 +774,27 @@ namespace DxMessaging.Tests.Runtime.Core
             public override void Deregister<T>(in MessageBusRegistration registration)
             {
                 ++DeregistrationAttempts;
-                if (!AllowDeregistrations && FailDeregistrationAt <= DeregistrationAttempts)
+                Action callback = OnDeregistration;
+                OnDeregistration = null;
+                if (!AfterDeregistration)
                 {
-                    throw DeregistrationFailure;
+                    callback?.Invoke();
                 }
-                base.Deregister<T>(in registration);
+                try
+                {
+                    if (!AllowDeregistrations && FailDeregistrationAt <= DeregistrationAttempts)
+                    {
+                        throw DeregistrationFailure;
+                    }
+                    base.Deregister<T>(in registration);
+                }
+                finally
+                {
+                    if (AfterDeregistration)
+                    {
+                        callback?.Invoke();
+                    }
+                }
             }
         }
 

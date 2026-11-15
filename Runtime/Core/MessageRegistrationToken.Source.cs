@@ -8,7 +8,6 @@ namespace DxMessaging.Core
     public sealed partial class MessageRegistrationToken
     {
         private List<MessageRegistrationHandle> _sourceMoves;
-        private long _sourceMoveCancellationVersion;
 
         /// <summary>Moves one source-bound broadcast handler or post-processor while keeping its handle.</summary>
         /// <param name="handle">Handle returned by a source-bound registration on this token.</param>
@@ -59,7 +58,7 @@ namespace DxMessaging.Core
             List<MessageRegistrationHandle> moves = _sourceMoves ??=
                 new List<MessageRegistrationHandle>();
             moves.Add(handle);
-            long cancellationVersion = _sourceMoveCancellationVersion;
+            long cancellationVersion = _activationCancellationVersion;
             bool active = slot.Deregistration != null;
             IMessageBus activeMessageBus = active
                 ? (slot.Deregistration as MessageHandler.HandlerDeregistration)?.CapturedMessageBus
@@ -101,7 +100,7 @@ namespace DxMessaging.Core
                     }
                 }
                 source.Source = newSource;
-                if (!active || cancellationVersion != _sourceMoveCancellationVersion)
+                if (!active || cancellationVersion != _activationCancellationVersion)
                 {
                     return true;
                 }
@@ -117,7 +116,7 @@ namespace DxMessaging.Core
                     source.Source = previousSource;
                     Exception recoveryFailure = null;
                     if (
-                        cancellationVersion == _sourceMoveCancellationVersion
+                        cancellationVersion == _activationCancellationVersion
                         && TryGetSlot(handle.Slot, handle.Id, out slot)
                         && ReferenceEquals(slot.Registration, registration)
                         && slot.Deregistration == null
@@ -174,14 +173,6 @@ namespace DxMessaging.Core
             );
         }
 #endif
-
-        private void CancelSourceMoves()
-        {
-            if (_sourceMoves != null && 0 < _sourceMoves.Count)
-            {
-                _sourceMoveCancellationVersion = unchecked(_sourceMoveCancellationVersion + 1);
-            }
-        }
 
         private interface ISourceRegistration
         {

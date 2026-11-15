@@ -711,11 +711,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         /*
-            Runs a warm, repeatable flood operation over <see cref="WarmFloodTrials"/> trials and
-            returns the MINIMUM wall clock (ms) plus the first trial's allocation count/bytes
-            (deterministic across trials, since each trial does identical work). Each trial builds
-            fresh scope state UNTIMED, GC-quiesces, then times exactly one operation. Used by the
-            warm-JIT floods to replace a noisy single-shot sample with a reproducible floor.
+            Runs a warmed flood operation over WarmFloodTrials fresh scopes and returns
+            its minimum measured wall-clock duration. Allocation count and bytes come
+            from the first trial, which can differ from the minimum-duration trial.
+            Scope setup, heap settling and disposal stay outside each timed operation.
+            The minimum is an observed sample, without a calibrated noise or cost bound.
         */
         private static (double minMilliseconds, long allocations, long bytes) MeasureWarmFloodMin(
             Func<BenchmarkRegistrationScope> setUpTrial,
@@ -753,12 +753,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         {
             Action<MessageRegistrationToken>[] builders = GetRegistrationFloodBuilders();
             /*
-                Count managed allocations via the reliable GC.Alloc recorder (the
-                recorder spans the timed region; its overhead is negligible against the
-                JIT-dominated flood). NEVER GC.GetAllocatedBytesForCurrentThread(): it
-                returns 0 for every allocation under Unity's Boehm GC (see AllocationProbe).
-                Single-shot by design (first-touch JIT cannot be re-measured cold); GC-quiesce
-                first so a pending collection cannot land inside the timed window.
+                Build the cached delegates before timing and settle the heap before this
+                single measured pass. The clock includes scope construction, all builder
+                registrations and scope disposal. A functional GC.Alloc recorder remains
+                enabled during that work and can perturb its cost. Sampling follows the
+                end timestamp. First-touch work depends on existing process state and the
+                backend; this row does not isolate JIT or registration cost alone.
             */
             QuiesceGarbageCollector();
             using AllocationProbe.Window window = AllocationProbe.BeginWindow();
@@ -783,24 +783,19 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         /*
-            The JIT-pre-warmed complement to MeasureRegistrationFlood. The cold flood times
-            BOTH the Mono JIT compile of each closed generic AND the registration
-            data-structure work; this scenario isolates the data-structure cost by paying
-            the JIT bill FIRST on a throwaway bus, then timing a fresh-bus registration of
-            the same 1000 builders. Only the JIT-compiled code survives the throwaway scope;
-            the registration state is torn down, so the timed pass registers from a genuinely
-            empty bus -- same shape as MeasureRegistrationFlood, just warm. Under IL2CPP/AOT
-            the generics are precompiled so warm and cold are ~equal; under Mono the warm
-            number is the registration cost with the JIT hitch removed.
+            Primes the registration workload on a throwaway scope, then measures the
+            same builders on fresh scopes. Compiled code, metadata, type keys and other
+            process state may survive priming. Unlike MeasureRegistrationFlood, each
+            timed trial excludes scope construction and disposal. Cold/warm differences
+            therefore include different timing boundaries as well as preparation.
         */
         private static DispatchBenchmarkResult MeasureRegistrationFloodWarmJit()
         {
             Action<MessageRegistrationToken>[] builders = GetRegistrationFloodBuilders();
 
             /*
-                JIT pre-warm: register all 1000 builders once on a throwaway bus so the
-                per-closed-generic Mono JIT compile happens here, OUTSIDE the timed region.
-                Dispose tears the registrations down; only the compiled code persists.
+                Prime all builders on a throwaway bus outside the timed trials. Disposing
+                that scope releases its registrations while process state may remain.
             */
             using (BenchmarkRegistrationScope warmupScope = new())
             {
@@ -811,9 +806,9 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             }
 
             /*
-                Warm + repeatable: run several trials (fresh empty scope each) and report the
-                MINIMUM wall clock so a single scheduler/GC blip cannot dominate the published
-                number. Each trial times only the 1000-builder registration pass.
+                Run WarmFloodTrials fresh scopes and report the minimum observed duration.
+                Each trial times only the builder registration loop; scope construction,
+                heap settling and disposal stay outside its clock.
             */
             (double minMilliseconds, long allocations, long bytes) = MeasureWarmFloodMin(
                 static () => new BenchmarkRegistrationScope(),
@@ -1169,8 +1164,8 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 }
 
                 /*
-                    Single-shot by design (first-touch JIT of the teardown path); GC-quiesce so a
-                    pending collection cannot land inside the timed UnregisterAll.
+                    Settle the heap before one timed UnregisterAll on the existing population.
+                    The clock excludes population setup and the surrounding scope disposal.
                 */
                 QuiesceGarbageCollector();
                 using AllocationProbe.Window window = AllocationProbe.BeginWindow();
@@ -1190,24 +1185,21 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         /*
-            The JIT-pre-warmed complement to MeasureDeregistrationFlood. The cold flood times
-            BOTH the Mono JIT compile of the deregistration path AND the teardown work; this
-            scenario isolates the teardown cost by paying the JIT bill FIRST on a throwaway bus
-            (register then UnregisterAll), then timing UnregisterAll on a fresh, fully-populated
-            token. Only the JIT-compiled code survives the throwaway scope; its registration
-            state is torn down, so the timed pass deregisters a genuinely fresh population --
-            same shape as MeasureDeregistrationFlood, just warm. Under IL2CPP/AOT the generics
-            are precompiled so warm and cold are ~equal; under Mono the warm number is the
-            teardown cost with the JIT hitch removed.
+            Primes registration and teardown on a throwaway scope, then times
+            UnregisterAll on fresh, populated tokens. Both cold and warmed teardown
+            clocks exclude registration and scope disposal. The warm row uses the
+            minimum of WarmFloodTrials; the cold row uses one measured pass.
+            Preparation can leave compiled code and other process state behind;
+            their difference does not isolate a particular native or JIT cost.
         */
         private static DispatchBenchmarkResult MeasureDeregistrationFloodWarmJit()
         {
             Action<MessageRegistrationToken>[] builders = GetRegistrationFloodBuilders();
 
             /*
-                JIT pre-warm: register AND deregister all 1000 builders once on a throwaway bus
-                so the per-closed-generic Mono JIT compile of BOTH paths happens here, OUTSIDE
-                the timed region. Dispose tears the rest down; only the compiled code persists.
+                Prime registration and UnregisterAll outside the timed trials. Disposing
+                the throwaway scope releases its remaining registrations; other process
+                state can survive.
             */
             using (BenchmarkRegistrationScope warmupScope = new())
             {
@@ -1264,11 +1256,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
             Type[] markerTypes = RegistrationFloodMarkerTypes.All;
 
             /*
-                Build the per-type set-up + single-emit closures BEFORE the trial loop so the
-                reflection (MakeGenericMethod + CreateDelegate) and the delegate allocation
-                never count against any cold sample. Each marker yields a distinct closed
-                generic whose fast dispatch path JIT-compiles on its first emit. This mirrors
-                the GetRegistrationFloodBuilders reflection pattern.
+                Build the per-type setup and single-emit closures before the trial loop.
+                Reflection and delegate construction stay outside timing. Each marker
+                selects a distinct closed message type; code sharing and first-touch work
+                depend on the backend and existing process state.
             */
             Func<ColdTrialState>[] setUpActions = new Func<ColdTrialState>[markerTypes.Length];
             BuildColdDispatchClosures(kind, markerTypes, setUpActions);
@@ -1290,11 +1281,10 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         }
 
         /*
-            Build, per closed message type, an UNTIMED set-up delegate that creates a fresh
-            scope, registers a by-ref no-op handler for that closed type, and returns a
-            ColdTrialState whose Emit performs EXACTLY ONE first dispatch. The helper is
-            generic over the closed message type, so each marker yields a distinct closed
-            generic whose fast dispatch path JIT-compiles on its first emit.
+            Build an untimed setup delegate for each closed message type. It creates
+            a fresh scope and registers a readonly no-op callback. ColdTrialState.Emit
+            then invokes one typed bus emission. Distinct closed types alone do not
+            establish separate JIT compilation events.
         */
         private static void BuildColdDispatchClosures(
             ColdDispatchKind kind,

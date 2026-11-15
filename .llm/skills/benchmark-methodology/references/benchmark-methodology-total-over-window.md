@@ -340,17 +340,18 @@ the same reconciliation to its handler-invocation count.
 
 ## Cold Counterpart: MeasureColdLatency
 
-The window protocol above applies only to warm/hot throughput. Cold (JIT-inclusive
-first-touch) scenarios use `BenchmarkProtocol.MeasureColdLatency`, the cold
-counterpart to `Measure`. Where `Measure` warms up and then sums batches over one
-continuous window, `MeasureColdLatency` runs K trials with NO warm-up and NO
-window. Each trial i builds FRESH state via `setUpTrial(i)` (UNTIMED; the index
-lets the caller pick a DISTINCT closed generic type per trial), times EXACTLY ONE
-`timedOperation` on that state (counting its allocations over the SAME region, since
-a cold op cannot be re-run cold), then disposes it via `tearDownTrial` (UNTIMED). It
-reports the MEDIAN wall clock and median allocation COUNT across the K trials, not
-the mean -- cold latency is right-skewed, so one GC or scheduler blip must not move
-the headline.
+The window protocol above applies only to warm/hot throughput. Cold first-touch
+scenarios use `BenchmarkProtocol.MeasureColdLatency`. It runs K trials with no
+warm-up or continuous window. Each trial prepares its declared fresh state via
+untimed `setUpTrial(i)`, times exactly one `timedOperation` while counting its
+allocations over that region, then calls untimed `tearDownTrial`. The index can
+select a distinct closed type, but type identity does not prove separate JIT or
+native bodies. Setup can already materialize types; a Mono timed call may include
+JIT work remaining in that call. State what is cold for each row.
+
+The latency headline is the median of all K trials. Right-tail pauses remain in
+the raw population and can still move the median. Count and byte medians retain
+the helper's separate availability rules; unavailable measurements are not zero.
 
 ```csharp
 ColdLatencyMeasurement cold = BenchmarkProtocol.MeasureColdLatency(
@@ -364,12 +365,12 @@ long medianBytes = cold.MedianGcAllocatedBytes; // -1 == AllocationProbe.Unmeasu
 ```
 
 Cold/latency results carry `emitsPerSecond=0` (the time lives in `wallClockMs`),
-which is what auto-excludes them from the regression gate. The three cold dispatch
-scenarios are the callers: each trial registers a READONLY-BY-REF (`FastHandler<T>`) no-op
-handler on a fresh bus, then times one emit of a distinct closed generic type, so
-it JIT-compiles and measures the SAME fast dispatch path (`RunFastHandlers`) the
-warm/hot scenarios use; the median over the distinct types stabilizes the JIT
-noise. See the methodology runbook.
+which excludes their throughput comparison. Increased comparable allocation counts
+still fail the regression gate. The three canonical cold-dispatch rows register a readonly-reference (`FastHandler<T>`) no-op handler on a fresh bus
+and time one emit of the selected closed type through the fast-handler workload.
+Other callers include the sticky first-publication and per-bus latency fixtures.
+None of these type selections alone establishes independent compiled bodies or
+independent-build uncertainty. See the methodology runbook.
 
 ## Why It Holds
 

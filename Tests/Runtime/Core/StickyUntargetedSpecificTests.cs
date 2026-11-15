@@ -89,6 +89,112 @@ namespace DxMessaging.Tests.Runtime.Core
         }
 
         [Test]
+        public void ThreeTypeStateSurvivesShrinkRepopulationAndReset(
+            [Values(0, 1, 2)] int clearedType,
+            [Values(false, true)] bool throughInterface,
+            [Values(false, true)] bool warmFirstTwo,
+            [Values(false, true)] bool resetInsteadOfClear
+        )
+        {
+            using CaseState state = new CaseState();
+            IMessageBus bus = state.Bus;
+            ValueMessage first = new ValueMessage(11);
+            OtherMessage second = default;
+            ReferenceMessage third = new ReferenceMessage(new Payload { Value = 13 });
+            string context =
+                $"clear={clearedType},interface={throughInterface},warm={warmFirstTwo},reset={resetInsteadOfClear}";
+            void Publish<TMessage>(ref TMessage message)
+                where TMessage : IUntargetedMessage
+            {
+                if (throughInterface)
+                {
+                    bus.EmitSticky(ref message);
+                }
+                else
+                {
+                    state.Bus.EmitSticky(ref message);
+                }
+            }
+            bool Clear(int index)
+            {
+                switch (index)
+                {
+                    case 0:
+                        return bus.ClearLatest<ValueMessage>();
+                    case 1:
+                        return bus.ClearLatest<OtherMessage>();
+                    default:
+                        return bus.ClearLatest<ReferenceMessage>();
+                }
+            }
+            void Verify(bool firstPresent, bool secondPresent, bool thirdPresent)
+            {
+                Assert.That(
+                    bus.TryGetLatest(out ValueMessage value),
+                    Is.EqualTo(firstPresent),
+                    context
+                );
+                if (firstPresent)
+                {
+                    Assert.That(value.Value, Is.EqualTo(first.Value), context);
+                }
+                Assert.That(
+                    bus.TryGetLatest<OtherMessage>(out _),
+                    Is.EqualTo(secondPresent),
+                    context
+                );
+                Assert.That(
+                    bus.TryGetLatest(out ReferenceMessage reference),
+                    Is.EqualTo(thirdPresent),
+                    context
+                );
+                if (thirdPresent)
+                {
+                    Assert.That(reference, Is.SameAs(third), context);
+                }
+            }
+            Publish(ref first);
+            Publish(ref second);
+            if (warmFirstTwo)
+            {
+                first = new ValueMessage(17);
+                Publish(ref first);
+                Publish(ref second);
+            }
+            Verify(true, true, false);
+            Publish(ref third);
+            Verify(true, true, true);
+            Assert.That(Clear(clearedType), Is.True, context);
+            Assert.That(Clear(clearedType), Is.False, context);
+            Verify(clearedType != 0, clearedType != 1, clearedType != 2);
+            first = new ValueMessage(23);
+            third = new ReferenceMessage(new Payload { Value = 29 });
+            Publish(ref first);
+            Publish(ref second);
+            Publish(ref third);
+            Publish(ref first);
+            Verify(true, true, true);
+            if (resetInsteadOfClear)
+            {
+                state.Bus.ResetState();
+            }
+            else
+            {
+                Assert.That(Clear(0), Is.True, context);
+                Assert.That(Clear(1), Is.True, context);
+                Assert.That(Clear(2), Is.True, context);
+            }
+            Verify(false, false, false);
+            first = new ValueMessage(31);
+            Publish(ref first);
+            Verify(true, false, false);
+            MessageBus other = new MessageBus();
+            Assert.That(other.TryGetLatest<ValueMessage>(out _), Is.False, context);
+            Assert.That(Clear(0), Is.True, context);
+            Verify(false, false, false);
+        }
+
+        [Test]
         public void OrdinaryLateRegistrationDoesNotReplay()
         {
             MessageBus bus = new MessageBus();
@@ -1045,6 +1151,86 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        [Test]
+        public void CustomLookupCancellationPreventsStaleReplay(
+            [Values(0, 1, 2)] int form,
+            [Values(false, true)] bool enabled,
+            [Values(false, true)] bool snapshotBeforeCallback,
+            [Values(0, 1, 2, 3)] int cancellation
+        )
+        {
+            string context =
+                $"form={form},enabled={enabled},snapshotBeforeCallback={snapshotBeforeCallback},cancellation={cancellation}";
+            MessageBus inner = new MessageBus();
+            StickyBus bus = new StickyBus(inner)
+            {
+                SnapshotBeforeLookupCallback = snapshotBeforeCallback,
+            };
+            using CaseState state = new CaseState(bus);
+            ValueMessage retained = new ValueMessage(17);
+            inner.EmitSticky(ref retained);
+            if (enabled)
+            {
+                state.Token.Enable();
+            }
+            List<int> values = new List<int>();
+            int lookupCallbacks = 0;
+            bus.OnLookup = () =>
+            {
+                ++lookupCallbacks;
+                switch (cancellation)
+                {
+                    case 1:
+                        state.Token.Disable();
+                        break;
+                    case 2:
+                        state.Token.UnregisterAll();
+                        break;
+                    case 3:
+                        state.Handler.active = false;
+                        break;
+                }
+            };
+            Register(state.Token, form, values);
+            if (!enabled)
+            {
+                state.Token.Enable();
+            }
+            Assert.That(lookupCallbacks, Is.EqualTo(1), "Run the lookup callback once: " + context);
+            CollectionAssert.AreEqual(
+                cancellation == 0 ? new[] { 17 } : Array.Empty<int>(),
+                values,
+                "Only the uncancelled active owner receives captured replay: " + context
+            );
+            Assert.That(
+                inner.RegisteredUntargeted,
+                Is.EqualTo(cancellation == 0 || cancellation == 3 ? 1 : 0),
+                "Inactive handlers retain their subscription; owner cleanup removes it: " + context
+            );
+            state.Handler.active = true;
+            ValueMessage ordinary = new ValueMessage(23);
+            inner.UntargetedBroadcast(ref ordinary);
+            int[] expected =
+                cancellation == 0 ? new[] { 17, 23 }
+                : cancellation == 3 ? new[] { 23 }
+                : Array.Empty<int>();
+            CollectionAssert.AreEqual(
+                expected,
+                values,
+                "Ordinary delivery follows actual ownership after handler reactivation: " + context
+            );
+            Assert.That(
+                inner.TryGetLatest(out ValueMessage latest),
+                Is.True,
+                "Owner cancellation and ordinary delivery preserve retained state: " + context
+            );
+            Assert.That(
+                latest.Value,
+                Is.EqualTo(17),
+                "Keep the original retained value: " + context
+            );
+        }
+
         /// <summary>Retarget recovery must preserve cancellation from the failed new-bus callback.</summary>
         /// <remarks>2026-11-12: Capturing cancellation only after rollback revived disabled staging.</remarks>
         [Test]
@@ -1352,6 +1538,7 @@ namespace DxMessaging.Tests.Runtime.Core
         {
             internal Action OnRegistration;
             internal Action OnLookup;
+            internal bool SnapshotBeforeLookupCallback;
             internal int RejectCleanup;
 
             internal StickyBus(IMessageBus inner)
@@ -1365,6 +1552,12 @@ namespace DxMessaging.Tests.Runtime.Core
             {
                 Action callback = OnLookup;
                 OnLookup = null;
+                if (SnapshotBeforeLookupCallback)
+                {
+                    bool present = Inner.TryGetLatest(out message);
+                    callback?.Invoke();
+                    return present;
+                }
                 callback?.Invoke();
                 return Inner.TryGetLatest(out message);
             }

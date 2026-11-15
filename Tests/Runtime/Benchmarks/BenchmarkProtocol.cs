@@ -330,11 +330,11 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         /// The COLD counterpart to <see cref="Measure"/>. Where <see cref="Measure"/>
         /// reports steady-state throughput over one warmed window, this runs
         /// <paramref name="trials"/> single-shot trials and reports the MEDIAN wall-clock
-        /// and median allocation across them. Each trial is a single first-touch
-        /// execution (JIT-inclusive under Mono), so there is no warm-up and no window:
-        /// the timed operation runs exactly once per trial and is timed end to end. The
-        /// median (not the mean) is the headline because cold latency is right-skewed --
-        /// one GC or scheduler blip must not move the reported number.
+        /// and median allocation across them. The timed operation runs exactly once
+        /// per prepared state, with no warm-up or window. Under Mono it may include
+        /// JIT work remaining in that call; setup can already materialize types.
+        /// Every latency trial contributes to the median. This reduces sensitivity
+        /// to right-tail pauses but does not make the result immune to them.
         /// Count and byte medians are reduced independently: byte samples can be
         /// <see cref="AllocationProbe.Unmeasured"/> for individual frame-boundary trials
         /// even when count samples are valid, so the byte median filters only the byte
@@ -342,7 +342,7 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
         ///
         /// Each trial i prepares FRESH state via <paramref name="setUpTrial"/> (UNTIMED;
         /// the <c>i</c> argument lets the caller pick a DISTINCT closed generic type per
-        /// trial so every trial JIT-compiles its own first-touch path), then times
+        /// trial; distinct type identity does not prove separate JIT or native bodies), then times
         /// EXACTLY ONE <paramref name="timedOperation"/> on that state, then disposes the
         /// state via <paramref name="tearDownTrial"/> (UNTIMED). Both the wall clock and
         /// the allocation delta are sampled around only the timed operation here, so the
@@ -393,17 +393,12 @@ namespace DxMessaging.Tests.Runtime.Benchmarks
                 try
                 {
                     /*
-                        Cold latency is a single first-touch operation per trial, so the
-                        allocation count is taken over the SAME region as the timing (it
-                        cannot be re-run cold). When the probe is functional its recorder
-                        adds a small overhead to this window; that is acceptable for the
-                        cold scenarios (dominated by first-touch JIT) and keeps the count
-                        honest. When non-functional, the window is a no-op and Sample
-                        returns AllocationProbe.Unmeasured. The `using` is scoped to this
-                        try block, so the recorder is released (disabled) even if
-                        timedOperation throws -- before tearDownTrial runs -- and the end
-                        timestamp is captured BEFORE Sample so the sample/disable overhead
-                        stays out of the measured time.
+                        Cold latency times one operation per trial. The allocation recorder opens
+                        before the start timestamp and remains enabled during the operation; a
+                        functional recorder can perturb its cost. SampleBoth and recorder disposal
+                        follow the end timestamp. An unavailable recorder reports Unmeasured.
+                        The scoped window is disposed before trial teardown, including when the
+                        operation throws. First-touch or JIT dominance is not assumed.
                     */
                     using AllocationProbe.Window window = AllocationProbe.BeginWindow();
                     long startTimestamp = Stopwatch.GetTimestamp();

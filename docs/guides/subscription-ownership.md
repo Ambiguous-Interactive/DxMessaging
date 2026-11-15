@@ -185,6 +185,22 @@ If recovery also fails, both failures appear in an `AggregateException`.
 Reentrant disable or removal takes precedence over activation.
 If a callback accepts cleanup after a lifecycle cancellation, finish that cleanup through the token, handle, or group before enabling again.
 
+## Change the token's bus during cleanup
+
+**Fixed in v4.0.0:** Calling `Disable()` or `UnregisterAll()` from an old-bus cleanup callback
+cancels pending activation by the enclosing `RetargetMessageBus(..., RebindActive)` call.
+After successful cleanup, a later explicit `Enable()` uses the selected destination and any retained staging.
+`UnregisterAll()` removes staging when cleanup completes. Registrations accepted by a callback's explicit
+re-enable remain owned on their accepting bus until a later cleanup pass.
+
+If old-bus cleanup throws, the token keeps the previous bus for later activation and preserves failed
+cleanup for retry. Recovery does not reactivate registrations canceled by the callback.
+`Enabled` stays true while any cleanup obligation remains; retry cleanup before enabling again.
+
+If new-bus activation fails, `Disable()` or `UnregisterAll()` during rollback cleanup also
+prevents recovery from reactivating staging. Natural rollback completion restores the previous
+bus when rollback cleanup callbacks do not cancel activation.
+
 ## Pass state to a static callback
 
 Explicit-state overloads cover untargeted, targeted, source-bound broadcast, all-target, and all-source handlers and post-processors.

@@ -1119,6 +1119,249 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(state.Token._emissionBuffer.Count, Is.Zero, label + ": history clears");
         }
 
+        private static IEnumerable<TestCaseData> RetargetCancellationCases()
+        {
+            foreach ((MessageScenario Scenario, bool Action, int Family) shape in Shapes())
+            foreach (bool diagnostics in new[] { false, true })
+            foreach (bool sameBus in new[] { false, true })
+            foreach (bool after in new[] { false, true })
+            foreach (int cleanup in new[] { 0, 1, 2, 3 })
+            {
+                yield return new TestCaseData(
+                    shape.Scenario,
+                    shape.Action,
+                    shape.Family,
+                    diagnostics,
+                    sameBus,
+                    after,
+                    cleanup
+                ).SetName(
+                    $"RetargetCleanupCancellation_{shape.Scenario}_action{shape.Action}_family{shape.Family}_diagnostics{diagnostics}_same{sameBus}_after{after}_cleanup{cleanup}"
+                );
+            }
+        }
+
+        /// <summary>Preserves lifecycle decisions made while an active retarget cleans its old bus.</summary>
+        /// <remarks>2026-11-15: A nested Disable must not be undone by the outer retarget's stale activation decision.</remarks>
+        [TestCaseSource(nameof(RetargetCancellationCases))]
+        public void ActiveRetargetPreservesCleanupCallbackCancellation(
+            MessageScenario scenario,
+            bool action,
+            int family,
+            bool diagnostics,
+            bool sameBus,
+            bool after,
+            int cleanup
+        )
+        {
+            string label =
+                $"[{scenario}] action={action},family={family},diagnostics={diagnostics},sameBus={sameBus},after={after},cleanup={cleanup}";
+            using CaseState state = new CaseState(diagnostics);
+            BusType destination = sameBus
+                ? state.Inner
+                : new BusType { DiagnosticsMode = diagnostics };
+            using LeakWatcher destinationLeaks = new LeakWatcher(destination, label: label);
+            _ = Register(state.Token, scenario, action, family, () => state.Calls.Add("original"));
+            state.Token.Enable();
+            int callbacks = 0;
+            state.Bus.AfterDeregistration = after;
+            state.Bus.OnFirstDeregistration = () =>
+            {
+                ++callbacks;
+                if (cleanup == 2)
+                {
+                    state.Token.UnregisterAll();
+                }
+                else if (cleanup != 0)
+                {
+                    state.Token.Disable();
+                    if (cleanup == 3)
+                    {
+                        state.Token.Enable();
+                    }
+                }
+            };
+            try
+            {
+                state.Token.RetargetMessageBus(
+                    sameBus ? state.Bus : destination,
+                    MessageBusRebindMode.RebindActive
+                );
+                state.Emit(scenario);
+                string[] oldDelivery = state.Calls.ToArray();
+                state.Calls.Clear();
+                if (!sameBus)
+                {
+                    state.Emit(scenario, destination);
+                }
+                string[] newDelivery = state.Calls.ToArray();
+                TestContext.WriteLine(
+                    $"{label}; enabled={state.Token.Enabled}; cleanupCount={state.CleanupCount}; old={string.Join(",", oldDelivery)}; new={string.Join(",", newDelivery)}"
+                );
+                bool active = cleanup == 0 || cleanup == 3;
+                AssertRetargetState(() =>
+                {
+                    Assert.That(callbacks, Is.EqualTo(1), label);
+                    Assert.That(state.Token.Enabled, Is.EqualTo(active), label);
+                    Assert.That(state.CleanupCount, Is.EqualTo(active ? 1 : 0), label);
+                    Assert.That(
+                        state.Token._metadata.Count,
+                        Is.EqualTo(cleanup == 2 ? 0 : 1),
+                        label
+                    );
+                    Assert.That(
+                        oldDelivery,
+                        Is.EqualTo(
+                            cleanup == 3 || (cleanup == 0 && sameBus)
+                                ? new[] { "original" }
+                                : Array.Empty<string>()
+                        ),
+                        label + ": only intentional nested reactivation stays on its accepting bus"
+                    );
+                    Assert.That(
+                        newDelivery,
+                        Is.EqualTo(
+                            cleanup == 0 && !sameBus ? new[] { "original" } : Array.Empty<string>()
+                        ),
+                        label + ": outer replay must not undo callback cancellation"
+                    );
+                });
+
+                state.Token.Disable();
+                state.Token.Enable();
+                state.Calls.Clear();
+                state.Emit(scenario);
+                string[] laterOld = state.Calls.ToArray();
+                state.Calls.Clear();
+                if (!sameBus)
+                {
+                    state.Emit(scenario, destination);
+                }
+                string[] expected = cleanup == 2 ? Array.Empty<string>() : new[] { "original" };
+                Assert.That(
+                    laterOld,
+                    Is.EqualTo(sameBus ? expected : Array.Empty<string>()),
+                    label
+                );
+                Assert.That(
+                    state.Calls,
+                    Is.EqualTo(sameBus ? Array.Empty<string>() : expected),
+                    label
+                );
+            }
+            finally
+            {
+                state.Token.UnregisterAll();
+                destination.Trim(force: true);
+            }
+            Assert.That(state.Token._metadata.Count, Is.Zero, label + ": staging clears");
+            Assert.That(state.Token._callCounts.Count, Is.Zero, label + ": counters clear");
+            Assert.That(state.Token._emissionBuffer.Count, Is.Zero, label + ": history clears");
+        }
+
+        /// <summary>Does not restore cleaned peers after a teardown callback cancels a failing retarget.</summary>
+        [Test]
+        public void RetargetCleanupFailurePreservesCallbackCancellation(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool diagnostics,
+            [Values(0, 1, 2, 3)] int cleanup
+        )
+        {
+            string label = $"[{scenario}] diagnostics={diagnostics},cleanup={cleanup}";
+            using CaseState state = new CaseState(diagnostics);
+            BusType destination = new BusType { DiagnosticsMode = diagnostics };
+            using LeakWatcher destinationLeaks = new LeakWatcher(destination, label: label);
+            _ = Register(state.Token, scenario, false, 0, () => state.Calls.Add("first"));
+            _ = Register(state.Token, scenario, false, 0, () => state.Calls.Add("later"));
+            state.Token.Enable();
+            state.Bus.OnFirstDeregistration = () =>
+            {
+                if (cleanup == 2)
+                {
+                    state.Token.UnregisterAll();
+                }
+                else if (cleanup != 0)
+                {
+                    state.Token.Disable();
+                    if (cleanup == 3)
+                    {
+                        state.Token.Enable();
+                    }
+                }
+            };
+            state.Bus.RejectNext = true;
+            try
+            {
+                Assert.That(
+                    Assert.Throws<InvalidOperationException>(() =>
+                        state.Token.RetargetMessageBus(
+                            destination,
+                            MessageBusRebindMode.RebindActive
+                        )
+                    ),
+                    Is.SameAs(state.Bus.Failure),
+                    label
+                );
+                state.Emit(scenario);
+                string[] oldDelivery = state.Calls.ToArray();
+                state.Calls.Clear();
+                state.Emit(scenario, destination);
+                bool restorePeers = cleanup == 0 || cleanup == 3;
+                TestContext.WriteLine(
+                    $"{label}; cleanupCount={state.CleanupCount}; old={string.Join(",", oldDelivery)}; new={string.Join(",", state.Calls)}"
+                );
+                AssertRetargetState(() =>
+                {
+                    Assert.That(
+                        state.Token.Enabled,
+                        Is.True,
+                        label + ": failed cleanup stays retryable"
+                    );
+                    Assert.That(state.CleanupCount, Is.EqualTo(restorePeers ? 2 : 1), label);
+                    Assert.That(
+                        state.Token._metadata.Count,
+                        Is.EqualTo(cleanup == 2 ? 0 : 2),
+                        label
+                    );
+                    Assert.That(
+                        oldDelivery,
+                        Is.EqualTo(restorePeers ? new[] { "first", "later" } : new[] { "first" }),
+                        label
+                            + ": callback cancellation must not revive a successfully cleaned peer"
+                    );
+                    Assert.That(
+                        state.Calls,
+                        Is.Empty,
+                        label + ": failed retarget keeps its old bus"
+                    );
+                });
+                state.Token.Disable();
+                Assert.That(
+                    state.Token.Enabled,
+                    Is.False,
+                    label + ": public retry drains the failed cleanup"
+                );
+                state.Token.Enable();
+                state.Calls.Clear();
+                state.Emit(scenario);
+                Assert.That(
+                    state.Calls,
+                    Is.EqualTo(cleanup == 2 ? Array.Empty<string>() : new[] { "first", "later" }),
+                    label
+                        + ": explicit activation restores only retained staging on the previous bus"
+                );
+            }
+            finally
+            {
+                state.Token.UnregisterAll();
+                destination.Trim(force: true);
+            }
+            Assert.That(state.Token._metadata.Count, Is.Zero, label + ": staging clears");
+            Assert.That(state.Token._callCounts.Count, Is.Zero, label + ": counters clear");
+            Assert.That(state.Token._emissionBuffer.Count, Is.Zero, label + ": history clears");
+        }
+
         private static void AssertRetargetState(Action assertions)
         {
 #if UNITY_2021_3_OR_NEWER
