@@ -131,9 +131,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lookups do not retain a resolved method, and new handlers wait for the next emission
   ([#670](https://github.com/Ambiguous-Interactive/DxMessaging/issues/670),
   [#694](https://github.com/Ambiguous-Interactive/DxMessaging/issues/694)).
-- Preserve retryable cleanup across diagnostic callbacks and keep a logger's successful `Disable()`
-  effective during retarget recovery ([#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663),
-  [#668](https://github.com/Ambiguous-Interactive/DxMessaging/issues/668)).
+- Preserve retryable cleanup and callback lifecycle cancellation during active token retargeting and recovery
+  ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503),
+  [#663](https://github.com/Ambiguous-Interactive/DxMessaging/issues/663), [#668](https://github.com/Ambiguous-Interactive/DxMessaging/issues/668)).
 - Fix `InstanceId` XML and JSON data contract serialization by storing the numeric `id` member on its backing field
   ([#662](https://github.com/Ambiguous-Interactive/DxMessaging/issues/662)).
 - **BREAKING:** Make `InstanceId`, `MessageRegistrationHandle`, and `MessageHandler` comparisons

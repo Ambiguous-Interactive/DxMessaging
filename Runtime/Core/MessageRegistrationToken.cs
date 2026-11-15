@@ -106,6 +106,7 @@ namespace DxMessaging.Core
         */
         private List<StagedRegistration> _registrationReplayQueue;
         private bool _isReplayingRegistrations;
+        private long _activationCancellationVersion;
         private List<TeardownIdentity> _teardownQueue;
         private HashSet<TeardownIdentity> _rollbackBaseline;
         private List<MessageRegistrationHandle> _activeRetargetHandles;
@@ -1554,7 +1555,7 @@ namespace DxMessaging.Core
         public void Disable()
         {
             CancelStickyReplay();
-            CancelSourceMoves();
+            CancelPendingActivation();
             if (!_enabled && _deregistrationCount == 0)
             {
                 return;
@@ -1587,7 +1588,7 @@ namespace DxMessaging.Core
         public void UnregisterAll()
         {
             CancelStickyReplay();
-            CancelSourceMoves();
+            CancelPendingActivation();
             Exception deregistrationException = InvokeDeregistrationQueue();
             if (deregistrationException == null && _deregistrationCount == 0)
             {
@@ -1605,6 +1606,12 @@ namespace DxMessaging.Core
             }
         }
 
+        /// <summary>Cancels pending source activation and active-retarget continuation without allocating state.</summary>
+        private void CancelPendingActivation()
+        {
+            _activationCancellationVersion = unchecked(_activationCancellationVersion + 1);
+        }
+
         /// <summary>
         /// Retargets staged registrations to use a new message bus, re-registering active handlers if needed.
         /// </summary>
@@ -1618,6 +1625,9 @@ namespace DxMessaging.Core
         /// registrations use the current override. Nested recovery preserves the owning replay.
         /// A registration accepted during old-bus cleanup remains on its accepting bus until a
         /// later cleanup pass. Retarget replay does not activate that still-live registration again.
+        /// Calling Disable or UnregisterAll during old-bus cleanup cancels this call's pending activation.
+        /// Successful cleanup keeps the selected destination for a later explicit Enable. Failed cleanup
+        /// keeps the previous bus and failed obligations retryable without restoring canceled registrations.
         /// </remarks>
         /// <param name="messageBus">Bus override to apply. Pass <c>null</c> to resume using the handler default.</param>
         /// <param name="rebindMode">Determines whether existing registrations should move to the supplied bus immediately.</param>
@@ -1652,6 +1662,7 @@ namespace DxMessaging.Core
                 return;
             }
 
+            long activationCancellationVersion = _activationCancellationVersion;
             long stickyCancellationVersion = _stickyReplay?.CancellationVersion ?? 0;
             bool replayWasInProgress = _isReplayingRegistrations;
             IMessageBus previousMessageBus = _messageBus;
@@ -1674,7 +1685,8 @@ namespace DxMessaging.Core
                     {
                         RestoreMissingRegistrationsAfterRetargetDeregistrationFailure(
                             previousMessageBus,
-                            activeRetargetHandles
+                            activeRetargetHandles,
+                            activationCancellationVersion
                         );
                         _enabled = 0 < _deregistrationCount;
                         ExceptionDispatchInfo.Capture(deregistrationException).Throw();
@@ -1684,6 +1696,12 @@ namespace DxMessaging.Core
                 }
 
                 _messageBus = messageBus;
+
+                if (activationCancellationVersion != _activationCancellationVersion)
+                {
+                    _enabled = 0 < _deregistrationCount;
+                    return;
+                }
 
                 if (rebindActiveRegistrations && 0 < _registrationCount)
                 {
@@ -2021,11 +2039,16 @@ namespace DxMessaging.Core
 
         private void RestoreMissingRegistrationsAfterRetargetDeregistrationFailure(
             IMessageBus previousMessageBus,
-            List<MessageRegistrationHandle> activeRetargetHandles
+            List<MessageRegistrationHandle> activeRetargetHandles,
+            long activationCancellationVersion
         )
         {
             _messageBus = previousMessageBus;
-            if (activeRetargetHandles == null || activeRetargetHandles.Count == 0)
+            if (
+                activationCancellationVersion != _activationCancellationVersion
+                || activeRetargetHandles == null
+                || activeRetargetHandles.Count == 0
+            )
             {
                 return;
             }
