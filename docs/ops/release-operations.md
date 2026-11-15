@@ -19,30 +19,26 @@ Canonical public identifiers:
 - Release workflow: `.github/workflows/release.yml`
 - Unity workflow lock: every Unity-credential-using job acquires
   `wallstop-organization-builds` through
-  `Ambiguous-Interactive/ambiguous-organization-build-lock` immediately
-  before the licensed `game-ci/unity-test-runner@v4` section and releases
-  it with `if: always()`. Native GitHub `concurrency` is repository-scoped,
+  `Ambiguous-Interactive/ambiguous-organization-build-lock` before invoking
+  Unity and releases it through the always-run cleanup steps. Licensed workflows
+  call the maintained PowerShell runners directly; the correctness and release
+  checks use `scripts/unity/run-ci-tests.ps1`.
+  Native GitHub `concurrency` is repository-scoped,
   so `wallstop-organization-builds` must not be used as a native
   `concurrency.group`. IL2CPP is the final mode inside each editor-scoped
-  `unity-tests` job, not a separate matrix job.
-- Unity runner labels: uniform static `runs-on: [self-hosted, Windows,
-RAM-64GB]` across all Unity-credential-using jobs, so either
-  ELI-MACHINE or DAD-MACHINE can pick up any Unity job. The `fast`
-  marker remains on ELI-MACHINE for a future opt-in hotfix dispatch but
-  no currently-active workflow requests it.
-- Stuck-job watchdog: `.github/workflows/stuck-job-watchdog.yml` runs
-  every 5 minutes to detect and recover from the known GitHub Actions
-  self-hosted dispatcher bug (Community Discussion #186811) where a
-  queued run never receives an Online/Idle runner. The watchdog
-  excludes `release.yml` from auto-cancellation to protect attestation
-  and publishing flows. For immediate one-click recovery of a single
-  stuck run, operators dispatch `.github/workflows/unstick-run.yml`
-  from the Actions tab with the stuck run id (it bypasses the cron
-  wait and the queue-age threshold). Note that GitHub `schedule:` cron
-  triggers fire only from the repository default branch, so the
-  watchdog cron is INACTIVE until `stuck-job-watchdog.yml` reaches
-  `master`; until then, use `unstick-run.yml` or the watchdog's manual
-  `workflow_dispatch` trigger.
+  correctness job. The release workflow has a separate EditMode check.
+- Unity runner labels: licensed jobs use
+  `runs-on: [self-hosted, Windows, RAM-64GB]`. Either ELI-MACHINE or DAD-MACHINE
+  can pick up a matching job. See the [CI lanes](../runbooks/iteration-speed.md#ci-lanes)
+  for PR, full compatibility and release selection.
+- Stuck-job watchdog: `.github/workflows/stuck-job-watchdog.yml` declares
+  a five-minute schedule on the default branch. It checks queued work and
+  available runners before recovery, and excludes `release.yml` from automatic
+  cancellation. Inspect recent Actions runs for the actual scheduling and
+  recovery outcome. To target one queued run, dispatch
+  `.github/workflows/unstick-run.yml` with its run ID. That workflow uses its
+  own minimum-age and exclusion checks. Read its summary for redispatch or
+  manual rerun instructions.
 
 Tracked pages:
 
@@ -68,7 +64,9 @@ organization password manager.
 
 ## Release Model
 
-The release pipeline runs prepare dispatch, PR, tag, release dispatch, publish:
+The [release-readiness criteria](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)
+define release acceptance. The pipeline runs prepare dispatch, PR, tag,
+exact-revision qualification, release dispatch and publication:
 
 1. An operator dispatches `.github/workflows/release-prepare.yml` from the
    default branch with a bump kind (`patch`/`minor`/`major`) or an explicit
@@ -92,9 +90,18 @@ The release pipeline runs prepare dispatch, PR, tag, release dispatch, publish:
    manual `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z`
    commands as a warning instead. If the App token exists but cannot write the
    tag ref, the job fails with the same manual fallback commands.
-1. After the tag exists, an operator selects that exact tag in the Actions UI
-   and dispatches `.github/workflows/release.yml`. Branch selections fail the
-   tag verifier and cannot publish.
+1. After the tag exists, select that exact tag for the qualification dispatches.
+   `.github/workflows/unity-tests.yml` supplies full supported-version
+   compatibility. Select `shipping_fidelity` for stripped-player checks, and
+   run a separate dispatch with `consumer_install_validation` for Git,
+   tarball and classic-package installs. Those two inputs cannot be combined.
+   Run `.github/workflows/perf-numbers.yml` from the same tag for performance
+   evidence. The [CI lanes](../runbooks/iteration-speed.md#ci-lanes) describe
+   the full managed and native release requirements.
+1. Wait for successful qualification producers and their retained artifacts
+   at that exact commit. Then select the tag and dispatch
+   `.github/workflows/release.yml`. A branch selection fails the tag verifier;
+   missing or expired qualification artifacts also block publication.
 
 The tag must exactly match `package.json.version` with a leading `v`. For
 example, package version `3.0.1` must be released from tag `v3.0.1`.
@@ -107,14 +114,18 @@ fallback when the App is unavailable.
 The release workflow performs these gates:
 
 1. Verify the semver tag, the package version, and the changelog heading.
-1. Run script tests (`node --test scripts/`) and `npm run validate:all`
+1. Require successful manual compatibility, shipping, consumer-install and
+   performance runs for the exact tag commit. The qualification job checks
+   producer results and artifact metadata; it does not replay artifact contents.
+1. Run the complete script suite with `npm test` and `npm run validate:all`
    (`package.json` is the source of truth for the current validation set).
    Repository identity checks are now the manual checklist in
    [GitHub Transfer](./github-transfer.md).
 1. Pack the npm tarball and write a `.sha256` checksum.
 1. Attest the packed `.tgz` with GitHub artifact attestations.
-1. Run the trusted Unity release check on the Ambiguous self-hosted Windows
-   runner.
+1. Run the trusted EditMode release check through the PowerShell runner on
+   a matching self-hosted Windows runner. The separate qualification producers
+   supply full compatibility, stripped-player and consumer evidence.
 1. Create a classic `.unitypackage` directly from the npm payload on an
    `ubuntu-latest` runner (`scripts/unity/create_unitypackage.py`). The writer
    does not open Unity or acquire a license seat; it runs in parallel with the
