@@ -85,6 +85,10 @@
       Link="BuilderDiagnosticOwnershipTests.cs"
     />
     <Compile
+      Include="../Tests/Runtime/Core/GeneratedTextDefaultTests.cs"
+      Link="GeneratedTextDefaultTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/GeneratedFloatingDefaultTests.cs"
       Link="GeneratedFloatingDefaultTests.cs"
     />
