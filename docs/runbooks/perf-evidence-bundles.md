@@ -527,6 +527,40 @@ GitHub retention, immutable publication, independent remote retrieval, or denied
 
 ## Evidence index
 
+### SubUnsub observations from source 2cb38b46
+
+Published and restored from GitHub on 2026-11-15. This revision retains the complete player log
+and all 48 canonical comparison CSV rows. Its existing observation reducer normalizes every one
+of the eight SubUnsub library rows from one Standalone IL2CPP Release player.
+
+| Field                    | Value                                                                                                                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Experiment               | `s507-subunsub-2cb38b46-6000.5.2f1`, revision `1`                                                                                                                                  |
+| Measured source          | `2cb38b4649e1d14cd22a0d3795fcbe2654bb113d`                                                                                                                                         |
+| Verifier commit          | `f21f0eeb6ec7411caf2ce1351e9dba8f3436ceb7`                                                                                                                                         |
+| Release                  | [Immutable revision 1](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-s507-subunsub-2cb38b46-6000.5.2f1-r1-54ce5917)                              |
+| Release / asset IDs      | `445880467` / `750191810`                                                                                                                                                          |
+| Asset                    | `s507-subunsub-2cb38b46-6000.5.2f1-r1-54ce5917.tar.gz` (`8,379` bytes)                                                                                                             |
+| Archive SHA-256          | `a4f97f9aae0f02d1abdaed0f057f8099446c51ce438f779d06686039648633f9`                                                                                                                 |
+| Manifest SHA-256         | `54ce591739b7c9c90d94e7bea419f6df727b1dd1d1c72d0e2ef2be88a92712f5`                                                                                                                 |
+| Bundle digest            | `dc90fa3ae6523432b93b2e984a57bf80b8e0707fff94c2d52447c17aa905e852`                                                                                                                 |
+| Artifact class / reducer | `allocation-subunsub-observations` / `allocation-subunsub-observations-v1`                                                                                                         |
+| Workflow source          | [Performance Numbers run 43682371169](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/43682371169), comparison job `132715584432`                                |
+| Publication checks       | Immutable setting enabled; complete draft asset downloaded and replayed; published metadata `draft: false`, `prerelease: true`, `immutable: true`; tag resolves to verifier commit |
+| Published restore        | New anonymous download; archive, manifest, inventory and identity verified; exact normalized replay from a fresh remote clone with pinned dependencies; clean checkout             |
+| Denied-access control    | Actual asset API with isolated invalid authentication: HTTP `401`, curl exit `22`, no file and no fallback; experiment remains incomplete in that context                          |
+
+Both allocation fields remain `-1` (unmeasured). Independent-build uncertainty, causal speedup,
+semantic parity, full native correctness and native binary privacy acceptance remain unqualified.
+The reducer retains descriptive SubUnsub observations; the broader log and CSV remain raw context.
+The source and verifier commits differ. Their evidence tools, helper subtrees and locked dependencies
+match; a separate repository policy check differs. Whole-repository byte equality is not claimed.
+
+The restore used a new remote verifier clone at the named commit and `npm ci --ignore-scripts`,
+with new published-asset download and extraction directories. It verified all declared bytes and
+recomputed the normalized result exactly. [Preparation and limits](https://github.com/Ambiguous-Interactive/DxMessaging/issues/500#issuecomment-6890852896)
+remain separate from [release readiness](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575).
+
 Repository-wide immutable releases were enabled with maintainer approval on 2026-09-10. The
 authenticated setting read back `enabled: true`. Publication remains an operator procedure, not
 an automatic upload of every workflow artifact. Retain all indexed revisions without expiry.
