@@ -365,8 +365,8 @@ long medianBytes = cold.MedianGcAllocatedBytes; // -1 == AllocationProbe.Unmeasu
 ```
 
 Cold/latency results carry `emitsPerSecond=0` (the time lives in `wallClockMs`),
-which excludes them from the regression gate. The three canonical cold-dispatch
-rows register a readonly-reference (`FastHandler<T>`) no-op handler on a fresh bus
+which excludes their throughput comparison. Increased comparable allocation counts
+still fail the regression gate. The three canonical cold-dispatch rows register a readonly-reference (`FastHandler<T>`) no-op handler on a fresh bus
 and time one emit of the selected closed type through the fast-handler workload.
 Other callers include the sticky first-publication and per-bus latency fixtures.
 None of these type selections alone establishes independent compiled bodies or

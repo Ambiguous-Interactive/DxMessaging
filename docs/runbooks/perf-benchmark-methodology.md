@@ -1077,11 +1077,10 @@ The script always exits 0 itself; the workflow decides whether to fail from the
 
 A scenario trips that smoke signal when its throughput drops by more than the regression
 threshold (default `0.33`, looser than the comment tolerance) OR its allocation
-exceeds the baseline. Only canonical dispatch scenarios participate in the hard
-smoke, so the wall-clock rows (the cold/warm-JIT registration and deregistration
-floods and the cold first-dispatch scenarios, all zero throughput) never trip the
-gate. The delta
-comment is still broader diagnostic output: it keeps the dispatch scenarios plus
+exceeds the baseline. Only canonical DxMessaging scenarios participate in the hard
+smoke. Zero-throughput wall-clock rows skip the throughput comparison; increased
+comparable allocation counts still fail the gate. The delta comment is broader
+diagnostic output: it keeps the dispatch scenarios plus
 the DxMessaging comparison rows and drops every other library's rows. Comparison
 rows are report-only because a single cross-library comparison sample is too
 noisy for required CI. The workflow first requires the complete expected

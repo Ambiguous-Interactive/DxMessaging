@@ -51,8 +51,9 @@ Never median-of-runs, never discard an outlier, never use a single untimed pass.
   and allocation count. Every latency trial contributes; pauses can still move
   the median. Setup and type materialization are untimed. A Mono timed call may
   include remaining JIT work, but distinct types do not prove separate JIT or
-  native bodies. Cold rows carry `emitsPerSecond = 0`, which excludes them from
-  the regression gate.
+  native bodies. Cold rows carry `emitsPerSecond = 0`, which excludes their
+  throughput comparison. Increased comparable allocation counts still fail the
+  regression gate.
 
 ### Allocation honesty
 
