@@ -27,9 +27,11 @@ Canonical public identifiers:
   so `wallstop-organization-builds` must not be used as a native
   `concurrency.group`. IL2CPP is the final mode inside each editor-scoped
   correctness job. The release workflow has a separate EditMode check.
-- Unity runner labels: licensed jobs use
+- Unity runner labels: correctness and release jobs use
   `runs-on: [self-hosted, Windows, RAM-64GB]`. Either ELI-MACHINE or DAD-MACHINE
-  can pick up a matching job. See the [CI lanes](../runbooks/iteration-speed.md#ci-lanes)
+  can pick up a matching job. `perf-numbers.yml` also requires `fast`; its runner
+  configuration identifies ELI-MACHINE for that lane.
+  See the [CI lanes](../runbooks/iteration-speed.md#ci-lanes)
   for PR, full compatibility and release selection.
 - Stuck-job watchdog: `.github/workflows/stuck-job-watchdog.yml` declares
   a five-minute schedule on the default branch. It checks queued work and
@@ -95,6 +97,9 @@ exact-revision qualification, release dispatch and publication:
    compatibility. Select `shipping_fidelity` for stripped-player checks, and
    run a separate dispatch with `consumer_install_validation` for Git,
    tarball and classic-package installs. Those two inputs cannot be combined.
+   Wait for each Unity dispatch to finish successfully before starting the next.
+   They share a concurrency group for the tag with `cancel-in-progress: true`,
+   so a new dispatch cancels an unfinished qualification run for that tag.
    Run `.github/workflows/perf-numbers.yml` from the same tag for performance
    evidence. The [CI lanes](../runbooks/iteration-speed.md#ci-lanes) describe
    the full managed and native release requirements.
