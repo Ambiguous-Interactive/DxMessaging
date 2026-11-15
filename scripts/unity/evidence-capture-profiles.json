@@ -1,0 +1,5 @@
+{
+  "open-loop-editor-capture": ["audit_open_loop_trace.py", "--bundle-stdin"],
+  "editor-latency-clock-capture": ["audit_open_loop_trace.py", "--clock-bundle-stdin"],
+  "managed-clock-fault-identity": ["reduce_managed_clock_identity.py", "--bundle-stdin"]
+}

@@ -12,6 +12,7 @@ const SETTINGS_SCHEMAS = Object.fromEntries(
 );
 const { extractRows, buildCsv, deriveScope } = require("./extract-perf-baseline.js");
 const { reducePairedBracket } = require("./reduce-paired-bracket.js");
+const CAPTURE_PROFILES = require("./evidence-capture-profiles.json");
 const MATRIX_EVIDENCE_NAME = "shipping-matrix-evidence.json";
 const CELL_EVIDENCE_SUFFIX = "/shipping-cell-evidence.json";
 const NORMALIZED_SCHEMA_VERSION = 1;
@@ -234,13 +235,14 @@ function reducePairedThroughputScreen(contents, { sourceCommit } = {}) {
     throw new Error("Paired screen sourceCommit must match the first run's commit.");
   return result;
 }
-function reduceOpenLoopEditorCapture(contents, { sourceCommit } = {}, clock = false) {
+function reduceCapture(contents, { sourceCommit } = {}, profile = "open-loop-editor-capture") {
   const encoded = Object.fromEntries([...contents].map(([name, bytes]) => [name, bytes.toString("base64")]));
   const input = JSON.stringify({ sourceCommit, contents: encoded });
-  const script = path.join(__dirname, "audit_open_loop_trace.py");
-  const run = spawnSync(process.platform === "win32" ? "python" : "python3", [script, clock ? "--clock-bundle-stdin" : "--bundle-stdin"], { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (!Object.hasOwn(CAPTURE_PROFILES, profile)) throw new Error("Unknown capture profile.");
+  const [file, argument] = CAPTURE_PROFILES[profile], script = path.join(__dirname, file);
+  const run = spawnSync(process.platform === "win32" ? "python" : "python3", [script, argument], { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   if (run.error || run.status !== 0)
-    throw new Error(`Open-loop capture replay failed: ${run.error?.message ?? run.stderr?.trim()}`);
+    throw new Error(`Capture evidence replay failed: ${run.error?.message ?? run.stderr?.trim()}`);
   return JSON.parse(run.stdout);
 }
 function reduceSubUnsubObservations(contents, { sourceCommit } = {}) {
@@ -601,7 +603,7 @@ module.exports = {
   reduceDifferentialReplayFailure,
   reduceEditorSettingsCache,
   reducePairedThroughputScreen,
-  reduceOpenLoopEditorCapture,
+  reduceCapture,
   reduceSubUnsubObservations,
   reduceShippingFidelityMatrix,
   summarizeByStrippingLevel

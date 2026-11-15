@@ -35,9 +35,9 @@ Each reducer accepts only its registered artifact class:
 | `paired-throughput-screen`         | `paired-throughput-screen-v1`         |
 | `allocation-subunsub-observations` | `allocation-subunsub-observations-v1` |
 | `differential-replay-failure`      | `differential-replay-failure-v1`      |
-| `editor-settings-cache`            | `editor-settings-cache-v1`            |
 | `open-loop-editor-capture`         | `open-loop-editor-capture-v1`         |
 | `editor-latency-clock-capture`     | `editor-latency-clock-capture-v1`     |
+| `managed-clock-fault-identity`     | `managed-clock-fault-identity-v1`     |
 
 Seal, verify, replay, and manifest writes reject a different class, even when its digest was
 recomputed. The paired screen retains the existing exploratory bracket decision. It does not
@@ -47,6 +47,41 @@ probes. Allocation-heavy SubUnsub campaigns, cold latency, frame/queue latency, 
 mapping, and ARM64 energy still need their complete raw-input contracts and reducers under #508.
 The Editor open-loop class is a descriptive protocol screen; it does not establish an independent
 player session, interval precision, or a latency promotion verdict.
+
+### Managed clock-fault observations
+
+The managed clock class retains a fixed 24-row observation format from #503. It requires exactly
+ten text files: `observations.json`, `source-bindings.json`, `pre-execution-bindings.json`,
+`debug-source-binding.json`, `observer-debug-binding.json`, `observer-source.cs.txt`,
+`observer-project.csproj.txt`, `observer-source-projection.json`, `execution.log`, and `scope.json`.
+The case roster covers three message kinds, two priority layouts, two clock triggers, and caught
+versus escaping faults. The reducer preserves every raw row and diagnostic. It recomputes callback
+order, scoped emission IDs, registration counters, cleanup, and the declared exception/control
+checks. A structurally complete adverse observation produces `ADVERSE`; missing or duplicate cases,
+inconsistent identities, or a false retained summary fail replay.
+
+The source projection descriptor has schema version 1, `mode`, original and retained `Sha256` and
+`Bytes` fields, a `markers` count map, and a `redactor` record. Exact mode requires identical
+original/retained hashes and lengths, no markers, and a null redactor. Redacted mode requires changed
+hashes, an exact inventory of retained `[redacted:<id>]` markers, and the recorded
+`scripts/unity/credential-patterns.js` module hash with function `redactSensitiveData`. Prepare the
+retained copy with that existing function; keep the original observation packet unchanged. The
+original source hash joins the frozen input roster and recorded PDB document checksum. The retained
+hash joins the supplied text bytes. The descriptor and normalized result expose both hashes.
+
+`scope.json` must expose `observerSourceProjectionMode`, `originalObserverSourceRetained`, and
+`observerRedactionReexecutedByReplay: false`. A redacted projection does not retain the original
+observer source. Replay checks the recorded provenance joins; without original bytes it cannot
+reconstruct that source or independently repeat the redaction. The recorded redactor hash is
+provenance, not proof of a new transform execution. Binary DLL/PDB files and Runtime source snapshots
+remain unretained in either mode. Their recorded hashes and identity metadata do not replace those
+bytes. The unresolved clock-getter contract remains explicit.
+
+Node dispatches the supplied bytes to the pure Python reducer. Replay does not load the product or
+repeat `ReferenceEquals`: it retains the producer's instrumented identity values and negative
+controls. This class establishes no new runtime, native, retained-memory, or performance result.
+Sealing and local replay alone also do not satisfy the immutable publication and independent
+restore procedure below.
 
 ### Native attribution capture admission (protocol only)
 
@@ -526,6 +561,48 @@ A local archive round trip can test packaging, byte integrity, and reducer repla
 GitHub retention, immutable publication, independent remote retrieval, or denied remote access.
 
 ## Evidence index
+
+### Managed clock-fault identity text from source 7c9bec8a
+
+Published and restored from GitHub on 2026-11-15. Revision 1 retains 24 recorded fault-reference
+observations and 24 identity controls from the
+[managed continuation study](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503#issuecomment-6898212818).
+The text reducer preserves every raw row and diagnostic and derives zero declared violations.
+
+| Field                                  | Value                                                                                                                                                                                                                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Experiment                             | `managed-clock-fault-reference-identity-s507`                                                                                                                                                                                                               |
+| Revision                               | `1`                                                                                                                                                                                                                                                         |
+| Artifact class / reducer               | `managed-clock-fault-identity` / `managed-clock-fault-identity-v1`                                                                                                                                                                                          |
+| Measured source                        | `7c9bec8a6201390b724c6d2fe6dbd150f7f6369d`                                                                                                                                                                                                                  |
+| Verifier commit / immutable tag target | `15fa0a87613020122f4ba100f7585b06196bd781`                                                                                                                                                                                                                  |
+| Manifest SHA-256                       | `20efd74117e57eab57e9ae0c5ac7179514376f7ce9a29450d4d561a6132864d6`                                                                                                                                                                                          |
+| Archive SHA-256                        | `cd7819e00a083c46883d7f919459133554883f9eee044461c77b59e3dae189f1`                                                                                                                                                                                          |
+| Bundle digest                          | `5341560bb93b71e56e6765538b723a2b89c4152c0e29b3773209ff5c244db3f2`                                                                                                                                                                                          |
+| Release                                | [Immutable text packet](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-managed-clock-fault-reference-identity-s507-r1-20efd741)                                                                                            |
+| Release / asset IDs                    | `446263011` / `751894345`                                                                                                                                                                                                                                   |
+| Exact asset                            | [managed-clock-fault-reference-identity-s507-r1.tar.gz](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-managed-clock-fault-reference-identity-s507-r1-20efd741/managed-clock-fault-reference-identity-s507-r1.tar.gz) |
+| Asset bytes                            | `23914`                                                                                                                                                                                                                                                     |
+| Publication readback                   | `draft=false`, `prerelease=true`, `immutable=true`; exact asset inventory and digest match                                                                                                                                                                  |
+| Draft download                         | Authenticated download matches the complete archive digest before publication                                                                                                                                                                               |
+| Independent restore                    | Fresh remote verifier clone and pinned `npm ci`; public download HTTP 200; archive/manifest hashes, relative regular-file inventory, source/revision/digest and remote tag match                                                                            |
+| Verifier result                        | `verify=0`, `replay=0`; clean checkout before and after                                                                                                                                                                                                     |
+
+The archive contains eleven regular files: ten declared text inputs and the manifest. No producing
+checkout scripts, dependencies, or archive were copied into the reviewer environment. The retained
+observer text has one `credential-assignment` redaction marker. Its original and retained hashes,
+marker inventory, and source-retention limits remain explicit in normalized output.
+
+An earlier anonymous API request for the actual draft asset returned HTTP 403 with a rate-limit
+message. That context remained incomplete and used no fallback. Its scratch observer had expected
+404 specifically and stopped on the actual 403; the original failure remains retained. This is a
+retrieval refusal, with no conclusion about draft visibility. The later published-asset restoration
+uses a separate directory and the canonical public download URL.
+
+Replay retains instrumented reference observations and checks their recorded relationships. It
+does not execute the product, reconstruct original observer source, or retain DLL/PDB bytes. The
+getter contract remains unresolved, and native, memory, performance, and human-reading acceptance
+remain open.
 
 ### SubUnsub observations from source 2cb38b46
 

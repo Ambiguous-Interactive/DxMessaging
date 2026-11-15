@@ -65,6 +65,11 @@ function contentsOf(root) {
     listBundleFiles(root).map((file) => [file, fs.readFileSync(path.join(root, file))])
   );
 }
+test("managed clock capture requires its declared input set", (t) => {
+  const root = writeMatrixBundle(temporaryDirectory());
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.throws(() => sealBundle(root, { ...SEAL_OPTIONS, artifactClass: "managed-clock-fault-identity", reducer: "managed-clock-fault-identity-v1" }), /exactly ten text inputs/);
+});
 test("a sealed bundle verifies and replays to the normalized result it published", () => {
   const { manifest, manifestPath } = sealedBundle();
   assert.equal(manifest.files.length, 9, "four cells contribute two files each plus the matrix");
