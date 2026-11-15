@@ -25,6 +25,7 @@ internal sealed class DocsSnippetCompilationTests
 
     /// <summary>Keep receiver and sender examples valid as Unity class files.</summary>
     /// <remarks>2026-11-03: Usage statements followed type declarations in three complete examples.</remarks>
+    [TestCase("docs/reference/helpers.md", "partial struct ProgressChanged")]
     [TestCase("README.md", "partial struct Heal")]
     [TestCase("docs/guides/migration-guide.md", "partial struct TestMessage")]
     [TestCase("docs/guides/patterns.md", "partial struct GameExit")]

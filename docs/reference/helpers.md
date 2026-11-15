@@ -421,9 +421,15 @@ public readonly partial struct ProgressChanged
     public readonly int? completed;
 }
 
-ProgressChanged unknown = new ProgressChanged(10);
-ProgressChanged zero = new ProgressChanged(10, completed: 0);
-// unknown.completed.HasValue is false; zero.completed.HasValue is true.
+public static class ProgressExample
+{
+    public static void ShowDefaults()
+    {
+        ProgressChanged unknown = new ProgressChanged(10);
+        ProgressChanged zero = new ProgressChanged(10, completed: 0);
+        // unknown.completed.HasValue is false; zero.completed.HasValue is true.
+    }
+}
 ```
 
 `[DxOptionalParameter(Expression = "null")]` and the type default from
