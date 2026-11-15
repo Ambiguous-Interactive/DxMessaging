@@ -39,18 +39,22 @@ The flat-dispatch redesign replaced the older per-priority `*DispatchLink`
 virtual-hop chain with resolved `FlatDispatchEntry` arrays; steady-state
 dispatch is now a direct delegate call per entry (see `FlatDispatch.cs`).
 
-Any PR touching these files has its dispatch-throughput numbers regenerated
-automatically by the `perf-numbers.yml` workflow. It re-runs the single
-published leg at the latest Unity version on every PR change -- a Standalone
-IL2CPP Release player, the headline scope (`Debug.isDebugBuild` false) -- and
-posts the refreshed numbers as a non-blocking sticky PR comment. The comment's
-provenance line carries privacy-safe machine specs (CPU, cores, clock, RAM, GPU,
+Dispatch-throughput measurements run through `perf-numbers.yml` on manual or
+nightly dispatch. Ordinary PRs and merges do not launch these benchmarks or
+receive a sticky performance comment. Link separately measured exact-source
+evidence for performance claims; see the
+[CI lanes](../../../../docs/runbooks/iteration-speed.md#ci-lanes).
+The published scope remains a Standalone IL2CPP Release player at the latest
+supported Unity version (`Debug.isDebugBuild` false).
+
+The workflow retains privacy-safe machine specs (CPU, cores, clock, RAM, GPU,
 OS) gathered by `scripts/unity/collect-machine-specs.ps1`, never a hostname or
-runner name. After merge, the push run commits the refreshed
-`docs/architecture/performance.md` table AND the regenerated master baseline
-`docs/architecture/perf-baseline.csv` directly to the default branch via a
-GitHub App token push when the App is provisioned and the measured commit is
-still the branch tip (no PR); see the
+runner name. Compatible historical comparisons appear in the job summary and
+the `perf-historical-delta` artifact. A default-branch dispatch may publish the
+refreshed `docs/architecture/performance.md` table and
+`docs/architecture/perf-baseline.csv` through the configured GitHub App only
+while the measured commit remains current. Other refs retain artifacts without
+publishing default-branch numbers. See the
 [performance numbers auto-commit runbook](../../../../docs/runbooks/perf-numbers-auto-commit.md)
 for the App + bypass prerequisite. There is no manual PR-body number requirement.
 

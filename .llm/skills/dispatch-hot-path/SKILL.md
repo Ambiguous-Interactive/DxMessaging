@@ -106,11 +106,14 @@ These apply to `DispatchFlatSnapshot`, `DispatchContextFlatSnapshot`,
 
 ## Enforcement
 
-`.github/workflows/perf-numbers.yml` re-runs the published Standalone IL2CPP
-Release leg on every PR change, posts a sticky comment, and runs
-`scripts/unity/render-perf-deltas.js --scope Standalone` against
-`docs/architecture/perf-baseline.csv`; it fails when a gated scenario drops
-throughput past the threshold (default 0.33) or increases allocation.
+`.github/workflows/perf-numbers.yml` runs Standalone IL2CPP Release benchmarks
+through manual or nightly dispatch. Ordinary PRs and merges do not launch them.
+Performance-sensitive changes need separately measured exact-source evidence;
+see [CI lanes](../../../docs/runbooks/iteration-speed.md#ci-lanes).
+The workflow retains historical comparison diagnostics in its job summary and
+artifact. For compatible baselines, `scripts/unity/render-perf-deltas.js --scope Standalone`
+fails gated throughput regressions past the existing diagnostic threshold
+(default 0.33) or increases in comparable measured allocation counts.
 `Tests/Runtime/Benchmarks/DispatchThroughputBenchmarks.cs` is the harness;
 `Tests/Editor/Allocations/EmitGateClockReadIsRare.cs` pins the gate cadence at or
 below `ceil(emitCount / 16) + 1`; `Tests/Editor/Contract/EvictionSweepContractTests.cs`
