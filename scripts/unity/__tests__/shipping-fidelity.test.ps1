@@ -327,6 +327,13 @@ if (
     if (@($parseErrors).Count -gt 0) {
         throw "run-ci-tests.ps1 has parse errors: $($parseErrors.Message -join '; ')"
     }
+    # Index top-level production functions once instead of traversing the whole AST per name.
+    $functionDefinitions = @{}
+    foreach ($definition in $runnerAst.EndBlock.Statements) {
+        if ($definition -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+            $functionDefinitions[$definition.Name] = $definition
+        }
+    }
     foreach ($functionName in @(
         'Resolve-FullPath',
         'ConvertTo-UnityFileUriPath',
@@ -351,14 +358,7 @@ if (
         'Write-ShippingPackageResolutionEvidence',
         'Test-ShippingFidelityResult'
     )) {
-        $definition = $runnerAst.FindAll(
-            {
-                param($node)
-                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-                    $node.Name -eq $functionName
-            },
-            $true
-        ) | Select-Object -First 1
+        $definition = $functionDefinitions[$functionName]
         if (-not $definition) {
             throw "Function '$functionName' was not found in run-ci-tests.ps1."
         }

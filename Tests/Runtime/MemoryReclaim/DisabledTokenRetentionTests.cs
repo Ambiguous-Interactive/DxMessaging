@@ -72,9 +72,15 @@ namespace DxMessaging.Tests.Runtime.MemoryReclaim
                                         sameType,
                                         fast,
                                         mode
-                                    ).SetName(
-                                        $"DisabledTokenRetention_{scenario.Kind}_OldPost{oldPost}_NewPost{newPost}_SameType{sameType}_Fast{fast}_Mode{mode}"
-                                    );
+                                    )
+                                        .SetName(
+                                            $"DisabledTokenRetention_{scenario.Kind}_OldPost{oldPost}_NewPost{newPost}_SameType{sameType}_Fast{fast}_Mode{mode}"
+                                        )
+                                        .SetCategory(
+                                            newPost == oldPost && sameType == fast
+                                                ? "FastRetention"
+                                                : "Exhaustive"
+                                        );
                                 }
                             }
                         }

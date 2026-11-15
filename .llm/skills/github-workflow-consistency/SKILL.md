@@ -97,7 +97,7 @@ publishing, and the tag-selected manual release dispatch.
   `exclude_mail = true`). Lychee treats unknown fields as hard errors.
 - `ci.yml` / `Lint docs links` is the blocking check: an offline pass
   (`--offline --include-fragments`) validating relative links and in-repo anchors with zero
-  network, then a lenient external pass. `markdown-link-validity.yml` is a daily advisory scan
+  network. External availability belongs to the daily advisory scan. `markdown-link-validity.yml` is a daily advisory scan
   that never fails and syncs one tracking issue from `./lychee/out.md`.
 - Acceptance policy: never accept 404 or 410; always accept 403 and 429. When a site adopts a
   new blocking status, widen the shared `accept` list. Never add a per-domain `exclude` and

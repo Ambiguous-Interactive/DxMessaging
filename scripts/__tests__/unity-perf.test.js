@@ -421,10 +421,7 @@ test("performance workflow publishes exact player-size and codegen evidence", ()
     path.join(REPO_ROOT, ".github", "workflows", "perf-numbers.yml"),
     "utf8"
   );
-  assert.match(
-    workflow,
-    /scripts\/unity\/\(comparison-\.\*\|paired-bracket-manifest\|post-route-perf-scenarios\|perf-scenario-definitions\)\\\.json\$/
-  );
+  assert.doesNotMatch(workflow, /^  (pull_request|push):/m);
   assert.match(
     workflow,
     /\$bracketManifestPath = 'scripts\/unity\/paired-bracket-manifest\.json'[\s\S]*\$comparisonGateArguments\.BracketManifestPath = \$bracketManifestPath[\s\S]*require-comparison-rows\.ps1 @comparisonGateArguments/

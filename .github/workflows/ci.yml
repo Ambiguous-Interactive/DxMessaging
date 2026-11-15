@@ -14,6 +14,8 @@ on:
       - main
       - master
       - develop
+  schedule:
+    - cron: "0 1 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -37,6 +39,9 @@ jobs:
       csharpier: ${{ steps.filter.outputs.csharpier }}
       docs: ${{ steps.filter.outputs.docs }}
       docs_links: ${{ steps.filter.outputs.docs_links }}
+      docs_dotnet: ${{ steps.filter.outputs.docs_dotnet }}
+      runtime_dotnet: ${{ steps.filter.outputs.runtime_dotnet }}
+      managed_exhaustive: ${{ steps.filter.outputs.managed_exhaustive }}
       dotnet: ${{ steps.filter.outputs.dotnet }}
       json: ${{ steps.filter.outputs.json }}
       llms: ${{ steps.filter.outputs.llms }}
@@ -55,6 +60,7 @@ jobs:
         id: filter
         env:
           GH_TOKEN: ${{ github.token }}
+          EXPECTED_FILE_COUNT: ${{ github.event.pull_request.changed_files }}
         run: |
           set -euo pipefail
 
@@ -65,6 +71,9 @@ jobs:
               csharpier \
               docs \
               docs_links \
+              docs_dotnet \
+              runtime_dotnet \
+              managed_exhaustive \
               dotnet \
               json \
               llms \
@@ -77,9 +86,21 @@ jobs:
           }
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            if ! files="$(gh api \
+            if ! [[ "${EXPECTED_FILE_COUNT}" =~ ^[1-9][0-9]*$ ]] || ! records="$(gh api \
               "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-              --paginate --jq '.[] | .filename, (.previous_filename // empty)')"; then
+              --paginate --jq '.[] | [.filename, (.previous_filename // null)] | @json')"; then
+              emit_all
+              exit 0
+            fi
+            if [ -z "$records" ] || [ "$(printf '%s\n' "$records" | wc -l | tr -d '[:space:]')" != "$EXPECTED_FILE_COUNT" ]; then
+              emit_all
+              exit 0
+            fi
+            if ! files="$(printf '%s\n' "$records" | jq -er '
+              if type == "array" and length == 2 and
+                (.[0] | type == "string" and length > 0) and
+                (.[1] == null or (.[1] | type == "string" and length > 0))
+              then .[] | select(. != null) else error("Invalid changed path record") end')"; then
               emit_all
               exit 0
             fi
@@ -116,7 +137,7 @@ jobs:
           set_output() {
             name="$1"
             pattern="$2"
-            if printf '%s\n' "$files" | grep -qE "$pattern"; then
+            if printf '%s\n' "$files" | grep -E "$pattern" > /dev/null; then
               echo "$name=true" >> "$GITHUB_OUTPUT"
             else
               echo "$name=false" >> "$GITHUB_OUTPUT"
@@ -135,10 +156,19 @@ jobs:
             "(^docs/|^mkdocs\.yml$|^requirements-docs\.txt$|$ci_workflow)"
           set_output docs_links \
             "(\.md$|\.markdown$|^docs/|^\.lychee\.toml$|^\.github/scripts/check-markdown-links\.ps1$|^\.github/actions/install-pinned-lychee/action\.yml$|$ci_workflow)"
-          # Docs, README, CHANGELOG, and sample Markdown are dotnet triggers because the
-          # dotnet job compiles samples and checks documentation contracts.
+          # Each managed suite follows its actual inputs. Pure documentation must not run runtime retention matrices.
           set_output dotnet \
-            "(\.cs$|\.csproj$|\.sln$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^Runtime/Analyzers/|^SourceGenerators/|^\.docs-tests/|^\.net-attributes/|^\.nuget-tests/|^docs/.*\.(md|markdown|html)$|^README\.md$|^CHANGELOG\.md$|^Samples~/.*\.(md|markdown)$|^docs/overrides/|^\.config/dotnet-tools\.json$|^scripts/unity/.*\.cs\.txt$|$ci_workflow)"
+            "(^SourceGenerators/|^Runtime/Analyzers/|^Runtime/Attributes/|^\.net-attributes/|^\.nuget-tests/|\.csproj$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^\.config/dotnet-tools\.json$|^\.github/analyzers/|$ci_workflow)"
+          set_output runtime_dotnet \
+            "(^Runtime/|^Tests/|^Editor/Analyzers/BaseCallIlInspector\.cs$|^\.net[^/]*/|^SourceGenerators/|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^\.github/analyzers/|$ci_workflow)"
+          set_output docs_dotnet \
+            "(^\.docs-tests/|^Runtime/|^Editor/|^SourceGenerators/|^docs/|^README\.md$|^CHANGELOG\.md$|^Samples~/|^scripts/unity/.*\.cs\.txt$|^scripts/mcp/DxMcpTestRunner\.cs\.txt$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|$ci_workflow)"
+          # Generated benchmark publications contain no compiler snippets or source changes.
+          if ! printf '%s\n' "$files" | grep -Ev '^docs/architecture/(performance\.md|perf-baseline\.csv|perf-baseline-profile\.json)$' | grep . > /dev/null; then
+            echo "docs_dotnet=false" >> "$GITHUB_OUTPUT"
+          fi
+          set_output managed_exhaustive \
+            "(^Runtime/Core/|^Tests/Runtime/(MemoryReclaim/|Core/DiagnosticOriginAfterDisableTests\.cs)|^\.net[^/]*/|$ci_workflow)"
 
           json_pattern='(\.json$|\.asmdef$|\.asmref$|(^|/)\.prettierrc[^/]*$'
           json_pattern="$json_pattern"'|(^|/)prettier\.config\.[^/]+$'
@@ -384,23 +414,6 @@ jobs:
           --collect:"XPlat Code Coverage"
           --results-directory ../.artifacts/generator-coverage/raw
 
-      - name: Restore docs tests
-        if: ${{ needs.changes.outputs.dotnet != 'false' }}
-        working-directory: .docs-tests
-        run: dotnet restore WallstopStudios.DxMessaging.Docs.Tests.csproj
-
-      - name: Run docs tests
-        if: ${{ needs.changes.outputs.dotnet != 'false' }}
-        working-directory: .docs-tests
-        run: >
-          dotnet test
-          WallstopStudios.DxMessaging.Docs.Tests.csproj
-          --configuration Release
-
-      - name: Run plain .NET runtime tests
-        if: ${{ needs.changes.outputs.dotnet != 'false' }}
-        run: dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release
-
       - name: Pack the engine-free attributes and test a package-only consumer
         if: ${{ needs.changes.outputs.dotnet != 'false' }}
         env:
@@ -468,39 +481,108 @@ jobs:
           name: generator-coverage
           path: artifacts/coverage
 
-      - name: Check source marker policy
-        if: ${{ needs.changes.outputs.dotnet != 'false' }}
-        shell: bash
+  docs-dotnet:
+    name: Documentation C# examples
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.docs_dotnet != 'true' && needs.changes.outputs.docs_dotnet != 'false') }}
         run: |
-          set -euo pipefail
-          source_pathspecs=(
-            'Runtime/**'
-            'Editor/**'
-            'SourceGenerators/**'
-            'Tests/**'
-            '*.cs'
-            '*.csproj'
-            '*.sln'
-          )
-          source_file_count=$(git ls-files -- "${source_pathspecs[@]}" | awk 'END { print NR + 0 }')
-          if [ "$source_file_count" -eq 0 ]; then
-            echo "No source files found for marker scan."
-            exit 0
-          fi
-          echo "Scanning ${source_file_count} tracked source files for TODO/FIXME markers."
-          set +e
-          git grep -n -E -I "(TODO|FIXME)" -- "${source_pathspecs[@]}"
-          marker_status=$?
-          set -e
-          if [ "$marker_status" -eq 0 ]; then
-            echo "::error::Found TODO/FIXME markers in source files. Please resolve or suppress them."
-            exit 1
-          elif [ "$marker_status" -eq 1 ]; then
-            echo "No TODO/FIXME markers detected in source files."
-          else
-            echo "::error::Source marker scan failed with exit code $marker_status."
-            exit "$marker_status"
-          fi
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with docs_dotnet='${{ needs.changes.outputs.docs_dotnet }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-.NET changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.docs_dotnet == 'false' }}
+        run: echo "No .NET-affecting files changed; check is present."
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.docs_dotnet != 'false' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        if: ${{ needs.changes.outputs.docs_dotnet != 'false' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+
+      - name: Run documentation compiler tests
+        if: ${{ needs.changes.outputs.docs_dotnet != 'false' }}
+        run: >-
+          dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj --configuration Release
+          --logger "trx;LogFileName=docs.trx" --results-directory .artifacts/managed/docs
+          -- RunConfiguration.TreatNoTestsAsError=true
+
+  runtime-dotnet:
+    name: Runtime .NET regressions
+    needs: changes
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate change detection
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.runtime_dotnet != 'true' && needs.changes.outputs.runtime_dotnet != 'false') }}
+        run: |
+          echo "::error::Change detection concluded '${{ needs.changes.result }}' with runtime_dotnet='${{ needs.changes.outputs.runtime_dotnet }}'."
+          echo "::error::Required gates only skip after successful detection emits true or false."
+          exit 1
+
+      - name: Skip non-.NET changes
+        if: ${{ needs.changes.result == 'success' && needs.changes.outputs.runtime_dotnet == 'false' }}
+        run: echo "No .NET-affecting files changed; check is present."
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.runtime_dotnet != 'false' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        if: ${{ needs.changes.outputs.runtime_dotnet != 'false' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+
+      - name: Run fast runtime regressions
+        if: ${{ needs.changes.outputs.runtime_dotnet != 'false' }}
+        run: >-
+          dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release
+          --filter "TestCategory!=Exhaustive&TestCategory!=MemoryReclaim"
+          --logger "trx;LogFileName=fast.trx" --results-directory .artifacts/managed/runtime
+          -- RunConfiguration.TreatNoTestsAsError=true
+
+      - name: Run representative retention in a fresh process
+        if: ${{ needs.changes.outputs.runtime_dotnet != 'false' }}
+        run: >-
+          dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --no-build
+          --filter "TestCategory=MemoryReclaim&TestCategory!=Exhaustive"
+          --logger "trx;LogFileName=retention.trx" --results-directory .artifacts/managed/runtime
+          -- RunConfiguration.TreatNoTestsAsError=true
+
+      - name: Run exhaustive retention combinations for affected owners or nightly
+        if: ${{ needs.changes.outputs.runtime_dotnet != 'false' && needs.changes.outputs.managed_exhaustive != 'false' }}
+        run: >-
+          dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --no-build
+          --filter "TestCategory=Exhaustive" --logger "trx;LogFileName=exhaustive.trx"
+          --results-directory .artifacts/managed/runtime
+          -- RunConfiguration.TreatNoTestsAsError=true
+
+      - name: Retain selected runtime case results
+        if: ${{ always() && needs.changes.outputs.runtime_dotnet != 'false' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: managed-runtime-results
+          path: .artifacts/managed/runtime/*.trx
+          if-no-files-found: error
 
   json-format:
     name: Check JSON/.asmdef formatting
@@ -586,6 +668,39 @@ jobs:
           echo "::error::Fix with: git add --renormalize . && git commit"
           exit 1
 
+      - name: Check source marker policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_pathspecs=(
+            'Runtime/**'
+            'Editor/**'
+            'SourceGenerators/**'
+            'Tests/**'
+            '*.cs'
+            '*.csproj'
+            '*.sln'
+          )
+          source_file_count=$(git ls-files -- "${source_pathspecs[@]}" | awk 'END { print NR + 0 }')
+          if [ "$source_file_count" -eq 0 ]; then
+            echo "No source files found for marker scan."
+            exit 0
+          fi
+          echo "Scanning ${source_file_count} tracked source files for TODO/FIXME markers."
+          set +e
+          git grep -n -E -I "(TODO|FIXME)" -- "${source_pathspecs[@]}"
+          marker_status=$?
+          set -e
+          if [ "$marker_status" -eq 0 ]; then
+            echo "::error::Found TODO/FIXME markers in source files. Please resolve or suppress them."
+            exit 1
+          elif [ "$marker_status" -eq 1 ]; then
+            echo "No TODO/FIXME markers detected in source files."
+          else
+            echo "::error::Source marker scan failed with exit code $marker_status."
+            exit "$marker_status"
+          fi
+
   spellcheck:
     name: Check spelling
     needs: changes
@@ -620,7 +735,9 @@ jobs:
 
       - name: Run cspell
         if: ${{ needs.changes.outputs.spellcheck != 'false' }}
-        run: npx --yes cspell@10.1.1 --no-progress .
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check:spelling
 
   validate-banner:
     name: Validate banner SVG
@@ -842,9 +959,8 @@ jobs:
           # Let the probes finish their descendant cleanup even if this shell exits early.
           trap 'wait "$heartbeat_pid" || true' EXIT
           script_status=0
-          # The native glob lets Node run test files in separate worker processes;
-          # scripts/ resolves to scripts/index.js and registers every suite in one process.
-          node --test 'scripts/**/*.test.js' || script_status=$?
+          # Share the bounded native Node and Python inventory with local npm test.
+          npm run test:all || script_status=$?
           heartbeat_status=0
           wait "$heartbeat_pid" || heartbeat_status=$?
           echo "::group::Unity editor heartbeat guards"
@@ -859,13 +975,6 @@ jobs:
         if: ${{ needs.changes.outputs.scripts != 'false' }}
         shell: pwsh
         run: ./scripts/__tests__/test-unity-license-activation-retry.ps1 -VerboseOutput
-
-      - name: Test Python script reducers
-        if: ${{ needs.changes.outputs.scripts != 'false' }}
-        shell: bash
-        run: |
-          python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
-          python -m unittest discover -s scripts/unity/__tests__ -p 'test_*.py'
 
       - name: Run MSVC toolchain assertion tests
         if: ${{ needs.changes.outputs.scripts != 'false' }}
@@ -1052,55 +1161,6 @@ jobs:
             --include-fragments \
             --files-from "${RUNNER_TEMP}/doc-files.txt"
 
-      - name: Probe external link liveness
-        if: ${{ needs.changes.outputs.docs_links != 'false' }}
-        run: |
-          # This gate is required, and it asks third-party websites whether they are up.
-          # A single attempt cannot tell a genuinely dead link from a host that was briefly
-          # unreachable, so one blip anywhere on the public internet turns master red on a
-          # commit that changed no links. That happened twice on 2026-07-31, from two
-          # different hosts and two different causes: a cached openupm.com timeout
-          # reclassified as a fatal error (#324), and a shellcheck.net connection failure.
-          #
-          # Two attempts, spaced apart, separate the two cases: a dead link is still dead
-          # 30 seconds later, a blip is not. This is not a flaky test being retried into
-          # green -- the failure being smoothed over is external and outside this
-          # repository, which is the same reasoning that already accepts bot detection,
-          # throttling, and timeouts here.
-          for attempt in 1 2; do
-            if lychee \
-              -c .lychee.toml \
-              --scheme https \
-              --scheme http \
-              --accept-timeouts=true \
-              --files-from "${RUNNER_TEMP}/doc-files.txt"; then
-              exit 0
-            fi
-            if [ "${attempt}" -eq 2 ]; then
-              echo "::error::External link probe failed on both attempts; treating the links as genuinely dead."
-              exit 1
-            fi
-            echo "::notice::External link probe failed on attempt ${attempt}; retrying in 30s to rule out a transient host failure."
-            sleep 30
-          done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Explain link-check failures
-        if: ${{ needs.changes.outputs.docs_links != 'false' && failure() }}
-        run: |
-          cat >> "${GITHUB_STEP_SUMMARY}" <<'EOF'
-          ## How to read a link-check failure
-
-          This job fails for broken internal links or genuinely dead external
-          links. Bot-detection, throttling, transient responses, and timeouts are
-          accepted by this gate; do not add per-domain excludes for those cases.
-
-          The external probe runs twice, 30s apart, and only fails if both
-          attempts fail. If you are reading this, the link was unreachable on
-          both, so check it by hand before assuming the host was flaky.
-          EOF
-
   ci-success:
     name: CI Success
     needs:
@@ -1109,6 +1169,8 @@ jobs:
       - markdownlint
       - csharpier
       - dotnet
+      - docs-dotnet
+      - runtime-dotnet
       - json-format
       - line-endings
       - spellcheck

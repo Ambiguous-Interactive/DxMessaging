@@ -78,6 +78,13 @@ Do not use it for source-generator or analyzer tests under `SourceGenerators/` (
 
 ### Topology
 
+Prefer a dedicated generated package host for repeated tests; see the
+[iteration runbook](../../../docs/runbooks/iteration-speed.md#dedicated-unity-package-host).
+Generate it from the host checkout so its local package path resolves on the host, and keep its
+bridge port/token separate from the game project. One integration owner controls editor mutations.
+For a generated host, prepare the runbook's physical package link and verify a probe file is
+readable from the container. A manifest `file:` reference alone does not establish that mapping.
+
 The devcontainer workspace is the same directory as the embedded package inside the host Unity project, so in-container edits are immediately visible to the host editor. Compilation and test execution happen in the host editor; the container only edits files and drives the editor over MCP.
 
 ### The loop
@@ -115,7 +122,11 @@ The devcontainer workspace is the same directory as the embedded package inside 
    A stale `running` sidecar alone is not a live job. Inspect framework state and errors before
    treating an observation timeout as completion or starting another run.
 
-`resultPath` resolves relative to the HOST Unity project root, not the embedded package. To land somewhere the container can read, prefix it: `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<name>.json`. A bare `.artifacts/unity-mcp/<name>.json` writes to the host project root, invisible to the container.
+`resultPath` resolves relative to the HOST Unity project root, not the package. Use
+`Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/<name>.json` only after verifying
+that physical package entry maps to the shared checkout as described above. A bare
+`.artifacts/unity-mcp/<name>.json` writes to the host project's artifact directory instead of the
+checkout's designated result directory.
 
 The bridge survives domain reloads via `[InitializeOnLoad]` plus `SessionState`, so a recompile mid-run does not lose the result.
 

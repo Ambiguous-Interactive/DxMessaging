@@ -3,27 +3,25 @@
 This runbook explains the one-time setup that lets the Performance Numbers
 workflow (`.github/workflows/perf-numbers.yml`) commit the refreshed
 `docs/architecture/performance.md` dispatch-throughput table directly to the
-default branch after a pull request merges. Keep execution notes local. Do not
+default branch after a nightly or manual measurement. Keep execution notes local. Do not
 paste secrets or screenshots of organization settings into this file.
 
 ## How the auto-commit works
 
-Eligible same-repository pull requests run the licensed benchmarks and receive
-one current-evidence comment linked to the measured head commit and workflow
-attempt. Fork and Dependabot pull requests skip the licensed jobs. After a pull
-request merges, the `push` event runs the benchmarks
-again and the `commit-perf-doc` job re-renders the table (a manual
-`workflow_dispatch` from the default branch does the same and is the supported
-recovery path after a failed publish). If the numbers moved, the job lands the
-refreshed doc, baseline, and baseline execution profile in two tiers:
+The hosted nightly dispatcher starts Performance Numbers through `workflow_dispatch`.
+Maintainers can also dispatch it manually for an exact branch or tag. Ordinary pull requests and
+merges do not run these licensed benchmarks. A performance-sensitive PR must link separately
+measured exact-source evidence before making a claim. Default-branch dispatches retain the
+publication path; dispatches from other refs retain artifacts without publishing default-branch
+numbers. If measurements moved, `commit-perf-doc` lands the refreshed doc, baseline and execution
+profile in two tiers:
 
 1. **Direct push** to the default branch with the App token (the fast path;
    requires the bypass in Step 3).
 1. **Fallback auto-merge pull request** when the direct push is rejected with
    `GH006`: the same commit is pushed to a `ci/perf-auto-update-*` branch, a
    pull request is opened with the App token, and squash auto-merge is
-   requested. The `pull_request` trigger ignores the generated performance doc
-   and baseline paths, so the fallback PR cannot run licensed benchmarks. A
+   requested. The performance workflow has no PR or push trigger, so the fallback PR cannot run licensed benchmarks. A
    branch name alone never bypasses the matrix. Other required
    checks still run. Superseded
    fallback PRs from older runs are closed automatically
@@ -46,18 +44,15 @@ that ref. Check the App installation, **Contents: Read and write**, **Pull
 requests: Read and write**, and any branch or tag rulesets that target
 `release/*` or `v*`.
 
-App-token pushes **do** re-trigger workflows (only the built-in `GITHUB_TOKEN`
-suppresses that). Recursion is therefore broken at the trigger: the `push`
-trigger ignores both `docs/architecture/performance.md` and
-`docs/architecture/perf-baseline.csv`, and
-`docs/architecture/perf-baseline-profile.json`, so the generated auto-commit cannot
-re-run the benchmark.
+App-token pushes can start other repository workflows. Performance Numbers has only a manual
+entry point, so neither its generated commit nor fallback PR can recursively start benchmarks.
+The nightly dispatcher uses revision-based deduplication.
 
 If the App credentials are absent, the `commit-perf-doc` job is skipped with a
 warning, so the workflow is never red just because the App has not been
 provisioned yet. If the default branch advances while the
 long benchmark run is in progress, the job warns and skips that stale artifact
-instead of pushing older numbers over a newer merge; the newer push run owns the
+instead of pushing older numbers over a newer merge; a later scheduled or manual run owns the
 fresh table update.
 
 ## Prerequisite: provision the auto-commit GitHub App
@@ -174,17 +169,16 @@ App just needs the **Pull requests: Read and write** permission from Step 1.
 
 ## How to verify it worked
 
-1. Merge a small pull request that meaningfully changes dispatch throughput (for
-   example a change under `Runtime/Core/MessageBus/`). The merge commit touches
-   non-ignored paths, so it triggers the workflow; the doc only changes when the
-   measured numbers move beyond the render tolerance.
-1. Watch the `push` run of the Performance Numbers workflow on the default
-   branch.
+1. Dispatch **Performance Numbers** from the default branch using
+   Actions -> Performance Numbers -> Run workflow. Merging a PR does not start
+   this workflow. The doc only changes when measured numbers move beyond the
+   render tolerance.
+1. Watch that `workflow_dispatch` run on the default branch.
 1. If the numbers moved, confirm that a commit with subject
    `docs(perf): auto-update dispatch throughput numbers` lands on the default
    branch.
 1. Confirm that doc-only commit does **not** start a follow-up Performance
-   Numbers run (this proves the `paths-ignore` loop break works).
+   Numbers run: the workflow has no pull-request or push triggers.
 1. Confirm the run did **not** warn about a fallback pull request -- a
    `GH006`-triggered fallback means the App is not yet allowed to bypass the
    protection (Step 3); if the branch requires status checks, see the

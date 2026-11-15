@@ -168,7 +168,7 @@ But NOT when combined with `grep -q` for existence checks.
 
 - [PowerShell Best Practices](./powershell-best-practices.md) - Cross-language scripting patterns
 - [Git Workflow Robustness](../../github-workflow-consistency/references/git-workflow-robustness.md) - Git command patterns
-- [Script and Automation Conventions](../../../context.md#script-and-automation-conventions) - Main context file patterns
+- [Script and Automation Conventions](../../agent-task-workflow/references/repository-conventions.md#script-and-automation-conventions) - Main context file patterns
 
 ## Changelog
 

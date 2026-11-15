@@ -297,6 +297,9 @@ Invoke `DxMcpTestRunner.Run(mode, assemblies, tests, categories, resultPath)` th
 `TestRunnerApi.Execute`. Filters use semicolon-separated strings. Use a fresh result path under
 `Packages/com.wallstop-studios.dxmessaging/.artifacts/unity-mcp/`; existing result or companion
 files are refused. The runner owns that path until passive framework cleanup ends.
+The physical package entry must map to the shared checkout; generated `file:` hosts need the
+[package link and readability probe](../../docs/runbooks/iteration-speed.md#dedicated-unity-package-host)
+before this prefix can be used.
 
 | Artifact                                        | Meaning                                                                             |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------- |

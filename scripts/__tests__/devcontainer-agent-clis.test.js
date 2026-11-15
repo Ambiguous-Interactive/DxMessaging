@@ -241,3 +241,53 @@ for (const [label, mode, foreign, repair, expected] of [
     if (repair === "directory") assert.equal(fs.statSync(file).uid, process.getuid());
   });
 }
+
+for (const [mode, expected] of [
+  ["ready", 0],
+  ["install", 0],
+  ["download-fails", 1],
+  ["install-fails", 1],
+  ["install-noop", 1]
+]) {
+  test(`pinned SDK bootstrap handles ${mode}`, { skip: !CAN_RUN_SHELL }, (t) => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-pinned-sdk-"));
+    t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+    fs.writeFileSync(
+      path.join(temp, "global.json"),
+      JSON.stringify({ sdk: { version: "10.0.404" } })
+    );
+    const result = childProcess.spawnSync(
+      "bash",
+      [
+        "-c",
+        `
+      set -euo pipefail
+      source "$1"
+      flock() { return 0; }
+      dotnet() { if [[ -f "$TMPDIR/ready" ]]; then echo 10.0.404; else echo 10.0.401; fi; }
+      curl() { [[ "$MODE" != download-fails ]]; }
+      sudo() {
+        [[ "$MODE" != install-fails ]] || return 1
+        if [[ "$MODE" != install-noop ]]; then touch "$TMPDIR/ready"; fi
+      }
+      if [[ "$MODE" == ready ]]; then touch "$TMPDIR/ready"; fi
+      ensure_pinned_sdk "$TMPDIR"
+    `,
+        "bash",
+        dev("lib/pinned-sdk.sh")
+      ],
+      {
+        encoding: "utf8",
+        env: { ...process.env, TMPDIR: temp, MODE: mode }
+      }
+    );
+    assert.equal(result.status, expected, result.stdout + result.stderr);
+  });
+}
+
+test("both container lifecycle hooks resolve the pinned SDK synchronously", () => {
+  for (const name of ["post-create.sh", "post-start.sh"]) {
+    assert.match(read(name), /source "\$\{SCRIPT_DIR\}\/lib\/pinned-sdk\.sh"/);
+    assert.match(read(name), /^\s*ensure_pinned_sdk(?: "[^"\n]+")?(?: \|\| return 1)?\s*$/m);
+  }
+});

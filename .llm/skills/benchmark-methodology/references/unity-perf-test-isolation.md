@@ -85,10 +85,10 @@ If the asmdef ends up in the `core` bucket instead, the most common cause is the
 
 ## Where Perf Actually Runs
 
-| Workflow               | Triggers                            | Includes Perf? |
-| ---------------------- | ----------------------------------- | -------------- |
-| `unity-tests.yml`      | PR / default-branch push / dispatch | NO             |
-| `unity-benchmarks.yml` | dispatch                            | YES            |
+| Workflow               | Triggers                     | Includes Perf? |
+| ---------------------- | ---------------------------- | -------------- |
+| `unity-tests.yml`      | PR / nightly manual dispatch | NO             |
+| `unity-benchmarks.yml` | dispatch                     | YES            |
 
 The active `.github/workflows/unity-*.yml` workflows run Unity directly on
 self-hosted Windows runners through `scripts/unity/run-ci-tests.ps1` (benchmarks
@@ -109,7 +109,7 @@ Comparison asmdefs live under `Tests/Runtime/Comparisons/` (with bridges under `
 
 The external comparison packages and their required Unity built-in packages are installed from the single source `.github/comparison-packages.json` (registry scopes + PINNED versions + Unity built-ins). `run-ci-tests.ps1 -IncludeComparisons` injects that registry, those pins, and those built-ins into the ephemeral comparison manifest; the committed `.unity-test-project/Packages/manifest.json` and `.unity-test-project/Packages/packages-lock.json` mirror them for local parity. Bump versions/modules in the JSON only; see [Comparison Parity and Package Single Source](../../test-code-quality/references/comparison-parity-and-package-single-source.md).
 
-Comparisons RUN in CI, not only as a manual local manifest step: `perf-numbers.yml` runs isolated internal and comparison matrix entries on every eligible pull request and push, and the comparison entry alone passes `include-comparisons: true` to the composite. To run them locally, the host project's manifest must already include the external comparison packages; then drive the comparison assemblies through `DxMcpTestRunner.Run` over the MCP loop (see [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)). Unity compiles each external bridge only when its package is present, because the asmdef `versionDefines` (sourced from `.github/comparison-packages.json`) guard each bridge; the zero-dependency baselines always compile.
+Comparisons RUN in CI, not only as a manual local manifest step: `perf-numbers.yml` runs isolated internal and comparison matrix entries on nightly or manual dispatch, and the comparison entry alone passes `include-comparisons: true` to the composite. To run them locally, the host project's manifest must already include the external comparison packages; then drive the comparison assemblies through `DxMcpTestRunner.Run` over the MCP loop (see [Unity MCP Test Loop](../../unity-mcp-test-loop/references/mcp-test-loop.md)). Unity compiles each external bridge only when its package is present, because the asmdef `versionDefines` (sourced from `.github/comparison-packages.json`) guard each bridge; the zero-dependency baselines always compile.
 
 ## Classification Invariants
 
