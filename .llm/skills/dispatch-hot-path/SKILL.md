@@ -19,7 +19,7 @@ nanosecond added to the per-emit prologue is a measurable share of throughput.
   anything under `Runtime/Core/Pooling/`.
 - Adding a field write, counter, clock read, diagnostic, or virtual call that
   runs once per emit.
-- Reviewing a `perf-numbers.yml` delta comment that shows a throughput drop.
+- Reviewing workflow diagnostics that show a throughput drop.
 - Touching the idle-eviction sweep gate or `TrySweepIdle`.
 - Deciding whether `[MethodImpl(MethodImplOptions.AggressiveInlining)]` belongs
   on a method.
