@@ -8,6 +8,7 @@ namespace DxMessaging.Tests.Runtime.Core
 
     /// <summary>Consumes generated integral endpoint defaults in Mono and IL2CPP.</summary>
     [TestFixture]
+    [Category("Fast")]
     public sealed partial class GeneratedIntegralDefaultTests
     {
         /// <summary>Runs handwritten controls before generated class and readonly-struct calls.</summary>
