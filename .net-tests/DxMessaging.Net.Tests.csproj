@@ -89,6 +89,10 @@
       Link="GeneratedEnumDefaultTests.cs"
     />
     <Compile
+      Include="../Tests/Runtime/Core/GeneratedNullableEnumDefaultTests.cs"
+      Link="GeneratedNullableEnumDefaultTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/GeneratedIntegralDefaultTests.cs"
       Link="GeneratedIntegralDefaultTests.cs"
     />
