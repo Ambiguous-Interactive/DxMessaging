@@ -1,5 +1,5 @@
 name: Runner Audit (Windows)
-# cspell:ignore PSHOME
+# cspell:ignore PSHOME mscorlib
 
 # Operator-driven, workflow_dispatch-only audit of a self-hosted Windows
 # runner's host prerequisites, exact Unity editors, and required modules.
@@ -28,6 +28,10 @@ name: Runner Audit (Windows)
 on:
   workflow_dispatch:
     inputs:
+      il2cpp-postmortem:
+        description: "Read retained #770 compiler inputs on DAD without launching Unity or changing caches. Overflow fails. No retries."
+        type: boolean
+        default: false
       reclaim-retired-test-cache:
         description: "Reclaim only retired, package-owned test Bee caches on DAD; no checkout or Unity."
         type: boolean
@@ -174,7 +178,8 @@ jobs:
 
   reclaim-retired-test-cache:
     name: Inspect or reclaim DxMessaging test caches
-    if: ${{ inputs['reclaim-retired-test-cache'] || inputs['inspect-test-cache'] }}
+    if: >-
+      ${{ !inputs['il2cpp-postmortem'] && ( inputs['reclaim-retired-test-cache'] || inputs['inspect-test-cache'] ) }}
     needs:
       - runner-preflight
     runs-on: [self-hosted, Windows, RAM-64GB]
@@ -274,11 +279,242 @@ jobs:
               throw 'Cache recovery did not establish the required 64 GiB free space; administrator action remains necessary.'
           }
 
+  il2cpp-postmortem:
+    name: Retained compiler inputs on DAD
+    if: ${{ inputs['il2cpp-postmortem'] }}
+    needs:
+      - runner-preflight
+    runs-on: [self-hosted, Windows, RAM-64GB]
+    timeout-minutes: 15
+    steps:
+      - name: Capture retained compiler inputs without native execution
+        id: postmortem
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
+          DXM_OTHER_POSTMORTEM_MODES: >-
+            ${{ inputs['reclaim-retired-test-cache'] || inputs['inspect-test-cache'] ||
+            inputs['shipping-editor-verification'] || inputs['native-sdk-floor'] ||
+            inputs['native-sdk-registry-probe'] || inputs['native-sdk-upm-network-probe'] ||
+            inputs['native-sdk-log-source'] != '' || inputs['perf-event-window-utc'] != '' ||
+            inputs['perf-host-characterization'] || inputs['perf-host-load'] ||
+            inputs['perf-host-monitor-smoke'] || inputs['perf-pilot-contract-smoke'] ||
+            inputs['perf-license-recovery'] || inputs['perf-pilot-calibration-work'] != 'none' ||
+            inputs['perf-pilot-work-vector'] != '' ||
+            inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' }}
+        run: |
+          # BEGIN IL2CPP POSTMORTEM CAPTURE
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $captureStartedAt = [DateTime]::UtcNow
+          $clock = [Diagnostics.Stopwatch]::StartNew()
+          if ($env:DXM_REQUESTED_RUNNER -cne 'DAD-MACHINE' -or $env:RUNNER_NAME -cne 'DAD-MACHINE' -or
+              $env:COMPUTERNAME -cne 'DAD-MACHINE' -or $env:GITHUB_REPOSITORY -cne 'Ambiguous-Interactive/DxMessaging') {
+              throw 'Postmortem capture requires the original DAD-MACHINE and repository.'
+          }
+          if ($env:DXM_OTHER_POSTMORTEM_MODES -cne 'false' -or $env:GITHUB_SHA -cnotmatch '^[a-f0-9]{40}$' -or
+              $env:GITHUB_RUN_ID -cnotmatch '^[1-9][0-9]*$' -or $env:GITHUB_RUN_ATTEMPT -cnotmatch '^[1-9][0-9]*$') {
+              throw 'Postmortem capture requires isolated mode and complete workflow identity.'
+          }
+          $active = @(Get-CimInstance Win32_Process -Filter "Name='Unity.exe' OR Name='il2cpp.exe'")
+          if ($active.Count -ne 0) { throw 'A Unity or converter process is active; retained inputs were not read.' }
+          $project = Join-Path $env:RUNNER_WORKSPACE 'dxm-u/t/6000.5.2f1-standalone-935565f2'
+          $managed = Join-Path $project 'Library/Bee/artifacts/WinPlayerBuildProgram/ManagedStripped'
+          $converter = Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3/6000.5.2f1/Editor/Data/il2cpp/build/deploy'
+          $plainPaths = @($project, $managed, $converter)
+          foreach ($directory in @($project, $managed, $converter)) {
+              $parent = [IO.DirectoryInfo]::new($directory)
+              while ($null -ne $parent) { $plainPaths += $parent.FullName; $parent = $parent.Parent }
+          }
+          foreach ($directory in @($plainPaths | Sort-Object -Unique)) {
+              $item = Get-Item -LiteralPath $directory -Force
+              if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                  throw 'Postmortem source directories must exist without redirection.'
+              }
+          }
+          $marker = Join-Path $project '.dxmessaging-ci-project'
+          if ((Get-Content -LiteralPath $marker -Raw).Trim() -cne 'com.wallstop-studios.dxmessaging unity ci ephemeral project') {
+              throw 'The retained project ownership marker differs.'
+          }
+          $expectedNames = @(
+              'Assembly-CSharp.dll'
+              'DxmCiStandaloneTestCallback.dll'
+              'Mono.Security.dll'
+              'System.Configuration.dll'
+              'System.Core.dll'
+              'System.Numerics.dll'
+              'System.Runtime.CompilerServices.Unsafe.dll'
+              'System.Runtime.Serialization.dll'
+              'System.ServiceModel.Internals.dll'
+              'System.Xml.dll'
+              'System.dll'
+              'Unity.Scripting.dll'
+              'UnityEngine.AIModule.dll'
+              'UnityEngine.AccessibilityModule.dll'
+              'UnityEngine.AdaptivePerformanceModule.dll'
+              'UnityEngine.AndroidJNIModule.dll'
+              'UnityEngine.AnimationModule.dll'
+              'UnityEngine.AssetBundleModule.dll'
+              'UnityEngine.AudioModule.dll'
+              'UnityEngine.ContentLoadModule.dll'
+              'UnityEngine.CoreModule.dll'
+              'UnityEngine.DirectorModule.dll'
+              'UnityEngine.GridModule.dll'
+              'UnityEngine.HierarchyCoreModule.dll'
+              'UnityEngine.IMGUIModule.dll'
+              'UnityEngine.InputForUIModule.dll'
+              'UnityEngine.InputLegacyModule.dll'
+              'UnityEngine.InputModule.dll'
+              'UnityEngine.JSONSerializeModule.dll'
+              'UnityEngine.MarshallingModule.dll'
+              'UnityEngine.ParticleSystemModule.dll'
+              'UnityEngine.Physics2DModule.dll'
+              'UnityEngine.PhysicsCore2DModule.dll'
+              'UnityEngine.PhysicsModule.dll'
+              'UnityEngine.PropertiesModule.dll'
+              'UnityEngine.ScriptingModule.dll'
+              'UnityEngine.SharedInternalsModule.dll'
+              'UnityEngine.SubsystemsModule.dll'
+              'UnityEngine.TerrainModule.dll'
+              'UnityEngine.TestRunner.dll'
+              'UnityEngine.TextCoreFontEngineModule.dll'
+              'UnityEngine.TextCoreTextEngineModule.dll'
+              'UnityEngine.TextRenderingModule.dll'
+              'UnityEngine.TilemapModule.dll'
+              'UnityEngine.UIElementsModule.dll'
+              'UnityEngine.UIModule.dll'
+              'UnityEngine.UnityAnalyticsCommonModule.dll'
+              'UnityEngine.UnityAnalyticsModule.dll'
+              'UnityEngine.UnityConsentModule.dll'
+              'UnityEngine.UnityWebRequestModule.dll'
+              'UnityEngine.VFXModule.dll'
+              'UnityEngine.VideoModule.dll'
+              'UnityEngine.XRModule.dll'
+              'UnityEngine.dll'
+              'WallstopStudios.DxMessaging.Attributes.dll'
+              'WallstopStudios.DxMessaging.DiagnosticsToolingExerciser.Sample.dll'
+              'WallstopStudios.DxMessaging.MiniCombat.Sample.dll'
+              'WallstopStudios.DxMessaging.Testing.dll'
+              'WallstopStudios.DxMessaging.Tests.00.Runtime.Benchmarks.dll'
+              'WallstopStudios.DxMessaging.Tests.00.Runtime.Comparisons.dll'
+              'WallstopStudios.DxMessaging.Tests.Runtime.AttributesOnly.dll'
+              'WallstopStudios.DxMessaging.Tests.Runtime.dll'
+              'WallstopStudios.DxMessaging.UIButtons.Sample.dll'
+              'WallstopStudios.DxMessaging.dll'
+              'mscorlib.dll'
+              'nunit.framework.dll'
+          )
+          $inputs = @(Get-ChildItem -LiteralPath $managed -File -Force | Where-Object { $_.Extension -ieq '.dll' } | Sort-Object Name)
+          if (@(Compare-Object -ReferenceObject $expectedNames -DifferenceObject @($inputs.Name) -CaseSensitive).Count -ne 0) {
+              throw 'Retained DLL names differ from the original 66 declared converter operands.'
+          }
+          $toolEntries = @(Get-ChildItem -LiteralPath $converter -Recurse -Force)
+          $tools = @($toolEntries | Where-Object { -not $_.PSIsContainer } | Sort-Object FullName)
+          if (@($inputs + $toolEntries | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count -ne 0) {
+              throw 'Retained files must not be redirected.'
+          }
+          $owned = @($inputs | Where-Object { $_.Name.StartsWith('WallstopStudios.DxMessaging.', [StringComparison]::Ordinal) -or
+              $_.Name -ceq 'WallstopStudios.DxMessaging.dll' -or $_.Name -ceq 'Assembly-CSharp.dll' -or $_.Name -ceq 'DxmCiStandaloneTestCallback.dll' })
+          if (-not (Test-Path -LiteralPath (Join-Path $converter 'il2cpp.exe') -PathType Leaf) -or
+              $tools.Count -lt 1 -or $tools.Count -gt 1024 -or ($tools | Measure-Object Length -Sum).Sum -gt 1GB -or
+              ($inputs | Measure-Object Length -Sum).Sum -gt 128MB -or ($owned | Measure-Object Length -Sum).Sum -gt 64MB) {
+              throw 'Postmortem capture exceeds the fixed input/tool/owned-byte bounds.'
+          }
+          $output = Join-Path $env:RUNNER_TEMP ("dxm-770-{0}-{1}" -f $env:GITHUB_RUN_ID, $env:GITHUB_RUN_ATTEMPT)
+          if (Test-Path -LiteralPath $output) { throw 'Postmortem output already exists; no retained evidence was overwritten.' }
+          New-Item -ItemType Directory -Path (Join-Path $output 'owned-inputs') | Out-Null
+          "artifact-root=$output" >> $env:GITHUB_OUTPUT
+          $records = [Collections.Generic.List[object]]::new()
+          $state = 'incomplete'
+          try {
+              foreach ($file in @($inputs) + @($tools)) {
+                  if ($clock.Elapsed.TotalSeconds -gt 60) { throw 'The fixed 60-second postmortem capture bound was reached.' }
+                  $before = Get-Item -LiteralPath $file.FullName
+                  $digest = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                  $relative = if ($file.DirectoryName -ceq $managed) { 'inputs/' + $file.Name } else {
+                      'converter/' + [IO.Path]::GetRelativePath($converter, $file.FullName).Replace('\', '/')
+                  }
+                  $retained = $null
+                  if ($file.FullName -in $owned.FullName) {
+                      $retained = 'owned-inputs/' + $file.Name
+                      Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $output $retained)
+                      if ((Get-FileHash -LiteralPath (Join-Path $output $retained) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $digest) {
+                          throw 'An owned input changed during its copy.'
+                      }
+                  }
+                  $after = Get-Item -LiteralPath $file.FullName
+                  if ($before.Length -ne $after.Length -or $before.LastWriteTimeUtc.Ticks -ne $after.LastWriteTimeUtc.Ticks -or
+                      (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne $digest) {
+                      throw 'A postmortem source file changed during observation.'
+                  }
+                  $records.Add([ordered]@{ path = $relative; bytes = $before.Length; sha256 = $digest;
+                      lastWriteUtc = $before.LastWriteTimeUtc.ToString('O'); retainedPath = $retained })
+              }
+              if ($clock.Elapsed.TotalSeconds -gt 60) { throw 'The fixed 60-second postmortem capture bound was reached.' }
+              $state = 'complete-later-observation'
+          } finally {
+              [ordered]@{ schemaVersion = 1; state = $state; workflowSource = $env:GITHUB_SHA;
+                  runId = $env:GITHUB_RUN_ID; attempt = $env:GITHUB_RUN_ATTEMPT; runner = $env:RUNNER_NAME;
+                  startedUtc = $captureStartedAt.ToString('O'); finishedUtc = [DateTime]::UtcNow.ToString('O');
+                  originalRun = '43800105910'; originalAttempt = 1; originalHead = '2c6b1653a998ca51c9ec89fe3d55f518baec0527';
+                  project = $project; converterDirectory = $converter; inputCount = $inputs.Count; toolCount = $tools.Count;
+                  historicalPreimage = 'not-established'; globallyAtomic = $false; loadedToolClosure = 'not-measured';
+                  files = @($records) } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $output 'postmortem.json') -Encoding utf8
+          }
+          # END IL2CPP POSTMORTEM CAPTURE
+
+      - name: Checkout isolated artifact tooling
+        if: ${{ always() && steps.postmortem.outputs.artifact-root != '' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: .artifacts/770-source
+
+      - name: Setup Node.js for artifact tooling
+        id: postmortem_node
+        if: ${{ always() && steps.postmortem.outputs.artifact-root != '' }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.13.1"
+
+      - name: Install artifact tooling dependencies
+        id: postmortem_tooling
+        if: ${{ always() && steps.postmortem.outputs.artifact-root != '' }}
+        timeout-minutes: 2
+        shell: pwsh
+        working-directory: .artifacts/770-source
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Redact retained compiler artifacts
+        id: redact_postmortem
+        if: ${{ always() && steps.postmortem_node.outcome == 'success' && steps.postmortem_tooling.outcome == 'success' }}
+        timeout-minutes: 2
+        shell: pwsh
+        working-directory: .artifacts/770-source
+        env:
+          DXM_POSTMORTEM_ROOT: ${{ steps.postmortem.outputs.artifact-root }}
+        run: |
+          node scripts/unity/redact-unity-artifacts.js "$env:DXM_POSTMORTEM_ROOT"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload retained compiler artifacts
+        if: ${{ always() && steps.redact_postmortem.outcome == 'success' }}
+        timeout-minutes: 3
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: il2cpp-postmortem-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.postmortem.outputs.artifact-root }}
+          if-no-files-found: error
+          retention-days: 14
+
   bootstrap:
     if: >-
-      ${{ !inputs['shipping-editor-verification'] && !inputs['native-sdk-floor'] &&
-      inputs['native-sdk-log-source'] == '' && !inputs['native-sdk-registry-probe'] &&
-      !inputs['native-sdk-upm-network-probe'] && !inputs['reclaim-retired-test-cache'] && !inputs['inspect-test-cache'] }}
+      ${{ !inputs['il2cpp-postmortem'] && ( !inputs['shipping-editor-verification'] && !inputs['native-sdk-floor'] && inputs['native-sdk-log-source']
+      == '' && !inputs['native-sdk-registry-probe'] && !inputs['native-sdk-upm-network-probe'] && !inputs['reclaim-retired-test-cache'] &&
+      !inputs['inspect-test-cache'] ) }}
     # F9: surface the mode (Audit vs Maintenance) in the job display name so
     # operators reading the Actions UI immediately see which mode this run is
     # without expanding the inputs.
@@ -559,7 +795,8 @@ jobs:
 
   shipping-editor-runner-preflight:
     name: Shipping Editor ELI registration preflight
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] }}
+    if: >-
+      ${{ !inputs['il2cpp-postmortem'] && ( github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] ) }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -572,7 +809,8 @@ jobs:
 
   shipping-editor-verification:
     name: Unity 2021.3 shipping Editor and samples on ELI
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] }}
+    if: >-
+      ${{ !inputs['il2cpp-postmortem'] && ( github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] ) }}
     needs:
       - runner-preflight
       - shipping-editor-runner-preflight
@@ -813,8 +1051,8 @@ jobs:
   package-log-capture:
     name: Package diagnostics on ELI
     if: >-
-      ${{ inputs['native-sdk-log-source'] != '' || inputs['native-sdk-registry-probe'] ||
-      inputs['native-sdk-upm-network-probe'] }}
+      ${{ !inputs['il2cpp-postmortem'] && ( inputs['native-sdk-log-source'] != '' || inputs['native-sdk-registry-probe'] ||
+      inputs['native-sdk-upm-network-probe'] ) }}
     needs:
       - runner-preflight
     runs-on: [self-hosted, Windows, RAM-64GB, fast]
@@ -950,11 +1188,10 @@ jobs:
   pilot-contract-smoke:
     name: Pilot IL2CPP contract, calibration, vector, or license recovery on ELI
     if: >-
-      ${{ !inputs['native-sdk-upm-network-probe'] && !inputs['native-sdk-registry-probe'] && inputs['native-sdk-log-source'] == '' &&
-      !inputs['native-sdk-floor'] && (inputs['perf-pilot-contract-smoke'] || inputs['perf-pilot-calibration-work'] != 'none' ||
-      inputs['perf-pilot-work-vector'] != '' ||
-      inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' ||
-      inputs['perf-license-recovery']) }}
+      ${{ !inputs['il2cpp-postmortem'] && ( !inputs['native-sdk-upm-network-probe'] && !inputs['native-sdk-registry-probe'] &&
+      inputs['native-sdk-log-source'] == '' && !inputs['native-sdk-floor'] && (inputs['perf-pilot-contract-smoke'] ||
+      inputs['perf-pilot-calibration-work'] != 'none' || inputs['perf-pilot-work-vector'] != '' || inputs['perf-pilot-batch-orders'] !=
+      'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' || inputs['perf-license-recovery']) ) }}
     needs:
       - runner-preflight
       - bootstrap
@@ -1361,8 +1598,8 @@ jobs:
   native-sdk-floor:
     name: Unity 2021.3 native SDK ${{ inputs['native-sdk-scope'] }} floor on ELI
     if: >-
-      ${{ inputs['native-sdk-floor'] && inputs['native-sdk-log-source'] == '' &&
-      !inputs['native-sdk-registry-probe'] && !inputs['native-sdk-upm-network-probe'] }}
+      ${{ !inputs['il2cpp-postmortem'] && ( inputs['native-sdk-floor'] && inputs['native-sdk-log-source'] == '' && !inputs['native-sdk-registry-probe']
+      && !inputs['native-sdk-upm-network-probe'] ) }}
     needs:
       - runner-preflight
     runs-on:
