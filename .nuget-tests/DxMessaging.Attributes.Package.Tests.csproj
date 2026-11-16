@@ -16,6 +16,14 @@
       Include="../Tests/Runtime/AttributesOnly/StandaloneAttributeRulesTests.cs"
       Link="StandaloneAttributeRulesTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/GeneratedEnumDefaultTests.cs"
+      Link="GeneratedEnumDefaultTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/GeneratedNullableEnumDefaultTests.cs"
+      Link="GeneratedNullableEnumDefaultTests.cs"
+    />
     <PackageReference
       Include="WallstopStudios.DxMessaging.Attributes"
       Version="$(AttributesPackageVersion)"
