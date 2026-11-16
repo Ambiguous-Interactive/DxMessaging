@@ -319,9 +319,9 @@ jobs:
           }
           $active = @(Get-CimInstance Win32_Process -Filter "Name='Unity.exe' OR Name='il2cpp.exe'")
           if ($active.Count -ne 0) { throw 'A Unity or converter process is active; retained inputs were not read.' }
-          $project = Join-Path $env:RUNNER_WORKSPACE 'dxm-u/t/6000.5.2f1-standalone-935565f2'
-          $managed = Join-Path $project 'Library/Bee/artifacts/WinPlayerBuildProgram/ManagedStripped'
-          $converter = Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3/6000.5.2f1/Editor/Data/il2cpp/build/deploy'
+          $project = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_WORKSPACE 'dxm-u/t/6000.5.2f1-standalone-935565f2'))
+          $managed = [IO.Path]::GetFullPath((Join-Path $project 'Library/Bee/artifacts/WinPlayerBuildProgram/ManagedStripped'))
+          $converter = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TOOL_CACHE 'u6-v3/6000.5.2f1/Editor/Data/il2cpp/build/deploy'))
           $plainPaths = @($project, $managed, $converter)
           foreach ($directory in @($project, $managed, $converter)) {
               $parent = [IO.DirectoryInfo]::new($directory)
@@ -421,7 +421,7 @@ jobs:
               ($inputs | Measure-Object Length -Sum).Sum -gt 128MB -or ($owned | Measure-Object Length -Sum).Sum -gt 64MB) {
               throw 'Postmortem capture exceeds the fixed input/tool/owned-byte bounds.'
           }
-          $output = Join-Path $env:RUNNER_TEMP ("dxm-770-{0}-{1}" -f $env:GITHUB_RUN_ID, $env:GITHUB_RUN_ATTEMPT)
+          $output = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP ("dxm-770-{0}-{1}" -f $env:GITHUB_RUN_ID, $env:GITHUB_RUN_ATTEMPT)))
           if (Test-Path -LiteralPath $output) { throw 'Postmortem output already exists; no retained evidence was overwritten.' }
           New-Item -ItemType Directory -Path (Join-Path $output 'owned-inputs') | Out-Null
           "artifact-root=$output" >> $env:GITHUB_OUTPUT
@@ -432,7 +432,7 @@ jobs:
                   if ($clock.Elapsed.TotalSeconds -gt 60) { throw 'The fixed 60-second postmortem capture bound was reached.' }
                   $before = Get-Item -LiteralPath $file.FullName
                   $digest = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-                  $relative = if ($file.DirectoryName -ceq $managed) { 'inputs/' + $file.Name } else {
+                  $relative = if ($file.FullName -in $inputs.FullName) { 'inputs/' + $file.Name } else {
                       'converter/' + [IO.Path]::GetRelativePath($converter, $file.FullName).Replace('\', '/')
                   }
                   $retained = $null
@@ -467,6 +467,10 @@ jobs:
       - name: Checkout isolated artifact tooling
         if: ${{ always() && steps.postmortem.outputs.artifact-root != '' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.longpaths
+          GIT_CONFIG_VALUE_0: "true"
         with:
           persist-credentials: false
           path: .artifacts/770-source

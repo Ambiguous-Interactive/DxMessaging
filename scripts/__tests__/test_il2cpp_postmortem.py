@@ -48,6 +48,7 @@ function Copy-Item {
 
 SCENARIOS = {
     "complete": None,
+    "normalized workspace": None,
     "wrong request": "original DAD-MACHINE",
     "wrong runner": "original DAD-MACHINE",
     "wrong machine": "original DAD-MACHINE",
@@ -75,6 +76,8 @@ class Il2CppPostmortem(unittest.TestCase):
     def test_artifact_binding_and_mode_isolation(self):
         job = SOURCE.split("\n  il2cpp-postmortem:\n", 1)[1].split("\n  bootstrap:\n", 1)[0]
         self.assertIn("path: .artifacts/770-source", job)
+        self.assertIn("GIT_CONFIG_KEY_0: core.longpaths", job)
+        self.assertIn('GIT_CONFIG_VALUE_0: "true"', job)
         self.assertIn("working-directory: .artifacts/770-source", job)
         self.assertIn('node scripts/unity/redact-unity-artifacts.js "$env:DXM_POSTMORTEM_ROOT"', job)
         self.assertIn("DXM_POSTMORTEM_ROOT: ${{ steps.postmortem.outputs.artifact-root }}", job)
@@ -126,6 +129,8 @@ class Il2CppPostmortem(unittest.TestCase):
                 "other mode": ("DXM_OTHER_POSTMORTEM_MODES", "true"),
                 "bad source identity": ("GITHUB_SHA", "short"),
             }
+            if scenario == "normalized workspace":
+                environment["RUNNER_WORKSPACE"] = str(workspace / ".." / "workspace")
             if scenario in substitutions:
                 key, value = substitutions[scenario]
                 environment[key] = value
