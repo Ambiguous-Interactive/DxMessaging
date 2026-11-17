@@ -46,7 +46,7 @@ try {
                 (Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash -or
                 $record.preProcessingLength -ne 6 -or
                 $record.sourceLengthObserved -ne 6 -or
-                $record.sourceLastWriteTimeUtc -ne $oldTimestamp.ToString('o') -or
+                ([DateTime]$record.sourceLastWriteTimeUtc).ToUniversalTime().ToString('o') -ne $oldTimestamp.ToString('o') -or
                 -not $record.sourceMetadataUnchangedDuringCopy) {
                 throw "Worker bytes, hash or historical timestamp lost for $($record.name)."
             }
