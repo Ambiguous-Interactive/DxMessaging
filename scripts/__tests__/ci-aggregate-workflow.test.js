@@ -42,10 +42,8 @@ function resolveLockActionPin(actionNames) {
 }
 // Acquire/editor/preflight/head-guard share the build lock; return/classify/release/require-confirmed share cleanup policy.
 // prettier-ignore
-const [LOCK_ACTION_PIN, CLEANUP_POLICY_PIN] = [["check-unity-runner-availability", "acquire-build-lock", "release-build-lock", "require-current-pr-head", "ensure-unity-editor"], ["return-unity-license", "classify-unity-cleanup-evidence", "require-confirmed-unity-cleanup"]].map((group) => resolveLockActionPin(group));
+const [LOCK_ACTION_PIN, { sha: CLEANUP_POLICY_SHA }] = [["check-unity-runner-availability", "acquire-build-lock", "release-build-lock", "require-current-pr-head", "ensure-unity-editor"], ["return-unity-license", "classify-unity-cleanup-evidence", "require-confirmed-unity-cleanup"]].map((group) => resolveLockActionPin(group));
 const LOCK_ACTION_SHA = LOCK_ACTION_PIN.sha;
-const ACQUIRE_ACTION_SHA = LOCK_ACTION_PIN.sha;
-const CLEANUP_POLICY_SHA = CLEANUP_POLICY_PIN.sha;
 // SYNC: workflow-test-vectors.json UNITY_LOCK_WINDOWS mirrors scripts/validate-unity-pr-policy.py LICENSED_LOCK_WINDOWS.
 // prettier-ignore
 const CONSOLIDATED_WORKFLOWS = ["actionlint.yml", "csharpier-check.yml", "dotnet-tests.yml", "json-format-check.yml", "lint-doc-links.yml", "markdownlint.yml", "script-tests.yml", "spellcheck.yml", "validate-banner.yml", "validate-docs.yml", "validate-llms-txt.yml", "yaml-format-lint.yml"];
@@ -57,14 +55,11 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function getJobBlock(source, jobId, sourceName = "ci.yml") {
-  const header = new RegExp(`^  ${escapeRegExp(jobId)}:\n`, "m");
-  const match = header.exec(source);
+  const match = new RegExp(`^  ${escapeRegExp(jobId)}:\n`, "m").exec(source);
   assert.ok(match, `${sourceName}:${jobId} job must exist`);
-  const start = match.index;
-  const rest = source.slice(start + match[0].length);
+  const rest = source.slice(match.index + match[0].length);
   const nextJob = /^  [A-Za-z0-9_-]+:\n/m.exec(rest);
-  const end = nextJob ? start + match[0].length + nextJob.index : source.length;
-  return source.slice(start, end);
+  return match[0] + rest.slice(0, nextJob?.index);
 }
 function getStepBlock(jobBlock, stepName) {
   const marker = `      - name: ${stepName}\n`;
@@ -74,10 +69,9 @@ function getStepBlock(jobBlock, stepName) {
   return jobBlock.slice(start, next === -1 ? jobBlock.length : next);
 }
 function extractShellPatternVariable(source, variableName) {
-  const initialPattern = new RegExp(`^\\s*${escapeRegExp(variableName)}='([^']*)'$`);
-  const appendPattern = new RegExp(
-    `^\\s*${escapeRegExp(variableName)}="\\$${escapeRegExp(variableName)}"'([^']*)'$`
-  );
+  const escaped = escapeRegExp(variableName);
+  const initialPattern = new RegExp(`^\\s*${escaped}='([^']*)'$`);
+  const appendPattern = new RegExp(`^\\s*${escaped}="\\$${escaped}"'([^']*)'$`);
   const pieces = [];
   for (const line of source.split(/\r?\n/)) {
     const match = initialPattern.exec(line) || (pieces.length && appendPattern.exec(line));
@@ -124,8 +118,14 @@ test("active workflows keep the shared safety contract", () => {
       `${file} must declare top-level permissions`
     );
     for (const [jobId, job] of Object.entries(workflow.jobs)) {
+      const timeout =
+        /^Ambiguous-Interactive\/review-tools\/\.github\/workflows\/(openai-review|agent-metrics)\.yml@[0-9a-f]{40}$/.test(
+          job.uses
+        )
+          ? job.with?.["timeout-minutes"]
+          : job["timeout-minutes"];
       assert.ok(
-        Number.isFinite(job["timeout-minutes"]) && job["timeout-minutes"] > 0,
+        Number.isFinite(timeout) && timeout > 0,
         `${file}:${jobId} must have a positive timeout-minutes`
       );
       for (const step of job.steps || []) {
@@ -363,7 +363,7 @@ test("copyable build-lock documentation follows the runner and App credential co
   ]) {
     const source = fs.readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
     const acquireExample = new RegExp(
-      `uses: ${escapeRegExp(LOCK_ACTION_PREFIX)}acquire-build-lock@${ACQUIRE_ACTION_SHA}${escapeRegExp(LOCK_ACTION_PIN.comment)}[\\s\\S]*?\`\`\``
+      `uses: ${escapeRegExp(LOCK_ACTION_PREFIX)}acquire-build-lock@${LOCK_ACTION_SHA}${escapeRegExp(LOCK_ACTION_PIN.comment)}[\\s\\S]*?\`\`\``
     ).exec(source);
     assert.ok(acquireExample, `${relativePath} must contain a copyable acquire example`);
     for (const binding of [
@@ -407,10 +407,10 @@ test("dependabot never splits a build-lock bump from the copyable docs examples"
 // prettier-ignore
 test("dependabot selects the uv updater for the uv-generated Python locks", () => { const updates = YAML.parse(fs.readFileSync(path.join(REPO_ROOT, ".github", "dependabot.yml"), "utf8")).updates; const rootUvUpdates = updates.filter((update) => update["package-ecosystem"] === "uv" && update.directory === "/"); const rootPipUpdates = updates.filter((update) => update["package-ecosystem"] === "pip" && update.directory === "/"); assert.equal(rootUvUpdates.length, 1, "dependabot.yml must define one root uv update entry"); assert.equal(rootPipUpdates.length, 0, "uv-generated locks must not use the pip updater, which recompiles with pip-compile"); assert.deepEqual(rootUvUpdates[0].groups?.["python-locks-all"]?.patterns, ["*"]); });
 test("every Unity lock window releases with explicit cleanup proof", () => {
-  const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${ACQUIRE_ACTION_SHA}${LOCK_ACTION_PIN.comment}`;
+  const acquire = `uses: ${LOCK_ACTION_PREFIX}acquire-build-lock@${LOCK_ACTION_SHA}${LOCK_ACTION_PIN.comment}`;
   const returnLicense = `uses: ${LOCK_ACTION_PREFIX}return-unity-license@${CLEANUP_POLICY_SHA}`;
   const classify = `uses: ${LOCK_ACTION_PREFIX}classify-unity-cleanup-evidence@${CLEANUP_POLICY_SHA}`;
-  const release = `uses: ${LOCK_ACTION_PREFIX}release-build-lock@${ACQUIRE_ACTION_SHA}${LOCK_ACTION_PIN.comment}`;
+  const release = `uses: ${LOCK_ACTION_PREFIX}release-build-lock@${LOCK_ACTION_SHA}${LOCK_ACTION_PIN.comment}`;
   const gate = `uses: ${LOCK_ACTION_PREFIX}require-confirmed-unity-cleanup@${CLEANUP_POLICY_SHA}`;
   const runnerLabels = new Map([
     ["perf-numbers.yml", '[["self-hosted","Windows","RAM-64GB","fast"]]'],
