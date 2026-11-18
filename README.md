@@ -21,9 +21,9 @@
 >
 > DxMessaging began as an original project around 2014 and remains actively developed and used today.
 > Over the past two years, I (wallstop) have been using LLMs to help improve the library's quality and
-> performance, expand its tests, and create user-facing documentation. There is always a human in
-> the loop: I actively review all changes and read through all user-facing copy. I share this so you
-> can make an informed decision about using the project.
+> performance, expand its tests, and create user-facing documentation. I review all changes and
+> read all user-facing copy. I share this so you can make an informed decision about using the
+> project.
 
 DxMessaging is free and will remain free forever. No paid editions, paid upgrades, or feature charges.
 
@@ -246,6 +246,7 @@ public sealed class DamageReceiver : MessageAwareComponent
     private void OnDamageRequested(in DamageRequested message)
     {
         Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
+        Debug.Log($"Health: {Health}", this);
     }
 }
 ```
@@ -275,30 +276,40 @@ On the hazard GameObject, enable **Is Trigger** on its collider and add a kinema
 GameObject. The hazard targets that exact object without knowing its concrete type. Registration
 cleanup follows the receiver's Unity lifecycle.
 
+Follow the [Play Mode walkthrough](docs/getting-started/quick-start.md#try-it-in-play-mode) to
+move the hazard into the target and find `Health: 75` in the Console.
+
 **Stuck?** See [Troubleshooting](docs/reference/troubleshooting.md) or [FAQ](docs/reference/faq.md)
 
 ---
 
 ## Dependency Injection (DI) Compatible
 
-**Using Zenject, VContainer, or Reflex?** DxMessaging is fully DI-compatible out of the box!
+Inject the scoped `IMessageBus` and `IMessageRegistrationBuilder` into your service. Use the same
+bus for its subscription and its sends.
 
 ```csharp
-[DxUntargetedMessage]
-public readonly struct GameStarted { }
+using System;
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Core.MessageBus;
 
-// Inject IMessageBus in any class
-public class PlayerService : IInitializable, IDisposable
+[DxUntargetedMessage]
+public readonly partial struct GameStarted { }
+
+public sealed class PlayerService : IDisposable
 {
     private readonly IMessageBus _messageBus;
     private readonly MessageRegistrationLease _lease;
 
+    public int StartsObserved { get; private set; }
+
     public PlayerService(IMessageBus messageBus, IMessageRegistrationBuilder builder)
     {
         _messageBus = messageBus;
-        // Builder automatically resolves your container-managed bus
         _lease = builder.Build(new MessageRegistrationBuildOptions
         {
+            PreferredMessageBus = messageBus,
             Configure = token => token.RegisterUntargeted<GameStarted>(OnGameStarted)
         });
     }
@@ -308,16 +319,20 @@ public class PlayerService : IInitializable, IDisposable
 
     public void PublishGameStarted()
     {
-        var started = new GameStarted();
-        started.EmitUntargeted(_messageBus);
+        GameStarted started = new GameStarted();
+        started.Emit(_messageBus);
     }
 
-    private static void OnGameStarted(GameStarted message)
+    private void OnGameStarted(GameStarted message)
     {
-        Debug.Log("Game started");
+        ++StartsObserved;
     }
 }
 ```
+
+Call `Initialize()` when the service starts. Have the scope that owns the service call `Dispose()`
+when it ends. The guides below show Zenject initialization, VContainer entry points, and explicit
+startup in Reflex.
 
 ### Why use DI + Messaging?
 
