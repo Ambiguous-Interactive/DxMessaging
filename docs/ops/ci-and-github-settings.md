@@ -306,6 +306,16 @@ Protect the default branch and release tags:
 1. Confirm release maintainers can create `vX.Y.Z` tags through the intended
    process.
 
+### Advisory OpenAI review
+
+Create the repository label `skip-openai-review` and apply it while the pull request
+is a draft. The [OpenAI Review workflow](../../.github/workflows/openai-review.yml)
+skips its API job while the label is present.
+
+Automatic Copilot reviews follow the branch ruleset. Verify review costs and
+authorization before marking a draft ready. Wallstop must review the final head
+before merge.
+
 ## Unity Workspace Contract
 
 The fixed runners retain generated Unity state locally:
