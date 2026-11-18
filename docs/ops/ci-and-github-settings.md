@@ -308,15 +308,17 @@ Protect the default branch and release tags:
 
 ### Advisory OpenAI review
 
-Create the repository label `skip-openai-review` and apply it while the pull request
-is a draft. The [OpenAI Review workflow](../../.github/workflows/openai-review.yml)
-skips its API job while the label is present. Adding the label cancels any review
-in progress. Removing it from a ready pull request starts a new review. Confirm the
-API cost is authorized before removing the label.
+The [OpenAI Review workflow](../../.github/workflows/openai-review.yml)
+runs automatically when a pull request from a person in this repository opens
+ready for review, becomes ready, reopens, or receives new commits while ready.
 
-Automatic Copilot reviews follow the branch ruleset. Verify review costs and
-authorization before marking a draft ready. Wallstop must review the final head
-before merge.
+Use `skip-openai-review` only when you explicitly want to opt out of OpenAI
+review on that pull request. Adding the label cancels a review in progress.
+Removing the label from a ready pull request starts a review if the current
+commit still needs one.
+
+Automatic Copilot reviews follow the branch ruleset. Wallstop must review the
+final head before merge.
 
 ## Unity Workspace Contract
 
