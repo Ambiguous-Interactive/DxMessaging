@@ -6,7 +6,7 @@
 
 ---
 
-**Goal:** Build a working message system. Copy the scripts, add two components, and run.
+Send a damage command from a 3D trigger and see the receiver's health in the Unity Console.
 
 **Stuck?** -> [Troubleshooting](../reference/troubleshooting.md) | [FAQ](../reference/faq.md)
 
@@ -34,6 +34,8 @@ https://github.com/Ambiguous-Interactive/DxMessaging.git
 
 ### Step 1: Define a damage command
 
+Create `DamageRequested.cs`.
+
 ```csharp
 using DxMessaging.Core.Attributes;
 
@@ -49,6 +51,8 @@ The source generator adds the constructor and targeted message identity. The emi
 DxMessaging extension method.
 
 ### Step 2: Receive damage
+
+Create `DamageReceiver.cs`.
 
 ```csharp
 using DxMessaging.Unity;
@@ -67,6 +71,7 @@ public sealed class DamageReceiver : MessageAwareComponent
     private void OnDamageRequested(in DamageRequested message)
     {
         Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
+        Debug.Log($"Health: {Health}", this);
     }
 }
 ```
@@ -96,6 +101,8 @@ See [DXMSG006 in the analyzer reference](../reference/analyzers.md#dxmsg006-miss
 
 ### Step 3: Add a hazard
 
+Create `Hazard.cs`.
+
 ```csharp
 using DxMessaging.Core.Extensions;
 using UnityEngine;
@@ -112,10 +119,19 @@ public sealed class Hazard : MonoBehaviour
 }
 ```
 
-On the hazard GameObject, enable **Is Trigger** on its collider and add a kinematic `Rigidbody` with
-**Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the same target
-GameObject. The hazard sends the same command to whatever enters the trigger without a player
-field, receiver lookup, interface, or UnityEvent.
+#### Try it in Play Mode
+
+1. Add two 3D cubes to an empty scene. Name them **Hazard** and **Target**. Set their positions
+   to `(0, 0, 0)` and `(3, 0, 0)`, respectively.
+1. Attach `Hazard` to **Hazard** and leave **Damage** at 25. On its Box Collider, enable
+   **Is Trigger**. Add a Rigidbody, enable **Is Kinematic**, and disable **Use Gravity**.
+1. Attach `DamageReceiver` to **Target**. Keep its Box Collider with **Is Trigger** disabled.
+1. Enter Play Mode. In the Inspector for **Hazard**, set **Transform > Position > X** to 3.
+   The hazard now overlaps the target.
+1. In the Unity Console, select `Health: 75`. Unity highlights **Target** in the Hierarchy.
+
+The trigger supplies the target GameObject. The hazard sends the command without a reference to
+the receiver component.
 
 ---
 
