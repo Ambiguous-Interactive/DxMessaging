@@ -17,6 +17,100 @@ namespace WallstopStudios.DxMessaging.Docs.Tests;
 internal sealed class GeneratedMessageDocumentationTests
 {
     private static readonly string[] SerializedStorageFieldNames = { "_screen", "_prefab" };
+    private static readonly int[] ExpectedReadmeServiceObservations = { 0, 1, 1, 1, 0, 0 };
+
+    [Test]
+    public void ReadmeDependencyInjectionExampleOwnsItsSubscription()
+    {
+        string root = ResolveRoot();
+        string path = Path.Combine(root, "README.md");
+        CSharpParseOptions options = new(LanguageVersion.CSharp9);
+        CompilationUnitSyntax example = ReadSnippets(
+                path,
+                "## Dependency Injection (DI) Compatible",
+                "### Why use DI + Messaging?",
+                options
+            )
+            .Single();
+
+        byte[] runtime = RuntimeHashCompilationTests.CompilePortableRuntimeImage(false);
+        string references = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+            ?? throw new InvalidOperationException("Runtime references are unavailable.");
+        CSharpCompilation input = CSharpCompilation.Create(
+            "ReadmeDependencyInjectionExample",
+            new[] { CSharpSyntaxTree.ParseText(example.ToFullString(), options, path) },
+            references
+                .Split(Path.PathSeparator)
+                .Select(file => MetadataReference.CreateFromFile(file))
+                .Append(MetadataReference.CreateFromImage(runtime)),
+            new CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                generalDiagnosticOption: ReportDiagnostic.Error
+            )
+        );
+        CSharpGeneratorDriver
+            .Create(new[] { new DxMessageIdGenerator() }, parseOptions: options)
+            .RunGeneratorsAndUpdateCompilation(
+                input,
+                out Compilation generated,
+                out ImmutableArray<Diagnostic> diagnostics
+            );
+        Assert.That(diagnostics, Is.Empty, string.Join("\n", diagnostics));
+        AssertCompiles(generated, "Compile the exact README example without additional imports.");
+
+        const string probe = """
+            using DxMessaging.Core.Extensions;
+            using DxMessaging.Core.MessageBus;
+
+            public static class ReadmeExampleProbe
+            {
+                public static int[] Observe()
+                {
+                    IMessageBus bus = new MessageBus();
+                    IMessageBus other = new MessageBus();
+                    using PlayerService service = new PlayerService(bus, new MessageRegistrationBuilder());
+                    service.PublishGameStarted();
+                    int beforeInitialize = service.StartsObserved;
+                    service.Initialize();
+                    service.PublishGameStarted();
+                    int afterPublish = service.StartsObserved;
+                    GameStarted gameStarted = new GameStarted();
+                    gameStarted.EmitUntargeted(other);
+                    int afterOtherBus = service.StartsObserved;
+                    service.Dispose();
+                    service.PublishGameStarted();
+                    return new[] { beforeInitialize, afterPublish, afterOtherBus, service.StartsObserved, bus.RegisteredUntargeted, other.RegisteredUntargeted };
+                }
+            }
+            """;
+        Compilation runnable = generated.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText(probe, options, "ReadmeExampleProbe.cs")
+        );
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = runnable.Emit(image);
+        Assert.That(emitted.Success, Is.True, string.Join("\n", emitted.Diagnostics));
+        AssemblyLoadContext context = new("ReadmeDependencyInjectionExample", isCollectible: true);
+        try
+        {
+            using MemoryStream runtimeImage = new(runtime);
+            context.LoadFromStream(runtimeImage);
+            image.Position = 0;
+            Assembly exampleAssembly = context.LoadFromStream(image);
+            object? observed = exampleAssembly
+                .GetType("ReadmeExampleProbe", throwOnError: true)!
+                .GetMethod("Observe")!
+                .Invoke(null, null);
+            Assert.That(
+                observed,
+                Is.EqualTo(ExpectedReadmeServiceObservations),
+                "Delivery must follow activation, the chosen bus, and disposal. No registrations may remain."
+            );
+        }
+        finally
+        {
+            context.Unload();
+        }
+    }
 
     [TestCase(
         "Heal",
