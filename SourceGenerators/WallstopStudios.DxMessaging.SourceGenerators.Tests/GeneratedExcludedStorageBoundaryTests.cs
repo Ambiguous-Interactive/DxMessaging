@@ -47,6 +47,126 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
         AssertCallerExecutes(generated, context + ": generated caller");
     }
 
+    [TestCase("public", false)]
+    [TestCase("private", false)]
+    [TestCase("private", true)]
+    public void FixedSizeBuffersAreExcludedFromScalarConstructors(
+        string accessibility,
+        bool includeSerializedFields
+    )
+    {
+        string fieldAttribute = includeSerializedFields ? "[UnityEngine.SerializeField]" : "";
+        string constructorAttribute = includeSerializedFields
+            ? "[DxAutoConstructor(GenerateSerializedProperties = true)]"
+            : "[DxAutoConstructor]";
+        string context = $"accessibility={accessibility}, serialized={includeSerializedFields}";
+        CSharpParseOptions options = new(LanguageVersion.CSharp9);
+
+        string CreateFixedStorageSource(string attribute, string constructor) =>
+            $$"""
+                using DxMessaging.Core.Attributes;
+
+                {{attribute}}
+                public unsafe partial struct Packet
+                {
+                    public readonly int Value;
+                    {{fieldAttribute}} {{accessibility}} fixed byte _bytes[4];
+                    {{constructor}}
+
+                    public int WriteAndRead()
+                    {
+                        fixed (byte* bytes = _bytes)
+                        {
+                            bytes[3] = 73;
+                            return bytes[3];
+                        }
+                    }
+                }
+
+                public static class Probe
+                {
+                    public static int[] Read()
+                    {
+                        Packet packet = new Packet(42);
+                        return new[] { packet.Value, packet.WriteAndRead() - 73, 0 };
+                    }
+                }
+
+                namespace UnityEngine
+                {
+                    public sealed class SerializeField : System.Attribute { }
+                }
+                """;
+
+        AssertCallerExecutes(
+            CreateCompilation(
+                CreateFixedStorageSource("", "public Packet(int Value) { this.Value = Value; }"),
+                options
+            ),
+            context + ": handwritten oracle"
+        );
+
+        GeneratorDriver driver = CSharpGeneratorDriver
+            .Create(
+                new ISourceGenerator[] { new DxAutoConstructorGenerator() },
+                parseOptions: options
+            )
+            .RunGeneratorsAndUpdateCompilation(
+                CreateCompilation(CreateFixedStorageSource(constructorAttribute, ""), options),
+                out Compilation generated,
+                out ImmutableArray<Diagnostic> diagnostics
+            );
+        Assert.That(diagnostics, Is.Empty, context + "\n" + string.Join("\n", diagnostics));
+        AssertCallerExecutes(generated, context + ": generated caller");
+        Assert.That(driver.GetRunResult().GeneratedTrees, Has.Length.EqualTo(1), context);
+        INamedTypeSymbol packet = generated.GetTypeByMetadataName("Packet")!;
+        IMethodSymbol constructor = packet.InstanceConstructors.Single(candidate =>
+            !candidate.IsImplicitlyDeclared
+        );
+        Assert.That(constructor.Parameters, Has.Length.EqualTo(1), context);
+        Assert.That(constructor.Parameters[0].Name, Is.EqualTo("Value"), context);
+        Assert.That(
+            packet.GetMembers().OfType<IPropertySymbol>(),
+            Is.Empty,
+            context + ": fixed storage has no generated property"
+        );
+    }
+
+    [Test]
+    public void StructWithOnlyFixedStorageHasNoGeneratedConstructor()
+    {
+        const string source = """
+            using DxMessaging.Core.Attributes;
+
+            [DxAutoConstructor]
+            public unsafe partial struct Packet
+            {
+                public fixed byte Bytes[4];
+            }
+            """;
+        CSharpParseOptions options = new(LanguageVersion.CSharp9);
+        CSharpCompilation input = CreateCompilation(source, options);
+        GeneratorDriver driver = CSharpGeneratorDriver
+            .Create(
+                new ISourceGenerator[] { new DxAutoConstructorGenerator() },
+                parseOptions: options
+            )
+            .RunGeneratorsAndUpdateCompilation(
+                input,
+                out Compilation generated,
+                out ImmutableArray<Diagnostic> diagnostics
+            );
+        Assert.That(diagnostics, Is.Empty, string.Join("\n", diagnostics));
+        using MemoryStream image = new();
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = generated.Emit(image);
+        Assert.That(emitted.Success, Is.True, string.Join("\n", emitted.Diagnostics));
+        Assert.That(
+            driver.GetRunResult().GeneratedTrees,
+            Is.Empty,
+            "Fixed storage alone has no constructor parameters to generate."
+        );
+    }
+
     private static IEnumerable<TestCaseData> Cases()
     {
         foreach (

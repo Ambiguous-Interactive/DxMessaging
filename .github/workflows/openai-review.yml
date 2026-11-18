@@ -1,0 +1,37 @@
+name: OpenAI Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
+
+concurrency:
+  # Unrelated label events cannot cancel reviews for this pull request.
+  group: >-
+    ${{ (github.event.action == 'labeled' || github.event.action == 'unlabeled') &&
+        github.event.label.name != 'skip-openai-review' &&
+        format('ignore-review-label-{0}', github.run_id) ||
+        format('{0}-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    if: >-
+      ${{ !github.event.pull_request.draft &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.user.type != 'Bot' &&
+          github.event.action != 'labeled' &&
+          (github.event.action != 'unlabeled' || github.event.label.name == 'skip-openai-review') &&
+          !contains(github.event.pull_request.labels.*.name, 'skip-openai-review') }}
+    uses: Ambiguous-Interactive/review-tools/.github/workflows/openai-review.yml@35be03f3bcae96a5ae3a3032d7db8eb0a0738d66 # v1.1.1
+    with:
+      model: ${{ vars.OPENAI_REVIEW_MODEL }}
+      effort: ${{ vars.OPENAI_REVIEW_EFFORT }}
+      timeout-minutes: 15
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    permissions:
+      contents: read
+      pull-requests: write

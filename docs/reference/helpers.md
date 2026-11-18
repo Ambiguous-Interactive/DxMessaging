@@ -8,7 +8,7 @@
 
 - You write: `[DxAutoConstructor]` on a struct
 - Source generator sees: "Oh, they want a constructor!"
-- Source generator creates: A constructor with all the fields as parameters
+- Source generator creates: A constructor with eligible fields as parameters
 - You get: Less typing, fewer bugs, more consistent code
 
 #### Learn more about source generators
@@ -99,7 +99,7 @@ public VideoSettingsChanged(int width, int height)
 - Creates constructor parameters in **field declaration order** within each source file
 - Orders fields across partial files by the compiler's source-file order; use named arguments when that order is not controlled
 - Includes `public` fields by default; opt in to serialized fields as described below
-- Ignores `static` fields
+- Skips static fields and fixed-size buffers
 - Works with `readonly` structs (recommended!)
 - Supports nested types inside partial classes, structs, and invariant interfaces
 - Supports internal types (types with `internal` visibility)
@@ -164,7 +164,7 @@ casing. C# keyword parameter names are escaped, so `_class` becomes `@class`. Ex
 fields that are not marked with `SerializeField` keep their parameter names.
 
 To retain existing handwritten getters, enable only `IncludeSerializedFields`. Static fields,
-constants, and compiler-generated backing fields are excluded. The options select fields by the
+constants, fixed-size buffers, and compiler-generated backing fields are excluded. The options select fields by the
 Unity attribute's full type name; an unrelated attribute called `SerializeField` does not opt in.
 
 Keep serialized field names when migrating existing assets. Unity continues to serialize those
@@ -185,7 +185,10 @@ accessible or write the constructor and properties explicitly with suitable acce
 > signatures also need support from your Unity version and scripting backend; the
 > generator does not add that support.
 
-**Fixed in v4.0.0:** Generated struct constructors also initialize excluded
+**Fixed in v4.0.0:** Constructor and property generation skip fixed-size buffers.
+Initialize buffer elements before reading them.
+
+**Fixed in v4.0.0:** Generated struct constructors initialize other excluded
 instance fields and auto-property backing storage to their type defaults. Existing
 field, auto-property, and field-like event initializers retain their values and
 execute once. For types without a primary constructor, user parameterless constructors
@@ -898,7 +901,7 @@ public readonly partial struct TookDamage
 
 #### `[DxAutoConstructor]`
 
-Automatically generates a constructor with all public fields as parameters:
+Generates a constructor with eligible public fields as parameters:
 
 ```csharp
 [DxAutoConstructor]
@@ -1189,11 +1192,11 @@ declaration across files.
 
 ### Missing constructor
 
-`[DxAutoConstructor]` uses public instance fields in source-file compilation order,
-then declaration order within each file. Use named arguments for split partial types
-when you do not control file order. Static
-fields and properties do not become constructor parameters. A type with no
-public instance fields gets no generated field constructor.
+`[DxAutoConstructor]` uses eligible public instance fields in source-file compilation
+order, then declaration order within each file. Use named arguments for split partial
+types when you do not control file order. You can opt in to eligible serialized fields.
+Constructor generation skips static fields, fixed-size buffers, and properties.
+A type with no eligible fields gets no generated field constructor.
 
 ```csharp
 using DxMessaging.Core.Attributes;

@@ -7,11 +7,13 @@ namespace DxMessaging.Core.Attributes
     /// </summary>
     /// <remarks>
     /// Apply this to a partial <c>struct</c> or <c>class</c> to generate a constructor whose parameters
-    /// match public instance fields by default, in declaration order within each source file. Across partial files,
+    /// match eligible public instance fields by default, in declaration order within each source file. Across partial files,
     /// parameters follow the compiler's syntax-tree order; use named arguments when file order is not controlled.
     /// Fields marked with
     /// <see cref="DxOptionalParameterAttribute"/> are emitted as optional parameters.
-    /// Excluded struct storage receives type defaults while existing field and auto-property initializers
+    /// Fixed-size buffers are excluded from generated constructors and properties. Initialize their
+    /// elements before reading them.
+    /// Other excluded struct storage receives type defaults while existing field and auto-property initializers
     /// are preserved. For types without a primary constructor, the generated constructor does not
     /// invoke a user parameterless constructor.
     /// When compiling before C# 11, DXMSG011 reports mixed initialized and uninitialized explicit-interface

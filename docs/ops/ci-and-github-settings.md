@@ -36,7 +36,7 @@ the central lock immediately before the licensed Unity section:
   uses: ./.github/actions/validate-unity-license
 
 - name: Acquire organization Unity lock
-  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@20077985093aac0e88f88f931ebedae78c1c9284 # v1.17.1
+  uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/acquire-build-lock@720ef47f9ab352fbc9403363ca63ae8c487a2442 # v1.18.1
   with:
     lock-name: wallstop-organization-builds
     require-resource-lifecycle: "true"
@@ -305,6 +305,18 @@ Protect the default branch and release tags:
 1. Protect `v*` tags from deletion or force updates.
 1. Confirm release maintainers can create `vX.Y.Z` tags through the intended
    process.
+
+### Advisory OpenAI review
+
+Create the repository label `skip-openai-review` and apply it while the pull request
+is a draft. The [OpenAI Review workflow](../../.github/workflows/openai-review.yml)
+skips its API job while the label is present. Adding the label cancels any review
+in progress. Removing it from a ready pull request starts a new review. Confirm the
+API cost is authorized before removing the label.
+
+Automatic Copilot reviews follow the branch ruleset. Verify review costs and
+authorization before marking a draft ready. Wallstop must review the final head
+before merge.
 
 ## Unity Workspace Contract
 
