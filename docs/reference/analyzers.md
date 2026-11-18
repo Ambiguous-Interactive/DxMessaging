@@ -41,7 +41,7 @@ DxMessaging ships source generators and a Roslyn analyzer that report authoring 
 
 ### Fix
 
-Pick exactly one message-shape attribute. A message can be Broadcast, Targeted, or Untargeted -- not two at once. If you genuinely need both shapes, define two separate types.
+Pick exactly one message attribute. If you need two message routes, define a type for each route.
 
 ```csharp
 //  Multiple shapes on one type
@@ -311,7 +311,11 @@ The same rule keeps guarded names that `MessageAwareComponent` does not declare 
 
 ### One diagnostic per declaration
 
-Each guarded-method diagnostic is reported at most once per (diagnostic id, source span) per compilation, even if this analyzer DLL ends up registered twice against the same assembly. That shape does happen: a stale copy of `WallstopStudios.DxMessaging.Analyzer.dll` left inside the consumer project loads alongside the package's RoslynAnalyzer-labeled payload, and each loaded registration reports its own copy of every warning -- one declaration surfacing as two identical entries. The analyzer keeps a per-compilation report table shared across registrations that resolve to one assembly identity and collapses duplicates to the first report; copies with different assembly identities load as separate types with separate state, so deleting the stale DLL remains the durable fix there. `SetupCscRsp` removes the one legacy in-project copy location this package ever created automatically and warns if that folder cannot be cleaned; stale copies anywhere else in the project get no automatic cleanup.
+Each guarded-method diagnostic is reported at most once per (diagnostic id, source span) per
+compilation for registrations that use the same loaded analyzer assembly. An older copy of
+`WallstopStudios.DxMessaging.Analyzer.dll` can load as a separate assembly and report the same
+warning. If warnings appear twice for a declaration, check for a
+[legacy analyzer copy](#remove-legacy-analyzer-copies).
 
 ### Coexistence with other diagnostics
 
@@ -613,13 +617,10 @@ Both DLLs ship under the package's `Runtime/Analyzers/` folder, tagged
 Excluding every platform is what keeps Unity from treating them as managed
 precompiled assemblies: a `RoslynAnalyzer`-labeled DLL is fed to the C# compiler
 as an analyzer regardless of platform inclusion, and an Editor-enabled DLL would
-instead be registered as a precompiled assembly. Nothing is copied into the
-consuming project; the package DLLs apply directly, with or without assembly
-definitions, including the predefined `Assembly-CSharp`. If you are upgrading from
-an older version that copied the analyzer under
-`Assets/Plugins/Editor/WallstopStudios.DxMessaging/`, that redundant in-project
-copy is removed automatically on import, before compilation, so the old and new
-copies never both generate.
+instead be registered as a precompiled assembly. The compiler DLLs apply directly from
+the package to the attributes assembly and assemblies that reference it, including the
+predefined `Assembly-CSharp`. See [assembly definition setup](../getting-started/install.md#source-generators-and-assembly-definitions)
+for custom assemblies.
 
 If you are upgrading from a prior version and DXMSG warnings stop appearing on Unity 2021:
 
@@ -628,6 +629,20 @@ If you are upgrading from a prior version and DXMSG warnings stop appearing on U
 1. After the next compile finishes, refresh the overlay cache via `Tools -> Wallstop Studios -> DxMessaging -> Rescan Base-Call Warnings`.
 
 For Unity 2021, the package-owned `[CustomEditor(typeof(MessageAwareComponent), editorForChildClasses: true)]` path is the primary warning surface because `Editor.finishedDefaultHeaderGUI` does not always fire for plain `MonoBehaviour` subclasses. User-defined custom editors for specific `MessageAwareComponent` subclasses still keep their body; the header hook supplies an IMGUI HelpBox for those editors when Unity fires the callback. See the [Inspector integration](#inspector-integration) section above.
+
+## Remove legacy analyzer copies
+
+On import, the Editor attempts to clean up `Assets/Plugins/Editor/WallstopStudios.DxMessaging/`.
+The folder must contain `WallstopStudios.DxMessaging.SourceGenerators.dll` and only
+recognized legacy DLLs and their metadata files. The Editor leaves the folder in place if
+it contains a subfolder, an unrecognized file, or names that differ only by case. Copies
+elsewhere under `Assets/` need manual cleanup.
+
+If both copies load, you can see duplicate generated members (`CS0102`) or duplicate
+analyzer warnings. In the Unity Project window, locate
+`WallstopStudios.DxMessaging.SourceGenerators.dll` and
+`WallstopStudios.DxMessaging.Analyzer.dll` under `Assets/`. Remove the obsolete copies you
+confirm came from an earlier DxMessaging setup. Keep unrelated project files in place.
 
 ---
 

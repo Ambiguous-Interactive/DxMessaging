@@ -8,13 +8,16 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 The seven public attributes move to `WallstopStudios.DxMessaging.Attributes` with unchanged namespaces and names. Add that assembly reference to each Unity assembly definition that uses a DxMessaging attribute. Keep the `WallstopStudios.DxMessaging` reference when the same assembly also uses message interfaces or runtime APIs. Predefined assemblies receive both references automatically.
 
-A shared rules assembly that only uses `[DxAutoConstructor]` and `[DxOptionalParameter]` can reference just the attributes and set `noEngineReferences` to `true`. The existing generator is scoped to this engine-free assembly and assemblies that reference it. Runtime type forwarding preserves legacy attribute lookups; an assembly definition still needs its direct compile reference.
+A shared rules assembly that only uses `[DxAutoConstructor]` and `[DxOptionalParameter]` can reference just the attributes and set `noEngineReferences` to `true`. The generator applies to the attributes assembly and assemblies that reference it. Type forwarding preserves legacy attribute lookups. Add the direct assembly reference to compile code that uses the attributes.
 
 The `.net-attributes` project prepares a matching NuGet package with compiler inputs included. Local package qualification is not a public feed release; use its package README for the current release status.
 
+If your project still has DxMessaging compiler assemblies under `Assets/`, check
+[which copies to remove when upgrading](../reference/analyzers.md#remove-legacy-analyzer-copies).
+
 ### Replace selected subscription sets
 
-Use [registration groups, source retargeting, and explicit state handlers](subscription-ownership.md)
+Use [registration groups, source changes, and explicit state handlers](subscription-ownership.md)
 to replace application-owned handle lists and capturing registration callbacks. Existing token lifecycle
 calls still control activation. Finish a group's pending cleanup before replacing it.
 
@@ -76,7 +79,7 @@ Rebuild every assembly that calls an affected constructor, including callers tha
 arguments. Argument names are resolved when the caller is compiled; they do not protect an
 existing DLL from a changed parameter order. Old binaries can assign same-typed arguments to
 different fields or fail to find the constructor when parameter types move. Obtain rebuilt
-versions of precompiled caller DLLs when their sources are unavailable.
+versions of precompiled caller assemblies when their sources are unavailable.
 
 ### Use compatible comparison arguments
 
