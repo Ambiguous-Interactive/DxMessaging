@@ -309,13 +309,10 @@ Protect the default branch and release tags:
 ### Advisory OpenAI review
 
 The [OpenAI Review workflow](../../.github/workflows/openai-review.yml)
-runs automatically when a pull request from a person in this repository opens
-ready for review, becomes ready, reopens, or receives new commits while ready.
-
-Use `skip-openai-review` only when you explicitly want to opt out of OpenAI
-review on that pull request. Adding the label cancels a review in progress.
-Removing the label from a ready pull request starts a review if the current
-commit still needs one.
+runs automatically for ready pull requests that a person opens from a branch
+in this repository. It starts when a pull request opens ready for review,
+becomes ready, reopens while ready, or receives new commits while ready.
+Pull request labels have no effect on OpenAI review.
 
 Automatic Copilot reviews follow the branch ruleset. Wallstop must review the
 final head before merge.
