@@ -559,7 +559,7 @@ jobs:
 
   shipping-editor-runner-preflight:
     name: Shipping Editor ELI registration preflight
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -572,7 +572,7 @@ jobs:
 
   shipping-editor-verification:
     name: Unity 2021.3 shipping Editor and samples on ELI
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] == true }}
     needs:
       - runner-preflight
       - shipping-editor-runner-preflight
@@ -951,10 +951,10 @@ jobs:
     name: Pilot IL2CPP contract, calibration, vector, or license recovery on ELI
     if: >-
       ${{ !inputs['native-sdk-upm-network-probe'] && !inputs['native-sdk-registry-probe'] && inputs['native-sdk-log-source'] == '' &&
-      !inputs['native-sdk-floor'] && (inputs['perf-pilot-contract-smoke'] || inputs['perf-pilot-calibration-work'] != 'none' ||
+      !inputs['native-sdk-floor'] && (inputs['perf-pilot-contract-smoke'] == true || inputs['perf-pilot-calibration-work'] != 'none' ||
       inputs['perf-pilot-work-vector'] != '' ||
       inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' ||
-      inputs['perf-license-recovery']) }}
+      inputs['perf-license-recovery'] == true) }}
     needs:
       - runner-preflight
       - bootstrap
@@ -1361,7 +1361,7 @@ jobs:
   native-sdk-floor:
     name: Unity 2021.3 native SDK ${{ inputs['native-sdk-scope'] }} floor on ELI
     if: >-
-      ${{ inputs['native-sdk-floor'] && inputs['native-sdk-log-source'] == '' &&
+      ${{ inputs['native-sdk-floor'] == true && inputs['native-sdk-log-source'] == '' &&
       !inputs['native-sdk-registry-probe'] && !inputs['native-sdk-upm-network-probe'] }}
     needs:
       - runner-preflight
@@ -1810,3 +1810,111 @@ jobs:
           path: .artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 14
+
+  # Each optional licensed lane reports its own dispatch verdict. The lane
+  # guard selects it, so the aggregate repeats that selection in LANE_SELECTED.
+  # A skipped lane then stays green only when the same selection term skipped
+  # it. The workflow is dispatch only, so no aggregate can block a merge.
+  native-sdk-floor-success:
+    name: Native SDK floor run success
+    if: ${{ always() }}
+    needs:
+      - runner-preflight
+      - native-sdk-floor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the selected native SDK floor result
+        shell: bash
+        env:
+          RUNNER_PREFLIGHT_RESULT: ${{ needs.runner-preflight.result }}
+          UNITY_TESTS_RESULT: ${{ needs.native-sdk-floor.result }}
+          LANE_SELECTED: >-
+            ${{ inputs['native-sdk-floor'] == true && inputs['native-sdk-log-source'] == '' &&
+            !inputs['native-sdk-registry-probe'] && !inputs['native-sdk-upm-network-probe'] }}
+          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          DEPENDABOT_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
+        run: |
+          set -euo pipefail
+          if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
+            test "${RUNNER_PREFLIGHT_RESULT}" = skipped
+            test "${UNITY_TESTS_RESULT}" = skipped
+          elif [ "${LANE_SELECTED}" = "true" ]; then
+            test "${RUNNER_PREFLIGHT_RESULT}" = success
+            test "${UNITY_TESTS_RESULT}" = success
+          elif [ "${LANE_SELECTED}" = "false" ]; then
+            test "${RUNNER_PREFLIGHT_RESULT}" = success
+          else
+            echo "LANE_SELECTED must be true or false." >&2
+            false
+          fi
+
+  pilot-contract-smoke-success:
+    name: Pilot contract smoke run success
+    if: ${{ always() }}
+    needs:
+      - runner-preflight
+      - pilot-contract-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the selected pilot contract smoke result
+        shell: bash
+        env:
+          RUNNER_PREFLIGHT_RESULT: ${{ needs.runner-preflight.result }}
+          UNITY_TESTS_RESULT: ${{ needs.pilot-contract-smoke.result }}
+          LANE_SELECTED: >-
+            ${{ !inputs['native-sdk-upm-network-probe'] && !inputs['native-sdk-registry-probe'] && inputs['native-sdk-log-source'] == '' &&
+            !inputs['native-sdk-floor'] && (inputs['perf-pilot-contract-smoke'] == true || inputs['perf-pilot-calibration-work'] != 'none' ||
+            inputs['perf-pilot-work-vector'] != '' ||
+            inputs['perf-pilot-batch-orders'] != 'ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB' ||
+            inputs['perf-license-recovery'] == true) }}
+          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          DEPENDABOT_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
+        run: |
+          set -euo pipefail
+          if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
+            test "${RUNNER_PREFLIGHT_RESULT}" = skipped
+            test "${UNITY_TESTS_RESULT}" = skipped
+          elif [ "${LANE_SELECTED}" = "true" ]; then
+            test "${RUNNER_PREFLIGHT_RESULT}" = success
+            test "${UNITY_TESTS_RESULT}" = success
+          elif [ "${LANE_SELECTED}" = "false" ]; then
+            test "${RUNNER_PREFLIGHT_RESULT}" = success
+          else
+            echo "LANE_SELECTED must be true or false." >&2
+            false
+          fi
+
+  shipping-editor-verification-success:
+    name: Shipping Editor verification run success
+    if: ${{ always() }}
+    needs:
+      - runner-preflight
+      - shipping-editor-runner-preflight
+      - shipping-editor-verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the selected shipping Editor result
+        shell: bash
+        env:
+          RUNNER_PREFLIGHT_RESULT: ${{ needs.runner-preflight.result }}
+          UNITY_TESTS_RESULT: ${{ needs.shipping-editor-verification.result }}
+          LANE_SELECTED: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] == true }}
+          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          DEPENDABOT_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
+        run: |
+          set -euo pipefail
+          if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
+            test "${RUNNER_PREFLIGHT_RESULT}" = skipped
+            test "${UNITY_TESTS_RESULT}" = skipped
+          elif [ "${LANE_SELECTED}" = "true" ]; then
+            test "${RUNNER_PREFLIGHT_RESULT}" = success
+            test "${UNITY_TESTS_RESULT}" = success
+          elif [ "${LANE_SELECTED}" = "false" ]; then
+            test "${RUNNER_PREFLIGHT_RESULT}" = success
+          else
+            echo "LANE_SELECTED must be true or false." >&2
+            false
+          fi
