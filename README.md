@@ -281,24 +281,31 @@ cleanup follows the receiver's Unity lifecycle.
 
 ## Dependency Injection (DI) Compatible
 
-**Using Zenject, VContainer, or Reflex?** DxMessaging is fully DI-compatible out of the box!
+Inject the scoped `IMessageBus` and `IMessageRegistrationBuilder` into your service. Use the same
+bus for its subscription and its sends.
 
 ```csharp
-[DxUntargetedMessage]
-public readonly struct GameStarted { }
+using System;
+using DxMessaging.Core.Attributes;
+using DxMessaging.Core.Extensions;
+using DxMessaging.Core.MessageBus;
 
-// Inject IMessageBus in any class
-public class PlayerService : IInitializable, IDisposable
+[DxUntargetedMessage]
+public readonly partial struct GameStarted { }
+
+public sealed class PlayerService : IDisposable
 {
     private readonly IMessageBus _messageBus;
     private readonly MessageRegistrationLease _lease;
 
+    public int StartsObserved { get; private set; }
+
     public PlayerService(IMessageBus messageBus, IMessageRegistrationBuilder builder)
     {
         _messageBus = messageBus;
-        // Builder automatically resolves your container-managed bus
         _lease = builder.Build(new MessageRegistrationBuildOptions
         {
+            PreferredMessageBus = messageBus,
             Configure = token => token.RegisterUntargeted<GameStarted>(OnGameStarted)
         });
     }
@@ -308,16 +315,20 @@ public class PlayerService : IInitializable, IDisposable
 
     public void PublishGameStarted()
     {
-        var started = new GameStarted();
-        started.EmitUntargeted(_messageBus);
+        GameStarted started = new GameStarted();
+        started.Emit(_messageBus);
     }
 
-    private static void OnGameStarted(GameStarted message)
+    private void OnGameStarted(GameStarted message)
     {
-        Debug.Log("Game started");
+        ++StartsObserved;
     }
 }
 ```
+
+Call `Initialize()` when the service starts. Have the scope that owns the service call `Dispose()`
+when it ends. The guides below show Zenject initialization, VContainer entry points, and explicit
+startup in Reflex.
 
 ### Why use DI + Messaging?
 
