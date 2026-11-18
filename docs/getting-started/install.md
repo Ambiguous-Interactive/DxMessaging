@@ -106,11 +106,9 @@ scoped to the attributes assembly and assemblies that reference it. Unity's pred
 receives the references automatically; you do not need to create an assembly definition
 for `[Dx*Message]` types to generate.
 
-If you previously worked around an earlier version by copying the analyzer DLLs
-into your own `Assets/` folder, that is no longer necessary: the package now ships
-them, and the old copy under `Assets/Plugins/Editor/` is removed automatically when
-you upgrade. The shipped generators are compile-time only and are never included in
-player builds.
+The package ships the compiler DLLs and uses them only at compile time. If you are upgrading
+from a version that used copies under `Assets/`, follow the
+[legacy analyzer cleanup instructions](../reference/analyzers.md#remove-legacy-analyzer-copies).
 
 ## After Installation
 
