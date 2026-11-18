@@ -499,6 +499,95 @@ namespace DxMessaging.Tests.Runtime.Core
             AssertRecovery(scope, scenario, carrier, label);
         }
 
+        /// <summary>Keeps activation and delivery out of the disposal callback.</summary>
+        [Test]
+        public void DisposalDoesNotPublishNestedLeaseActivation(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool startsActive,
+            [Values(false, true)] bool reenters
+        )
+        {
+            string label = $"{scenario}, startsActive={startsActive}, reenters={reenters}";
+            using Scope scope = new Scope(label);
+            List<string> hooks = new List<string>();
+            int deliveries = 0;
+            int liveDuringDispose = -1;
+            bool activeDuringDispose = true;
+            scope.Lease = scope.Builder.Build(
+                new MessageRegistrationBuildOptions
+                {
+                    ActivateOnBuild = startsActive,
+                    Configure = token =>
+                    {
+                        scope.Token = token;
+                        Register(token, scenario, 0, () => ++deliveries);
+                    },
+                    Lifecycle = new MessageRegistrationLifecycle(
+                        null,
+                        _ => hooks.Add("activate"),
+                        _ => hooks.Add("deactivate"),
+                        _ =>
+                        {
+                            hooks.Add("dispose");
+                            if (reenters)
+                            {
+                                scope.Lease.Activate();
+                            }
+                            liveDuringDispose = Total(scope.Inner);
+                            activeDuringDispose = scope.Lease.IsActive;
+                            Emit(scope.Inner, scenario);
+                        }
+                    ),
+                }
+            );
+
+            int expectedDeliveries = startsActive ? 1 : 0;
+            Emit(scope.Inner, scenario);
+            Assert.That(
+                deliveries,
+                Is.EqualTo(expectedDeliveries),
+                label + ": initial delivery follows the requested activation"
+            );
+
+            scope.Lease.Dispose();
+            scope.Lease.Dispose();
+            Emit(scope.Inner, scenario);
+
+            string[] expectedHooks = startsActive
+                ? new[] { "activate", "deactivate", "dispose" }
+                : new[] { "dispose" };
+            string observed =
+                label
+                + $": hooks={string.Join(",", hooks)}, live during disposal={liveDuringDispose}, "
+                + $"active during disposal={activeDuringDispose}, deliveries={deliveries}";
+            TestContext.WriteLine(observed);
+            Assert.That(Total(scope.Inner), Is.Zero, label + ": disposal drains bus registrations");
+            Assert.That(scope.Token.Enabled, Is.False, label + ": disposal disables the token");
+            Assert.That(scope.Token._metadata, Is.Empty, label + ": disposal clears token staging");
+            Assert.That(scope.Lease.IsActive, Is.False, label + ": disposed lease is inactive");
+            Assert.Throws<ObjectDisposedException>(
+                () => scope.Lease.Activate(),
+                label + ": completed disposal still rejects activation"
+            );
+            Assert.That(
+                liveDuringDispose,
+                Is.Zero,
+                observed + ": disposal callbacks cannot activate the lease"
+            );
+            Assert.That(
+                activeDuringDispose,
+                Is.False,
+                observed + ": lease stays inactive during the disposal callback"
+            );
+            Assert.That(
+                deliveries,
+                Is.EqualTo(expectedDeliveries),
+                observed + ": no subscription delivers during or after disposal"
+            );
+            Assert.That(hooks, Is.EqualTo(expectedHooks), observed + ": lifecycle hook order");
+        }
+
         private static IEnumerable<TestCaseData> BuildRecoveryCases()
         {
             foreach (MessageScenario scenario in MessageScenarios.AllKinds)
