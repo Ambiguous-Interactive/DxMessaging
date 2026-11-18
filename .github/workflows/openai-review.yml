@@ -17,7 +17,7 @@ jobs:
       ${{ !github.event.pull_request.draft &&
           github.event.pull_request.head.repo.full_name == github.repository &&
           github.event.pull_request.user.type != 'Bot' }}
-    uses: Ambiguous-Interactive/review-tools/.github/workflows/openai-review.yml@d8aab4dc3655924360ff17ebb04bbc3a844a493f # v1.1.0
+    uses: Ambiguous-Interactive/review-tools/.github/workflows/openai-review.yml@35be03f3bcae96a5ae3a3032d7db8eb0a0738d66 # v1.1.1
     with:
       model: ${{ vars.OPENAI_REVIEW_MODEL }}
       effort: ${{ vars.OPENAI_REVIEW_EFFORT }}
