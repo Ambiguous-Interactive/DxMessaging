@@ -100,6 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   initializers and avoiding unintended constructor calls. Chain empty primary constructors and
   report an actionable diagnostic when primary parameters require explicit argument choices ([#706](https://github.com/Ambiguous-Interactive/DxMessaging/issues/706),
   [#719](https://github.com/Ambiguous-Interactive/DxMessaging/issues/719)).
+- Fix `[DxAutoConstructor]` compilation errors for structs with fixed-size buffers by excluding
+  buffers from generated constructors and properties ([#497](https://github.com/Ambiguous-Interactive/DxMessaging/issues/497#issuecomment-6964871272)).
 - Preserve pointer constructor signatures and accept valid `null` pointer defaults
   ([#705](https://github.com/Ambiguous-Interactive/DxMessaging/issues/705)).
 - Preserve valid `nameof(...)` generation and resolve optional defaults in each field's own
