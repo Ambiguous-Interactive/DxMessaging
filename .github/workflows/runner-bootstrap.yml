@@ -1844,6 +1844,7 @@ jobs:
             test "${UNITY_TESTS_RESULT}" = success
           elif [ "${LANE_SELECTED}" = "false" ]; then
             test "${RUNNER_PREFLIGHT_RESULT}" = success
+            test "${UNITY_TESTS_RESULT}" = skipped
           else
             echo "LANE_SELECTED must be true or false." >&2
             false
@@ -1881,6 +1882,7 @@ jobs:
             test "${UNITY_TESTS_RESULT}" = success
           elif [ "${LANE_SELECTED}" = "false" ]; then
             test "${RUNNER_PREFLIGHT_RESULT}" = success
+            test "${UNITY_TESTS_RESULT}" = skipped
           else
             echo "LANE_SELECTED must be true or false." >&2
             false
@@ -1900,6 +1902,7 @@ jobs:
         shell: bash
         env:
           RUNNER_PREFLIGHT_RESULT: ${{ needs.runner-preflight.result }}
+          SHIPPING_EDITOR_PREFLIGHT_RESULT: ${{ needs.shipping-editor-runner-preflight.result }}
           UNITY_TESTS_RESULT: ${{ needs.shipping-editor-verification.result }}
           LANE_SELECTED: ${{ github.event_name == 'workflow_dispatch' && inputs['shipping-editor-verification'] == true }}
           FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
@@ -1908,12 +1911,16 @@ jobs:
           set -euo pipefail
           if [ "${FORK_PR}" = "true" ] || [ "${DEPENDABOT_PR}" = "true" ]; then
             test "${RUNNER_PREFLIGHT_RESULT}" = skipped
+            test "${SHIPPING_EDITOR_PREFLIGHT_RESULT}" = skipped
             test "${UNITY_TESTS_RESULT}" = skipped
           elif [ "${LANE_SELECTED}" = "true" ]; then
             test "${RUNNER_PREFLIGHT_RESULT}" = success
+            test "${SHIPPING_EDITOR_PREFLIGHT_RESULT}" = success
             test "${UNITY_TESTS_RESULT}" = success
           elif [ "${LANE_SELECTED}" = "false" ]; then
             test "${RUNNER_PREFLIGHT_RESULT}" = success
+            test "${SHIPPING_EDITOR_PREFLIGHT_RESULT}" = skipped
+            test "${UNITY_TESTS_RESULT}" = skipped
           else
             echo "LANE_SELECTED must be true or false." >&2
             false
