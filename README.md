@@ -246,6 +246,7 @@ public sealed class DamageReceiver : MessageAwareComponent
     private void OnDamageRequested(in DamageRequested message)
     {
         Health = Mathf.Max(0, Health - Mathf.Max(0, message.Amount));
+        Debug.Log($"Health: {Health}", this);
     }
 }
 ```
@@ -274,6 +275,9 @@ On the hazard GameObject, enable **Is Trigger** on its collider and add a kinema
 **Use Gravity** disabled. Put `DamageReceiver` and the entering collider on the same target
 GameObject. The hazard targets that exact object without knowing its concrete type. Registration
 cleanup follows the receiver's Unity lifecycle.
+
+Follow the [Play Mode walkthrough](docs/getting-started/quick-start.md#try-it-in-play-mode) to
+move the hazard into the target and find `Health: 75` in the Console.
 
 **Stuck?** See [Troubleshooting](docs/reference/troubleshooting.md) or [FAQ](docs/reference/faq.md)
 

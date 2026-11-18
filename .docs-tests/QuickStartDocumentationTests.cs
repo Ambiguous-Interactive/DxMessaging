@@ -9,7 +9,8 @@ using WallstopStudios.DxMessaging.SourceGenerators;
 namespace WallstopStudios.DxMessaging.Docs.Tests;
 
 /// <summary>Exercises the published quick start from trigger callback through receiver output.</summary>
-[TestFixture]
+[TestFixture("docs/getting-started/quick-start.md")]
+[TestFixture("README.md")]
 internal sealed class QuickStartDocumentationTests
 {
     private static readonly HashSet<string> UnitySources = new(StringComparer.Ordinal)
@@ -25,14 +26,30 @@ internal sealed class QuickStartDocumentationTests
         "Unity/ScriptableMessageBusProvider.cs",
     };
 
+    private readonly string _page;
     private (int Hit, int Miss, int Remaining, (string Message, bool HitContext)[] Logs) _result;
+
+    public QuickStartDocumentationTests(string page)
+    {
+        _page = page;
+    }
 
     [OneTimeSetUp]
     public void ExecutePublishedQuickStart()
     {
         string root = DocsSnippetCompilationTests.ResolveRepoRoot();
-        string path = Path.Combine(root, "docs", "getting-started", "quick-start.md");
-        string[] examples = DocsSnippetCompilationTests.ExtractCodeBlocks(path, "csharp").ToArray();
+        string path = Path.Combine(root, _page);
+        string[] examples = DocsSnippetCompilationTests
+            .ExtractCodeBlocks(path, "csharp")
+            .Where(code =>
+                code.Contains("partial struct DamageRequested", StringComparison.Ordinal)
+                || code.Contains(
+                    "class DamageReceiver : MessageAwareComponent",
+                    StringComparison.Ordinal
+                )
+                || code.Contains("class Hazard : MonoBehaviour", StringComparison.Ordinal)
+            )
+            .ToArray();
         Assert.That(examples, Has.Length.EqualTo(3), "Use the three complete published scripts.");
 
         CSharpParseOptions portable = new(LanguageVersion.CSharp9);
