@@ -310,7 +310,9 @@ Protect the default branch and release tags:
 
 Create the repository label `skip-openai-review` and apply it while the pull request
 is a draft. The [OpenAI Review workflow](../../.github/workflows/openai-review.yml)
-skips its API job while the label is present.
+skips its API job while the label is present. Adding the label cancels any review
+in progress. Removing it from a ready pull request starts a new review. Confirm the
+API cost is authorized before removing the label.
 
 Automatic Copilot reviews follow the branch ruleset. Verify review costs and
 authorization before marking a draft ready. Wallstop must review the final head
