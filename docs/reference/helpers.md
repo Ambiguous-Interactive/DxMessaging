@@ -1196,7 +1196,7 @@ declaration across files.
 order, then declaration order within each file. Use named arguments for split partial
 types when you do not control file order. You can opt in to eligible serialized fields.
 Constructor generation skips static fields, fixed-size buffers, and properties.
-A type with no eligible fields needs no generated constructor.
+A type with no eligible fields gets no generated field constructor.
 
 ```csharp
 using DxMessaging.Core.Attributes;
