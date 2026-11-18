@@ -214,7 +214,13 @@ namespace WallstopStudios.DxMessaging.SourceGenerators
             foreach (ISymbol member in typeSymbol.GetMembers())
             {
                 if (
-                    member is IFieldSymbol { IsStatic: false, IsImplicitlyDeclared: false } field
+                    member
+                        is IFieldSymbol
+                        {
+                            IsStatic: false,
+                            IsImplicitlyDeclared: false,
+                            IsFixedSizeBuffer: false,
+                        } field
                     && (
                         field.DeclaredAccessibility == Accessibility.Public
                         || (includeSerializedFields && HasSerializeFieldAttribute(field))
