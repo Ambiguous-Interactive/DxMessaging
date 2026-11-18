@@ -312,8 +312,8 @@ The same rule keeps guarded names that `MessageAwareComponent` does not declare 
 ### One diagnostic per declaration
 
 Each guarded-method diagnostic is reported at most once per (diagnostic id, source span) per
-compilation for registrations that share the same analyzer assembly identity. An older copy of
-`WallstopStudios.DxMessaging.Analyzer.dll` can have a different identity and report the same
+compilation for registrations that use the same loaded analyzer assembly. An older copy of
+`WallstopStudios.DxMessaging.Analyzer.dll` can load as a separate assembly and report the same
 warning. If warnings appear twice for a declaration, check for a
 [legacy analyzer copy](#remove-legacy-analyzer-copies).
 
@@ -630,7 +630,7 @@ If you are upgrading from a prior version and DXMSG warnings stop appearing on U
 
 For Unity 2021, the package-owned `[CustomEditor(typeof(MessageAwareComponent), editorForChildClasses: true)]` path is the primary warning surface because `Editor.finishedDefaultHeaderGUI` does not always fire for plain `MonoBehaviour` subclasses. User-defined custom editors for specific `MessageAwareComponent` subclasses still keep their body; the header hook supplies an IMGUI HelpBox for those editors when Unity fires the callback. See the [Inspector integration](#inspector-integration) section above.
 
-### Remove legacy analyzer copies
+## Remove legacy analyzer copies
 
 On import, the Editor attempts to clean up `Assets/Plugins/Editor/WallstopStudios.DxMessaging/`.
 The folder must contain `WallstopStudios.DxMessaging.SourceGenerators.dll` and only
