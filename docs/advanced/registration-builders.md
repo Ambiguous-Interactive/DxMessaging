@@ -232,6 +232,8 @@ Disposal sequence:
 1. Clears the owned token's staged registrations and token-local diagnostics
 1. Marks the lease as disposed after token cleanup succeeds
 
+During disposal, a nested `lease.Activate()` call yields to the current disposal pass.
+
 Token cleanup still runs when a lifecycle callback throws; `Dispose()` rethrows the first lifecycle exception after cleanup. If the bus deregistration action itself throws before cleanup, the failed token cleanup remains retryable by calling `Dispose()` again.
 
 ---
