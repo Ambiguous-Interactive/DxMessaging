@@ -71,11 +71,13 @@ name: Stuck Job Watchdog
 # the run never reached `failed`; the documented workaround is cancel +
 # redispatch / cancel + operator-managed re-run):
 #   * `gh run cancel <id>` kills the stuck dispatch.
-#   * If the run was triggered by push/schedule/workflow_dispatch on a
+#   * If the run was triggered by push/schedule on a
 #     branch (not a tag) AND the workflow file declares `workflow_dispatch:`,
 #     re-dispatch via REST API
 #     (`POST repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches`).
-#   * Otherwise (pull_request, tag, no workflow_dispatch trigger), emit a
+#   * Manual workflow inputs are not available for a fresh REST dispatch.
+#     For workflow_dispatch, rerun the original run instead of using defaults.
+#   * Otherwise (pull_request, manual dispatch, tag, no dispatch trigger), emit a
 #     clear `GITHUB_STEP_SUMMARY` line instructing the operator to click
 #     "Re-run all jobs" in the GitHub UI. Do NOT push a commit, comment on
 #     the PR, or escalate any other automatic action.
@@ -902,7 +904,12 @@ jobs:
             fi
 
             case "${run_event}" in
-              push|schedule|workflow_dispatch)
+              workflow_dispatch)
+                log_summary "run ${run_id}: a fresh dispatch cannot preserve the original manual inputs. Click 'Re-run all jobs' at ${run_html_url}."
+                printf '* run %s (%s, event=%s) -- cancelled; use Re-run all jobs to preserve manual inputs: %s\n' \
+                  "${run_id}" "${run_path_base}" "${run_event}" "${run_html_url}" >> "${stuck_runs_file}"
+                ;;
+              push|schedule)
                 if [[ -n "${run_head_branch}" && ${workflow_supports_dispatch} -eq 1 ]]; then
                   log_summary "run ${run_id}: re-dispatching workflow ${run_workflow_id} on ref '${run_head_branch}'."
                   if gh api -X POST "repos/${REPO}/actions/workflows/${run_workflow_id}/dispatches" \

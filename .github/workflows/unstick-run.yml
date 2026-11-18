@@ -20,13 +20,14 @@ name: Unstick Run
 #   * Honor the same workflow-file exclusion list (release.yml +
 #     `vars.WATCHDOG_EXCLUDED_WORKFLOWS`) unless `bypass_exclusion=true`.
 #   * `gh run cancel` the run.
-#   * If `force_redispatch=true` AND the run was push/schedule/
-#     workflow_dispatch on a branch AND the workflow file declares
+#   * If `force_redispatch=true` AND the run was push/schedule
+#     on a branch AND the workflow file declares
 #     `workflow_dispatch:`, REST-redispatch via
 #     `POST repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches`.
 #   * Otherwise, surface a step-summary line instructing the operator to
 #     click "Re-run all jobs" in the UI (the only safe recovery path for
-#     pull_request runs).
+#     pull_request and manually dispatched runs). A fresh REST dispatch
+#     cannot recover the original manual input values.
 #
 # This workflow does NOT touch the watchdog state branch and does NOT
 # count against the watchdog's per-run cancel cap.
@@ -39,7 +40,7 @@ on:
         required: true
         type: string
       force_redispatch:
-        description: "Attempt REST re-dispatch after cancel (push/schedule/workflow_dispatch on a branch only)."
+        description: "Attempt REST re-dispatch after cancel (push/schedule on a branch only)."
         required: false
         type: boolean
         default: false
@@ -237,7 +238,10 @@ jobs:
           redispatch_reason=""
           if [[ "${force_redispatch}" == "true" ]]; then
             case "${run_event}" in
-              push|schedule|workflow_dispatch)
+              workflow_dispatch)
+                redispatch_reason="a fresh REST dispatch cannot preserve the original manual inputs; rerun the original run."
+                ;;
+              push|schedule)
                 if [[ -z "${run_head_branch}" ]]; then
                   redispatch_reason="event=${run_event} but head_branch is empty (likely a tag); cannot REST-dispatch."
                 else
@@ -277,7 +281,7 @@ jobs:
                 fi
                 ;;
               *)
-                redispatch_reason="event='${run_event}' has no safe REST re-dispatch path (only push/schedule/workflow_dispatch on a branch are supported). Operator must use the UI."
+                redispatch_reason="event='${run_event}' has no REST re-dispatch path (only push/schedule on a branch are supported). Operator must use the UI."
                 ;;
             esac
           else
@@ -297,6 +301,9 @@ jobs:
             log_summary "Next step: the workflow has been re-dispatched. Watch ${run_html_url%/runs/*} for the new run."
           else
             case "${run_event}" in
+              workflow_dispatch)
+                log_summary "Next step: open ${run_html_url} and click 'Re-run all jobs' to preserve the original manual inputs."
+                ;;
               pull_request|pull_request_target)
                 log_summary "Next step: open ${run_html_url} and click 'Re-run all jobs' (PR-triggered runs cannot be REST-dispatched)."
                 ;;
