@@ -510,6 +510,34 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("A grouped write after greater-than requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(8 >> (message).Value++));",
+                "message"
+            ).SetName("A grouped write after a right shift requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " { int low = 0; int high = 1; if (low < high) Observe(1 > (message).Value++); });",
+                "message"
+            ).SetName("A grouped write in an unbraced comparison body requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe((2 < 3, 4 > (message).Value++)));",
+                "message"
+            ).SetName("A grouped write in a later tuple element requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " { int low = 0, high = 1; Observe((low < high, (low + high) > (message).Value++)); });",
+                "message"
+            ).SetName("Grouped arithmetic before a comparison does not hide a write");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " { int low = 0, high = 1; Observe((low < high, RefCell(low, high) > (message).Value++)); });",
+                "message"
+            ).SetName("A preceding call with two arguments does not hide a write");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " { int low = 0, high = 1; Observe((low < high, message.Buffer[low] > (message).Value++)); });",
+                "message"
+            ).SetName("A preceding index access does not hide a write");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
                     + " { int threshold = 1; Observe(threshold>(message).Value++); });",
                 "message"
@@ -544,6 +572,14 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("A nested member write requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => message.Child[0] = 1);",
+                "message"
+            ).SetName("A nested struct indexer write requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => ++(message.Child)[0]);",
+                "message"
+            ).SetName("A grouped nested struct indexer increment requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => ((message).Child).Value++);",
                 "message"
             ).SetName("A grouped nested member write requires manual review");
@@ -563,6 +599,10 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe($\"{message.Value++}\"));",
                 "message"
             ).SetName("An interpolated direct write requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe($\"{{{message.Value++}}}\"));",
+                "message"
+            ).SetName("An interpolated write between escaped braces requires manual review");
             yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe($@\"{message[0] += 1}\"));",
                 "message"
@@ -659,6 +699,15 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData("Observe($\"{message.Value}\");").SetName(
                 "An interpolated read still migrates"
             );
+            yield return new TestCaseData(
+                "Observe($\"{{message.Value++}} {message.Value}\");"
+            ).SetName("Escaped braces beside an interpolation read still migrate");
+            yield return new TestCaseData(
+                "Observe($@\"{{message.Value++}}\"); Observe(@$\"{{message.Value++}}\");"
+            ).SetName("Escaped braces in verbatim interpolated strings still migrate");
+            yield return new TestCaseData("Observe($\"{message.Value:message.Value++}\");").SetName(
+                "A write-like interpolation format still migrates"
+            );
             yield return new TestCaseData("Observe(\"{message.Value++}\");").SetName(
                 "Plain string text matching an interpolated write still migrates"
             );
@@ -673,6 +722,9 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             );
             yield return new TestCaseData("Observe(message[0]);").SetName(
                 "A direct indexer read still migrates"
+            );
+            yield return new TestCaseData("Observe(message.Child[0]);").SetName(
+                "A nested struct indexer read still migrates"
             );
             yield return new TestCaseData(
                 "Pulse other = message; other.Value++; Observe(other);"

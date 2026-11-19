@@ -184,26 +184,28 @@ migration.
 
 The preview defers assignments, compound assignments, and increment or decrement operations on a
 callback parameter, a direct indexer such as `message[0]`, or a member chain such as
-`message.Child.Value`. This includes simple parentheses around a receiver or target, such as
-`(message).Value`. The preview applies the same grouping rule to direct `ref` and `out` arguments.
+`message.Child.Value` or `message.Child[0]`. It also defers writes through a member indexer when
+the member could be an array or another reference type. The scan recognizes simple parentheses
+around a receiver or target, such as `(message).Value`. The preview applies the same grouping rule to direct `ref` and `out` arguments.
 It also checks direct targets in ordinary tuple deconstruction, including bodies of `if`, `else`,
 `while`, `for`, `foreach`, `lock`, and `do` without braces.
 
 The preview flags calls such as `message.Increment()` and `message.Child.Increment()` because an
 `in` parameter can cause a mutable struct method to run on a defensive copy. The text scan checks
-these calls, writes, and `ref` or `out` arguments in simple interpolated strings, including C# 11
-raw interpolation. It can also flag read-only calls, class members, initializer members that share
-the parameter's name, and text that resembles code. Calls through delegate fields and readonly
-aliases to nested members can also require manual review. Inspect explicit method type arguments,
+these calls, writes, and `ref` or `out` arguments in simple interpolated strings. In C# 11 raw
+interpolation, literal text that resembles code can also trigger review. The scan can flag read-only
+calls, class members, initializer members that share the parameter's name, calls through delegate
+fields, and readonly aliases to nested members. Inspect explicit method type arguments,
 conditional access, complex interpolation, casts, and indirect targets manually.
 
 Copy a struct message to a local when the callback needs writable scratch data. Move payload or
 context edits to an interceptor when later listeners need to see them.
 
-When you migrate a deferred string-handler override and still need inherited string delivery, add
+When you migrate a deferred string-handler override by hand, change its parameter from `ref` to
+`in`. If the override calls the base implementation, change the matching argument too. For example,
+use `base.HandleGlobalStringMessage(in message)`. To keep inherited string delivery, add
 `protected override bool RegisterForStringMessages => true;` if the class has no such override.
-Keep an existing opt-in, opt-out, or computed override. Inherited registration still depends on this
-property after the handler parameter changes to `in`.
+Keep an existing opt-in, opt-out, or computed override.
 
 Apply the same change to both parameters of callbacks that receive a target or source:
 

@@ -302,8 +302,11 @@ namespace DxMessaging.Editor
                 throw new ArgumentNullException(nameof(source));
             }
 
-            List<TextSpan> interpolatedLiterals = new();
-            string masked = MaskNonCode(source, interpolatedLiterals);
+            List<InterpolatedSpan> interpolatedExpressions = new();
+            string masked = MaskNonCode(source, interpolatedExpressions);
+            interpolatedExpressions.Sort(
+                static (left, right) => left.Content.Start.CompareTo(right.Content.Start)
+            );
             HashSet<int> replacementStarts = new();
             SortedSet<string> manualReview = new(StringComparer.Ordinal);
             List<Invocation> readonlyInvocations = FindInvocations(
@@ -379,7 +382,7 @@ namespace DxMessaging.Editor
             PruneIncompatibleParameterUses(
                 source,
                 masked,
-                interpolatedLiterals,
+                interpolatedExpressions,
                 replacementStarts,
                 manualReview
             );
@@ -1588,7 +1591,7 @@ namespace DxMessaging.Editor
         private static void PruneIncompatibleParameterUses(
             string source,
             string masked,
-            List<TextSpan> interpolatedLiterals,
+            List<InterpolatedSpan> interpolatedExpressions,
             HashSet<int> replacementStarts,
             SortedSet<string> manualReview
         )
@@ -1671,13 +1674,12 @@ namespace DxMessaging.Editor
                             masked,
                             body,
                             parameterName,
-                            parameterValue,
-                            stopAtTypeArgumentBarriers: true
+                            parameterValue
                         )
                             ?? FindInterpolatedParameterIssue(
                                 source,
                                 body,
-                                interpolatedLiterals,
+                                interpolatedExpressions,
                                 parameterName,
                                 parameterValue
                             );
@@ -1791,13 +1793,7 @@ namespace DxMessaging.Editor
                 operand.Index + operand.Length,
                 scopeEnd
             );
-            ExpandStandaloneGrouping(
-                source,
-                rightHandSide,
-                ref targetStart,
-                ref following,
-                stopAtTypeArgumentBarriers: false
-            );
+            ExpandStandaloneGrouping(source, rightHandSide, ref targetStart, ref following);
             return targetStart == rightHandSide.Start
                 && 0 <= following
                 && following < scopeEnd
@@ -1843,34 +1839,37 @@ namespace DxMessaging.Editor
         private static string FindInterpolatedParameterIssue(
             string source,
             TextSpan body,
-            List<TextSpan> interpolatedLiterals,
+            List<InterpolatedSpan> interpolatedExpressions,
             string parameterName,
             string parameterValue
         )
         {
             int bodyEnd = body.Start + body.Length;
-            foreach (TextSpan literal in interpolatedLiterals)
+            foreach (InterpolatedSpan expression in interpolatedExpressions)
             {
-                if (bodyEnd <= literal.Start)
+                TextSpan scope = expression.Content;
+                if (bodyEnd <= scope.Start)
                 {
                     break;
                 }
-                if (literal.Start < body.Start || bodyEnd < literal.Start + literal.Length)
+                if (scope.Start < body.Start || bodyEnd < scope.Start + scope.Length)
                 {
                     continue;
                 }
 
-                Match forwarding = FindInterpolatedReferenceUse(source, literal, parameterValue);
+                string code = source;
+                if (!expression.IsRaw)
+                {
+                    code = MaskNonCode(source.Substring(scope.Start, scope.Length), null);
+                    scope = new TextSpan(0, code.Length);
+                }
+                Match forwarding = FindByReferenceUses(code, scope, parameterValue)
+                    .FirstOrDefault();
                 if (forwarding != null)
                 {
                     return $"passes parameter '{parameterName}' by {forwarding.Groups["modifier"].Value}";
                 }
-                string issue = FindDirectParameterIssue(
-                    source,
-                    literal,
-                    parameterName,
-                    parameterValue
-                );
+                string issue = FindDirectParameterIssue(code, scope, parameterName, parameterValue);
                 if (issue != null)
                 {
                     return issue;
@@ -1879,67 +1878,11 @@ namespace DxMessaging.Editor
             return null;
         }
 
-        private static Match FindInterpolatedReferenceUse(
-            string source,
-            TextSpan literal,
-            string parameterValue
-        )
-        {
-            Match forwarding = FindByReferenceUses(source, literal, parameterValue)
-                .FirstOrDefault();
-            // A preceding quote marks a raw interpolated literal.
-            if (forwarding != null || source[literal.Start - 2] == '"')
-            {
-                return forwarding;
-            }
-
-            string maskedOperand = MaskCommentsInsideReferenceGroupings(source, literal);
-            return maskedOperand == null
-                ? null
-                : FindByReferenceUses(
-                        maskedOperand,
-                        new TextSpan(0, maskedOperand.Length),
-                        parameterValue
-                    )
-                    .FirstOrDefault();
-        }
-
-        private static string MaskCommentsInsideReferenceGroupings(string source, TextSpan literal)
-        {
-            int limit = literal.Start + literal.Length;
-            char[] masked = null;
-            for (
-                Match use = ByReferenceModifierRegex.Match(source, literal.Start, literal.Length);
-                use.Success;
-                use = use.NextMatch()
-            )
-            {
-                int opening = NextAfterBlockComments(source, use.Index + use.Length, limit);
-                while (0 <= opening && opening < limit && source[opening] == '(')
-                {
-                    int content = opening + 1;
-                    int following = NextAfterBlockComments(source, content, limit);
-                    if (
-                        0 <= following
-                        && following < limit
-                        && following != NextNonWhitespace(source, content)
-                    )
-                    {
-                        masked ??= source.AsSpan(literal.Start, literal.Length).ToArray();
-                        Mask(masked, content - literal.Start, following - literal.Start);
-                    }
-                    opening = following;
-                }
-            }
-            return masked == null ? null : new string(masked);
-        }
-
         private static string FindDirectParameterIssue(
             string masked,
             TextSpan body,
             string parameterName,
-            string parameterValue,
-            bool stopAtTypeArgumentBarriers = false
+            string parameterValue
         )
         {
             int bodyEnd = body.Start + body.Length;
@@ -1962,13 +1905,7 @@ namespace DxMessaging.Editor
 
                 int targetStart = use.Index;
                 int next = NextAfterBlockComments(masked, use.Index + use.Length, bodyEnd);
-                DirectTargetKind target = ReadDirectTarget(
-                    masked,
-                    body,
-                    ref targetStart,
-                    ref next,
-                    stopAtTypeArgumentBarriers
-                );
+                DirectTargetKind target = ReadDirectTarget(masked, body, ref targetStart, ref next);
                 if (target == DirectTargetKind.MemberInvocation)
                 {
                     return $"invokes a method on parameter '{parameterName}' or its member";
@@ -2016,69 +1953,55 @@ namespace DxMessaging.Editor
             string text,
             TextSpan body,
             ref int targetStart,
-            ref int following,
-            bool stopAtTypeArgumentBarriers = false
+            ref int following
         )
         {
             int bodyEnd = body.Start + body.Length;
-            ExpandStandaloneGrouping(
-                text,
-                body,
-                ref targetStart,
-                ref following,
-                stopAtTypeArgumentBarriers
-            );
-            bool hasMember = false;
+            ExpandStandaloneGrouping(text, body, ref targetStart, ref following);
+            bool hasIndexer = false;
+            bool followsMember = false;
             while (0 <= following && following < bodyEnd)
             {
                 following = SkipNullForgivingReceiver(text, following, bodyEnd);
-                if (text[following] != '.')
+                if (text[following] == '[' && !hasIndexer)
+                {
+                    int indexerEnd = FindMatching(text, following, '[', ']');
+                    if (indexerEnd < 0 || bodyEnd <= indexerEnd)
+                    {
+                        return DirectTargetKind.Unsupported;
+                    }
+
+                    hasIndexer = true;
+                    followsMember = false;
+                    following = NextNonWhitespace(text, indexerEnd + 1);
+                }
+                else if (text[following] == '.')
+                {
+                    int memberStart = NextNonWhitespace(text, following + 1);
+                    if (memberStart < 0 || bodyEnd <= memberStart)
+                    {
+                        return DirectTargetKind.Unsupported;
+                    }
+
+                    Match member = DirectMemberIdentifierRegex.Match(
+                        text,
+                        memberStart,
+                        bodyEnd - memberStart
+                    );
+                    if (!member.Success)
+                    {
+                        return DirectTargetKind.Unsupported;
+                    }
+
+                    followsMember = true;
+                    following = NextNonWhitespace(text, member.Index + member.Length);
+                }
+                else
                 {
                     break;
                 }
 
-                int memberStart = NextNonWhitespace(text, following + 1);
-                if (memberStart < 0 || bodyEnd <= memberStart)
-                {
-                    return DirectTargetKind.Unsupported;
-                }
-
-                Match member = DirectMemberIdentifierRegex.Match(
-                    text,
-                    memberStart,
-                    bodyEnd - memberStart
-                );
-                if (!member.Success)
-                {
-                    return DirectTargetKind.Unsupported;
-                }
-
-                hasMember = true;
-                following = NextNonWhitespace(text, member.Index + member.Length);
-                ExpandStandaloneGrouping(
-                    text,
-                    body,
-                    ref targetStart,
-                    ref following,
-                    stopAtTypeArgumentBarriers
-                );
-            }
-            if (!hasMember && 0 <= following && following < bodyEnd && text[following] == '[')
-            {
-                int indexerEnd = FindMatching(text, following, '[', ']');
-                if (indexerEnd < 0 || bodyEnd <= indexerEnd)
-                {
-                    return DirectTargetKind.Unsupported;
-                }
-
-                following = NextNonWhitespace(text, indexerEnd + 1);
-                ExpandStandaloneGrouping(
-                    text,
-                    body,
-                    ref targetStart,
-                    ref following,
-                    stopAtTypeArgumentBarriers
-                );
+                ExpandStandaloneGrouping(text, body, ref targetStart, ref following);
             }
 
             if (following < 0 || bodyEnd <= following)
@@ -2088,7 +2011,7 @@ namespace DxMessaging.Editor
 
             return text[following] switch
             {
-                '(' when hasMember => DirectTargetKind.MemberInvocation,
+                '(' when followsMember => DirectTargetKind.MemberInvocation,
                 '.' or '[' or '(' => DirectTargetKind.Unsupported,
                 _ => DirectTargetKind.Storage,
             };
@@ -2111,8 +2034,7 @@ namespace DxMessaging.Editor
             string text,
             TextSpan body,
             ref int targetStart,
-            ref int following,
-            bool stopAtTypeArgumentBarriers
+            ref int following
         )
         {
             int bodyEnd = body.Start + body.Length;
@@ -2129,12 +2051,7 @@ namespace DxMessaging.Editor
                 if (
                     !FollowsTargetBoundary(text, body.Start, beforeOpening)
                     && "+-*/%&|^~<".IndexOf(text[beforeOpening]) < 0
-                    && !FollowsStandaloneGreaterThan(
-                        text,
-                        body.Start,
-                        beforeOpening,
-                        stopAtTypeArgumentBarriers
-                    )
+                    && !FollowsStandaloneGreaterThan(text, body.Start, beforeOpening)
                 )
                 {
                     return;
@@ -2148,16 +2065,87 @@ namespace DxMessaging.Editor
         private static bool FollowsStandaloneGreaterThan(
             string text,
             int bodyStart,
-            int previous,
-            bool stopAtTypeArgumentBarriers
+            int previous
         ) =>
             text[previous] == '>'
             && bodyStart < previous
-            && text[previous - 1] != '>'
             && text[previous - 1] != '='
-            // A matched angle can belong to a generic call's type arguments.
-            && FindMatchingBackward(text, previous, '<', '>', bodyStart, stopAtTypeArgumentBarriers)
-                < 0;
+            && !ClosesTypeArgumentList(text, bodyStart, previous);
+
+        private static bool ClosesTypeArgumentList(string text, int bodyStart, int closing)
+        {
+            int angles = 1;
+            for (int index = closing - 1; bodyStart <= index; index--)
+            {
+                char current = text[index];
+                if (current == '>')
+                {
+                    angles++;
+                }
+                else if (current == '<')
+                {
+                    if (text[index + 1] == '<')
+                    {
+                        return false;
+                    }
+                    if (--angles == 0)
+                    {
+                        int nameEnd = PreviousNonWhitespace(text, index - 1);
+                        return bodyStart <= nameEnd && IsIdentifierPart(text[nameEnd]);
+                    }
+                }
+                else if (current == ')' || current == ']')
+                {
+                    // A tuple type or array rank can appear inside the argument list.
+                    char opening = current == ')' ? '(' : '[';
+                    int groupStart = FindMatchingBackward(text, index, opening, current, bodyStart);
+                    if (
+                        groupStart < 0
+                        || !IsTypeArgumentGrouping(text, bodyStart, groupStart, index)
+                    )
+                    {
+                        return false;
+                    }
+                    index = groupStart;
+                }
+                else if (
+                    "([{;}=+-/%&|^~!".IndexOf(current) >= 0
+                    || (
+                        char.IsDigit(current)
+                        && (index == bodyStart || !IsIdentifierPart(text[index - 1]))
+                    )
+                )
+                {
+                    // An unmatched opener, operator, or numeric literal separates these angles.
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        private static bool IsTypeArgumentGrouping(
+            string text,
+            int bodyStart,
+            int opening,
+            int closing
+        )
+        {
+            if (text[opening] == '(')
+            {
+                int before = PreviousNonWhitespace(text, opening - 1);
+                return (before < bodyStart || text[before] is '<' or ',' or '(')
+                    && 1 < SplitArguments(text, opening + 1, closing).Count;
+            }
+
+            for (int index = opening + 1; index < closing; index++)
+            {
+                if (text[index] != ',' && !char.IsWhiteSpace(text[index]))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
 
         private static bool FollowsPrefixWriteOperator(string text, int bodyStart, int previous)
         {
@@ -2649,91 +2637,204 @@ namespace DxMessaging.Editor
             return -1;
         }
 
-        private static string MaskNonCode(string source, List<TextSpan> interpolatedLiterals)
+        private static string MaskNonCode(
+            string source,
+            List<InterpolatedSpan> interpolatedExpressions
+        )
         {
             char[] masked = source.ToCharArray();
-            int index = 0;
-            while (index < source.Length)
+            for (int index = 0; index < source.Length; )
             {
-                if (index + 1 < source.Length && source[index] == '/' && source[index + 1] == '/')
+                int end = FindNonCodeEnd(source, index, interpolatedExpressions);
+                if (index < end)
                 {
-                    int end = source.IndexOf('\n', index + 2);
-                    end = end < 0 ? source.Length : end;
                     Mask(masked, index, end);
                     index = end;
-                    continue;
                 }
-                if (index + 1 < source.Length && source[index] == '/' && source[index + 1] == '*')
+                else
                 {
-                    int end = FindBlockCommentEnd(source, index, source.Length);
-                    end = end < 0 ? source.Length : end;
-                    Mask(masked, index, end);
-                    index = end;
-                    continue;
+                    index++;
                 }
-
-                int quoteStart = index;
-                if (source[index] == '$' && index + 1 < source.Length && source[index + 1] == '@')
-                {
-                    quoteStart = index + 2;
-                }
-                else if (
-                    source[index] == '@'
-                    && index + 1 < source.Length
-                    && source[index + 1] == '$'
-                )
-                {
-                    quoteStart = index + 2;
-                }
-                else if (
-                    (source[index] == '$' || source[index] == '@')
-                    && index + 1 < source.Length
-                )
-                {
-                    quoteStart = index + 1;
-                }
-
-                if (quoteStart < source.Length && source[quoteStart] == '"')
-                {
-                    bool verbatim =
-                        source[index] == '@'
-                        || (index + 1 < source.Length && source[index + 1] == '@');
-                    int quoteCount = CountRun(source, quoteStart, '"');
-                    bool raw = 3 <= quoteCount;
-                    int delimiterLength = raw ? quoteCount : 1;
-                    int contentStart = quoteStart + delimiterLength;
-                    int end = raw
-                        ? FindRawStringEnd(source, contentStart, delimiterLength)
-                        : FindQuotedEnd(source, contentStart, '"', verbatim);
-                    bool interpolated =
-                        source[index] == '$'
-                        || (index + 1 < quoteStart && source[index + 1] == '$');
-                    int contentEnd = end - delimiterLength;
-                    if (
-                        interpolated
-                        && contentStart < contentEnd
-                        && CountRun(source, contentEnd, '"') == delimiterLength
-                    )
-                    {
-                        interpolatedLiterals.Add(
-                            new TextSpan(contentStart, contentEnd - contentStart)
-                        );
-                    }
-                    Mask(masked, index, end);
-                    index = end;
-                    continue;
-                }
-                if (source[index] == '\'')
-                {
-                    int end = FindQuotedEnd(source, index + 1, '\'', verbatim: false);
-                    Mask(masked, index, end);
-                    index = end;
-                    continue;
-                }
-
-                index++;
             }
             return new string(masked);
+        }
+
+        private static int FindNonCodeEnd(
+            string source,
+            int start,
+            List<InterpolatedSpan> interpolatedExpressions
+        )
+        {
+            if (source[start] == '\'')
+            {
+                return FindQuotedEnd(source, start + 1, '\'', verbatim: false);
+            }
+            if (source[start] == '/' && start + 1 < source.Length)
+            {
+                if (source[start + 1] == '/')
+                {
+                    int end = source.IndexOf('\n', start + 2);
+                    return end < 0 ? source.Length : end;
+                }
+                if (source[start + 1] == '*')
+                {
+                    int end = FindBlockCommentEnd(source, start, source.Length);
+                    return end < 0 ? source.Length : end;
+                }
+            }
+
+            return FindStringEnd(source, start, interpolatedExpressions);
+        }
+
+        private static int FindStringEnd(
+            string source,
+            int start,
+            List<InterpolatedSpan> interpolatedExpressions
+        )
+        {
+            int quoteStart = start;
+            bool verbatim = source[start] == '@';
+            bool interpolated = source[start] == '$';
+            if (verbatim || interpolated)
+            {
+                quoteStart++;
+                char alternatePrefix = verbatim ? '$' : '@';
+                if (quoteStart < source.Length && source[quoteStart] == alternatePrefix)
+                {
+                    quoteStart++;
+                    verbatim = true;
+                    interpolated = true;
+                }
+            }
+            if (source.Length <= quoteStart || source[quoteStart] != '"')
+            {
+                return start;
+            }
+
+            int quoteCount = CountRun(source, quoteStart, '"');
+            if (quoteCount < 3)
+            {
+                return interpolated
+                    ? FindInterpolatedStringEnd(
+                        source,
+                        quoteStart + 1,
+                        verbatim,
+                        interpolatedExpressions
+                    )
+                    : FindQuotedEnd(source, quoteStart + 1, '"', verbatim);
+            }
+
+            int contentStart = quoteStart + quoteCount;
+            int end = FindRawStringEnd(source, contentStart, quoteCount);
+            int contentEnd = end - quoteCount;
+            if (
+                interpolated
+                && contentStart < contentEnd
+                && CountRun(source, contentEnd, '"') == quoteCount
+            )
+            {
+                interpolatedExpressions?.Add(
+                    new InterpolatedSpan(contentStart, contentEnd - contentStart, isRaw: true)
+                );
+            }
+            return end;
+        }
+
+        private static int FindInterpolatedStringEnd(
+            string source,
+            int start,
+            bool verbatim,
+            List<InterpolatedSpan> interpolatedExpressions
+        )
+        {
+            for (int index = start; index < source.Length; index++)
+            {
+                char current = source[index];
+                if (current == '\\' && !verbatim)
+                {
+                    index++;
+                }
+                else if (current == '"')
+                {
+                    if (!verbatim || source.Length <= index + 1 || source[index + 1] != '"')
+                    {
+                        return index + 1;
+                    }
+                    index++;
+                }
+                else if (current == '{' && index + 1 < source.Length)
+                {
+                    if (source[index + 1] == '{')
+                    {
+                        index++;
+                        continue;
+                    }
+
+                    int expressionStart = index + 1;
+                    index = FindInterpolationEnd(
+                        source,
+                        expressionStart,
+                        interpolatedExpressions,
+                        out int expressionEnd
+                    );
+                    if (index < source.Length && expressionStart < expressionEnd)
+                    {
+                        interpolatedExpressions?.Add(
+                            new InterpolatedSpan(
+                                expressionStart,
+                                expressionEnd - expressionStart,
+                                isRaw: false
+                            )
+                        );
+                    }
+                }
+            }
+            return source.Length;
+        }
+
+        private static int FindInterpolationEnd(
+            string source,
+            int start,
+            List<InterpolatedSpan> interpolatedExpressions,
+            out int expressionEnd
+        )
+        {
+            int nesting = 0;
+            for (int index = start; index < source.Length; index++)
+            {
+                int end = FindNonCodeEnd(source, index, interpolatedExpressions);
+                if (index < end)
+                {
+                    index = end - 1;
+                    continue;
+                }
+
+                switch (source[index])
+                {
+                    case '(' or '[' or '{':
+                        nesting++;
+                        break;
+                    case '}' when nesting == 0:
+                        expressionEnd = index;
+                        return index;
+                    case ')' or ']' or '}':
+                        nesting--;
+                        break;
+                    case ':' when nesting == 0:
+                        if (index + 1 < source.Length && source[index + 1] == ':')
+                        {
+                            // Global and namespace aliases use :: within expressions.
+                            index++;
+                            break;
+                        }
+
+                        expressionEnd = index;
+                        int close = source.IndexOf('}', index + 1);
+                        return close < 0 ? source.Length : close;
+                }
+            }
+            expressionEnd = source.Length;
+            return source.Length;
         }
 
         private static int FindBlockCommentEnd(string source, int start, int limit)
@@ -2820,8 +2921,7 @@ namespace DxMessaging.Editor
             int close,
             char openValue,
             char closeValue,
-            int minimum = 0,
-            bool stopAtTypeArgumentBarriers = false
+            int minimum = 0
         )
         {
             int depth = 0;
@@ -2835,22 +2935,9 @@ namespace DxMessaging.Editor
                 {
                     return index;
                 }
-                else if (stopAtTypeArgumentBarriers && IsTypeArgumentBarrier(text, index, minimum))
-                {
-                    break;
-                }
             }
             return -1;
         }
-
-        // This check is only enabled for masked code, where comments and literals are absent.
-        private static bool IsTypeArgumentBarrier(string text, int index, int minimum) =>
-            text[index] == ';'
-            || (
-                minimum < index
-                && (text[index] == '&' || text[index] == '|')
-                && text[index - 1] == text[index]
-            );
 
         private static int NextNonWhitespace(string text, int start)
         {
@@ -3164,6 +3251,18 @@ namespace DxMessaging.Editor
             public int ParametersStart { get; }
 
             public int ParametersEnd { get; }
+        }
+
+        private readonly struct InterpolatedSpan
+        {
+            public readonly TextSpan Content;
+            public readonly bool IsRaw;
+
+            public InterpolatedSpan(int start, int length, bool isRaw)
+            {
+                Content = new TextSpan(start, length);
+                IsRaw = isRaw;
+            }
         }
 
         private readonly struct TextSpan
