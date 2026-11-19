@@ -350,7 +350,7 @@ namespace DxMessaging.Tests.Runtime.Core
             Max = 65535,
         }
 
-        private enum Int32Value : int
+        private enum Int32Value
         {
             Min = -2147483648,
             Max = 2147483647,
