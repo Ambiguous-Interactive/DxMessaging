@@ -741,14 +741,16 @@ jobs:
 
       - name: Redact shipping Editor artifacts
         id: redact_editor
-        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        # A cancelled run skips artifact handling and proceeds to the central
+        # return, so cancellation cannot use up the cleanup budget.
+        if: ${{ always() && !cancelled() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
           paths: .artifacts/unity/shipping-editor/${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload shipping Editor artifacts
-        if: ${{ always() && steps.redact_editor.outcome == 'success' }}
+        if: ${{ always() && !cancelled() && steps.redact_editor.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -1292,14 +1294,14 @@ jobs:
 
       - name: Redact pilot contract artifacts
         id: redact_pilot
-        if: ${{ always() && !inputs['perf-license-recovery'] && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        if: ${{ always() && !cancelled() && !inputs['perf-license-recovery'] && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
           paths: .artifacts/unity/pilot-contract-smoke/${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload pilot contract artifacts
-        if: ${{ always() && steps.redact_pilot.outcome == 'success' }}
+        if: ${{ always() && !cancelled() && steps.redact_pilot.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -1748,14 +1750,16 @@ jobs:
 
       - name: Redact native SDK floor artifacts
         id: redact_sdk_floor
-        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        # A cancelled run skips artifact handling and proceeds to the central
+        # return, so cancellation cannot use up the cleanup budget.
+        if: ${{ always() && !cancelled() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
         timeout-minutes: 2
         uses: ./.github/actions/redact-unity-artifacts
         with:
           paths: .artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload native SDK floor artifacts
-        if: ${{ always() && steps.redact_sdk_floor.outcome == 'success' }}
+        if: ${{ always() && !cancelled() && steps.redact_sdk_floor.outcome == 'success' }}
         timeout-minutes: 10
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
