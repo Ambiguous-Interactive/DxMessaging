@@ -57,13 +57,7 @@ function extractActionScript(actionPath) {
 }
 
 function runVerifyUnityResultsAction(resultsDir, resultsFile = "") {
-  let script = extractActionScript(VERIFY_ACTION_PATH);
-  script = script.replace(
-    '$dir = "${{ inputs.results-dir }}"',
-    `$dir = ${toPowerShellSingleQuoted(resultsDir)}`
-  );
-  script = script.replace('$label = "${{ inputs.label }}"', "$label = 'Regression fixture'");
-
+  const script = extractActionScript(VERIFY_ACTION_PATH);
   const scriptPath = path.join(resultsDir, "verify-unity-results.ps1");
   fs.writeFileSync(scriptPath, script, "utf8");
 
@@ -76,7 +70,9 @@ function runVerifyUnityResultsAction(resultsDir, resultsFile = "") {
       env: {
         ...process.env,
         DXM_EXPECTED_EMPTY: "",
-        DXM_RESULTS_FILE: resultsFile
+        DXM_RESULTS_FILE: resultsFile,
+        DXM_RESULTS_DIR: resultsDir,
+        DXM_RESULTS_LABEL: "Regression fixture"
       }
     }
   );

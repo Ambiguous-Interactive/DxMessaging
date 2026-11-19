@@ -774,13 +774,21 @@ function Assert-ConsumerResults {
         throw "$SourceKind consumer wrote no NUnit result at $ResultPath."
     }
     [xml]$result = Get-Content -LiteralPath $ResultPath -Raw
-    $run = $result.'test-run'
+    $run = $result.SelectSingleNode('/test-run')
+    if (-not $run) {
+        throw "$SourceKind consumer NUnit report has no test-run element. See $ResultPath."
+    }
     $total = [int]$run.total
     $passed = [int]$run.passed
     $failed = [int]$run.failed
     $skipped = [int]$run.skipped
     if ($total -ne 8 -or $passed -ne 8 -or $failed -ne 0 -or $skipped -ne 0) {
         throw "$SourceKind consumer expected 8 passed / 0 failed / 0 skipped; got total=$total passed=$passed failed=$failed skipped=$skipped."
+    }
+    $verdict = $run.GetAttribute('result')
+    if ($verdict -cne 'Passed') {
+        $reportedVerdict = if ($verdict) { $verdict } else { 'missing' }
+        throw "$SourceKind consumer NUnit run result was '$reportedVerdict'. Expected 'Passed'. See $ResultPath."
     }
     return [ordered]@{ total = $total; passed = $passed; failed = $failed; skipped = $skipped }
 }
