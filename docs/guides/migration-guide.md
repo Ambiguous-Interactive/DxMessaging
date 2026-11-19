@@ -183,12 +183,13 @@ Review project-wide callback uses, inspect the diff, and let Unity compile befor
 migration.
 
 The preview defers direct assignments, compound assignments, and increment or decrement operations
-on a callback parameter, its direct members, or a direct indexer such as `message[0]`. Review writes
-inside interpolation expressions and through parenthesized or indirect targets manually. The
-preview reads source text, so a member or indexer write on a class message or an initializer member
-with the same name as a parameter can also appear in its review list. Copy a struct message to a
-local when the callback needs writable scratch data. Move payload or context edits to an interceptor
-when later listeners need to see them.
+on a callback parameter, its direct members, or a direct indexer such as `message[0]`. It checks for
+the same patterns in simple interpolated strings. The preview reads source text, so text in an
+interpolated string that resembles a write can also appear in the review list. Member or indexer
+writes on class messages and initializer members with the same name as a parameter can also appear.
+Review complex interpolation and writes through parenthesized or indirect targets manually. Copy a
+struct message to a local when the callback needs writable scratch data. Move payload or context
+edits to an interceptor when later listeners need to see them.
 
 Apply the same change to both parameters of callbacks that receive a target or source:
 

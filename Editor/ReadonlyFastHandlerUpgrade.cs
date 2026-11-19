@@ -256,7 +256,8 @@ namespace DxMessaging.Editor
                 throw new ArgumentNullException(nameof(source));
             }
 
-            string masked = MaskNonCode(source);
+            List<TextSpan> interpolatedLiterals = new();
+            string masked = MaskNonCode(source, interpolatedLiterals);
             HashSet<int> replacementStarts = new();
             SortedSet<string> manualReview = new(StringComparer.Ordinal);
             List<Invocation> readonlyInvocations = FindInvocations(
@@ -329,7 +330,13 @@ namespace DxMessaging.Editor
                 );
             }
 
-            PruneIncompatibleParameterUses(masked, replacementStarts, manualReview);
+            PruneIncompatibleParameterUses(
+                source,
+                masked,
+                interpolatedLiterals,
+                replacementStarts,
+                manualReview
+            );
 
             SortedDictionary<int, string> insertions = new();
             AddStringHandlerOptIns(masked, replacementStarts, insertions, manualReview);
@@ -1535,7 +1542,9 @@ namespace DxMessaging.Editor
         }
 
         private static void PruneIncompatibleParameterUses(
+            string source,
             string masked,
+            List<TextSpan> interpolatedLiterals,
             HashSet<int> replacementStarts,
             SortedSet<string> manualReview
         )
@@ -1620,7 +1629,15 @@ namespace DxMessaging.Editor
                 {
                     foreach (string parameterName in parameterNames)
                     {
-                        if (WritesParameterOrDirectAccess(masked, body, parameterName))
+                        if (
+                            WritesParameterOrDirectAccess(masked, body, parameterName)
+                            || WritesParameterInInterpolatedLiteral(
+                                source,
+                                body,
+                                interpolatedLiterals,
+                                parameterName
+                            )
+                        )
                         {
                             reason = $"writes to parameter '{parameterName}' or its member";
                             break;
@@ -1643,6 +1660,32 @@ namespace DxMessaging.Editor
                     $"callback on line {LineNumber(masked, entry.Key)} {reason}; inspect it manually"
                 );
             }
+        }
+
+        private static bool WritesParameterInInterpolatedLiteral(
+            string source,
+            TextSpan body,
+            List<TextSpan> interpolatedLiterals,
+            string parameterName
+        )
+        {
+            int bodyEnd = body.Start + body.Length;
+            foreach (TextSpan literal in interpolatedLiterals)
+            {
+                if (bodyEnd <= literal.Start)
+                {
+                    break;
+                }
+                if (
+                    body.Start <= literal.Start
+                    && literal.Start + literal.Length <= bodyEnd
+                    && WritesParameterOrDirectAccess(source, literal, parameterName)
+                )
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static bool WritesParameterOrDirectAccess(
@@ -2090,7 +2133,7 @@ namespace DxMessaging.Editor
             return -1;
         }
 
-        private static string MaskNonCode(string source)
+        private static string MaskNonCode(string source, List<TextSpan> interpolatedLiterals)
         {
             char[] masked = source.ToCharArray();
             int index = 0;
@@ -2144,6 +2187,22 @@ namespace DxMessaging.Editor
                         3 <= quoteCount
                             ? FindRawStringEnd(source, quoteStart + quoteCount, quoteCount)
                             : FindQuotedEnd(source, quoteStart + 1, '"', verbatim);
+                    bool interpolated =
+                        source[index] == '$'
+                        || (index + 1 < quoteStart && source[index + 1] == '$');
+                    int contentStart = quoteStart + 1;
+                    int contentEnd = end - 1;
+                    if (
+                        interpolated
+                        && quoteCount < 3
+                        && contentStart < contentEnd
+                        && source[contentEnd] == '"'
+                    )
+                    {
+                        interpolatedLiterals.Add(
+                            new TextSpan(contentStart, contentEnd - contentStart)
+                        );
+                    }
                     Mask(masked, index, end);
                     index = end;
                     continue;
