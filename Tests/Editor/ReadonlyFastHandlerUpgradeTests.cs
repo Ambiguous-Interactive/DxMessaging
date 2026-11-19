@@ -868,6 +868,13 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "A commented grouped receiver in an interpolated ref argument requires manual review"
             );
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> Observe($\"{Bump(ref (/* note */ message))}\"));",
+                "ref"
+            ).SetName(
+                "A comment inside an interpolated grouped ref operand requires manual review"
+            );
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => Bump(ref(message).Value));",
                 "ref"
             ).SetName("A grouped ref argument without a space requires manual review");

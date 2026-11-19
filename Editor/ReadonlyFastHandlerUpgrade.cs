@@ -1860,8 +1860,7 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
-                Match forwarding = FindByReferenceUses(source, literal, parameterValue)
-                    .FirstOrDefault();
+                Match forwarding = FindInterpolatedReferenceUse(source, literal, parameterValue);
                 if (forwarding != null)
                 {
                     return $"passes parameter '{parameterName}' by {forwarding.Groups["modifier"].Value}";
@@ -1878,6 +1877,61 @@ namespace DxMessaging.Editor
                 }
             }
             return null;
+        }
+
+        private static Match FindInterpolatedReferenceUse(
+            string source,
+            TextSpan literal,
+            string parameterValue
+        )
+        {
+            Match forwarding = FindByReferenceUses(source, literal, parameterValue)
+                .FirstOrDefault();
+            // A preceding quote marks a raw interpolated literal.
+            if (forwarding != null || source[literal.Start - 2] == '"')
+            {
+                return forwarding;
+            }
+
+            string maskedOperand = MaskCommentsInsideReferenceGroupings(source, literal);
+            return maskedOperand == null
+                ? null
+                : FindByReferenceUses(
+                        maskedOperand,
+                        new TextSpan(0, maskedOperand.Length),
+                        parameterValue
+                    )
+                    .FirstOrDefault();
+        }
+
+        private static string MaskCommentsInsideReferenceGroupings(string source, TextSpan literal)
+        {
+            int limit = literal.Start + literal.Length;
+            char[] masked = null;
+            for (
+                Match use = ByReferenceModifierRegex.Match(source, literal.Start, literal.Length);
+                use.Success;
+                use = use.NextMatch()
+            )
+            {
+                int opening = NextAfterBlockComments(source, use.Index + use.Length, limit);
+                while (0 <= opening && opening < limit && source[opening] == '(')
+                {
+                    int content = opening + 1;
+                    int following = NextAfterBlockComments(source, content, limit);
+                    if (
+                        0 <= following
+                        && following < limit
+                        && following != NextNonWhitespace(source, content)
+                    )
+                    {
+                        masked ??= source.AsSpan(literal.Start, literal.Length).ToArray();
+                        Mask(masked, content - literal.Start, following - literal.Start);
+                    }
+                    opening = following;
+                }
+            }
+            return masked == null ? null : new string(masked);
         }
 
         private static string FindDirectParameterIssue(
