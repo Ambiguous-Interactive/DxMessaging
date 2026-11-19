@@ -1,0 +1,217 @@
+namespace DxMessaging.Tests.Consumer
+{
+    using System;
+    using System.Collections;
+    using System.Collections.Generic;
+    using System.Globalization;
+    using System.Reflection;
+    using DxMessaging.Core;
+    using DxMessaging.Core.MessageBus;
+    using DxMessaging.Core.Messages;
+    using NUnit.Framework;
+    using UnityEngine;
+    using UnityEngine.SceneManagement;
+    using UnityEngine.TestTools;
+    using Object = UnityEngine.Object;
+
+    public sealed class QuickStartPlayModeTests
+    {
+        private const float PhysicsStep = 0.02f;
+        private Scene _ownedScene;
+        private IMessageBus _bus;
+        private int _initialRegistrations;
+
+        [Test]
+        [Category("CiConsumerQuickStart")]
+        [Category("UnityRuntime")]
+        public void HazardOverlapDamagesOnlyTheTarget()
+        {
+            Assert.That(Application.isPlaying, Is.True, "The walkthrough must run in Play Mode.");
+            Type damageType = Type.GetType("DamageRequested, Assembly-CSharp", throwOnError: true);
+            Type receiverType = Type.GetType("DamageReceiver, Assembly-CSharp", throwOnError: true);
+            Type hazardType = Type.GetType("Hazard, Assembly-CSharp", throwOnError: true);
+            Assert.That(
+                typeof(ITargetedMessage).IsAssignableFrom(damageType),
+                Is.True,
+                "The shipped generator must make DamageRequested a targeted message."
+            );
+            PropertyInfo health = receiverType.GetProperty("Health");
+            Assert.That(health, Is.Not.Null, "DamageReceiver must expose its Health property.");
+
+            _bus = MessageHandler.MessageBus;
+            _initialRegistrations = _bus.RegisteredTargeted;
+            _ownedScene = SceneManager.CreateScene(
+                "DxMessaging Consumer Quick Start",
+                new CreateSceneParameters(LocalPhysicsMode.Physics3D)
+            );
+            PhysicsScene physics = _ownedScene.GetPhysicsScene();
+            Assert.That(
+                physics.IsValid(),
+                Is.True,
+                "The walkthrough needs its own 3D physics scene."
+            );
+
+            GameObject hazard = CreateBox("Hazard", 0);
+            hazard.GetComponent<BoxCollider>().isTrigger = true;
+            Rigidbody body = hazard.AddComponent<Rigidbody>();
+            body.isKinematic = true;
+            body.useGravity = false;
+            hazard.AddComponent(hazardType);
+            GameObject target = CreateBox("Target", 3);
+            Component targetReceiver = target.AddComponent(receiverType);
+            Component otherReceiver = CreateBox("Other Receiver", 6).AddComponent(receiverType);
+
+            int registered = _bus.RegisteredTargeted;
+            Assert.That(
+                registered,
+                Is.EqualTo(_initialRegistrations + 2),
+                "Each receiver must register one distinct target."
+            );
+
+            ILogger logger = Debug.unityLogger;
+            ILogHandler originalHandler = logger.logHandler;
+            HealthLogHandler log = new HealthLogHandler(originalHandler);
+            logger.logHandler = log;
+            try
+            {
+                Physics.SyncTransforms();
+                physics.Simulate(PhysicsStep);
+                int targetHealth = (int)health.GetValue(targetReceiver);
+                int otherHealth = (int)health.GetValue(otherReceiver);
+                TestContext.WriteLine(
+                    $"Quick start separated target={targetHealth} other={otherHealth} logs={log.Entries.Count} registrations={registered - _initialRegistrations}"
+                );
+                Assert.That(
+                    targetHealth,
+                    Is.EqualTo(100),
+                    "The separated target must start at 100 health."
+                );
+                Assert.That(
+                    otherHealth,
+                    Is.EqualTo(100),
+                    "The separated receiver must start at 100 health."
+                );
+                Assert.That(log.Entries, Is.Empty, "Separation must produce no health log.");
+
+                hazard.transform.position = target.transform.position;
+                Physics.SyncTransforms();
+                physics.Simulate(PhysicsStep);
+                targetHealth = (int)health.GetValue(targetReceiver);
+                otherHealth = (int)health.GetValue(otherReceiver);
+                Assert.That(
+                    targetHealth,
+                    Is.EqualTo(75),
+                    "Overlap must remove 25 health from the target."
+                );
+                Assert.That(
+                    otherHealth,
+                    Is.EqualTo(100),
+                    "Overlap must leave the other receiver at 100 health."
+                );
+                Assert.That(
+                    log.Entries,
+                    Has.Count.EqualTo(1),
+                    "Overlap must produce exactly one health log."
+                );
+                (string message, Object context) = log.Entries[0];
+                Assert.That(
+                    message,
+                    Is.EqualTo("Health: 75"),
+                    "The logged health must match the walkthrough."
+                );
+                Assert.That(
+                    context,
+                    Is.SameAs(targetReceiver),
+                    "The log context must select the target receiver."
+                );
+                TestContext.WriteLine(
+                    $"Quick start overlapped target={targetHealth} other={otherHealth} logs={log.Entries.Count} context={target.name}"
+                );
+            }
+            finally
+            {
+                logger.logHandler = originalHandler;
+            }
+        }
+
+        [UnityTearDown]
+        public IEnumerator UnloadWalkthroughScene()
+        {
+            if (_ownedScene.IsValid() && _ownedScene.isLoaded)
+            {
+                AsyncOperation unload = SceneManager.UnloadSceneAsync(_ownedScene);
+                Assert.That(
+                    unload != null,
+                    Is.True,
+                    "Unity must start unloading the walkthrough scene."
+                );
+                yield return unload;
+                Assert.That(
+                    !_ownedScene.IsValid() || !_ownedScene.isLoaded,
+                    Is.True,
+                    "Unity must finish unloading the walkthrough scene."
+                );
+            }
+            _ownedScene = default;
+
+            if (_bus != null)
+            {
+                int remaining = _bus.RegisteredTargeted - _initialRegistrations;
+                _bus = null;
+                TestContext.WriteLine($"Quick start unloaded registrations={remaining}");
+                Assert.That(
+                    remaining,
+                    Is.Zero,
+                    "Scene unload must release both targeted registrations."
+                );
+            }
+        }
+
+        private GameObject CreateBox(string name, float x)
+        {
+            GameObject box = new GameObject(name);
+            SceneManager.MoveGameObjectToScene(box, _ownedScene);
+            box.transform.position = new Vector3(x, 0, 0);
+            box.AddComponent<BoxCollider>();
+            return box;
+        }
+
+        private sealed class HealthLogHandler : ILogHandler
+        {
+            private readonly ILogHandler _originalHandler;
+
+            public HealthLogHandler(ILogHandler originalHandler)
+            {
+                _originalHandler = originalHandler;
+            }
+
+            public List<(string Message, Object Context)> Entries { get; } =
+                new List<(string Message, Object Context)>();
+
+            public void LogFormat(
+                LogType logType,
+                Object context,
+                string format,
+                params object[] args
+            )
+            {
+                _originalHandler.LogFormat(logType, context, format, args);
+                if (logType != LogType.Log)
+                {
+                    return;
+                }
+
+                string message = string.Format(CultureInfo.InvariantCulture, format, args);
+                if (message.StartsWith("Health: ", StringComparison.Ordinal))
+                {
+                    Entries.Add((message, context));
+                }
+            }
+
+            public void LogException(Exception exception, Object context)
+            {
+                _originalHandler.LogException(exception, context);
+            }
+        }
+    }
+}

@@ -764,10 +764,60 @@ function Get-ConsumerMarkerValues {
     return $values
 }
 
+function Add-ConsumerQuickStartTest {
+    param([Parameter(Mandatory = $true)][string]$ConsumerPath)
+
+    $guidePath = Join-Path $RepoRoot 'docs/getting-started/quick-start.md'
+    $guide = [System.IO.File]::ReadAllText($guidePath)
+    $blocks = [regex]::Matches($guide, '(?ms)^```csharp[ \t]*\r?\n(?<source>.*?)^```[ \t]*\r?$')
+    $consumerScripts = 'Assets/ConsumerQuickStart'
+    $testDirectory = 'Assets/ConsumerQuickStartTests'
+    $testAssembly = 'Dxm.ConsumerAcceptance.Tests.PlayMode'
+    $sourceHashes = [ordered]@{}
+    New-Item -ItemType Directory -Force -Path (Join-Path $ConsumerPath $consumerScripts) | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $ConsumerPath $testDirectory) | Out-Null
+    foreach ($scriptName in @('DamageRequested', 'DamageReceiver', 'Hazard')) {
+        $code = @(
+            foreach ($block in $blocks) {
+                $source = $block.Groups['source'].Value
+                if ($source -match "(?m)^[ \t]*public[ \t]+[^\r\n]*\b(?:class|struct)[ \t]+$scriptName\b") {
+                    $source
+                }
+            }
+        )
+        if ($code.Count -ne 1) {
+            throw "Expected one C# block declaring $scriptName in $guidePath."
+        }
+        $relativePath = "$consumerScripts/$scriptName.cs"
+        $scriptPath = Join-Path $ConsumerPath $relativePath
+        [System.IO.File]::WriteAllText($scriptPath, $code[0])
+        $sourceHashes[$relativePath] = (Get-FileHash -Algorithm SHA256 -LiteralPath $scriptPath).Hash
+    }
+
+    $testSource = "$testDirectory/QuickStartPlayModeTests.cs"
+    $testSourcePath = Join-Path $ConsumerPath $testSource
+    Copy-Item -LiteralPath (Join-Path $RepoRoot 'scripts/unity/consumer-quick-start-playmode.cs.txt') -Destination $testSourcePath
+    $sourceHashes[$testSource] = (Get-FileHash -Algorithm SHA256 -LiteralPath $testSourcePath).Hash
+    $asmdef = [ordered]@{
+        name = $testAssembly
+        references = @('UnityEngine.TestRunner', 'UnityEditor.TestRunner', 'WallstopStudios.DxMessaging')
+        overrideReferences = $true
+        precompiledReferences = @('nunit.framework.dll')
+        autoReferenced = $false
+        defineConstraints = @('UNITY_INCLUDE_TESTS')
+    }
+    $asmdefRelativePath = "$testDirectory/$testAssembly.asmdef"
+    $asmdefPath = Join-Path $ConsumerPath $asmdefRelativePath
+    [System.IO.File]::WriteAllText($asmdefPath, (($asmdef | ConvertTo-Json -Depth 5) + "`n"))
+    $sourceHashes[$asmdefRelativePath] = (Get-FileHash -Algorithm SHA256 -LiteralPath $asmdefPath).Hash
+    return $sourceHashes
+}
+
 function Assert-ConsumerResults {
     param(
         [Parameter(Mandatory = $true)][string]$ResultPath,
-        [Parameter(Mandatory = $true)][string]$SourceKind
+        [Parameter(Mandatory = $true)][string]$SourceKind,
+        [int]$ExpectedPasses = 8
     )
 
     if (-not (Test-Path -LiteralPath $ResultPath -PathType Leaf)) {
@@ -782,8 +832,8 @@ function Assert-ConsumerResults {
     $passed = [int]$run.passed
     $failed = [int]$run.failed
     $skipped = [int]$run.skipped
-    if ($total -ne 8 -or $passed -ne 8 -or $failed -ne 0 -or $skipped -ne 0) {
-        throw "$SourceKind consumer expected 8 passed / 0 failed / 0 skipped; got total=$total passed=$passed failed=$failed skipped=$skipped."
+    if ($total -ne $ExpectedPasses -or $passed -ne $ExpectedPasses -or $failed -ne 0 -or $skipped -ne 0) {
+        throw "$SourceKind consumer expected $ExpectedPasses passed / 0 failed / 0 skipped; got total=$total passed=$passed failed=$failed skipped=$skipped."
     }
     $verdict = $run.GetAttribute('result')
     if ($verdict -cne 'Passed') {
@@ -883,6 +933,38 @@ function Invoke-ConsumerInstallVerification {
         results = $counts
         unityExitCode = $testExit
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $sourceEvidence 'evidence.json') -Encoding UTF8
+}
+
+function Invoke-ConsumerQuickStartVerification {
+    param(
+        [Parameter(Mandatory = $true)][string]$ConsumerPath,
+        [Parameter(Mandatory = $true)][string]$SourceEvidence
+    )
+
+    $sourceHashes = Add-ConsumerQuickStartTest -ConsumerPath $ConsumerPath
+    $resultPath = Join-Path $SourceEvidence 'quick-start-playmode.xml'
+    $logPath = Join-Path $SourceEvidence 'quick-start-playmode.log'
+    $testArgs = @(
+        '-batchmode', '-nographics', '-projectPath', $ConsumerPath, '-runTests',
+        '-testPlatform', 'PlayMode', '-testResults', $resultPath,
+        '-assemblyNames', 'Dxm.ConsumerAcceptance.Tests.PlayMode',
+        '-testCategory', 'CiConsumerQuickStart', '-releaseCodeOptimization', '-logFile', '-'
+    )
+    $testExit = Invoke-UnityEditor -EditorPath $UnityEditorPath -Arguments $testArgs -Label "Run Git consumer quick start ($UnityVersion)" -LogPath $logPath
+    $counts = Assert-ConsumerResults -ResultPath $resultPath -SourceKind 'Git quick start' -ExpectedPasses 1
+    $lock = Get-Content -LiteralPath (Join-Path $ConsumerPath 'Packages/packages-lock.json') -Raw | ConvertFrom-Json
+    $lockEntry = $lock.dependencies.$PackageName
+    if ($lockEntry.source -ne 'git' -or $lockEntry.hash -ne $GitRevision) {
+        throw "Git quick start resolved $($lockEntry.source) revision $($lockEntry.hash). Expected Git revision $GitRevision."
+    }
+    [ordered]@{
+        unityVersion = $UnityVersion
+        packageSource = $lockEntry.source
+        gitRevision = $lockEntry.hash
+        sourceSha256 = $sourceHashes
+        results = $counts
+        unityExitCode = $testExit
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $SourceEvidence 'quick-start-evidence.json') -Encoding UTF8
 }
 
 function Test-ExportMarker {
@@ -1133,6 +1215,7 @@ if ($VerifyConsumerInstalls) {
         foreach ($consumer in @('git', 'tarball', 'classic')) {
             Add-ConsumerSampleTests -ConsumerPath (Join-Path $consumerRoot $consumer)
         }
+        $null = Add-ConsumerQuickStartTest -ConsumerPath (Join-Path $consumerRoot 'git')
     }
 }
 
@@ -1225,6 +1308,7 @@ try {
         Invoke-ConsumerInstallVerification -SourceKind 'git' -ConsumerPath (Join-Path $consumerRoot 'git') -Dependency "https://github.com/Ambiguous-Interactive/DxMessaging.git#$GitRevision" -EvidenceRoot $evidenceRoot -TarballPayloadRoot $payloadRoot
         Invoke-ConsumerInstallVerification -SourceKind 'tarball' -ConsumerPath (Join-Path $consumerRoot 'tarball') -Dependency $tarballDependency -EvidenceRoot $evidenceRoot -TarballPayloadRoot $payloadRoot
         Invoke-ConsumerInstallVerification -SourceKind 'classic' -ConsumerPath (Join-Path $consumerRoot 'classic') -Dependency '' -EvidenceRoot $evidenceRoot -TarballPayloadRoot $payloadRoot
+        Invoke-ConsumerQuickStartVerification -ConsumerPath (Join-Path $consumerRoot 'git') -SourceEvidence (Join-Path $evidenceRoot 'git')
         Write-Host "::notice::Verified Git, tarball, and classic consumer installs on Unity $UnityVersion."
     }
 } finally {
