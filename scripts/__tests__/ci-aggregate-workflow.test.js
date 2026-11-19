@@ -491,7 +491,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       );
     }
     // prettier-ignore
-    assert.match(job, new RegExp(`\\n    timeout-minutes: ${jobTimeout ?? (file === "unity-tests.yml" ? 1050 : 900)}\\n`), `${label}: lifecycle budget`);
+    assert.match(job, new RegExp(`\\n    timeout-minutes: ${jobTimeout ?? (file === "unity-tests.yml" ? 1060 : 900)}\\n`), `${label}: lifecycle budget`);
     if (["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file)) {
       assert.match(job, /\n      fail-fast: false\n      max-parallel: 1\n/, `${label} fairness`);
     }
@@ -559,6 +559,8 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const parsedSteps = YAML.parse(job)[jobId].steps;
     const gateIndex = parsedSteps.findIndex((step) => step.id === "ensure_unity_editor");
     assert.ok(gateIndex >= 0, `${label}: editor gate step must exist`);
+    // prettier-ignore
+    assert.ok(parsedSteps.slice(0, gateIndex).every((s) => /require-current-pr-head@/.test(s.uses || "") && s["timeout-minutes"] <= 2) && gateIndex <= 1 && parsedSteps.at(-1).name === "Require confirmed Unity cleanup", `${label}: bounded head guard and terminal cleanup gate`);
     const consumers = UNITY_EDITOR_CONSUMERS.find(
       ([candidateFile, candidateJobId]) => candidateFile === file && candidateJobId === jobId
     );

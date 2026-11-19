@@ -132,7 +132,7 @@ jobs:
           github.event.pull_request.head.repo.full_name == github.repository)
       }}
     runs-on: [self-hosted, Windows, RAM-64GB]
-    timeout-minutes: 1050
+    timeout-minutes: 1060
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -159,7 +159,9 @@ jobs:
           - standalone
     steps:
       - name: Require current PR head before setup
-        timeout-minutes: 3
+        # The enrollment contract admits a preceding current-head guard only
+        # when its timeout is two minutes or less.
+        timeout-minutes: 2
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@720ef47f9ab352fbc9403363ca63ae8c487a2442 # v1.18.1
         with:
           github-token: ${{ github.token }}
@@ -333,7 +335,7 @@ jobs:
             matrix.unity-version == '2021.3.45f1' ||
             matrix.unity-version == '6000.5.2f1'
           }}
-        timeout-minutes: 3
+        timeout-minutes: 2
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@720ef47f9ab352fbc9403363ca63ae8c487a2442 # v1.18.1
         with:
           github-token: ${{ github.token }}
@@ -784,6 +786,34 @@ jobs:
           }
           Write-Host 'All required Unity test modes and shipping-fidelity runs completed.'
 
+      # Cache maintenance stays before the central return because the
+      # enrollment contract requires the return, classifier, release, and final
+      # cleanup gate to be the terminal steps.
+      - name: Inspect retained correctness project caches on DAD
+        if: ${{ success() && runner.name == 'DAD-MACHINE' && github.event_name == 'workflow_dispatch' && !inputs.consumer_install_validation }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          ./scripts/unity/inspect-test-project-caches.ps1 `
+            -WorkspacePath $env:RUNNER_WORKSPACE `
+            -RetainedSourceSetKey $env:DXM_UNITY_SOURCE_SET_KEY `
+            -UnityVersion '${{ matrix.unity-version }}'
+
+      - name: Retire previous correctness project generations on DAD
+        if: >-
+          ${{ success() && runner.name == 'DAD-MACHINE' &&
+          (github.event_name == 'pull_request' || github.event_name == 'push') &&
+          steps.run_editmode.outcome == 'success' && steps.run_playmode.outcome == 'success' &&
+          steps.run_standalone.outcome == 'success' }}
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          ./scripts/unity/retire-test-project-caches.ps1 `
+            -WorkspacePath $env:RUNNER_WORKSPACE `
+            -EvidencePath (Join-Path $env:GITHUB_WORKSPACE '.artifacts') `
+            -RetainedSourceSetKey $env:DXM_UNITY_SOURCE_SET_KEY `
+            -UnityVersion '${{ matrix.unity-version }}'
+
       - name: Return Unity license
         id: return_unity_license
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
@@ -850,31 +880,6 @@ jobs:
           reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
           reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
           incident-id: ${{ steps.release_unity_lock.outputs.incident-id }}
-
-      - name: Inspect retained correctness project caches on DAD
-        if: ${{ success() && runner.name == 'DAD-MACHINE' && github.event_name == 'workflow_dispatch' && !inputs.consumer_install_validation }}
-        timeout-minutes: 5
-        shell: pwsh
-        run: |
-          ./scripts/unity/inspect-test-project-caches.ps1 `
-            -WorkspacePath $env:RUNNER_WORKSPACE `
-            -RetainedSourceSetKey $env:DXM_UNITY_SOURCE_SET_KEY `
-            -UnityVersion '${{ matrix.unity-version }}'
-
-      - name: Retire previous correctness project generations on DAD
-        if: >-
-          ${{ success() && runner.name == 'DAD-MACHINE' &&
-          (github.event_name == 'pull_request' || github.event_name == 'push') &&
-          steps.run_editmode.outcome == 'success' && steps.run_playmode.outcome == 'success' &&
-          steps.run_standalone.outcome == 'success' }}
-        timeout-minutes: 5
-        shell: pwsh
-        run: |
-          ./scripts/unity/retire-test-project-caches.ps1 `
-            -WorkspacePath $env:RUNNER_WORKSPACE `
-            -EvidencePath (Join-Path $env:GITHUB_WORKSPACE '.artifacts') `
-            -RetainedSourceSetKey $env:DXM_UNITY_SOURCE_SET_KEY `
-            -UnityVersion '${{ matrix.unity-version }}'
 
   # Single aggregate gate so branch protection can require ONE "Unity CI Success"
   # context instead of the individual matrix and preflight contexts.
