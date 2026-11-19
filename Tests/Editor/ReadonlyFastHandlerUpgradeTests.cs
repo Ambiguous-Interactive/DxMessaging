@@ -659,6 +659,9 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "RefPulse(message).Value = 1; RefCell((message.Value)) = 2;"
             ).SetName("Grouped call arguments in unrelated targets still migrate");
             yield return new TestCaseData(
+                "Observe(((message)).Value); Observe(Bump(ref RefCell((message).Value)));"
+            ).SetName("Grouped reads inside unrelated byref arguments still migrate");
+            yield return new TestCaseData(
                 "Pulse copy; int value; (copy, value) = (message, message.Value);"
                     + " Observe(copy); Observe(value);"
             ).SetName("Reading a parameter on a tuple right hand side still migrates");
@@ -749,6 +752,71 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             Assert.That(
                 result.ManualReviewMethods[0],
                 Does.Contain($"passes parameter '{parameter}' by out")
+            );
+        }
+
+        private static IEnumerable<TestCaseData> GroupedByReferenceUseCases()
+        {
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Bump(ref (message).Value));",
+                "ref"
+            ).SetName("A grouped receiver in a ref argument requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> Observe($\"{Assign(out ((message).Value))}\"));",
+                "out"
+            ).SetName("A grouped member in an interpolated out argument requires manual review");
+        }
+
+        [TestCaseSource(nameof(GroupedByReferenceUseCases))]
+        public void AnalyzeLeavesGroupedByReferenceUsesForManualReview(
+            string registration,
+            string modifier
+        )
+        {
+            string source = "DxMessaging.Core.MessageRegistrationToken token;\n" + registration;
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain($"passes parameter 'message' by {modifier}")
+            );
+        }
+
+        private const string GroupedOutWithBaseForwardingSource =
+            @"
+using DxMessaging.Unity;
+sealed class Receiver : MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message)
+    {
+        Clear(out (message));
+        base.HandleGlobalStringMessage(ref message);
+    }
+
+    private static void Clear(out GlobalStringMessage replacement) => replacement = default;
+}";
+
+        [Test]
+        public void AnalyzeKeepsBaseForwardingWhenGroupedOutNeedsManualReview()
+        {
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                GroupedOutWithBaseForwardingSource
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(GroupedOutWithBaseForwardingSource));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("passes parameter 'message' by out")
             );
         }
 

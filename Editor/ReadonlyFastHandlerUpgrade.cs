@@ -102,7 +102,9 @@ namespace DxMessaging.Editor
         );
 
         private static readonly Regex ByReferenceUseRegex = new(
-            @"\b(?<modifier>ref|out)\s+(?<name>" + IdentifierSpellingPattern + ")",
+            @"\b(?<modifier>ref|out)\s+(?<grouping>(?:\(\s*)*)(?<name>"
+                + IdentifierSpellingPattern
+                + ")",
             RegexOptions.CultureInvariant
         );
 
@@ -1718,11 +1720,34 @@ namespace DxMessaging.Editor
                 use = use.NextMatch()
             )
             {
-                if (IdentifierValue(use.Groups["name"].Value) == parameterValue)
+                if (
+                    IdentifierValue(use.Groups["name"].Value) == parameterValue
+                    && HasValidReferenceGrouping(source, scope, use)
+                )
                 {
                     yield return use;
                 }
             }
+        }
+
+        private static bool HasValidReferenceGrouping(string source, TextSpan scope, Match use)
+        {
+            Group grouping = use.Groups["grouping"];
+            if (grouping.Length == 0)
+            {
+                return true;
+            }
+
+            int scopeEnd = scope.Start + scope.Length;
+            TextSpan operand = new(grouping.Index, scopeEnd - grouping.Index);
+            Group name = use.Groups["name"];
+            int targetStart = name.Index;
+            int following = NextNonWhitespace(source, name.Index + name.Length);
+            return TryReadDirectTarget(source, operand, ref targetStart, ref following)
+                && targetStart == operand.Start
+                && (
+                    following < 0 || scopeEnd <= following || ",);]".IndexOf(source[following]) >= 0
+                );
         }
 
         private static string FindInterpolatedParameterIssue(
@@ -1785,43 +1810,14 @@ namespace DxMessaging.Editor
 
                 int targetStart = use.Index;
                 int next = NextNonWhitespace(masked, use.Index + use.Length);
-                ExpandStandaloneGrouping(masked, body, ref targetStart, ref next);
-                if (0 <= next && next < bodyEnd && masked[next] == '.')
+                if (!TryReadDirectTarget(masked, body, ref targetStart, ref next))
                 {
-                    int memberStart = NextNonWhitespace(masked, next + 1);
-                    if (memberStart < 0 || bodyEnd <= memberStart)
-                    {
-                        continue;
-                    }
-                    Match member = DirectMemberIdentifierRegex.Match(
-                        masked,
-                        memberStart,
-                        bodyEnd - memberStart
-                    );
-                    if (!member.Success)
-                    {
-                        continue;
-                    }
-                    next = NextNonWhitespace(masked, member.Index + member.Length);
-                }
-                else if (0 <= next && next < bodyEnd && masked[next] == '[')
-                {
-                    int indexerEnd = FindMatching(masked, next, '[', ']');
-                    if (indexerEnd < 0 || bodyEnd <= indexerEnd)
-                    {
-                        continue;
-                    }
-                    next = NextNonWhitespace(masked, indexerEnd + 1);
+                    continue;
                 }
 
-                ExpandStandaloneGrouping(masked, body, ref targetStart, ref next);
                 if (0 <= next && next < bodyEnd)
                 {
                     char following = masked[next];
-                    if (following == '.' || following == '[' || following == '(')
-                    {
-                        continue;
-                    }
                     Match write = DirectWriteOperatorRegex.Match(masked, next);
                     if (write.Success && next + write.Length <= bodyEnd)
                     {
@@ -1844,6 +1840,50 @@ namespace DxMessaging.Editor
                 }
             }
             return false;
+        }
+
+        private static bool TryReadDirectTarget(
+            string text,
+            TextSpan body,
+            ref int targetStart,
+            ref int following
+        )
+        {
+            int bodyEnd = body.Start + body.Length;
+            ExpandStandaloneGrouping(text, body, ref targetStart, ref following);
+            if (0 <= following && following < bodyEnd && text[following] == '.')
+            {
+                int memberStart = NextNonWhitespace(text, following + 1);
+                if (memberStart < 0 || bodyEnd <= memberStart)
+                {
+                    return false;
+                }
+
+                Match member = DirectMemberIdentifierRegex.Match(
+                    text,
+                    memberStart,
+                    bodyEnd - memberStart
+                );
+                if (!member.Success)
+                {
+                    return false;
+                }
+
+                following = NextNonWhitespace(text, member.Index + member.Length);
+            }
+            else if (0 <= following && following < bodyEnd && text[following] == '[')
+            {
+                int indexerEnd = FindMatching(text, following, '[', ']');
+                if (indexerEnd < 0 || bodyEnd <= indexerEnd)
+                {
+                    return false;
+                }
+
+                following = NextNonWhitespace(text, indexerEnd + 1);
+            }
+
+            ExpandStandaloneGrouping(text, body, ref targetStart, ref following);
+            return following < 0 || bodyEnd <= following || ".[(".IndexOf(text[following]) < 0;
         }
 
         private static void ExpandStandaloneGrouping(
