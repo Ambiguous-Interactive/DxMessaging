@@ -69,8 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Preserve `MessagingComponent` listener ownership during bus provider and duplicate-warning
-  callbacks ([#805](https://github.com/Ambiguous-Interactive/DxMessaging/issues/805)).
+- Preserve `MessagingComponent` listener ownership during callbacks and report unresolved provider
+  recursion during initial setup ([#805](https://github.com/Ambiguous-Interactive/DxMessaging/issues/805)).
 - Reduce diagnostic scan buffering in the opt-in Editor Console bridge and release its Console
   enumeration reliably ([#801](https://github.com/Ambiguous-Interactive/DxMessaging/issues/801)).
 - Preserve broken-base-chain warnings (`DXMSG010`) in the opt-in Editor compiler-message bridge
