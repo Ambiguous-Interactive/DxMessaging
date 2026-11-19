@@ -45,13 +45,13 @@ Test-NUnitResults -Path $env:DXM_NUNIT_XML -Label 'ordinary Unity'
 """
 
 
-def composite_gate():
+def composite_step():
     result = subprocess.run(
         [
             "node",
             "-e",
             "const fs = require('node:fs'); const yaml = require('yaml'); "
-            "process.stdout.write(yaml.parse(fs.readFileSync(process.argv[1], 'utf8')).runs.steps[0].run);",
+            "process.stdout.write(JSON.stringify(yaml.parse(fs.readFileSync(process.argv[1], 'utf8')).runs.steps[0]));",
             str(ACTION_PATH),
         ],
         cwd=ROOT,
@@ -59,23 +59,30 @@ def composite_gate():
         text=True,
         check=True,
     )
-    return result.stdout.replace("${{ inputs.results-dir }}", "$env:DXM_NUNIT_DIR").replace(
-        "${{ inputs.label }}", "ordinary Unity"
-    )
+    return json.loads(result.stdout)
+
+
+def composite_gate():
+    return composite_step()["run"]
 
 
 @unittest.skipUnless(PWSH, "PowerShell is not available")
 class UnityNUnitResultsTests(unittest.TestCase):
-    def validate(self, verdict, passed=8, *, command=CONSUMER_GATE, script="export-unitypackage.ps1"):
-        report = ET.Element("test-run", total=str(passed), passed=str(passed), failed="0", skipped="0")
+    def validate(self, verdict, passed=8, *, skipped=0, command=CONSUMER_GATE, script="export-unitypackage.ps1"):
+        report = ET.Element(
+            "test-run", total=str(passed + skipped), passed=str(passed), failed="0", skipped=str(skipped)
+        )
         if verdict is not None:
             report.set("result", verdict)
+        status = verdict.split(":", 1)[0] if verdict is not None else "Passed"
         suite = ET.SubElement(
-            report, "test-suite", type="TestFixture", fullname="SampleFixture", result=verdict or "Passed"
+            report, "test-suite", type="TestFixture", fullname="SampleFixture", result=status
         )
         for index in range(passed):
             ET.SubElement(suite, "test-case", name=f"SampleContract{index + 1}", result="Passed")
-        if verdict == "Failed":
+        for index in range(skipped):
+            ET.SubElement(suite, "test-case", name=f"Skipped{index + 1}", result="Skipped")
+        if status == "Failed":
             suite.set("site", "TearDown")
             ET.SubElement(ET.SubElement(suite, "failure"), "message").text = "Fixture cleanup failed."
         with tempfile.TemporaryDirectory(prefix="dxm-consumer-result-") as temp:
@@ -93,7 +100,8 @@ class UnityNUnitResultsTests(unittest.TestCase):
                 os.environ,
                 DXM_NUNIT_GATE_SCRIPT=str(UNITY_SCRIPTS / script),
                 DXM_NUNIT_XML=str(path),
-                DXM_NUNIT_DIR=str(path.parent),
+                DXM_RESULTS_DIR=str(path.parent),
+                DXM_RESULTS_LABEL="ordinary Unity",
                 DXM_RESULTS_FILE=str(path),
                 DXM_EXPECTED_EMPTY="false",
             ),
@@ -122,17 +130,32 @@ class UnityNUnitResultsTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("classic consumer expected 8 passed / 0 failed / 0 skipped", result.stderr)
 
+    def test_composite_binds_inputs_outside_the_run_scalar(self):
+        step = composite_step()
+        self.assertFalse("${{" in step["run"], "The runner must treat the PowerShell body as a literal.")
+        self.assertEqual(
+            step["env"],
+            {
+                "DXM_EXPECTED_EMPTY": "${{ inputs.expected-empty }}",
+                "DXM_RESULTS_FILE": "${{ inputs.results-file }}",
+                "DXM_RESULTS_DIR": "${{ inputs.results-dir }}",
+                "DXM_RESULTS_LABEL": "${{ inputs.label }}",
+            },
+        )
+
     def test_unity_runner_and_composite_reject_failed_fixture_with_passing_cases(self):
         gates = [
             ("Unity runner", EDITOR_GATE, "run-ci-tests.ps1"),
             ("GitHub composite", composite_gate(), "run-ci-tests.ps1"),
         ]
         for name, command, script in gates:
-            with self.subTest(gate=name, verdict="Passed"):
-                result = self.validate("Passed", command=command, script=script)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            with self.subTest(gate=name, verdict="Failed"):
-                result = self.validate("Failed", command=command, script=script)
-                self.assertNotEqual(result.returncode, 0, result.stdout)
-                self.assertIn("SampleFixture -- Fixture cleanup failed.", result.stdout)
-                self.assertIn("failed NUnit run without failed test cases", result.stdout)
+            for verdict, skipped in (("Passed", 0), ("Skipped:Ignored", 1)):
+                with self.subTest(gate=name, verdict=verdict):
+                    result = self.validate(verdict, skipped=skipped, command=command, script=script)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for verdict in ("Failed", "Failed:Error"):
+                with self.subTest(gate=name, verdict=verdict):
+                    result = self.validate(verdict, command=command, script=script)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("SampleFixture -- Fixture cleanup failed.", result.stdout)
+                    self.assertIn("failed NUnit run without failed test cases", result.stdout)

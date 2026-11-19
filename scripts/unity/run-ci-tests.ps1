@@ -7843,7 +7843,7 @@ function Test-NUnitResults {
         Write-CiError "0 tests ran for $Label -- check assembly selection and package testables.$exitNote"
         throw "0 tests ran for $Label."
     }
-    if ($failed -gt 0 -or $run.GetAttribute('result') -ceq 'Failed') {
+    if ($failed -gt 0 -or $run.GetAttribute('result') -cmatch '^Failed(:|$)') {
         # NUnit can fail a fixture during teardown without changing the failed-case count.
         Write-UnityFailedTestAnnotations -Xml $xml -Label $Label
         $problem = if ($failed -gt 0) {

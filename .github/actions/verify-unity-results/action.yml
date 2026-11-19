@@ -41,17 +41,17 @@ runs:
       env:
         DXM_EXPECTED_EMPTY: ${{ inputs.expected-empty }}
         DXM_RESULTS_FILE: ${{ inputs.results-file }}
+        # Keep the script literal. Inline inputs make the runner turn the whole
+        # script into a format expression subject to its expression length limit.
+        DXM_RESULTS_DIR: ${{ inputs.results-dir }}
+        DXM_RESULTS_LABEL: ${{ inputs.label }}
       run: |
-        $dir = "${{ inputs.results-dir }}"
-        $label = "${{ inputs.label }}"
+        $dir = $env:DXM_RESULTS_DIR
+        $label = $env:DXM_RESULTS_LABEL
         # When the caller resolved an empty DxMessaging test-assembly list for
         # this target it skips the Unity run entirely (see compute-unity-assemblies
-        # and unity-tests.yml). There are then no results to verify, so treat it
-        # as an explicit success instead of a "tests did not run" failure. Read
-        # the signal from the environment via an env: mapping above (NOT an inline
-        # workflow-expression expansion in this run script) so the spawn-based
-        # verifier tests, which only substitute results-dir/label, observe an
-        # unset var and exercise the normal verification path.
+        # and unity-tests.yml). There are then no results to verify, so treat
+        # the absence of results as an expected skip.
         if ($env:DXM_EXPECTED_EMPTY -eq 'true') {
           Write-Host "::notice::No DxMessaging test assemblies were selected for $label; the Unity run was skipped, so there is nothing to verify."
           exit 0
@@ -529,7 +529,7 @@ runs:
           Write-Host "::error::0 tests ran for $label -- check the assembly list / filter"
           exit 1
         }
-        if ($failed -gt 0 -or $run.GetAttribute('result') -ceq 'Failed') {
+        if ($failed -gt 0 -or $run.GetAttribute('result') -cmatch '^Failed(:|$)') {
           Write-FailedTestAnnotations -Doc $doc -Label $label
           $problem = if ($failed -gt 0) {
             "$label reported $failed failed test(s)"
