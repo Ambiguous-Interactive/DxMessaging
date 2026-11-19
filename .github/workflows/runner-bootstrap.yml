@@ -815,7 +815,6 @@ jobs:
           reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
           reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
 
-
   package-log-capture:
     name: Package diagnostics on ELI
     if: >-
@@ -1822,7 +1821,6 @@ jobs:
           release-reason: ${{ steps.release_unity_lock.outputs.resource-reason }}
           reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
           reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
-
 
   # Each optional licensed lane reports its own dispatch verdict. The lane
   # guard selects it, so the aggregate repeats that selection in LANE_SELECTED.
