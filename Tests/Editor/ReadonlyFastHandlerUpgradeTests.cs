@@ -467,6 +467,17 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("Unicode member assignment requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => message[0] = 1);",
+                "message"
+            ).SetName("Direct indexer assignment requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> { int[] indices = { 0 }; ++message[indices[0]]; });",
+                "message"
+            ).SetName(
+                "Direct indexer increment with nested index expression requires manual review"
+            );
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>(OnPulse);\n"
                     + "void OnPulse(ref Pulse message) => message.Value += 1;",
                 "message"
@@ -498,6 +509,9 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             ).SetName("Reads and comparisons still migrate");
             yield return new TestCaseData("Observe(message.\u0394);").SetName(
                 "A read of a Unicode member still migrates"
+            );
+            yield return new TestCaseData("Observe(message[0]);").SetName(
+                "A direct indexer read still migrates"
             );
             yield return new TestCaseData(
                 "Pulse other = message; other.Value++; Observe(other);"

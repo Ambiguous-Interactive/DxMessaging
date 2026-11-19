@@ -1620,7 +1620,7 @@ namespace DxMessaging.Editor
                 {
                     foreach (string parameterName in parameterNames)
                     {
-                        if (WritesParameterOrDirectMember(masked, body, parameterName))
+                        if (WritesParameterOrDirectAccess(masked, body, parameterName))
                         {
                             reason = $"writes to parameter '{parameterName}' or its member";
                             break;
@@ -1645,7 +1645,7 @@ namespace DxMessaging.Editor
             }
         }
 
-        private static bool WritesParameterOrDirectMember(
+        private static bool WritesParameterOrDirectAccess(
             string masked,
             TextSpan body,
             string parameterName
@@ -1686,6 +1686,15 @@ namespace DxMessaging.Editor
                         continue;
                     }
                     next = NextNonWhitespace(masked, member.Index + member.Length);
+                }
+                else if (0 <= next && next < bodyEnd && masked[next] == '[')
+                {
+                    int indexerEnd = FindMatching(masked, next, '[', ']');
+                    if (indexerEnd < 0 || bodyEnd <= indexerEnd)
+                    {
+                        continue;
+                    }
+                    next = NextNonWhitespace(masked, indexerEnd + 1);
                 }
 
                 if (0 <= next && next < bodyEnd)
