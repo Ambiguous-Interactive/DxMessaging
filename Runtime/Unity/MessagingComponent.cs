@@ -111,13 +111,6 @@ namespace DxMessaging.Unity
         private MessageRegistrationToken CreateToken(MonoBehaviour listener, bool warnOnExisting)
         {
             ValidateListener(listener);
-            if (_messageHandler == null)
-            {
-                EnsureMessageHandler();
-                // Provider resolution can create a token or destroy an owner before returning.
-                ValidateListener(listener);
-            }
-
             if (
                 _registeredListeners.TryGetValue(
                     listener,
@@ -135,6 +128,17 @@ namespace DxMessaging.Unity
                 }
 
                 return createdToken;
+            }
+
+            if (_messageHandler == null)
+            {
+                EnsureMessageHandler();
+                // Provider resolution can create a token or destroy an owner before returning.
+                ValidateListener(listener);
+                if (_registeredListeners.TryGetValue(listener, out createdToken))
+                {
+                    return createdToken;
+                }
             }
 
             createdToken = MessageRegistrationToken.Create(_messageHandler);

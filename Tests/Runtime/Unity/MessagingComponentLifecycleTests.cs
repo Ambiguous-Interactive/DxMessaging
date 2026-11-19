@@ -560,6 +560,117 @@ namespace DxMessaging.Tests.Runtime.Unity
             }
         }
 
+        /// <summary>Warns for a preexisting token without exposing an initial request to the logger.</summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void CreateWarnsOnlyForTokensCachedAtEntry(bool cachedAtEntry)
+        {
+            string context = $"cachedAtEntry={cachedAtEntry}";
+            GameObject host = new(nameof(CreateWarnsOnlyForTokensCachedAtEntry));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            ConfigurationProbeProvider provider = new(bus);
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+
+            using LeakWatcher watcher = new(bus, label: context);
+            MessageRegistrationToken existing = null;
+            MessageRegistrationToken returned = null;
+            if (cachedAtEntry)
+            {
+                existing = component.Create(listener);
+            }
+            else
+            {
+                provider.OnResolve = () => existing = component.Create(listener);
+            }
+
+            bool previousDebug = MessagingDebug.enabled;
+            Action<LogLevel, string> previousLog = MessagingDebug.LogFunction;
+            int warningCount = 0;
+            string warning = null;
+            bool releasedByLogger = false;
+            try
+            {
+                MessagingDebug.enabled = true;
+                MessagingDebug.LogFunction = (level, message) =>
+                {
+                    if (
+                        level == LogLevel.Warn
+                        && message.StartsWith(
+                            "Ignoring double RegistrationToken request",
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        ++warningCount;
+                        warning = message;
+                        if (!cachedAtEntry)
+                        {
+                            releasedByLogger = component.Release(listener);
+                        }
+                    }
+                    else
+                    {
+                        previousLog?.Invoke(level, message);
+                    }
+                };
+
+                returned = component.Create(listener);
+                int calls = 0;
+                _ = returned.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                returned.Enable();
+                SimpleUntargetedMessage payload = new();
+                bus.UntargetedBroadcast(ref payload);
+                int callsBeforeRelease = calls;
+                bool released = component.Release(listener);
+                bus.UntargetedBroadcast(ref payload);
+                int retained = watcher.LeakedRegistrations;
+
+                TestContext.WriteLine(
+                    $"{context} warnings={warningCount}, releasedByLogger={releasedByLogger}, "
+                        + $"released={released}, deliveries={callsBeforeRelease}/{calls}, retained={retained}."
+                );
+                Assert.That(returned, Is.SameAs(existing), $"{context} Preserve the cached token.");
+                Assert.That(
+                    callsBeforeRelease,
+                    Is.EqualTo(1),
+                    $"{context} Verify active delivery."
+                );
+                Assert.That(
+                    released,
+                    Is.True,
+                    $"{context} Release must still own the returned token."
+                );
+                Assert.That(calls, Is.EqualTo(1), $"{context} Release must stop delivery.");
+                Assert.That(retained, Is.Zero, $"{context} Release must remove the registration.");
+                Assert.That(
+                    warningCount,
+                    Is.EqualTo(cachedAtEntry ? 1 : 0),
+                    $"{context} Duplicate warning count."
+                );
+                string expectedWarning = cachedAtEntry
+                    ? $"Ignoring double RegistrationToken request for {listener}."
+                    : null;
+                Assert.That(
+                    warning,
+                    Is.EqualTo(expectedWarning),
+                    $"{context} Original warning text."
+                );
+            }
+            finally
+            {
+                MessagingDebug.enabled = previousDebug;
+                MessagingDebug.LogFunction = previousLog;
+                component.Release(listener);
+                returned?.Dispose();
+                existing?.Dispose();
+            }
+        }
+
         /// <summary>Drains accepted work after failures and reports every original error before recovery.</summary>
         [Test]
         public void QueuedConfigurationFailuresPreserveErrorsAndRecovery(
