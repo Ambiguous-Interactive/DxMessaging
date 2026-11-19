@@ -41,6 +41,7 @@ namespace DxMessaging.Unity
         private MessageHandler _messageHandler;
         private bool _destroyed;
         private bool _resolvingInitialMessageBus;
+        private MessageHandler _explicitlyToggledInitialHandler;
         private int _initialProviderResolutionDepth;
         private bool _applyingMessageBusConfiguration;
         private Queue<MessageBusConfiguration> _pendingMessageBusConfigurations;
@@ -243,6 +244,8 @@ namespace DxMessaging.Unity
         /// The call would start a third active provider resolution before the first handler exists.
         /// </exception>
         /// <remarks>
+        /// The initial resolution guard skips the immediate provider call and leaves the current
+        /// provider selection in effect for any later resolution.
         /// Requests made during another configuration queue until the outermost call drains them.
         /// Resolution and migration errors from queued requests are reported by that outermost call.
         /// <para><b>Fixed in v4.0.0.</b></para>
@@ -276,6 +279,8 @@ namespace DxMessaging.Unity
         /// The call would start a third active provider resolution before the first handler exists.
         /// </exception>
         /// <remarks>
+        /// The initial resolution guard skips the immediate provider call and leaves the current
+        /// provider selection in effect for any later resolution.
         /// Requests made during another configuration queue until the outermost call drains them.
         /// Resolution and migration errors from queued requests are reported by that outermost call.
         /// <para><b>Fixed in v4.0.0.</b></para>
@@ -396,7 +401,7 @@ namespace DxMessaging.Unity
         {
             if (!emitMessagesWhenDisabled)
             {
-                ToggleMessageHandler(true);
+                SetMessageHandlerActive(true, explicitToggle: false);
             }
         }
 
@@ -412,7 +417,7 @@ namespace DxMessaging.Unity
         {
             if (!emitMessagesWhenDisabled)
             {
-                ToggleMessageHandler(false);
+                SetMessageHandlerActive(false, explicitToggle: false);
             }
         }
 
@@ -472,17 +477,22 @@ namespace DxMessaging.Unity
         /// Calls after this owner's destruction callback have no effect.
         /// <para><b>Fixed in v4.0.0.</b></para>
         /// </remarks>
-        public void ToggleMessageHandler(bool newActive)
+        public void ToggleMessageHandler(bool newActive) =>
+            SetMessageHandlerActive(newActive, explicitToggle: true);
+
+        private void SetMessageHandlerActive(bool newActive, bool explicitToggle)
         {
-            if (_destroyed)
+            MessageHandler handler = _messageHandler;
+            if (_destroyed || handler == null)
             {
                 return;
             }
 
-            if (_messageHandler != null && _messageHandler.active != newActive)
+            if (explicitToggle && _resolvingInitialMessageBus)
             {
-                _messageHandler.active = newActive;
+                _explicitlyToggledInitialHandler = handler;
             }
+            handler.active = newActive;
         }
 
         /// <summary>
@@ -522,14 +532,33 @@ namespace DxMessaging.Unity
             finally
             {
                 _resolvingInitialMessageBus = wasResolving;
+                if (!wasResolving)
+                {
+                    ReconcileInitialHandlerActivity();
+                }
             }
         }
 
-        private MessageHandler CreateMessageHandler(IMessageBus resolvedBus) =>
-            new(gameObject, resolvedBus)
+        private void ReconcileInitialHandlerActivity()
+        {
+            MessageHandler handler = _messageHandler;
+            MessageHandler explicitlyToggled = _explicitlyToggledInitialHandler;
+            _explicitlyToggledInitialHandler = null;
+            if (
+                !_destroyed
+                && this != null
+                && handler != null
+                && !ReferenceEquals(handler, explicitlyToggled)
+            )
             {
-                active = emitMessagesWhenDisabled || isActiveAndEnabled,
-            };
+                handler.active = IsHandlerActiveForLifecycle;
+            }
+        }
+
+        private bool IsHandlerActiveForLifecycle => emitMessagesWhenDisabled || isActiveAndEnabled;
+
+        private MessageHandler CreateMessageHandler(IMessageBus resolvedBus) =>
+            new(gameObject, resolvedBus) { active = IsHandlerActiveForLifecycle };
 
         /// <summary>Drains accepted requests without overlapping listener migrations.</summary>
         private void ApplyMessageBusConfiguration(MessageBusRebindMode rebindMode)

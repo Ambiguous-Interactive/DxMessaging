@@ -254,8 +254,13 @@ rechecked when each migration runs, so independently owned work is not migrated 
 
 Before the first handler exists, a component permits one nested provider resolution inside the
 initial provider call. A third active resolution throws `InvalidOperationException` before invoking
-the provider. Call the concrete-bus overload of `Configure` before creating a listener from a deeper
-provider callback. Once a handler exists, nested creation uses that handler.
+the provider. A provider-based `Configure` call selects the provider before it attempts resolution.
+The guard keeps the component's current selection for any later resolution. Call the concrete-bus
+overload of `Configure` before creating a listener from a deeper provider callback.
+
+If `Configure` publishes the first handler during a provider callback, nested creation uses that
+handler. Its lifecycle-derived active state reflects the settings when initial resolution ends.
+Call `ToggleMessageHandler` after publication to set the active state explicitly.
 
 ### Retarget a Token Directly
 
