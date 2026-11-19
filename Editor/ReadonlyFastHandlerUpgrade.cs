@@ -5,6 +5,7 @@ namespace DxMessaging.Editor
     using System.Collections.Generic;
     using System.Globalization;
     using System.IO;
+    using System.Linq;
     using System.Text;
     using System.Text.RegularExpressions;
     using UnityEditor;
@@ -1744,7 +1745,9 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
-                foreach (Match forwarding in FindByReferenceUses(source, literal, parameterValue))
+                Match forwarding = FindByReferenceUses(source, literal, parameterValue)
+                    .FirstOrDefault();
+                if (forwarding != null)
                 {
                     return $"passes parameter '{parameterName}' by {forwarding.Groups["modifier"].Value}";
                 }
@@ -1902,21 +1905,13 @@ namespace DxMessaging.Editor
                     return false;
                 }
 
-                bool directElement = false;
-                foreach (TextSpan element in elements)
-                {
-                    if (
+                if (
+                    !elements.Exists(element =>
                         NextNonWhitespace(text, element.Start) == targetStart
                         && PreviousNonWhitespace(text, element.Start + element.Length - 1)
                             == targetEnd
                     )
-                    {
-                        directElement = true;
-                        break;
-                    }
-                }
-
-                if (!directElement)
+                )
                 {
                     return false;
                 }
