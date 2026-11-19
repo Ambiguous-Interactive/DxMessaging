@@ -331,8 +331,10 @@ public sealed class PlayerService : IDisposable
 ```
 
 Call `Initialize()` when the service starts. Have the scope that owns the service call `Dispose()`
-when it ends. The guides below show Zenject initialization, VContainer entry points, and explicit
-startup in Reflex.
+when it ends. To start this service through a container, use the adapter for
+[Zenject](docs/integrations/zenject.md#start-the-readme-service) or
+[VContainer](docs/integrations/vcontainer.md#start-the-readme-service). For Reflex, call
+`Initialize()` explicitly from your scene bootstrap.
 
 ### Why use DI + Messaging?
 

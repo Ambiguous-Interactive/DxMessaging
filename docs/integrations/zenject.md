@@ -143,6 +143,36 @@ Add `GameInstaller` to the same context's installer list. Its `IInitializable` a
 `IDisposable` bindings connect the service's lease activation and cleanup to that
 context's lifetime. See [Extenject's installer setup](https://github.com/Mathijs-Bakker/Extenject#hello-world-example).
 
+#### Start the README service
+
+For the README's `PlayerService`, add an `IInitializable` adapter. Zenject calls the adapter at
+startup, and the adapter activates the service's subscription.
+
+```csharp
+using Zenject;
+
+public sealed class ReadmeServiceStartup : IInitializable
+{
+    private readonly PlayerService _service;
+
+    public ReadmeServiceStartup(PlayerService service)
+    {
+        _service = service;
+    }
+
+    public void Initialize() => _service.Initialize();
+}
+```
+
+Add these bindings inside `InstallBindings()` in the context that owns the service. That context
+must have access to the bus and builder from the quick start. The `IDisposable` binding lets the
+context dispose the same `PlayerService` instance it passes to the adapter.
+
+```csharp
+Container.BindInterfacesAndSelfTo<PlayerService>().AsSingle();
+Container.BindInterfacesTo<ReadmeServiceStartup>().AsSingle();
+```
+
 ---
 
 ### Pattern 2: Configure MessagingComponents (For Existing MonoBehaviours)

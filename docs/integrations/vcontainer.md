@@ -141,6 +141,35 @@ protected override void Configure(IContainerBuilder builder)
 }
 ```
 
+#### Start the README service
+
+For the README's `PlayerService`, add an `IStartable` adapter. VContainer calls `Start()` on the
+adapter, which activates the service's subscription.
+
+```csharp
+using VContainer.Unity;
+
+public sealed class ReadmeServiceStartup : IStartable
+{
+    private readonly PlayerService _service;
+
+    public ReadmeServiceStartup(PlayerService service)
+    {
+        _service = service;
+    }
+
+    public void Start() => _service.Initialize();
+}
+```
+
+Use these registrations inside `Configure()` after registering the bus and builder. The scope
+creates the service for the adapter and disposes it when the scope ends.
+
+```csharp
+builder.Register<PlayerService>(Lifetime.Singleton);
+builder.RegisterEntryPoint<ReadmeServiceStartup>();
+```
+
 ---
 
 ### Pattern 2: Configure MessagingComponents (For Existing MonoBehaviours)
