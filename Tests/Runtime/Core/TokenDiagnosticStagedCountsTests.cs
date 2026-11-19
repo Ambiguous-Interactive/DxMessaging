@@ -3,6 +3,7 @@ namespace DxMessaging.Tests.Runtime.Core
     using System;
     using System.Collections.Generic;
     using DxMessaging.Core;
+    using DxMessaging.Core.Diagnostics;
     using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
@@ -410,6 +411,218 @@ namespace DxMessaging.Tests.Runtime.Core
                 );
             }
             AssertClean(scope, label);
+        }
+
+        private static IEnumerable<TestCaseData> CleanupHistoryCases()
+        {
+            foreach (MessageScenario scenario in MessageScenarios.AllKinds)
+            foreach (string cleanup in new[] { "None", "RemoveLast", "UnregisterAll", "Dispose" })
+            foreach (bool reuse in new[] { false, true })
+            {
+                if (cleanup == "None" && reuse)
+                {
+                    continue;
+                }
+                yield return new TestCaseData(scenario, cleanup, reuse).SetName(
+                    $"DiagnosticHistoryAfterCleanup_{scenario}_{cleanup}_reuse{reuse}"
+                );
+            }
+        }
+
+        /// <summary>Keeps discarded deliveries out of history after complete token cleanup.</summary>
+        [TestCaseSource(nameof(CleanupHistoryCases))]
+        public void CompletedCleanupBoundariesKeepDiagnosticHistoryCurrent(
+            MessageScenario scenario,
+            string cleanup,
+            bool reuse
+        )
+        {
+            string label = $"{scenario}, cleanup={cleanup}, reuse={reuse}";
+            using Scope scope = new Scope(8, diagnostics: true, label);
+            MessageRegistrationToken token = scope.Token;
+            bool explicitCleanup = cleanup == "UnregisterAll" || cleanup == "Dispose";
+            bool frozenPeer = explicitCleanup && reuse;
+            List<string> delivery = new List<string>();
+            List<long> replacementTraces = new List<long>();
+            MessageRegistrationHandle original = default;
+            MessageRegistrationHandle peer = default;
+            MessageRegistrationHandle replacement = default;
+            long originalTrace = 0;
+            long peerTrace = 0;
+
+            void StageReplacement()
+            {
+                replacement = Register(token, scenario, 1, () =>
+                {
+                    delivery.Add("replacement");
+                    replacementTraces.Add(scope.Bus.EmissionId);
+                });
+                token.Enable();
+            }
+
+            original = Register(token, scenario, 1, () =>
+            {
+                delivery.Add("original");
+                originalTrace = scope.Bus.EmissionId;
+                switch (cleanup)
+                {
+                    case "None":
+                        return;
+                    case "RemoveLast":
+                        token.RemoveRegistration(original);
+                        break;
+                    case "UnregisterAll":
+                        token.UnregisterAll();
+                        break;
+                    case "Dispose":
+                        token.Dispose();
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(cleanup));
+                }
+
+                Assert.That(token._metadata, Is.Empty, label + ": cleanup clears staging");
+                Assert.That(token._callCounts, Is.Empty, label + ": cleanup clears counts");
+                Assert.That(
+                    token._emissionBuffer.Count,
+                    Is.Zero,
+                    label + ": cleanup leaves empty history before the callback returns"
+                );
+                Assert.That(Counters(scope.Bus), Is.All.EqualTo(0), label + ": cleanup drains bus");
+                Assert.That(
+                    token.Enabled,
+                    Is.EqualTo(!explicitCleanup),
+                    label + ": only explicit cleanup disables the token"
+                );
+                if (reuse)
+                {
+                    StageReplacement();
+                    if (explicitCleanup)
+                    {
+                        Emit(scope.Bus, scenario);
+                    }
+                }
+            });
+            if (frozenPeer)
+            {
+                peer = Register(token, scenario, 1, () =>
+                {
+                    delivery.Add("frozen peer");
+                    peerTrace = scope.Bus.EmissionId;
+                });
+            }
+            token.Enable();
+            Emit(scope.Bus, scenario);
+
+            string[] expectedDelivery = frozenPeer
+                ? new[] { "original", "replacement", "frozen peer" }
+                : new[] { "original" };
+            Assert.That(delivery, Is.EqualTo(expectedDelivery), label + ": frozen delivery order");
+            Assert.That(originalTrace, Is.GreaterThan(0), label + ": original dispatch trace");
+            if (frozenPeer)
+            {
+                Assert.That(
+                    peerTrace,
+                    Is.EqualTo(originalTrace),
+                    label + ": peer stays on old trace"
+                );
+                Assert.That(replacement, Is.Not.EqualTo(original), label + ": new handle identity");
+            }
+            Assert.That(
+                token._callCounts.ContainsKey(original),
+                Is.EqualTo(cleanup == "None"),
+                label + ": only a still-staged original has a counter"
+            );
+            Assert.That(
+                token._callCounts.ContainsKey(peer),
+                Is.False,
+                label + ": peer has no count"
+            );
+            if (reuse)
+            {
+                Assert.That(
+                    token._metadata.ContainsKey(replacement),
+                    Is.True,
+                    label + ": new staging"
+                );
+                AssertCount(token, replacement, explicitCleanup ? 1 : 0, label);
+            }
+            else
+            {
+                Assert.That(
+                    token._metadata.Count,
+                    Is.EqualTo(cleanup == "None" ? 1 : 0),
+                    label + ": exact staging after the original delivery"
+                );
+            }
+
+            List<(MessageRegistrationHandle Handle, long Trace)> expectedHistory = new();
+            if (frozenPeer)
+            {
+                expectedHistory.Add((replacement, replacementTraces[0]));
+            }
+            else if (cleanup == "None" || reuse)
+            {
+                expectedHistory.Add((original, originalTrace));
+            }
+            for (int i = 0; i < token._emissionBuffer.Count; ++i)
+            {
+                MessageEmissionData record = token._emissionBuffer[i];
+                TestContext.WriteLine(
+                    $"{label}: history[{i}]={record.registrationHandle.Id}, trace={record.traceId}; "
+                        + $"original={original.Id}, peer={peer.Id}, replacement={replacement.Id}"
+                );
+            }
+            AssertHistory(expectedHistory);
+
+            if (!reuse)
+            {
+                if (cleanup == "None")
+                {
+                    token.UnregisterAll();
+                    expectedHistory.Clear();
+                }
+                StageReplacement();
+            }
+            Emit(scope.Bus, scenario);
+            long latestTrace = replacementTraces[replacementTraces.Count - 1];
+            Assert.That(
+                latestTrace,
+                Is.GreaterThan(originalTrace),
+                label + ": later trace advances"
+            );
+            if (0 < expectedHistory.Count)
+            {
+                Assert.That(
+                    latestTrace,
+                    Is.GreaterThan(expectedHistory[expectedHistory.Count - 1].Trace),
+                    label + ": history retains ascending trace order"
+                );
+            }
+            expectedHistory.Add((replacement, latestTrace));
+            AssertHistory(expectedHistory);
+            AssertCount(token, replacement, frozenPeer ? 2 : 1, label);
+            AssertClean(scope, label);
+
+            void AssertHistory(List<(MessageRegistrationHandle Handle, long Trace)> expected)
+            {
+                Assert.That(
+                    token._emissionBuffer.Count,
+                    Is.EqualTo(expected.Count),
+                    label + ": history belongs to the current token lifecycle"
+                );
+                for (int i = 0; i < expected.Count; ++i)
+                {
+                    MessageEmissionData record = token._emissionBuffer[i];
+                    Assert.That(
+                        record.registrationHandle,
+                        Is.EqualTo(expected[i].Handle),
+                        label + ": recorded callback identity"
+                    );
+                    Assert.That(record.traceId, Is.EqualTo(expected[i].Trace), label + ": trace");
+                    Assert.That(record.message, Is.TypeOf<ProbeMessage>(), label + ": payload");
+                }
+            }
         }
 
         private static void AssertCount(

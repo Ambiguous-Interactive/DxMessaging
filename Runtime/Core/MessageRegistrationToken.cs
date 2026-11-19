@@ -59,8 +59,10 @@ namespace DxMessaging.Core
         /// When <c>true</c>, collects per-registration call counts and emission history.
         /// </summary>
         /// <remarks>
-        /// Counts belong to staged registrations. A completed callback can still record bounded
-        /// emission history after its registration has been removed.
+        /// Counts belong to staged registrations. Completed deliveries may remain in bounded
+        /// history after individual removal while the token has staged registrations or pending
+        /// cleanup. Successful <see cref="UnregisterAll"/> or <see cref="Dispose"/> excludes
+        /// previous registrations from new history.
         /// </remarks>
         public bool DiagnosticMode
         {
@@ -132,6 +134,7 @@ namespace DxMessaging.Core
         */
         private Dictionary<MessageRegistrationHandle, int> _callCountsBacking;
         private CyclicBuffer<MessageEmissionData> _emissionBufferBacking;
+        private ulong _diagnosticHistoryClearedThrough;
 
         internal Dictionary<MessageRegistrationHandle, int> _callCounts =>
             _callCountsBacking ??= new Dictionary<MessageRegistrationHandle, int>();
@@ -148,6 +151,13 @@ namespace DxMessaging.Core
             InstanceId? context = null
         )
         {
+            if (
+                unchecked((ulong)handle.Id) <= _diagnosticHistoryClearedThrough
+                || (_registrationCount == 0 && _deregistrationCount == 0)
+            )
+            {
+                return;
+            }
             if (TryGetSlot(handle.Slot, handle.Id, out _))
             {
                 _callCounts[handle] = _callCounts.GetValueOrDefault(handle) + 1;
@@ -1593,6 +1603,11 @@ namespace DxMessaging.Core
             if (deregistrationException == null && _deregistrationCount == 0)
             {
                 _enabled = false;
+                /*
+                    Frozen callbacks may finish after this clear, even after the token
+                    starts registering a new set of callbacks.
+                */
+                _diagnosticHistoryClearedThrough = MessageRegistrationHandle.LastIssuedId;
                 ClearRegistrationArena();
                 ClearDiagnosticState();
                 return;
