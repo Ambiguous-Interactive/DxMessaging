@@ -85,6 +85,17 @@ namespace DxMessaging.Editor
 
         private static readonly Regex RefRegex = new(@"\bref\b", RegexOptions.CultureInvariant);
 
+        private const string UnicodeEscapePattern = @"\\(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})";
+
+        private static readonly Regex DirectMemberIdentifierRegex = new(
+            @"\G@?(?:[_\p{L}\p{Nl}]|"
+                + UnicodeEscapePattern
+                + @")(?:[\p{L}\p{Nl}\p{Nd}\p{Pc}\p{Mn}\p{Mc}\p{Cf}]|"
+                + UnicodeEscapePattern
+                + ")*",
+            RegexOptions.CultureInvariant
+        );
+
         private static readonly Regex DirectWriteOperatorRegex = new(
             @"\G(?:\+\+|--|(?:<<|>>>?|[+*/%&|^\-]|\?\?)=|=(?!=|>))",
             RegexOptions.CultureInvariant
@@ -1665,8 +1676,12 @@ namespace DxMessaging.Editor
                     {
                         continue;
                     }
-                    Match member = IdentifierRegexForParameter.Match(masked, memberStart);
-                    if (!member.Success || member.Index != memberStart)
+                    Match member = DirectMemberIdentifierRegex.Match(
+                        masked,
+                        memberStart,
+                        bodyEnd - memberStart
+                    );
+                    if (!member.Success)
                     {
                         continue;
                     }

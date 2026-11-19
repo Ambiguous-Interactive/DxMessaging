@@ -463,6 +463,10 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("Inline field assignment");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => message.\u0394 = 1);",
+                "message"
+            ).SetName("Unicode member assignment requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>(OnPulse);\n"
                     + "void OnPulse(ref Pulse message) => message.Value += 1;",
                 "message"
@@ -492,6 +496,9 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "if (message.Value == 3 || message.Value != 4 || message.Value <= 5 "
                     + "|| message.Value >= 6) Observe(message);"
             ).SetName("Reads and comparisons still migrate");
+            yield return new TestCaseData("Observe(message.\u0394);").SetName(
+                "A read of a Unicode member still migrates"
+            );
             yield return new TestCaseData(
                 "Pulse other = message; other.Value++; Observe(other);"
             ).SetName("Writes to another receiver still migrate");
