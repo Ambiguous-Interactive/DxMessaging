@@ -182,15 +182,20 @@ before adding the string-handler opt-in because another part can already declare
 Review project-wide callback uses, inspect the diff, and let Unity compile before committing the
 migration.
 
-The preview defers direct assignments, compound assignments, and increment or decrement operations
-on a callback parameter, its direct members, or a direct indexer such as `message[0]`. This includes
-simple parentheses around a receiver or target, such as `(message).Value`. The preview applies the
-same grouping rule to direct `ref` and `out` arguments. It also checks direct targets in ordinary
-tuple deconstruction, including bodies of `if`, `else`, `while`, `for`, `foreach`, `lock`, and `do`
-without braces. It checks writes and `ref` or `out` arguments in simple
-interpolated strings, including C# 11 raw interpolation. The text scan can flag apparent writes or
-forwarding in literal text, member and indexer writes on class messages, and initializer members with
-the same name as a parameter. Review complex interpolation, casts, and indirect targets manually.
+The preview defers assignments, compound assignments, and increment or decrement operations on a
+callback parameter, a direct indexer such as `message[0]`, or a member chain such as
+`message.Child.Value`. This includes simple parentheses around a receiver or target, such as
+`(message).Value`. The preview applies the same grouping rule to direct `ref` and `out` arguments.
+It also checks direct targets in ordinary tuple deconstruction, including bodies of `if`, `else`,
+`while`, `for`, `foreach`, `lock`, and `do` without braces.
+
+The preview flags calls such as `message.Increment()` and `message.Child.Increment()` because an
+`in` parameter can cause a mutable struct method to run on a defensive copy. The text scan checks
+these calls, writes, and `ref` or `out` arguments in simple interpolated strings, including C# 11
+raw interpolation. It can also flag read-only calls, class members, initializer members that share
+the parameter's name, and text that resembles code. Review explicit method type arguments,
+conditional access, complex interpolation, casts, and indirect targets manually.
+
 Copy a struct message to a local when the callback needs writable scratch data. Move payload or
 context edits to an interceptor when later listeners need to see them.
 

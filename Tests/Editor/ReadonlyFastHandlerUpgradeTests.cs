@@ -540,6 +540,14 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("An interpolated member write after a comment requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => message.Child.Value++);",
+                "message"
+            ).SetName("A nested member write requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => ((message).Child).Value++);",
+                "message"
+            ).SetName("A grouped nested member write requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => ++((message).Value));",
                 "message"
             ).SetName("A grouped prefix increment requires manual review");
@@ -721,6 +729,12 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "Pulse other = default; if (message != other) Observe(message!.Value);"
             ).SetName("An inequality and a null-forgiven read still migrate");
+            yield return new TestCaseData("Observe(message.Child.Value);").SetName(
+                "Nested member reads still migrate"
+            );
+            yield return new TestCaseData(
+                "if (message.Child.Value < (1 + 2)) Observe(message);"
+            ).SetName("A nested member comparison still migrates");
             yield return new TestCaseData(
                 "RefPulseCallback callback = RefPulse; callback!(message).Value = 2;"
             ).SetName("Writing to a null-forgiven delegate result still migrates");
@@ -961,6 +975,38 @@ sealed class Receiver : MessageAwareComponent
             Assert.That(
                 result.ManualReviewMethods[0],
                 Does.Contain($"writes to parameter '{parameter}'")
+            );
+        }
+
+        private static IEnumerable<TestCaseData> ReceiverInvocationCases()
+        {
+            yield return new TestCaseData("message.Increment();").SetName(
+                "A method call on the message requires manual review"
+            );
+            yield return new TestCaseData("message.Child.Increment();").SetName(
+                "A method call on a nested message member requires manual review"
+            );
+        }
+
+        [TestCaseSource(nameof(ReceiverInvocationCases))]
+        public void AnalyzeLeavesReceiverInvocationsForManualReview(string body)
+        {
+            string source =
+                "DxMessaging.Core.MessageRegistrationToken token;\n"
+                + "token.RegisterUntargeted<Pulse>((ref Pulse message) => { "
+                + body
+                + " });";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("invokes a method on parameter 'message' or its member")
             );
         }
 
