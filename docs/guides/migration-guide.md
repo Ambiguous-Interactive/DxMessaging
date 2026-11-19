@@ -184,9 +184,9 @@ migration.
 
 The preview defers direct assignments, compound assignments, and increment or decrement operations
 on a callback parameter, its direct members, or a direct indexer such as `message[0]`. It checks for
-the same patterns in simple interpolated strings. The preview reads source text, so text in an
-interpolated string that resembles a write can also appear in the review list. Member or indexer
-writes on class messages and initializer members with the same name as a parameter can also appear.
+these writes and `ref` or `out` arguments in simple interpolated strings, including C# 11 raw
+interpolation. The text scan can flag apparent writes or forwarding in literal text, member and
+indexer writes on class messages, and initializer members with the same name as a parameter.
 Review complex interpolation and writes through parenthesized or indirect targets manually. Copy a
 struct message to a local when the callback needs writable scratch data. Move payload or context
 edits to an interceptor when later listeners need to see them.

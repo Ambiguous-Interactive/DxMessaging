@@ -1602,10 +1602,7 @@ namespace DxMessaging.Editor
                 string reason = null;
                 foreach (string parameterName in parameterNames)
                 {
-                    Regex byReferenceUse = new(
-                        @"\b(?<modifier>ref|out)\s+" + Regex.Escape(parameterName) + @"\b",
-                        RegexOptions.CultureInvariant
-                    );
+                    Regex byReferenceUse = CreateByReferenceUseRegex(parameterName);
                     foreach (Match match in byReferenceUse.Matches(masked, body.Start))
                     {
                         if (body.Start + body.Length <= match.Index)
@@ -1629,17 +1626,16 @@ namespace DxMessaging.Editor
                 {
                     foreach (string parameterName in parameterNames)
                     {
-                        if (
-                            WritesParameterOrDirectAccess(masked, body, parameterName)
-                            || WritesParameterInInterpolatedLiteral(
+                        reason = WritesParameterOrDirectAccess(masked, body, parameterName)
+                            ? $"writes to parameter '{parameterName}' or its member"
+                            : FindInterpolatedParameterIssue(
                                 source,
                                 body,
                                 interpolatedLiterals,
                                 parameterName
-                            )
-                        )
+                            );
+                        if (reason != null)
                         {
-                            reason = $"writes to parameter '{parameterName}' or its member";
                             break;
                         }
                     }
@@ -1662,7 +1658,13 @@ namespace DxMessaging.Editor
             }
         }
 
-        private static bool WritesParameterInInterpolatedLiteral(
+        private static Regex CreateByReferenceUseRegex(string parameterName) =>
+            new(
+                @"\b(?<modifier>ref|out)\s+" + Regex.Escape(parameterName) + @"\b",
+                RegexOptions.CultureInvariant
+            );
+
+        private static string FindInterpolatedParameterIssue(
             string source,
             TextSpan body,
             List<TextSpan> interpolatedLiterals,
@@ -1670,22 +1672,30 @@ namespace DxMessaging.Editor
         )
         {
             int bodyEnd = body.Start + body.Length;
+            Regex byReferenceUse = null;
             foreach (TextSpan literal in interpolatedLiterals)
             {
                 if (bodyEnd <= literal.Start)
                 {
                     break;
                 }
-                if (
-                    body.Start <= literal.Start
-                    && literal.Start + literal.Length <= bodyEnd
-                    && WritesParameterOrDirectAccess(source, literal, parameterName)
-                )
+                if (literal.Start < body.Start || bodyEnd < literal.Start + literal.Length)
                 {
-                    return true;
+                    continue;
+                }
+
+                byReferenceUse ??= CreateByReferenceUseRegex(parameterName);
+                Match forwarding = byReferenceUse.Match(source, literal.Start, literal.Length);
+                if (forwarding.Success)
+                {
+                    return $"passes parameter '{parameterName}' by {forwarding.Groups["modifier"].Value}";
+                }
+                if (WritesParameterOrDirectAccess(source, literal, parameterName))
+                {
+                    return $"writes to parameter '{parameterName}' or its member";
                 }
             }
-            return false;
+            return null;
         }
 
         private static bool WritesParameterOrDirectAccess(
@@ -2183,20 +2193,20 @@ namespace DxMessaging.Editor
                         source[index] == '@'
                         || (index + 1 < source.Length && source[index + 1] == '@');
                     int quoteCount = CountRun(source, quoteStart, '"');
-                    int end =
-                        3 <= quoteCount
-                            ? FindRawStringEnd(source, quoteStart + quoteCount, quoteCount)
-                            : FindQuotedEnd(source, quoteStart + 1, '"', verbatim);
+                    bool raw = 3 <= quoteCount;
+                    int delimiterLength = raw ? quoteCount : 1;
+                    int contentStart = quoteStart + delimiterLength;
+                    int end = raw
+                        ? FindRawStringEnd(source, contentStart, delimiterLength)
+                        : FindQuotedEnd(source, contentStart, '"', verbatim);
                     bool interpolated =
                         source[index] == '$'
                         || (index + 1 < quoteStart && source[index + 1] == '$');
-                    int contentStart = quoteStart + 1;
-                    int contentEnd = end - 1;
+                    int contentEnd = end - delimiterLength;
                     if (
                         interpolated
-                        && quoteCount < 3
                         && contentStart < contentEnd
-                        && source[contentEnd] == '"'
+                        && CountRun(source, contentEnd, '"') == delimiterLength
                     )
                     {
                         interpolatedLiterals.Add(

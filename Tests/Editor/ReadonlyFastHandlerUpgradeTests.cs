@@ -471,6 +471,10 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("A verbatim interpolated direct write requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe($$\"\"\"{{message.Value++}}\"\"\"));",
+                "message"
+            ).SetName("A raw interpolated direct write requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => message.\u0394 = 1);",
                 "message"
             ).SetName("Unicode member assignment requires manual review");
@@ -521,6 +525,12 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData("Observe(\"{message.Value++}\");").SetName(
                 "Plain string text matching an interpolated write still migrates"
             );
+            yield return new TestCaseData("Observe($$\"\"\"{{message.Value}}\"\"\");").SetName(
+                "A raw interpolated read still migrates"
+            );
+            yield return new TestCaseData("Observe(\"\"\"{{message.Value++}}\"\"\");").SetName(
+                "Plain raw string text matching an interpolated write still migrates"
+            );
             yield return new TestCaseData("Observe(message.\u0394);").SetName(
                 "A read of a Unicode member still migrates"
             );
@@ -545,6 +555,39 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "Observe(message.Value + +message.Value); Observe(message.Value - -message.Value);"
             ).SetName("Separate unary operators still migrate");
+        }
+
+        private static IEnumerable<TestCaseData> InterpolatedByReferenceUseCases()
+        {
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe($\"{Bump(ref message.Value)}\"));",
+                "ref"
+            ).SetName("An interpolated ref field argument requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe($\"{Assign(out message.Value)}\"));",
+                "out"
+            ).SetName("An interpolated out field argument requires manual review");
+        }
+
+        [TestCaseSource(nameof(InterpolatedByReferenceUseCases))]
+        public void AnalyzeLeavesInterpolatedByReferenceUsesForManualReview(
+            string registration,
+            string modifier
+        )
+        {
+            string source = "DxMessaging.Core.MessageRegistrationToken token;\n" + registration;
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain($"passes parameter 'message' by {modifier}")
+            );
         }
 
         [TestCaseSource(nameof(ExplicitParameterWriteCases))]
