@@ -141,12 +141,14 @@ on:
         default: "ABBABAAB,BAABABBA,ABBABAAB,BAABABBA,ABBABAAB"
 # Forbid concurrent audits OF THIS REPO across BOTH runners. The group
 # is intentionally NOT parameterized by `inputs.runner-label` so that two
-# dispatches (one per machine) cannot overlap. This is stricter than per-runner
-# concurrency: any in-flight audit anywhere blocks another audit from starting.
-# Host audits are license-free. Optional shipping and pilot jobs acquire the central Unity lock.
+# dispatches (one per machine) cannot overlap.
+# Host audits are license-free. Optional shipping and pilot jobs acquire the
+# central Unity lock. The enrollment contract requires literal
+# `cancel-in-progress: true` on every workflow scope that can reach acquire, so
+# a superseded dispatch cancels instead of queueing for a self-hosted seat.
 concurrency:
   group: runner-audit-windows
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -579,16 +581,9 @@ jobs:
     runs-on: [self-hosted, Windows, RAM-64GB, fast]
     timeout-minutes: 600
     steps:
-      - name: Require ELI request and runner
-        timeout-minutes: 1
-        shell: pwsh
-        env:
-          DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
-        run: |
-          if ($env:DXM_REQUESTED_RUNNER -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
-              throw 'Shipping Editor verification requires the ELI-MACHINE request and runner.'
-          }
-
+      # The enrollment contract requires the central editor gate to be the first
+      # step. Only the exact current-PR-head guard may precede it, and a
+      # dispatch-only lane has none.
       - name: Require manually installed Unity editor
         id: ensure_unity_editor
         timeout-minutes: 10
@@ -600,6 +595,16 @@ jobs:
           diagnostics-path: unity-editor-check.json
           ci-managed-only: true
           require-healthy-existing: true
+
+      - name: Require ELI request and runner
+        timeout-minutes: 1
+        shell: pwsh
+        env:
+          DXM_REQUESTED_RUNNER: ${{ inputs.runner-label }}
+        run: |
+          if ($env:DXM_REQUESTED_RUNNER -cne 'ELI-MACHINE' -or $env:RUNNER_NAME -cne 'ELI-MACHINE') {
+              throw 'Shipping Editor verification requires the ELI-MACHINE request and runner.'
+          }
 
       - name: Enable Git long paths
         timeout-minutes: 2
@@ -734,6 +739,24 @@ jobs:
           label: Shipping Editor and samples
           expected-empty: "false"
 
+      - name: Redact shipping Editor artifacts
+        id: redact_editor
+        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: .artifacts/unity/shipping-editor/${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload shipping Editor artifacts
+        if: ${{ always() && steps.redact_editor.outcome == 'success' }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shipping-editor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/unity/shipping-editor/${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Return Unity license
         id: return_unity_license
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
@@ -792,23 +815,6 @@ jobs:
           reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
           reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
 
-      - name: Redact shipping Editor artifacts
-        id: redact_editor
-        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
-        timeout-minutes: 2
-        uses: ./.github/actions/redact-unity-artifacts
-        with:
-          paths: .artifacts/unity/shipping-editor/${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Upload shipping Editor artifacts
-        if: ${{ always() && steps.redact_editor.outcome == 'success' }}
-        timeout-minutes: 10
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: shipping-editor-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .artifacts/unity/shipping-editor/${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 14
 
   package-log-capture:
     name: Package diagnostics on ELI
@@ -961,6 +967,21 @@ jobs:
     runs-on: [self-hosted, Windows, RAM-64GB, fast]
     timeout-minutes: 600
     steps:
+      # The enrollment contract requires the central editor gate to be the first
+      # step. Only the exact current-PR-head guard may precede it, and a
+      # dispatch-only lane has none.
+      - name: Require manually installed Unity editor
+        id: ensure_unity_editor
+        timeout-minutes: 10
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@720ef47f9ab352fbc9403363ca63ae8c487a2442 # v1.18.1
+        with:
+          unity-version: 6000.5.2f1
+          install-root: ${{ runner.tool_cache }}\u6-v3
+          provisioning-profile: StandaloneWindowsIl2Cpp
+          diagnostics-path: unity-editor-check.json
+          ci-managed-only: true
+          require-healthy-existing: true
+
       - name: Require ELI request and runner
         shell: pwsh
         timeout-minutes: 1
@@ -1003,18 +1024,6 @@ jobs:
           } elseif ($env:DXM_PILOT_BATCH_ORDERS -cne $fixedOrders) {
             throw 'Custom pilot batch orders require vector mode.'
           }
-
-      - name: Require manually installed Unity editor
-        id: ensure_unity_editor
-        timeout-minutes: 10
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@720ef47f9ab352fbc9403363ca63ae8c487a2442 # v1.18.1
-        with:
-          unity-version: 6000.5.2f1
-          install-root: ${{ runner.tool_cache }}\u6-v3
-          provisioning-profile: StandaloneWindowsIl2Cpp
-          diagnostics-path: unity-editor-check.json
-          ci-managed-only: true
-          require-healthy-existing: true
 
       - name: Enable Git long paths
         shell: pwsh
@@ -1372,6 +1381,21 @@ jobs:
       - fast
     timeout-minutes: 600
     steps:
+      # The enrollment contract requires the central editor gate to be the first
+      # step. Only the exact current-PR-head guard may precede it, and a
+      # dispatch-only lane has none.
+      - name: Require manually installed Unity editor
+        id: ensure_unity_editor
+        timeout-minutes: 10
+        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@720ef47f9ab352fbc9403363ca63ae8c487a2442 # v1.18.1
+        with:
+          unity-version: 2021.3.45f1
+          install-root: ${{ runner.tool_cache }}\u6-v3
+          provisioning-profile: StandaloneWindowsIl2Cpp
+          diagnostics-path: unity-editor-check.json
+          ci-managed-only: true
+          require-healthy-existing: true
+
       - name: Require ELI request and isolated SDK floor mode
         shell: pwsh
         timeout-minutes: 1
@@ -1393,18 +1417,6 @@ jobs:
           if (@('PlayMode', 'StandaloneRelease') -cnotcontains $env:DXM_FLOOR_SCOPE) {
             throw 'Native SDK floor requires an explicit supported scope.'
           }
-
-      - name: Require manually installed Unity editor
-        id: ensure_unity_editor
-        timeout-minutes: 10
-        uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/ensure-unity-editor@720ef47f9ab352fbc9403363ca63ae8c487a2442 # v1.18.1
-        with:
-          unity-version: 2021.3.45f1
-          install-root: ${{ runner.tool_cache }}\u6-v3
-          provisioning-profile: StandaloneWindowsIl2Cpp
-          diagnostics-path: unity-editor-check.json
-          ci-managed-only: true
-          require-healthy-existing: true
 
       - name: Enable Git long paths
         shell: pwsh
@@ -1735,6 +1747,24 @@ jobs:
             throw 'Native SDK floor leaf identities differ from the retained complete CPU/Burst scope.'
           }
 
+      - name: Redact native SDK floor artifacts
+        id: redact_sdk_floor
+        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
+        timeout-minutes: 2
+        uses: ./.github/actions/redact-unity-artifacts
+        with:
+          paths: .artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload native SDK floor artifacts
+        if: ${{ always() && steps.redact_sdk_floor.outcome == 'success' }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-sdk-floor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Return Unity license
         id: return_unity_license
         if: ${{ always() && steps.acquire_lock.outputs.acquired == 'true' }}
@@ -1793,23 +1823,6 @@ jobs:
           reservation-state: ${{ steps.release_unity_lock.outputs.reservation-state }}
           reservation-id: ${{ steps.release_unity_lock.outputs.reservation-id }}
 
-      - name: Redact native SDK floor artifacts
-        id: redact_sdk_floor
-        if: ${{ always() && steps.setup_node.outcome == 'success' && steps.install_dependencies.outcome == 'success' }}
-        timeout-minutes: 2
-        uses: ./.github/actions/redact-unity-artifacts
-        with:
-          paths: .artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Upload native SDK floor artifacts
-        if: ${{ always() && steps.redact_sdk_floor.outcome == 'success' }}
-        timeout-minutes: 10
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: native-sdk-floor-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .artifacts/unity/native-sdk-floor/${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 14
 
   # Each optional licensed lane reports its own dispatch verdict. The lane
   # guard selects it, so the aggregate repeats that selection in LANE_SELECTED.

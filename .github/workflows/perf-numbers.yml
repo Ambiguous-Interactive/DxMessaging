@@ -114,7 +114,9 @@ jobs:
           - comparisons
     steps:
       - name: Require current PR head before self-hosted setup
-        timeout-minutes: 3
+        # The enrollment contract admits a preceding current-head guard only
+        # when its timeout is two minutes or less.
+        timeout-minutes: 2
         uses: Ambiguous-Interactive/ambiguous-organization-build-lock/.github/actions/require-current-pr-head@720ef47f9ab352fbc9403363ca63ae8c487a2442 # v1.18.1
         with:
           github-token: ${{ github.token }}
