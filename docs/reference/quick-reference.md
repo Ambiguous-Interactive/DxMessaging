@@ -4,12 +4,12 @@ Use this as a rapid guide to define/emit/listen and manage lifecycles.
 
 Do's
 
-- Use attributes + `DxAutoConstructor` for clarity (or interfaces on structs for perf).
+- Use attributes with `DxAutoConstructor` for clarity, or implement interfaces on structs for performance.
 - Bind struct messages to a variable before emitting.
 - Use GameObject/Component emit helpers (no manual `InstanceId`).
 - Register once; enable/disable with component state.
 - Prefer named handler methods over inline lambdas for reuse and clarity.
-- When using DI, inject `IMessageRegistrationBuilder` instead of newing `MessageHandler`s manually.
+- When using DI, inject `IMessageRegistrationBuilder` to create registrations.
 
 ## Don'ts
 

@@ -25,8 +25,8 @@ Use the Editor tools to locate the failed stage before changing code:
 Then check the matching cause below:
 
 - Ensure your `MessageRegistrationToken` is enabled (Enable in `OnEnable`, Disable in `OnDisable`).
-- Verify the category matches the emission (Untargeted vs Targeted vs Broadcast).
-- Targeted/Broadcast require a valid `InstanceId`; ensure the target/source object exists when you emit.
+- Verify the registration and emission use the same category (untargeted, targeted, or broadcast).
+- For targeted and broadcast messages, supply a valid `InstanceId`. Check that the target or source exists when you emit.
 - In Unity, confirm your `MessagingComponent` exists on sender/receiver GameObjects.
 - **CRITICAL**: If inheriting from `MessageAwareComponent`, ensure your overrides call base methods:
   - **`base.RegisterMessageHandlers()`** - Call this FIRST in your override to preserve parent class registrations. Override `RegisterForStringMessages => true` separately when you want the built-in string demos.
@@ -60,7 +60,7 @@ Then check the matching cause below:
 ## Allocations and boxing
 
 - Prefer struct messages implementing the generic interfaces: `I*Message<T>`.
-- Use readonly by-reference handler overloads to avoid copies.
+- Use handler overloads that take an `in` parameter to avoid message copies.
 - Register handlers once in `Awake`/setup, not every frame: each registration allocates a small bounded amount, while ordinary typed steady-state struct dispatch is allocation-free. Struct global accept-all dispatch boxes the message, and emission-site stack-trace capture allocates while enabled. See the [allocation FAQ](faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc).
 
 ## Emitting while disabled
