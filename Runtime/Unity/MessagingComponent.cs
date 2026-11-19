@@ -42,6 +42,7 @@ namespace DxMessaging.Unity
         private bool _destroyed;
         private bool _resolvingInitialMessageBus;
         private MessageHandler _explicitlyToggledInitialHandler;
+        private bool _explicitInitialHandlerActive;
         private int _initialProviderResolutionDepth;
         private bool _applyingMessageBusConfiguration;
         private Queue<MessageBusConfiguration> _pendingMessageBusConfigurations;
@@ -472,8 +473,8 @@ namespace DxMessaging.Unity
         /// </summary>
         /// <param name="newActive">Desired active state.</param>
         /// <remarks>
-        /// Explicit calls always win while the owner is alive: unlike the Unity enable/disable
-        /// lifecycle, this method is never gated by <see cref="emitMessagesWhenDisabled"/>.
+        /// This method sets the handler's active state regardless of <see cref="emitMessagesWhenDisabled"/>.
+        /// At initial resolution completion, a published handler uses its last explicit request.
         /// Calls after this owner's destruction callback have no effect.
         /// <para><b>Fixed in v4.0.0.</b></para>
         /// </remarks>
@@ -491,6 +492,7 @@ namespace DxMessaging.Unity
             if (explicitToggle && _resolvingInitialMessageBus)
             {
                 _explicitlyToggledInitialHandler = handler;
+                _explicitInitialHandlerActive = newActive;
             }
             handler.active = newActive;
         }
@@ -543,15 +545,14 @@ namespace DxMessaging.Unity
         {
             MessageHandler handler = _messageHandler;
             MessageHandler explicitlyToggled = _explicitlyToggledInitialHandler;
+            bool requestedActive = _explicitInitialHandlerActive;
             _explicitlyToggledInitialHandler = null;
-            if (
-                !_destroyed
-                && this != null
-                && handler != null
-                && !ReferenceEquals(handler, explicitlyToggled)
-            )
+            _explicitInitialHandlerActive = false;
+            if (!_destroyed && this != null && handler != null)
             {
-                handler.active = IsHandlerActiveForLifecycle;
+                handler.active = ReferenceEquals(handler, explicitlyToggled)
+                    ? requestedActive
+                    : IsHandlerActiveForLifecycle;
             }
         }
 

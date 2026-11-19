@@ -1278,6 +1278,122 @@ namespace DxMessaging.Tests.Runtime.Unity
             }
         }
 
+        /// <summary>Restores the last explicit activity request after initialization lifecycle callbacks.</summary>
+        [TestCase(false, false)]
+        [TestCase(true, false)]
+        [TestCase(true, true)]
+        public void InitialExplicitToggleWinsAfterInterveningLifecycleWrites(
+            bool requestedActive,
+            bool requestOppositeFirst
+        )
+        {
+            string context =
+                $"requestedActive={requestedActive}, requestOppositeFirst={requestOppositeFirst}";
+            GameObject host = new(nameof(InitialExplicitToggleWinsAfterInterveningLifecycleWrites));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            ConfigurationProbeProvider provider = new(bus);
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+
+            using LeakWatcher watcher = new(bus, label: context);
+            MessageRegistrationToken nested = null;
+            int calls = 0;
+            int duringLifecycle = -1;
+            provider.OnResolve = () =>
+            {
+                component.Configure(bus, MessageBusRebindMode.RebindActive);
+                nested = component.Create(listener);
+                _ = nested.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                nested.Enable();
+                if (requestOppositeFirst)
+                {
+                    component.ToggleMessageHandler(!requestedActive);
+                }
+                component.ToggleMessageHandler(requestedActive);
+                host.SetActive(true);
+                if (requestedActive)
+                {
+                    host.SetActive(false);
+                }
+
+                SimpleUntargetedMessage during = new();
+                bus.UntargetedBroadcast(ref during);
+                duringLifecycle = calls;
+                component.emitMessagesWhenDisabled = requestedActive && !requestOppositeFirst;
+            };
+
+            try
+            {
+                MessageRegistrationToken outer = component.Create(listener);
+                SimpleUntargetedMessage payload = new();
+                bus.UntargetedBroadcast(ref payload);
+                int afterCompletion = calls - duringLifecycle;
+
+                component.emitMessagesWhenDisabled = false;
+                host.SetActive(false);
+                host.SetActive(true);
+                int beforeEnable = calls;
+                bus.UntargetedBroadcast(ref payload);
+                int afterEnable = calls - beforeEnable;
+
+                host.SetActive(false);
+                int beforeDisable = calls;
+                bus.UntargetedBroadcast(ref payload);
+                int afterDisable = calls - beforeDisable;
+
+                bool released = component.Release(listener);
+                host.SetActive(true);
+                int beforeReleaseProbe = calls;
+                bus.UntargetedBroadcast(ref payload);
+
+                TestContext.WriteLine(
+                    $"{context} during={duringLifecycle}, completed={afterCompletion}, "
+                        + $"enabled={afterEnable}, disabled={afterDisable}, released={released}, "
+                        + $"afterRelease={calls - beforeReleaseProbe}, retained={watcher.LeakedRegistrations}."
+                );
+                Assert.That(outer, Is.SameAs(nested), $"{context} Keep the nested token owned.");
+                Assert.That(
+                    duringLifecycle,
+                    Is.EqualTo(requestedActive ? 0 : 1),
+                    $"{context} Lifecycle writes take effect during resolution."
+                );
+                Assert.That(
+                    afterCompletion,
+                    Is.EqualTo(requestedActive ? 1 : 0),
+                    $"{context} Completion restores the last explicit request."
+                );
+                Assert.That(
+                    afterEnable,
+                    Is.EqualTo(1),
+                    $"{context} Later OnEnable may activate the handler."
+                );
+                Assert.That(
+                    afterDisable,
+                    Is.Zero,
+                    $"{context} Later OnDisable may deactivate the handler."
+                );
+                Assert.That(released, Is.True, $"{context} Release the owned token.");
+                Assert.That(
+                    calls,
+                    Is.EqualTo(beforeReleaseProbe),
+                    $"{context} Release stops delivery when active."
+                );
+                Assert.That(
+                    watcher.LeakedRegistrations,
+                    Is.Zero,
+                    $"{context} Release drains the bus."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+                nested?.Dispose();
+            }
+        }
+
         /// <summary>Drains accepted work after failures and reports every original error before recovery.</summary>
         [Test]
         public void QueuedConfigurationFailuresPreserveErrorsAndRecovery(

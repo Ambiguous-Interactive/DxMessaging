@@ -259,8 +259,10 @@ The guard keeps the component's current selection for any later resolution. Call
 overload of `Configure` before creating a listener from a deeper provider callback.
 
 If `Configure` publishes the first handler during a provider callback, nested creation uses that
-handler. Its lifecycle-derived active state reflects the settings when initial resolution ends.
-Call `ToggleMessageHandler` after publication to set the active state explicitly.
+handler. Unity's enable and disable callbacks continue to follow `emitMessagesWhenDisabled`.
+At the end of initial resolution, the component reapplies the last explicit `ToggleMessageHandler`
+request made for that handler after publication. When there is no explicit request, the handler
+uses the final lifecycle settings.
 
 ### Retarget a Token Directly
 
