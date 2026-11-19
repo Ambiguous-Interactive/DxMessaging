@@ -194,6 +194,11 @@ the same name as a parameter. Review complex interpolation, casts, and indirect 
 Copy a struct message to a local when the callback needs writable scratch data. Move payload or
 context edits to an interceptor when later listeners need to see them.
 
+When you migrate a deferred string-handler override and still need inherited string delivery, add
+`protected override bool RegisterForStringMessages => true;` if the class has no such override.
+Keep an existing opt-in, opt-out, or computed override. Inherited registration still depends on this
+property after the handler parameter changes to `in`.
+
 Apply the same change to both parameters of callbacks that receive a target or source:
 
 ```csharp

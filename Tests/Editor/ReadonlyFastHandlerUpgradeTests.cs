@@ -532,6 +532,14 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("A grouped comparison write after logical or requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => message!.Value++);",
+                "message"
+            ).SetName("A null-forgiven member receiver requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe($\"{message /* note */ .Value++}\"));",
+                "message"
+            ).SetName("An interpolated member write after a comment requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => ++((message).Value));",
                 "message"
             ).SetName("A grouped prefix increment requires manual review");
@@ -705,6 +713,15 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "int limit = 2; Observe(1 < limit && 1 > (message).Value);"
             ).SetName("Grouped reads in mixed comparisons still migrate");
             yield return new TestCaseData(
+                "ref readonly Pulse view = ref message; Observe(view);"
+            ).SetName("A plain readonly alias still migrates");
+            yield return new TestCaseData(
+                "ref readonly Pulse view = ref (message); Observe(view);"
+            ).SetName("A grouped readonly alias still migrates");
+            yield return new TestCaseData(
+                "Pulse other = default; if (message != other) Observe(message!.Value);"
+            ).SetName("An inequality and a null-forgiven read still migrate");
+            yield return new TestCaseData(
                 "RefPulseCallback callback = RefPulse; callback!(message).Value = 2;"
             ).SetName("Writing to a null-forgiven delegate result still migrates");
             yield return new TestCaseData(
@@ -732,6 +749,10 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
 
         private static IEnumerable<TestCaseData> InterpolatedByReferenceUseCases()
         {
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe($\"{Bump(ref /* note */ message.Value)}\"));",
+                "ref"
+            ).SetName("An interpolated ref argument after a comment requires manual review");
             yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe($\"{Bump(ref message.Value)}\"));",
                 "ref"
@@ -816,6 +837,10 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => Bump(ref (message).Value));",
                 "ref"
             ).SetName("A grouped receiver in a ref argument requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => BumpPulse(ref (message)));",
+                "ref"
+            ).SetName("A grouped ref argument for the whole parameter still requires review");
             yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) "
                     + "=> Observe($\"{Assign(out ((message).Value))}\"));",

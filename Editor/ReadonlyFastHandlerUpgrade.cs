@@ -101,11 +101,24 @@ namespace DxMessaging.Editor
             RegexOptions.CultureInvariant
         );
 
-        private static readonly Regex ByReferenceUseRegex = new(
-            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?<modifier>ref|out)(?:\s+|(?=[(@]))"
-                + @"(?<grouping>(?:\(\s*)*)(?<name>"
+        private static readonly Regex ByReferenceModifierRegex = new(
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?<modifier>ref|out)(?=\s|[(@]|/\*)",
+            RegexOptions.CultureInvariant
+        );
+
+        private static readonly Regex ByReferenceOperandRegex = new(
+            @"\G(?<grouping>(?:\(\s*)*)(?<name>" + IdentifierSpellingPattern + ")",
+            RegexOptions.CultureInvariant
+        );
+
+        private static readonly Regex ReadonlyRefLocalPrefixRegex = new(
+            @"\G\s*ref\s+readonly\s+"
                 + IdentifierSpellingPattern
-                + ")",
+                + @"(?:\s*(?:\.|::)\s*"
+                + IdentifierSpellingPattern
+                + @")*\s+"
+                + IdentifierSpellingPattern
+                + @"\s*=\s*",
             RegexOptions.CultureInvariant
         );
 
@@ -1720,20 +1733,75 @@ namespace DxMessaging.Editor
             string parameterValue
         )
         {
+            int scopeEnd = scope.Start + scope.Length;
             for (
-                Match use = ByReferenceUseRegex.Match(source, scope.Start, scope.Length);
+                Match use = ByReferenceModifierRegex.Match(source, scope.Start, scope.Length);
                 use.Success;
                 use = use.NextMatch()
             )
             {
+                int start = NextAfterBlockComments(source, use.Index + use.Length, scopeEnd);
+                if (start < 0 || scopeEnd <= start)
+                {
+                    continue;
+                }
+
+                Match operand = ByReferenceOperandRegex.Match(source, start, scopeEnd - start);
                 if (
-                    IdentifierValue(use.Groups["name"].Value) == parameterValue
-                    && HasValidReferenceGrouping(source, scope, use)
+                    operand.Success
+                    && IdentifierValue(operand.Groups["name"].Value) == parameterValue
+                    && HasValidReferenceGrouping(source, scope, operand)
+                    && !IsReadonlyRefLocalInitializer(source, scope, use, operand)
                 )
                 {
                     yield return use;
                 }
             }
+        }
+
+        private static bool IsReadonlyRefLocalInitializer(
+            string source,
+            TextSpan scope,
+            Match use,
+            Match operand
+        )
+        {
+            if (use.Groups["modifier"].Value != "ref")
+            {
+                return false;
+            }
+
+            ReadOnlySpan<char> prefix = source.AsSpan(scope.Start, use.Index - scope.Start);
+            int declarationStart = scope.Start + prefix.LastIndexOfAny(';', '{', '}') + 1;
+            Match declaration = ReadonlyRefLocalPrefixRegex.Match(
+                source,
+                declarationStart,
+                use.Index - declarationStart
+            );
+            if (!declaration.Success || declaration.Index + declaration.Length != use.Index)
+            {
+                return false;
+            }
+
+            int scopeEnd = scope.Start + scope.Length;
+            TextSpan rightHandSide = new(operand.Index, scopeEnd - operand.Index);
+            int targetStart = operand.Groups["name"].Index;
+            int following = NextAfterBlockComments(
+                source,
+                operand.Index + operand.Length,
+                scopeEnd
+            );
+            ExpandStandaloneGrouping(
+                source,
+                rightHandSide,
+                ref targetStart,
+                ref following,
+                stopAtTypeArgumentBarriers: false
+            );
+            return targetStart == rightHandSide.Start
+                && 0 <= following
+                && following < scopeEnd
+                && source[following] == ';';
         }
 
         private static bool HasValidReferenceGrouping(string source, TextSpan scope, Match use)
@@ -1831,7 +1899,7 @@ namespace DxMessaging.Editor
                 }
 
                 int targetStart = use.Index;
-                int next = NextNonWhitespace(masked, use.Index + use.Length);
+                int next = NextAfterBlockComments(masked, use.Index + use.Length, bodyEnd);
                 if (
                     !TryReadDirectTarget(
                         masked,
@@ -1888,6 +1956,14 @@ namespace DxMessaging.Editor
                 ref following,
                 stopAtTypeArgumentBarriers
             );
+            if (0 <= following && following < bodyEnd && text[following] == '!')
+            {
+                int access = NextNonWhitespace(text, following + 1);
+                if (0 <= access && access < bodyEnd && (text[access] == '.' || text[access] == '['))
+                {
+                    following = access;
+                }
+            }
             if (0 <= following && following < bodyEnd && text[following] == '.')
             {
                 int memberStart = NextNonWhitespace(text, following + 1);
