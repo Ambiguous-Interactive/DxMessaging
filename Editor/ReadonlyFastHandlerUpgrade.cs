@@ -85,6 +85,11 @@ namespace DxMessaging.Editor
 
         private static readonly Regex RefRegex = new(@"\bref\b", RegexOptions.CultureInvariant);
 
+        private static readonly Regex DirectWriteOperatorRegex = new(
+            @"\G(?:\+\+|--|(?:<<|>>>?|[+*/%&|^\-]|\?\?)=|=(?!=|>))",
+            RegexOptions.CultureInvariant
+        );
+
         private static readonly Regex TypeDeclarationRegex = new(
             @"\b(?:class|struct|record(?:\s+(?:class|struct))?)\s+[A-Za-z_]\w*(?:\s*<[^>{};]+>)?",
             RegexOptions.CultureInvariant
@@ -313,7 +318,7 @@ namespace DxMessaging.Editor
                 );
             }
 
-            PruneUnsafeByReferenceUse(masked, replacementStarts, manualReview);
+            PruneIncompatibleParameterUses(masked, replacementStarts, manualReview);
 
             SortedDictionary<int, string> insertions = new();
             AddStringHandlerOptIns(masked, replacementStarts, insertions, manualReview);
@@ -1518,7 +1523,7 @@ namespace DxMessaging.Editor
             }
         }
 
-        private static void PruneUnsafeByReferenceUse(
+        private static void PruneIncompatibleParameterUses(
             string masked,
             HashSet<int> replacementStarts,
             SortedSet<string> manualReview
@@ -1574,9 +1579,7 @@ namespace DxMessaging.Editor
                 }
 
                 List<int> forwardingStarts = new();
-                string unsafeParameter = string.Empty;
-                string unsafeModifier = string.Empty;
-                bool hasUnsafeByReferenceUse = false;
+                string reason = null;
                 foreach (string parameterName in parameterNames)
                 {
                     Regex byReferenceUse = new(
@@ -1592,14 +1595,28 @@ namespace DxMessaging.Editor
                         forwardingStarts.Add(match.Index);
                         if (!replacementStarts.Contains(match.Index))
                         {
-                            hasUnsafeByReferenceUse = true;
-                            unsafeParameter = parameterName;
-                            unsafeModifier = match.Groups["modifier"].Value;
+                            reason =
+                                $"passes parameter '{parameterName}' by {match.Groups["modifier"].Value}";
                         }
                     }
                 }
 
-                if (!hasUnsafeByReferenceUse && !hasUnsupportedParameter)
+                if (reason == null && hasUnsupportedParameter)
+                {
+                    reason = "has unsupported parameter syntax";
+                }
+                if (reason == null)
+                {
+                    foreach (string parameterName in parameterNames)
+                    {
+                        if (WritesParameterOrDirectMember(masked, body, parameterName))
+                        {
+                            reason = $"writes to parameter '{parameterName}' or its member";
+                            break;
+                        }
+                    }
+                }
+                if (reason == null)
                 {
                     continue;
                 }
@@ -1611,14 +1628,80 @@ namespace DxMessaging.Editor
                 {
                     replacementStarts.Remove(forwardingStart);
                 }
-                string reason =
-                    hasUnsupportedParameter && !hasUnsafeByReferenceUse
-                        ? "has unsupported parameter syntax"
-                        : $"passes parameter '{unsafeParameter}' by {unsafeModifier}";
                 manualReview.Add(
                     $"callback on line {LineNumber(masked, entry.Key)} {reason}; inspect it manually"
                 );
             }
+        }
+
+        private static bool WritesParameterOrDirectMember(
+            string masked,
+            TextSpan body,
+            string parameterName
+        )
+        {
+            int bodyEnd = body.Start + body.Length;
+            Regex identifier = new(
+                @"(?<![\w@])@?" + Regex.Escape(parameterName.TrimStart('@')) + @"(?!\w)",
+                RegexOptions.CultureInvariant
+            );
+            for (
+                Match use = identifier.Match(masked, body.Start, body.Length);
+                use.Success;
+                use = use.NextMatch()
+            )
+            {
+                int previous = PreviousNonWhitespace(masked, use.Index - 1);
+                if (body.Start <= previous && masked[previous] == '.')
+                {
+                    continue;
+                }
+
+                int next = NextNonWhitespace(masked, use.Index + use.Length);
+                if (0 <= next && next < bodyEnd && masked[next] == '.')
+                {
+                    int memberStart = NextNonWhitespace(masked, next + 1);
+                    if (memberStart < 0 || bodyEnd <= memberStart)
+                    {
+                        continue;
+                    }
+                    Match member = IdentifierRegexForParameter.Match(masked, memberStart);
+                    if (!member.Success || member.Index != memberStart)
+                    {
+                        continue;
+                    }
+                    next = NextNonWhitespace(masked, member.Index + member.Length);
+                }
+
+                if (0 <= next && next < bodyEnd)
+                {
+                    char following = masked[next];
+                    if (following == '.' || following == '[' || following == '(')
+                    {
+                        continue;
+                    }
+                    Match write = DirectWriteOperatorRegex.Match(masked, next);
+                    if (write.Success && next + write.Length <= bodyEnd)
+                    {
+                        return true;
+                    }
+                }
+
+                if (body.Start < previous)
+                {
+                    char preceding = masked[previous];
+                    // In count+++message, the first two signs are the local's postfix operator.
+                    if (
+                        (preceding == '+' || preceding == '-')
+                        && masked[previous - 1] == preceding
+                        && (previous - 1 == body.Start || masked[previous - 2] != preceding)
+                    )
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private static int FindEnclosingOpenParenthesis(string text, int position)

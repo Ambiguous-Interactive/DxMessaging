@@ -182,6 +182,12 @@ before adding the string-handler opt-in because another part can already declare
 Review project-wide callback uses, inspect the diff, and let Unity compile before committing the
 migration.
 
+The preview also defers direct assignments, compound assignments, and increment or decrement
+operations on a callback parameter or one of its direct members. It can flag member writes on a
+class message because the preview reads source text without resolving types. Copy a struct message
+to a local when the callback needs writable scratch data. Move payload or context edits to an
+interceptor when later listeners need to see those edits.
+
 Apply the same change to both parameters of callbacks that receive a target or source:
 
 ```csharp

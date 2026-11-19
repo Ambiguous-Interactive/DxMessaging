@@ -452,6 +452,133 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             );
         }
 
+        private static IEnumerable<TestCaseData> ExplicitParameterWriteCases()
+        {
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => message = default);",
+                "message"
+            ).SetName("Inline parameter assignment");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => message.Value = 1);",
+                "message"
+            ).SetName("Inline field assignment");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>(OnPulse);\n"
+                    + "void OnPulse(ref Pulse message) => message.Value += 1;",
+                "message"
+            ).SetName("Method group compound field assignment");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => ++message.Value);",
+                "message"
+            ).SetName("Inline prefix field increment");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>(delegate(ref Pulse @event) { @event.Value--; });",
+                "@event"
+            ).SetName("Anonymous method postfix field decrement");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => @message.Value--);",
+                "message"
+            ).SetName("Explicit identifier escaping preserves the parameter binding");
+            yield return new TestCaseData(
+                "token.RegisterBroadcastWithoutSource<Pulse>((ref InstanceId source, ref Pulse message)"
+                    + " => { source = default; Observe(message); });",
+                "source"
+            ).SetName("Context assignment keeps both parameters unchanged");
+        }
+
+        private static IEnumerable<TestCaseData> SafeParameterUseCases()
+        {
+            yield return new TestCaseData(
+                "if (message.Value == 3 || message.Value != 4 || message.Value <= 5 "
+                    + "|| message.Value >= 6) Observe(message);"
+            ).SetName("Reads and comparisons still migrate");
+            yield return new TestCaseData(
+                "Pulse other = message; other.Value++; Observe(other);"
+            ).SetName("Writes to another receiver still migrate");
+            yield return new TestCaseData(
+                "var holder = (message, index: 0); holder . @message.Value++; Observe(holder);"
+            ).SetName("A qualified member named like the parameter still migrates");
+            yield return new TestCaseData(
+                "int count = 1; Observe(count+++message.Value); Observe(count---message.Value);"
+            ).SetName("A preceding postfix operator still migrates");
+            yield return new TestCaseData(
+                "int count = 0; count += message.Value; Observe(count);"
+            ).SetName("Writes to a local still migrate");
+            yield return new TestCaseData(
+                "Observe(\"message.Value--\"); /* ++message.Value; */ Observe(message);"
+            ).SetName("Write-like text still migrates");
+            yield return new TestCaseData(
+                "Observe(message.Value + +message.Value); Observe(message.Value - -message.Value);"
+            ).SetName("Separate unary operators still migrate");
+        }
+
+        [TestCaseSource(nameof(ExplicitParameterWriteCases))]
+        public void AnalyzeLeavesExplicitParameterWritesForManualReview(
+            string registration,
+            string parameter
+        )
+        {
+            string source = "DxMessaging.Core.MessageRegistrationToken token;\n" + registration;
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain($"writes to parameter '{parameter}'")
+            );
+        }
+
+        [TestCaseSource(nameof(SafeParameterUseCases))]
+        public void AnalyzeStillConvertsCallbacksThatOnlyReadParameters(string body)
+        {
+            const string Before =
+                "DxMessaging.Core.MessageRegistrationToken token;\n"
+                + "token.RegisterUntargeted<Pulse>((ref Pulse message) => { ";
+            string source = Before + body + " });";
+            string expected = Before.Replace("(ref Pulse", "(in Pulse") + body + " });";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(expected));
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [Test]
+        public void AnalyzeLeavesOverrideWritesAndBaseForwardingUnchanged()
+        {
+            const string Source =
+                @"
+class Receiver : DxMessaging.Unity.MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message)
+    {
+        message = default;
+        base.HandleGlobalStringMessage(ref message);
+    }
+}";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("writes to parameter 'message'")
+            );
+        }
+
         [Test]
         public void AnalyzeLeavesExpressionBodyWithGenericRefForwardingForManualReview()
         {
