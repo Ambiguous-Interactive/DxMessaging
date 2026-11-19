@@ -3,6 +3,7 @@ namespace DxMessaging.Editor
 #if UNITY_EDITOR
     using System;
     using System.Collections.Generic;
+    using System.Globalization;
     using System.IO;
     using System.Text;
     using System.Text.RegularExpressions;
@@ -68,11 +69,6 @@ namespace DxMessaging.Editor
             RegexOptions.CultureInvariant
         );
 
-        private static readonly Regex IdentifierRegexForParameter = new(
-            @"@?[A-Za-z_]\w*",
-            RegexOptions.CultureInvariant
-        );
-
         private static readonly Regex NamedIdentifierRegex = new(
             @"^(?:\(\s*(?:(?:global::)?DxMessaging\s*\.\s*Core\s*\.\s*)?MessageHandler\s*\.\s*FastHandler(?:WithContext)?\s*<[^()]+>\s*\)\s*)?(?:(?:this|base)\s*\.\s*)?(?<name>[A-Za-z_]\w*)$",
             RegexOptions.CultureInvariant
@@ -87,12 +83,40 @@ namespace DxMessaging.Editor
 
         private const string UnicodeEscapePattern = @"\\(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})";
 
+        private const string IdentifierSpellingPattern =
+            @"@?(?:[_\p{L}\p{Nl}]|"
+            + UnicodeEscapePattern
+            + @")(?:[\p{L}\p{Nl}\p{Nd}\p{Pc}\p{Mn}\p{Mc}\p{Cf}]|"
+            + UnicodeEscapePattern
+            + ")*";
+
+        private static readonly Regex IdentifierUseRegex = new(
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])" + IdentifierSpellingPattern,
+            RegexOptions.CultureInvariant
+        );
+
         private static readonly Regex DirectMemberIdentifierRegex = new(
-            @"\G@?(?:[_\p{L}\p{Nl}]|"
-                + UnicodeEscapePattern
-                + @")(?:[\p{L}\p{Nl}\p{Nd}\p{Pc}\p{Mn}\p{Mc}\p{Cf}]|"
-                + UnicodeEscapePattern
-                + ")*",
+            @"\G" + IdentifierSpellingPattern,
+            RegexOptions.CultureInvariant
+        );
+
+        private static readonly Regex ByReferenceUseRegex = new(
+            @"\b(?<modifier>ref|out)\s+(?<name>" + IdentifierSpellingPattern + ")",
+            RegexOptions.CultureInvariant
+        );
+
+        private static readonly Regex BaseRefArgumentRegex = new(
+            @"^\s*ref\s+(?<name>" + IdentifierSpellingPattern + @")\s*$",
+            RegexOptions.CultureInvariant
+        );
+
+        private static readonly Regex UnicodeEscapeRegex = new(
+            UnicodeEscapePattern,
+            RegexOptions.CultureInvariant
+        );
+
+        private static readonly Regex IdentifierFormattingRegex = new(
+            @"\p{Cf}",
             RegexOptions.CultureInvariant
         );
 
@@ -1523,14 +1547,12 @@ namespace DxMessaging.Editor
                 foreach (TextSpan argument in SplitArguments(masked, open + 1, close))
                 {
                     string argumentText = masked.Substring(argument.Start, argument.Length);
-                    Match forwarded = Regex.Match(
-                        argumentText,
-                        @"^\s*ref\s+(?<name>@?[A-Za-z_]\w*)\s*$",
-                        RegexOptions.CultureInvariant
-                    );
+                    Match forwarded = BaseRefArgumentRegex.Match(argumentText);
                     if (
                         forwarded.Success
-                        && refParameterNames.Contains(forwarded.Groups["name"].Value)
+                        && refParameterNames.Contains(
+                            IdentifierValue(forwarded.Groups["name"].Value)
+                        )
                     )
                     {
                         int refStart = argument.Start + forwarded.Index;
@@ -1602,13 +1624,9 @@ namespace DxMessaging.Editor
                 string reason = null;
                 foreach (string parameterName in parameterNames)
                 {
-                    Regex byReferenceUse = CreateByReferenceUseRegex(parameterName);
-                    foreach (Match match in byReferenceUse.Matches(masked, body.Start))
+                    string parameterValue = IdentifierValue(parameterName);
+                    foreach (Match match in FindByReferenceUses(masked, body, parameterValue))
                     {
-                        if (body.Start + body.Length <= match.Index)
-                        {
-                            break;
-                        }
                         forwardingStarts.Add(match.Index);
                         if (!replacementStarts.Contains(match.Index))
                         {
@@ -1626,13 +1644,15 @@ namespace DxMessaging.Editor
                 {
                     foreach (string parameterName in parameterNames)
                     {
-                        reason = WritesParameterOrDirectAccess(masked, body, parameterName)
+                        string parameterValue = IdentifierValue(parameterName);
+                        reason = WritesParameterOrDirectAccess(masked, body, parameterValue)
                             ? $"writes to parameter '{parameterName}' or its member"
                             : FindInterpolatedParameterIssue(
                                 source,
                                 body,
                                 interpolatedLiterals,
-                                parameterName
+                                parameterName,
+                                parameterValue
                             );
                         if (reason != null)
                         {
@@ -1658,21 +1678,56 @@ namespace DxMessaging.Editor
             }
         }
 
-        private static Regex CreateByReferenceUseRegex(string parameterName) =>
-            new(
-                @"\b(?<modifier>ref|out)\s+@?" + Regex.Escape(parameterName.TrimStart('@')) + @"\b",
-                RegexOptions.CultureInvariant
-            );
+        private static string IdentifierValue(string spelling)
+        {
+            string value = spelling.TrimStart('@');
+            if (0 <= value.IndexOf('\\'))
+            {
+                value = UnicodeEscapeRegex.Replace(value, match =>
+                    int.TryParse(
+                        match.Value.Substring(2),
+                        NumberStyles.AllowHexSpecifier,
+                        CultureInfo.InvariantCulture,
+                        out int scalar
+                    )
+                    && 0 <= scalar
+                    && scalar <= 0x10FFFF
+                    && (scalar < 0xD800 || 0xDFFF < scalar)
+                        ? char.ConvertFromUtf32(scalar)
+                        : match.Value
+                );
+            }
+            return IdentifierFormattingRegex.Replace(value, string.Empty);
+        }
+
+        private static IEnumerable<Match> FindByReferenceUses(
+            string source,
+            TextSpan scope,
+            string parameterValue
+        )
+        {
+            for (
+                Match use = ByReferenceUseRegex.Match(source, scope.Start, scope.Length);
+                use.Success;
+                use = use.NextMatch()
+            )
+            {
+                if (IdentifierValue(use.Groups["name"].Value) == parameterValue)
+                {
+                    yield return use;
+                }
+            }
+        }
 
         private static string FindInterpolatedParameterIssue(
             string source,
             TextSpan body,
             List<TextSpan> interpolatedLiterals,
-            string parameterName
+            string parameterName,
+            string parameterValue
         )
         {
             int bodyEnd = body.Start + body.Length;
-            Regex byReferenceUse = null;
             foreach (TextSpan literal in interpolatedLiterals)
             {
                 if (bodyEnd <= literal.Start)
@@ -1684,13 +1739,11 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
-                byReferenceUse ??= CreateByReferenceUseRegex(parameterName);
-                Match forwarding = byReferenceUse.Match(source, literal.Start, literal.Length);
-                if (forwarding.Success)
+                foreach (Match forwarding in FindByReferenceUses(source, literal, parameterValue))
                 {
                     return $"passes parameter '{parameterName}' by {forwarding.Groups["modifier"].Value}";
                 }
-                if (WritesParameterOrDirectAccess(source, literal, parameterName))
+                if (WritesParameterOrDirectAccess(source, literal, parameterValue))
                 {
                     return $"writes to parameter '{parameterName}' or its member";
                 }
@@ -1701,20 +1754,21 @@ namespace DxMessaging.Editor
         private static bool WritesParameterOrDirectAccess(
             string masked,
             TextSpan body,
-            string parameterName
+            string parameterValue
         )
         {
             int bodyEnd = body.Start + body.Length;
-            Regex identifier = new(
-                @"(?<![\w@])@?" + Regex.Escape(parameterName.TrimStart('@')) + @"(?!\w)",
-                RegexOptions.CultureInvariant
-            );
             for (
-                Match use = identifier.Match(masked, body.Start, body.Length);
+                Match use = IdentifierUseRegex.Match(masked, body.Start, body.Length);
                 use.Success;
                 use = use.NextMatch()
             )
             {
+                if (IdentifierValue(use.Value) != parameterValue)
+                {
+                    continue;
+                }
+
                 int previous = PreviousNonWhitespace(masked, use.Index - 1);
                 if (body.Start <= previous && masked[previous] == '.')
                 {
@@ -1812,10 +1866,10 @@ namespace DxMessaging.Editor
                 {
                     continue;
                 }
-                MatchCollection identifiers = IdentifierRegexForParameter.Matches(parameterText);
+                MatchCollection identifiers = IdentifierUseRegex.Matches(parameterText);
                 if (0 < identifiers.Count)
                 {
-                    names.Add(identifiers[identifiers.Count - 1].Value);
+                    names.Add(IdentifierValue(identifiers[identifiers.Count - 1].Value));
                 }
             }
             return names;
@@ -1837,7 +1891,7 @@ namespace DxMessaging.Editor
                 {
                     continue;
                 }
-                MatchCollection identifiers = IdentifierRegexForParameter.Matches(
+                MatchCollection identifiers = IdentifierUseRegex.Matches(
                     text.Substring(parameter.Start, parameter.Length)
                 );
                 if (identifiers.Count == 0)

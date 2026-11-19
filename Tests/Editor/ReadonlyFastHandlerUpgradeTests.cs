@@ -403,6 +403,37 @@ sealed class Receiver : MessageAwareComponent
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
+        private const string UnicodeOverrideForwardingSource =
+            @"
+using DxMessaging.Unity;
+sealed class Receiver : MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message)
+    {
+        base.HandleGlobalStringMessage(ref @\u006dessage);
+    }
+}";
+
+        [Test]
+        public void AnalyzeConvertsOverrideForwardingWithEquivalentIdentifierSpelling()
+        {
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                UnicodeOverrideForwardingSource
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(2));
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("HandleGlobalStringMessage(in GlobalStringMessage message)")
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain(@"base.HandleGlobalStringMessage(in @\u006dessage)")
+            );
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
         [Test]
         public void AnalyzeLeavesMethodGroupWithRefForwardingForManualReview()
         {
@@ -462,6 +493,10 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => message.Value = 1);",
                 "message"
             ).SetName("Inline field assignment");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => \\u006dessage.Value++);",
+                "message"
+            ).SetName("Writing through an escaped parameter spelling requires manual review");
             yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe($\"{message.Value++}\"));",
                 "message"
@@ -553,6 +588,13 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "Pulse messageOther; Observe(AssignPulse(out messageOther)); Observe(message);"
             ).SetName("Byref use of a similarly named local still migrates");
             yield return new TestCaseData(
+                "Pulse message\\u0031; Observe(AssignPulse(out message\\u0031));"
+                    + " Observe(message);"
+            ).SetName("An escaped longer local still migrates");
+            yield return new TestCaseData("Observe(\\u006dessage);").SetName(
+                "An escaped parameter read still migrates"
+            );
+            yield return new TestCaseData(
                 "Observe(\"message.Value--\"); /* ++message.Value; */ Observe(message);"
             ).SetName("Write-like text still migrates");
             yield return new TestCaseData(
@@ -607,6 +649,16 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "token.RegisterUntargeted<Pulse>((ref Pulse @message) => AssignPulse(out message));",
                 "@message"
             ).SetName("A plain byref use of an escaped parameter requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>(OnPulse);\n"
+                    + "void OnPulse(ref Pulse \u0394message) => AssignPulse(out \\u0394message);",
+                "\u0394message"
+            ).SetName("A byref use of a Unicode parameter requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse @\\u006dessage) "
+                    + "=> Observe($\"{AssignPulse(out message)}\"));",
+                "@\\u006dessage"
+            ).SetName("An interpolated use of an escaped declaration requires manual review");
         }
 
         [TestCaseSource(nameof(EscapedByReferenceUseCases))]
