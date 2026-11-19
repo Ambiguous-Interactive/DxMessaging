@@ -267,11 +267,9 @@ Interceptors -> Global Accept-All -> Handlers<T> @ source
     -> Post-Processors<T> (All Sources)
 ```
 
-> 📝 **Note: Priority Rules**
->
-> - Lower priority values run earlier
-> - Same priority preserves registration order
-> - Within a priority, fast (readonly by-reference) handlers run before action handlers
+> Within a typed handler or post-processor phase, lower priorities run earlier. At the same
+> priority, the bus visits each handler's callbacks together. See
+> [execution order](../concepts/interceptors-and-ordering.md#execution-order).
 
 ## API Quick Reference
 

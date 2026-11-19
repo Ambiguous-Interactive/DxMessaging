@@ -45,7 +45,9 @@ Then check the matching cause below:
 
 ## Unexpected ordering
 
-- Check `priority` values on registrations; lower runs earlier. Same priority is registration order.
+- Check `priority` values within the same dispatch phase. Lower values run earlier. For equal
+  priorities, check which handler owns each callback. See
+  [execution order](../concepts/interceptors-and-ordering.md#execution-order).
 - Interceptors always precede handlers and can cancel; confirm interceptors return `true`.
 
 ## Double registration or over-deregistration warnings
