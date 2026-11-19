@@ -102,14 +102,15 @@ namespace DxMessaging.Editor
         );
 
         private static readonly Regex ByReferenceUseRegex = new(
-            @"\b(?<modifier>ref|out)\s+(?<grouping>(?:\(\s*)*)(?<name>"
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?<modifier>ref|out)(?:\s+|(?=[(@]))"
+                + @"(?<grouping>(?:\(\s*)*)(?<name>"
                 + IdentifierSpellingPattern
                 + ")",
             RegexOptions.CultureInvariant
         );
 
         private static readonly Regex BaseRefArgumentRegex = new(
-            @"^\s*ref\s+(?<name>" + IdentifierSpellingPattern + @")\s*$",
+            @"^\s*ref(?:\s+|(?=@))(?<name>" + IdentifierSpellingPattern + @")\s*$",
             RegexOptions.CultureInvariant
         );
 

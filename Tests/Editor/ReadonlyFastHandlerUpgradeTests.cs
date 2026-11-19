@@ -661,6 +661,9 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "Observe(((message)).Value); Observe(Bump(ref RefCell((message).Value)));"
             ).SetName("Grouped reads inside unrelated byref arguments still migrate");
+            yield return new TestCaseData("Observe(@ref (message).Value);").SetName(
+                "An escaped ref callable still migrates"
+            );
             yield return new TestCaseData(
                 "Pulse copy; int value; (copy, value) = (message, message.Value);"
                     + " Observe(copy); Observe(value);"
@@ -766,6 +769,15 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                     + "=> Observe($\"{Assign(out ((message).Value))}\"));",
                 "out"
             ).SetName("A grouped member in an interpolated out argument requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Bump(ref(message).Value));",
+                "ref"
+            ).SetName("A grouped ref argument without a space requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> Observe($\"{Assign(out((message).Value))}\"));",
+                "out"
+            ).SetName("A grouped out argument without a space requires manual review");
         }
 
         [TestCaseSource(nameof(GroupedByReferenceUseCases))]
@@ -818,6 +830,33 @@ sealed class Receiver : MessageAwareComponent
                 result.ManualReviewMethods[0],
                 Does.Contain("passes parameter 'message' by out")
             );
+        }
+
+        private const string CompactBaseForwardingSource =
+            @"
+using DxMessaging.Unity;
+sealed class Receiver : MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message)
+    {
+        base.HandleGlobalStringMessage(ref@message);
+    }
+}";
+
+        [Test]
+        public void AnalyzeConvertsBaseForwardingWithAnAdjacentEscape()
+        {
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                CompactBaseForwardingSource
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(2));
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("base.HandleGlobalStringMessage(in@message)")
+            );
+            Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
         [TestCaseSource(nameof(ExplicitParameterWriteCases))]
