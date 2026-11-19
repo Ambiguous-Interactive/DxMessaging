@@ -17,6 +17,7 @@ This guide covers:
 - [MessageRegistrationBuilder](#messageregistrationbuilder)
 - [MessageRegistrationBuildOptions](#messageregistrationbuildoptions)
 - [MessageRegistrationLease](#messageregistrationlease)
+- [Keep cleanup after a failed build](#keep-cleanup-after-a-failed-build)
 - [MessageRegistrationLifecycle](#messageregistrationlifecycle)
 - [Code Examples](#code-examples)
 - [See Also](#see-also)
@@ -237,6 +238,148 @@ Before token cleanup completes, a call to `lease.Activate()` from a disposal cal
 If a nested `Dispose()` has already completed cleanup, the call throws `ObjectDisposedException`.
 
 Token cleanup still runs when a lifecycle callback throws; `Dispose()` rethrows the first lifecycle exception after cleanup. If the bus deregistration action itself throws before cleanup, the failed token cleanup remains retryable by calling `Dispose()` again.
+
+### Keep cleanup after a failed build
+
+**4.0 cleanup recovery:** Store the cleanup owner before calling `Build`. A failed build can
+return ownership through `MessageRegistrationBuildException.Lease` instead of its return value.
+Keep that lease reachable until cleanup finishes. Use this pattern when configured callbacks
+or a custom bus can fail during cleanup or accept another subscription during disposal.
+
+```csharp
+namespace RegistrationRecoveryExample
+{
+    using System;
+    using DxMessaging.Core.MessageBus;
+
+    /// <summary>Keeps one lease reachable through setup and cleanup failures.</summary>
+    public sealed class RegistrationOwner : IDisposable
+    {
+        private bool _changingLease;
+        private bool _disposing;
+
+        /// <summary>Gets the current lease, including cleanup retained after a failure.</summary>
+        public MessageRegistrationLease Lease { get; private set; }
+
+        /// <summary>Creates one lease after the previous lease has finished cleanup.</summary>
+        /// <param name="builder">Builder used to create the lease.</param>
+        /// <param name="options">Registration and lifecycle settings.</param>
+        public void Build(IMessageRegistrationBuilder builder, MessageRegistrationBuildOptions options)
+        {
+            if (builder == null)
+            {
+                throw new ArgumentNullException(nameof(builder));
+            }
+            if (_changingLease || _disposing || Lease != null)
+            {
+                throw new InvalidOperationException("Finish the current operation and lease cleanup before building again.");
+            }
+            _changingLease = true;
+            try
+            {
+                try
+                {
+                    Lease = builder.Build(options);
+                }
+                catch (MessageRegistrationBuildException failure)
+                {
+                    Lease = failure.Lease;
+                    throw;
+                }
+            }
+            finally
+            {
+                _changingLease = false;
+            }
+        }
+
+        /// <summary>Activates the owned lease after an inactive build or deactivation.</summary>
+        public void Activate()
+        {
+            if (_changingLease || _disposing || Lease == null)
+            {
+                throw new InvalidOperationException("Build a lease and finish the current operation before activating.");
+            }
+            _changingLease = true;
+            try
+            {
+                Lease.Activate();
+            }
+            finally
+            {
+                _changingLease = false;
+            }
+        }
+
+        /// <summary>Deactivates the owned lease while retaining it for activation or cleanup.</summary>
+        public void Deactivate()
+        {
+            if (_changingLease || _disposing)
+            {
+                throw new InvalidOperationException("Finish the current operation before deactivating.");
+            }
+            if (Lease == null)
+            {
+                return;
+            }
+            _changingLease = true;
+            try
+            {
+                Lease.Deactivate();
+            }
+            finally
+            {
+                _changingLease = false;
+            }
+        }
+
+        /// <summary>Retries cleanup and retains its owner while live work remains.</summary>
+        public void Dispose()
+        {
+            if (_changingLease)
+            {
+                throw new InvalidOperationException("Finish the current lease operation before disposing its owner.");
+            }
+            if (_disposing || Lease == null)
+            {
+                return;
+            }
+            _disposing = true;
+            try
+            {
+                MessageRegistrationLease lease = Lease;
+                lease.Dispose();
+                if (!lease.Token.Enabled)
+                {
+                    Lease = null;
+                }
+            }
+            finally
+            {
+                _disposing = false;
+            }
+        }
+    }
+}
+```
+
+Create and keep a `RegistrationOwner` before calling its `Build` method. If setup fails,
+handle the reported exception and retain the owner. After resolving the cleanup failure,
+call the owner's `Dispose` again. The `Lease` property stays set when disposal throws or
+`Token.Enabled` still reports live cleanup, including a returned disposal pass that accepted
+new work through a callback. Replace the owner only after `Lease` becomes null.
+
+Call the owner's `Activate()` after an inactive build, and its `Deactivate()` to pause delivery.
+The owner retains the lease across either operation, including an exception that leaves cleanup
+live. Build, activation and deactivation reject lifecycle reentry. Disposal during those operations
+is rejected; nested disposal during an existing disposal returns to the outer call.
+
+Use the owner for all lifecycle operations. The `Lease` property exposes state for inspection;
+do not call lifecycle methods on that lease or mutate its token directly. Those calls bypass
+the owner's operation guard and can lose cleanup ownership if a callback disposes the owner
+before registration acceptance returns. Direct token operations also do not synchronize
+`IsActive`, so cleanup checks `Token.Enabled` instead. Do not reactivate a retained token after
+its owner has finished cleanup.
 
 ---
 
