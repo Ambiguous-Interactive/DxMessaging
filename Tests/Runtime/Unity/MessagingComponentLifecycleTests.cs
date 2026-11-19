@@ -812,6 +812,224 @@ namespace DxMessaging.Tests.Runtime.Unity
             }
         }
 
+        /// <summary>Rejects a third unresolved provider invocation and allows a retry after unwinding.</summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void InitialProviderResolutionRejectsThirdUnresolvedCall(bool configureFirst)
+        {
+            string context = $"configureFirst={configureFirst}";
+            GameObject host = new(nameof(InitialProviderResolutionRejectsThirdUnresolvedCall));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            ConfigurationProbeProvider provider = new(bus);
+            if (!configureFirst)
+            {
+                component.Configure(provider, MessageBusRebindMode.RebindActive);
+            }
+
+            using LeakWatcher watcher = new(bus, label: context);
+            int resolvesBefore = provider.Resolves;
+            InvalidOperationException sentinel = new(
+                "Provider recursion fixture reached its sentinel."
+            );
+            Action recursiveResolve = null;
+            recursiveResolve = () =>
+            {
+                if (6 <= provider.Resolves - resolvesBefore)
+                {
+                    throw sentinel;
+                }
+                provider.OnResolve = recursiveResolve;
+                component.Create(listener);
+            };
+            provider.OnResolve = recursiveResolve;
+
+            try
+            {
+                InvalidOperationException failure = Assert.Throws<InvalidOperationException>(
+                    () =>
+                    {
+                        if (configureFirst)
+                        {
+                            component.Configure(provider, MessageBusRebindMode.RebindActive);
+                        }
+                        else
+                        {
+                            component.Create(listener);
+                        }
+                    },
+                    $"{context} Reject unresolved provider recursion."
+                );
+                int cycleResolves = provider.Resolves - resolvesBefore;
+                bool cachedDuringFailure = component.TryGetToken(listener, out _);
+                int retainedDuringFailure = watcher.LeakedRegistrations;
+
+                provider.OnResolve = null;
+                MessageRegistrationToken retry = component.Create(listener);
+                int retryResolves = provider.Resolves - resolvesBefore - cycleResolves;
+                int calls = 0;
+                _ = retry.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                retry.Enable();
+                SimpleUntargetedMessage payload = new();
+                bus.UntargetedBroadcast(ref payload);
+                int callsBeforeRelease = calls;
+                bool released = component.Release(listener);
+                bus.UntargetedBroadcast(ref payload);
+
+                TestContext.WriteLine(
+                    $"{context} providerCalls={cycleResolves}, sentinel={ReferenceEquals(failure, sentinel)}, "
+                        + $"cached={cachedDuringFailure}, retained={retainedDuringFailure}, "
+                        + $"retryCalls={retryResolves}, released={released}, deliveries={callsBeforeRelease}/{calls}."
+                );
+
+                Assert.That(
+                    failure,
+                    Is.Not.SameAs(sentinel),
+                    $"{context} Stop before the fixture sentinel."
+                );
+                Assert.That(
+                    cycleResolves,
+                    Is.EqualTo(2),
+                    $"{context} The third invocation must never call the provider."
+                );
+                Assert.That(
+                    failure.Message,
+                    Does.Contain("Configure a concrete message bus"),
+                    $"{context} Explain how to avoid the recursive resolution."
+                );
+                Assert.That(
+                    cachedDuringFailure,
+                    Is.False,
+                    $"{context} Failed creation must not cache a token."
+                );
+                Assert.That(
+                    retainedDuringFailure,
+                    Is.Zero,
+                    $"{context} Failed creation must not leave a registration."
+                );
+                Assert.That(
+                    retryResolves,
+                    Is.EqualTo(1),
+                    $"{context} Retry must resolve the provider once."
+                );
+                Assert.That(callsBeforeRelease, Is.EqualTo(1), $"{context} Retry must deliver.");
+                Assert.That(
+                    released,
+                    Is.True,
+                    $"{context} The owner must release the retried token."
+                );
+                Assert.That(calls, Is.EqualTo(1), $"{context} Release must stop delivery.");
+                Assert.That(
+                    watcher.LeakedRegistrations,
+                    Is.Zero,
+                    $"{context} Release must drain the bus."
+                );
+            }
+            finally
+            {
+                provider.OnResolve = null;
+                component.Release(listener);
+            }
+        }
+
+        /// <summary>Accepts a concrete bus and later provider resolution once the handler exists.</summary>
+        [Test]
+        public void NestedProviderResolutionAllowsConfigurationAfterHandlerPublication()
+        {
+            GameObject host = new(
+                nameof(NestedProviderResolutionAllowsConfigurationAfterHandlerPublication)
+            );
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus superseded = new();
+            MessageBus concrete = new();
+            ConfigurationProbeProvider initialProvider = new(superseded);
+            ConfigurationProbeProvider laterProvider = new(concrete);
+            component.Configure(initialProvider, MessageBusRebindMode.RebindActive);
+            int resolvesBefore = initialProvider.Resolves;
+
+            using LeakWatcher supersededWatcher = new(superseded);
+            using LeakWatcher concreteWatcher = new(concrete);
+            MessageRegistrationToken nested = null;
+            MessageRegistrationToken fromConcrete = null;
+            MessageRegistrationToken fromLaterProvider = null;
+            laterProvider.OnResolve = () => fromLaterProvider = component.Create(listener);
+            initialProvider.OnResolve = () =>
+            {
+                initialProvider.OnResolve = () =>
+                {
+                    component.Configure(concrete, MessageBusRebindMode.RebindActive);
+                    fromConcrete = component.Create(listener);
+                    component.Configure(laterProvider, MessageBusRebindMode.RebindActive);
+                };
+                nested = component.Create(listener);
+            };
+
+            try
+            {
+                MessageRegistrationToken outer = component.Create(listener);
+                Assert.That(
+                    initialProvider.Resolves - resolvesBefore,
+                    Is.EqualTo(2),
+                    "Two unresolved provider calls are supported."
+                );
+                Assert.That(
+                    laterProvider.Resolves,
+                    Is.EqualTo(1),
+                    "The later provider resolves after handler publication."
+                );
+                Assert.That(outer, Is.SameAs(nested), "The nested request shares the outer token.");
+                Assert.That(
+                    outer,
+                    Is.SameAs(fromConcrete),
+                    "The concrete configuration supplies the owned token."
+                );
+                Assert.That(
+                    outer,
+                    Is.SameAs(fromLaterProvider),
+                    "The later provider sees the same token."
+                );
+                int calls = 0;
+                _ = outer.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                outer.Enable();
+                SimpleUntargetedMessage payload = new();
+                superseded.UntargetedBroadcast(ref payload);
+                Assert.That(
+                    calls,
+                    Is.Zero,
+                    "The initial provider must not receive the registration."
+                );
+                concrete.UntargetedBroadcast(ref payload);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(1),
+                    "The accepted bus must receive the registration."
+                );
+                Assert.That(
+                    component.Release(listener),
+                    Is.True,
+                    "The owner must release the shared token."
+                );
+                concrete.UntargetedBroadcast(ref payload);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(1),
+                    "Release must stop delivery on the accepted bus."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+            }
+        }
+
         /// <summary>Drains accepted work after failures and reports every original error before recovery.</summary>
         [Test]
         public void QueuedConfigurationFailuresPreserveErrorsAndRecovery(
