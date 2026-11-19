@@ -1660,7 +1660,7 @@ namespace DxMessaging.Editor
 
         private static Regex CreateByReferenceUseRegex(string parameterName) =>
             new(
-                @"\b(?<modifier>ref|out)\s+" + Regex.Escape(parameterName) + @"\b",
+                @"\b(?<modifier>ref|out)\s+@?" + Regex.Escape(parameterName.TrimStart('@')) + @"\b",
                 RegexOptions.CultureInvariant
             );
 

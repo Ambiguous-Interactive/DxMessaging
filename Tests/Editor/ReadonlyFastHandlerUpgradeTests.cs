@@ -550,6 +550,9 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "int count = 0; count += message.Value; Observe(count);"
             ).SetName("Writes to a local still migrate");
             yield return new TestCaseData(
+                "Pulse messageOther; Observe(AssignPulse(out messageOther)); Observe(message);"
+            ).SetName("Byref use of a similarly named local still migrates");
+            yield return new TestCaseData(
                 "Observe(\"message.Value--\"); /* ++message.Value; */ Observe(message);"
             ).SetName("Write-like text still migrates");
             yield return new TestCaseData(
@@ -587,6 +590,43 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             Assert.That(
                 result.ManualReviewMethods[0],
                 Does.Contain($"passes parameter 'message' by {modifier}")
+            );
+        }
+
+        private static IEnumerable<TestCaseData> EscapedByReferenceUseCases()
+        {
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => AssignPulse(out @message));",
+                "message"
+            ).SetName("An escaped byref use requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe($\"{AssignPulse(out @message)}\"));",
+                "message"
+            ).SetName("An escaped interpolated byref use requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse @message) => AssignPulse(out message));",
+                "@message"
+            ).SetName("A plain byref use of an escaped parameter requires manual review");
+        }
+
+        [TestCaseSource(nameof(EscapedByReferenceUseCases))]
+        public void AnalyzeLeavesEscapedByReferenceUsesForManualReview(
+            string registration,
+            string parameter
+        )
+        {
+            string source = "DxMessaging.Core.MessageRegistrationToken token;\n" + registration;
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain($"passes parameter '{parameter}' by out")
             );
         }
 
