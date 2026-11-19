@@ -123,9 +123,13 @@ options.MessageBusProvider = new FixedMessageBusProvider(otherBus);
 Resolution order:
 
 1. `PreferredMessageBus` if set
-1. `MessageBusProvider.Resolve()` if provider is set
-1. Builder's provider (from constructor) if set
-1. `null` (uses global bus)
+1. A non-null result from the options' available `MessageBusProvider`
+1. The builder's available provider (from its constructor), if the options' provider is absent or returns null
+1. `null`, which leaves the token using the global bus
+
+If the options and builder reference the same provider, `Build()` calls it only once. A null result then selects the global bus. Provider exceptions propagate before token creation; they do not select the next fallback. A non-null `PreferredMessageBus` skips both providers.
+
+This resolution happens during `Build()`. Changing a provider's result later does not move the lease's registrations; use the [runtime reconfiguration APIs](runtime-configuration.md) to rebind them. A standalone [provider handle](message-bus-providers.md#messagebusproviderhandle) returns its selected provider's result without this builder fallback chain.
 
 ---
 
