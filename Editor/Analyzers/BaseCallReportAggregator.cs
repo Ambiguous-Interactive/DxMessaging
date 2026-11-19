@@ -299,7 +299,7 @@ namespace DxMessaging.Editor.Analyzers
             internal void Clear() => _reports.Clear();
 
             /// <summary>Unions Console rows and the latest reports in their active order.</summary>
-            internal Dictionary<string, BaseCallReportEntryDto> BuildSnapshot(
+            internal Dictionary<string, BaseCallReportEntryDto> BuildMergedSnapshot(
                 IReadOnlyDictionary<string, ParsedTypeReport>? logEntriesReports
             )
             {

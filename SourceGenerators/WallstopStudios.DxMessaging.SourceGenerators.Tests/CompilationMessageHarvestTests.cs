@@ -675,7 +675,7 @@ internal sealed class CompilationMessageHarvestTests
             )
         );
         Assert.That(
-            DescribeCompilerReport(reports.BuildSnapshot(null)[sharedType]),
+            DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]),
             Is.EqualTo(("Awake,OnEnable", "DXMSG006,DXMSG009", "Assets/A.cs", 10))
         );
 
@@ -684,12 +684,12 @@ internal sealed class CompilationMessageHarvestTests
             MakeReports((sharedType, awake, "DXMSG006", "Assets/MovedA.cs", 11))
         );
         Assert.That(
-            DescribeCompilerReport(reports.BuildSnapshot(null)[sharedType]),
+            DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]),
             Is.EqualTo(("Awake,OnEnable", "DXMSG006,DXMSG009", "Assets/MovedA.cs", 11))
         );
 
         reports.Replace("a.DLL", BaseCallLogMessageParser.Aggregate(Array.Empty<string>()));
-        Dictionary<string, BaseCallReportEntryDto> afterAClears = reports.BuildSnapshot(null);
+        Dictionary<string, BaseCallReportEntryDto> afterAClears = reports.BuildMergedSnapshot(null);
         Assert.That(afterAClears, Has.Count.EqualTo(2));
         Assert.That(
             DescribeCompilerReport(afterAClears[independentType]),
@@ -709,12 +709,12 @@ internal sealed class CompilationMessageHarvestTests
             MakeReports((sharedType, onDestroy, "DXMSG010", "Assets/NewA.cs", 31))
         );
         Assert.That(
-            DescribeCompilerReport(reports.BuildSnapshot(null)[sharedType]),
+            DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]),
             Is.EqualTo(("OnDestroy,OnEnable", "DXMSG009,DXMSG010", "Assets/B.cs", 20))
         );
 
         reports.Replace("B.DLL", null);
-        Dictionary<string, BaseCallReportEntryDto> afterBClears = reports.BuildSnapshot(null);
+        Dictionary<string, BaseCallReportEntryDto> afterBClears = reports.BuildMergedSnapshot(null);
         Assert.That(afterBClears, Has.Count.EqualTo(1));
         Assert.That(
             DescribeCompilerReport(afterBClears[sharedType]),
@@ -725,12 +725,12 @@ internal sealed class CompilationMessageHarvestTests
             (sharedType, start, "DXMSG006", "Assets/Console.cs", 40)
         );
         Assert.That(
-            DescribeCompilerReport(reports.BuildSnapshot(logReports)[sharedType]),
+            DescribeCompilerReport(reports.BuildMergedSnapshot(logReports)[sharedType]),
             Is.EqualTo(("OnDestroy,Start", "DXMSG006,DXMSG010", "Assets/Console.cs", 40))
         );
 
         reports.Clear();
-        Assert.That(reports.BuildSnapshot(null), Is.Empty);
+        Assert.That(reports.BuildMergedSnapshot(null), Is.Empty);
     }
 
     private static (

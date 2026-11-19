@@ -478,7 +478,7 @@ namespace DxMessaging.Editor.Analyzers
                 try
                 {
                     Dictionary<string, BaseCallReportEntryDto> bridgeSnapshot =
-                        _compilerReports.BuildSnapshot(
+                        _compilerReports.BuildMergedSnapshot(
                             logEntriesHarvested ? logEntriesAggregate : null
                         );
                     UnionBridgeIntoSnapshot(bridgeSnapshot, nextSnapshot);
