@@ -262,6 +262,1138 @@ namespace DxMessaging.Tests.Runtime.Unity
             }
         }
 
+        /// <summary>Keeps registrations made by a reentrant provider under the component's ownership.</summary>
+        [Test]
+        public void ProviderReentryPreservesListenerAndHandlerOwnership(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool usePeer
+        )
+        {
+            string context = $"[{scenario.Kind}, usePeer={usePeer}]";
+            GameObject host = new(nameof(ProviderReentryPreservesListenerAndHandlerOwnership));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            ManualListenerComponent nestedListener = usePeer
+                ? host.AddComponent<ManualListenerComponent>()
+                : listener;
+            InstanceId route = host;
+            MessageBus bus = new();
+            ConfigurationProbeProvider provider = new(bus);
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+
+            using LeakWatcher watcher = new(bus, label: context);
+            MessageRegistrationToken nested = null;
+            MessageRegistrationToken outer = null;
+            int nestedCalls = 0;
+            int outerCalls = 0;
+            provider.OnResolve = () =>
+            {
+                nested = component.Create(nestedListener);
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, nested, route, () =>
+                    ++nestedCalls
+                );
+                nested.Enable();
+            };
+            try
+            {
+                outer = component.Create(listener);
+                Assert.That(nested, Is.Not.Null, $"{context} The first resolve must enter Create.");
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, outer, route, () =>
+                    ++outerCalls
+                );
+                outer.Enable();
+
+                ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                int nestedCallsWhileOn = nestedCalls;
+                int outerCallsWhileOn = outerCalls;
+
+                component.ToggleMessageHandler(false);
+                ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                int nestedCallsWhileOff = nestedCalls;
+                int outerCallsWhileOff = outerCalls;
+                component.ToggleMessageHandler(true);
+
+                bool releasedOuter = component.Release(listener);
+                bool releasedNested = !usePeer || component.Release(nestedListener);
+                ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                bool sameToken = ReferenceEquals(nested, outer);
+                int retained = watcher.LeakedRegistrations;
+                TestContext.WriteLine(
+                    $"Provider reentry {context} sameToken={sameToken}; on={nestedCallsWhileOn},{outerCallsWhileOn}; "
+                        + $"off={nestedCallsWhileOff},{outerCallsWhileOff}; released={releasedOuter},{releasedNested}; "
+                        + $"afterRelease={nestedCalls},{outerCalls}; retained={retained}."
+                );
+                Assert.That(
+                    nestedCallsWhileOn,
+                    Is.EqualTo(1),
+                    $"{context} Nested delivery control."
+                );
+                Assert.That(outerCallsWhileOn, Is.EqualTo(1), $"{context} Outer delivery control.");
+                Assert.That(
+                    sameToken,
+                    Is.EqualTo(!usePeer),
+                    $"{context} Same listener gets one token. Peers get distinct tokens."
+                );
+                Assert.That(
+                    nestedCallsWhileOff,
+                    Is.EqualTo(1),
+                    $"{context} Shared toggle must suspend the nested registration."
+                );
+                Assert.That(
+                    outerCallsWhileOff,
+                    Is.EqualTo(1),
+                    $"{context} Shared toggle must suspend the outer registration."
+                );
+                Assert.That(
+                    releasedOuter && releasedNested,
+                    Is.True,
+                    $"{context} Owner release must succeed."
+                );
+                Assert.That(
+                    nestedCalls,
+                    Is.EqualTo(nestedCallsWhileOff),
+                    $"{context} Release must stop further nested delivery."
+                );
+                Assert.That(
+                    outerCalls,
+                    Is.EqualTo(outerCallsWhileOff),
+                    $"{context} Release must stop further outer delivery."
+                );
+                Assert.That(retained, Is.Zero, $"{context} Release must drain both registrations.");
+            }
+            finally
+            {
+                component.Release(listener);
+                if (usePeer)
+                {
+                    component.Release(nestedListener);
+                }
+                nested?.Dispose();
+                outer?.Dispose();
+            }
+        }
+
+        /// <summary>Keeps the bus accepted while the initial provider call was still running.</summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void InitialProviderReentryKeepsAcceptedBus(bool initializeOnAwake)
+        {
+            string context = $"initializeOnAwake={initializeOnAwake}";
+            MessageScenario scenario = MessageScenario.Untargeted();
+            GameObject host = new(nameof(InitialProviderReentryKeepsAcceptedBus));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            InstanceId route = host;
+            MessageBus stale = new();
+            MessageBus accepted = new();
+            ConfigurationProbeProvider provider = new(stale);
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+            provider.OnResolve = () =>
+                component.Configure(accepted, MessageBusRebindMode.RebindActive);
+
+            using LeakWatcher staleWatcher = new(stale, label: context);
+            using LeakWatcher acceptedWatcher = new(accepted, label: context);
+            try
+            {
+                if (initializeOnAwake)
+                {
+                    host.SetActive(true);
+                }
+                MessageRegistrationToken token = component.Create(listener);
+                int calls = 0;
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () =>
+                    ++calls
+                );
+                token.Enable();
+
+                ScenarioCallbacks.EmitForKind(scenario, stale, route);
+                int staleCalls = calls;
+                ScenarioCallbacks.EmitForKind(scenario, accepted, route);
+                TestContext.WriteLine(
+                    $"Provider reentry {context} superseded={staleCalls}; accepted={calls - staleCalls}."
+                );
+                Assert.That(
+                    staleCalls,
+                    Is.Zero,
+                    $"{context} The superseded provider must receive no registrations."
+                );
+                Assert.That(
+                    calls - staleCalls,
+                    Is.EqualTo(1),
+                    $"{context} The accepted bus must deliver."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+            }
+        }
+
+        /// <summary>Retains the first lifecycle owner when its creation reenters the factory.</summary>
+        [Test]
+        public void ProviderReentryRetainsOneLifecycleOwner()
+        {
+            GameObject host = new(nameof(ProviderReentryRetainsOneLifecycleOwner));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            ConfigurationProbeProvider provider = new(new MessageBus());
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+
+            MessagingLifecycle nested = null;
+            MessagingLifecycle outer = null;
+            provider.OnResolve = () => nested = component.CreateLifecycleBound(listener);
+            try
+            {
+                Assert.Throws<InvalidOperationException>(
+                    () => outer = component.CreateLifecycleBound(listener),
+                    "The nested owner already claimed the listener."
+                );
+                Assert.That(
+                    nested.Token,
+                    Is.SameAs(component.Create(listener)),
+                    "The nested owner must retain the cached token."
+                );
+                nested.Dispose();
+                Assert.That(nested.IsDisposed, Is.True, "The sole owner may release its token.");
+                using MessagingLifecycle replacement = component.CreateLifecycleBound(listener);
+                Assert.That(
+                    replacement.IsDisposed,
+                    Is.False,
+                    "An owner may claim the listener after release."
+                );
+            }
+            finally
+            {
+                nested?.Dispose();
+                outer?.Dispose();
+            }
+        }
+
+        /// <summary>Retries handler creation after an initial provider failure.</summary>
+        [Test]
+        public void InitialProviderFailureLeavesCreationRetryable()
+        {
+            GameObject host = new(nameof(InitialProviderFailureLeavesCreationRetryable));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            ConfigurationProbeProvider provider = new(new MessageBus());
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+
+            InvalidOperationException failure = new("Provider failed.");
+            provider.Failure = failure;
+            Assert.That(
+                Assert.Throws<InvalidOperationException>(() => component.Create(listener)),
+                Is.SameAs(failure),
+                "Initial creation must report the original provider exception."
+            );
+            Assert.That(
+                component.Release(listener),
+                Is.False,
+                "Failed creation must not cache a token."
+            );
+
+            provider.Failure = null;
+            try
+            {
+                MessageRegistrationToken token = component.Create(listener);
+                Assert.That(
+                    component.Create(listener),
+                    Is.SameAs(token),
+                    "Retry must cache one reusable token."
+                );
+                Assert.That(
+                    provider.Resolves,
+                    Is.EqualTo(3),
+                    "Configuration, failed creation, and retry each resolve once."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+            }
+        }
+
+        /// <summary>Rejects an initial token request when the provider destroys its listener.</summary>
+        [Test]
+        public void InitialProviderReentryRejectsDestroyedListener()
+        {
+            GameObject host = new(nameof(InitialProviderReentryRejectsDestroyedListener));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            ConfigurationProbeProvider provider = new(new MessageBus());
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+            provider.OnResolve = () => UnityEngine.Object.DestroyImmediate(listener);
+
+            try
+            {
+                Assert.Throws<ArgumentNullException>(
+                    () => component.Create(listener),
+                    "Provider resolution must not cache a token for a destroyed listener."
+                );
+                Assert.That(
+                    listener == null,
+                    Is.True,
+                    "The provider destroyed the original listener."
+                );
+                Assert.That(
+                    component.Release(listener),
+                    Is.False,
+                    "There must be no token to release."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+            }
+        }
+
+        /// <summary>Warns for a preexisting token without exposing an initial request to the logger.</summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void CreateWarnsOnlyForTokensCachedAtEntry(bool cachedAtEntry)
+        {
+            string context = $"cachedAtEntry={cachedAtEntry}";
+            GameObject host = new(nameof(CreateWarnsOnlyForTokensCachedAtEntry));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            ConfigurationProbeProvider provider = new(bus);
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+
+            using LeakWatcher watcher = new(bus, label: context);
+            MessageRegistrationToken existing = null;
+            MessageRegistrationToken returned = null;
+            if (cachedAtEntry)
+            {
+                existing = component.Create(listener);
+            }
+            else
+            {
+                provider.OnResolve = () => existing = component.Create(listener);
+            }
+
+            bool previousDebug = MessagingDebug.enabled;
+            Action<LogLevel, string> previousLog = MessagingDebug.LogFunction;
+            int warningCount = 0;
+            string warning = null;
+            bool releasedByLogger = false;
+            try
+            {
+                MessagingDebug.enabled = true;
+                MessagingDebug.LogFunction = (level, message) =>
+                {
+                    if (
+                        level == LogLevel.Warn
+                        && message.StartsWith(
+                            "Ignoring double RegistrationToken request",
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        ++warningCount;
+                        warning = message;
+                        if (!cachedAtEntry)
+                        {
+                            releasedByLogger = component.Release(listener);
+                        }
+                    }
+                    else
+                    {
+                        previousLog?.Invoke(level, message);
+                    }
+                };
+
+                returned = component.Create(listener);
+                int calls = 0;
+                _ = returned.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                returned.Enable();
+                SimpleUntargetedMessage payload = new();
+                bus.UntargetedBroadcast(ref payload);
+                int callsBeforeRelease = calls;
+                bool released = component.Release(listener);
+                bus.UntargetedBroadcast(ref payload);
+                int retained = watcher.LeakedRegistrations;
+
+                TestContext.WriteLine(
+                    $"{context} warnings={warningCount}, releasedByLogger={releasedByLogger}, "
+                        + $"released={released}, deliveries={callsBeforeRelease}/{calls}, retained={retained}."
+                );
+                Assert.That(returned, Is.SameAs(existing), $"{context} Preserve the cached token.");
+                Assert.That(
+                    callsBeforeRelease,
+                    Is.EqualTo(1),
+                    $"{context} Verify active delivery."
+                );
+                Assert.That(
+                    released,
+                    Is.True,
+                    $"{context} Release must still own the returned token."
+                );
+                Assert.That(calls, Is.EqualTo(1), $"{context} Release must stop delivery.");
+                Assert.That(retained, Is.Zero, $"{context} Release must remove the registration.");
+                Assert.That(
+                    warningCount,
+                    Is.EqualTo(cachedAtEntry ? 1 : 0),
+                    $"{context} Duplicate warning count."
+                );
+                string expectedWarning = cachedAtEntry
+                    ? $"Ignoring double RegistrationToken request for {listener}."
+                    : null;
+                Assert.That(
+                    warning,
+                    Is.EqualTo(expectedWarning),
+                    $"{context} Original warning text."
+                );
+            }
+            finally
+            {
+                MessagingDebug.enabled = previousDebug;
+                MessagingDebug.LogFunction = previousLog;
+                component.Release(listener);
+                returned?.Dispose();
+                existing?.Dispose();
+            }
+        }
+
+        /// <summary>Revalidates token ownership after a genuine repeat invokes the warning receiver.</summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void CachedCreateReturnsOwnedTokenAfterWarning(bool replaceDuringWarning)
+        {
+            string context = $"replaceDuringWarning={replaceDuringWarning}";
+            GameObject host = new(nameof(CachedCreateReturnsOwnedTokenAfterWarning));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            component.Configure(bus, MessageBusRebindMode.RebindActive);
+
+            using LeakWatcher watcher = new(bus, label: context);
+            MessageRegistrationToken original = component.Create(listener);
+            MessageRegistrationToken replacement = null;
+            MessageRegistrationToken returned = null;
+            bool previousDebug = MessagingDebug.enabled;
+            Action<LogLevel, string> previousLog = MessagingDebug.LogFunction;
+            string expectedWarning = $"Ignoring double RegistrationToken request for {listener}.";
+            int warnings = 0;
+            bool releasedOriginal = false;
+            try
+            {
+                MessagingDebug.enabled = true;
+                MessagingDebug.LogFunction = (level, message) =>
+                {
+                    if (level == LogLevel.Warn && message == expectedWarning)
+                    {
+                        ++warnings;
+                        releasedOriginal = component.Release(listener);
+                        if (replaceDuringWarning)
+                        {
+                            replacement = component.Create(listener);
+                        }
+                    }
+                    else
+                    {
+                        previousLog?.Invoke(level, message);
+                    }
+                };
+
+                returned = component.Create(listener);
+                int calls = 0;
+                _ = returned.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                returned.Enable();
+                SimpleUntargetedMessage payload = new();
+                bus.UntargetedBroadcast(ref payload);
+                int callsBeforeRelease = calls;
+                bool sameAsOriginal = ReferenceEquals(returned, original);
+                bool sameAsReplacement = ReferenceEquals(returned, replacement);
+                bool released = component.Release(listener);
+                bus.UntargetedBroadcast(ref payload);
+                int retained = watcher.LeakedRegistrations;
+                TestContext.WriteLine(
+                    $"{context} warnings={warnings}, releasedOriginal={releasedOriginal}, "
+                        + $"sameAsOriginal={sameAsOriginal}, sameAsReplacement={sameAsReplacement}, "
+                        + $"released={released}, deliveries={callsBeforeRelease}/{calls}, retained={retained}."
+                );
+
+                Assert.That(warnings, Is.EqualTo(1), $"{context} The repeat must warn once.");
+                Assert.That(
+                    releasedOriginal,
+                    Is.True,
+                    $"{context} The warning released the original token."
+                );
+                Assert.That(
+                    sameAsOriginal,
+                    Is.False,
+                    $"{context} Create must not return the detached token."
+                );
+                Assert.That(
+                    sameAsReplacement,
+                    Is.EqualTo(replaceDuringWarning),
+                    $"{context} Use the logger's replacement when present."
+                );
+                Assert.That(
+                    callsBeforeRelease,
+                    Is.EqualTo(1),
+                    $"{context} The returned token must receive."
+                );
+                Assert.That(
+                    released,
+                    Is.True,
+                    $"{context} The owner must release the returned token."
+                );
+                Assert.That(calls, Is.EqualTo(1), $"{context} Release must stop delivery.");
+                Assert.That(retained, Is.Zero, $"{context} Release must remove the registration.");
+            }
+            finally
+            {
+                MessagingDebug.enabled = previousDebug;
+                MessagingDebug.LogFunction = previousLog;
+                component.Release(listener);
+                original.Dispose();
+                replacement?.Dispose();
+                returned?.Dispose();
+            }
+        }
+
+        /// <summary>Preserves the warning receiver's exception and original cache entry.</summary>
+        [Test]
+        public void CachedCreatePropagatesWarningException()
+        {
+            GameObject host = new(nameof(CachedCreatePropagatesWarningException));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            component.Configure(new MessageBus(), MessageBusRebindMode.RebindActive);
+            MessageRegistrationToken original = component.Create(listener);
+            InvalidOperationException failure = new("Warning receiver failed.");
+            bool previousDebug = MessagingDebug.enabled;
+            Action<LogLevel, string> previousLog = MessagingDebug.LogFunction;
+            try
+            {
+                MessagingDebug.enabled = true;
+                MessagingDebug.LogFunction = (_, _) => throw failure;
+
+                Assert.That(
+                    Assert.Throws<InvalidOperationException>(() => component.Create(listener)),
+                    Is.SameAs(failure),
+                    "Create must propagate the original warning exception."
+                );
+                Assert.That(
+                    component.TryGetToken(listener, out MessageRegistrationToken retained),
+                    Is.True,
+                    "The failing warning must leave the cache entry available."
+                );
+                Assert.That(retained, Is.SameAs(original), "The original token must remain owned.");
+            }
+            finally
+            {
+                MessagingDebug.enabled = previousDebug;
+                MessagingDebug.LogFunction = previousLog;
+                component.Release(listener);
+            }
+        }
+
+        /// <summary>Rejects a third unresolved provider invocation and allows a retry after unwinding.</summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void InitialProviderResolutionRejectsThirdUnresolvedCall(bool configureFirst)
+        {
+            string context = $"configureFirst={configureFirst}";
+            GameObject host = new(nameof(InitialProviderResolutionRejectsThirdUnresolvedCall));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            ConfigurationProbeProvider provider = new(bus);
+            if (!configureFirst)
+            {
+                component.Configure(provider, MessageBusRebindMode.RebindActive);
+            }
+
+            using LeakWatcher watcher = new(bus, label: context);
+            int resolvesBefore = provider.Resolves;
+            InvalidOperationException sentinel = new(
+                "Provider recursion fixture reached its sentinel."
+            );
+            Action recursiveResolve = null;
+            recursiveResolve = () =>
+            {
+                if (6 <= provider.Resolves - resolvesBefore)
+                {
+                    throw sentinel;
+                }
+                provider.OnResolve = recursiveResolve;
+                component.Create(listener);
+            };
+            provider.OnResolve = recursiveResolve;
+
+            try
+            {
+                InvalidOperationException failure = Assert.Throws<InvalidOperationException>(
+                    () =>
+                    {
+                        if (configureFirst)
+                        {
+                            component.Configure(provider, MessageBusRebindMode.RebindActive);
+                        }
+                        else
+                        {
+                            component.Create(listener);
+                        }
+                    },
+                    $"{context} Reject unresolved provider recursion."
+                );
+                int cycleResolves = provider.Resolves - resolvesBefore;
+                bool cachedDuringFailure = component.TryGetToken(listener, out _);
+                int retainedDuringFailure = watcher.LeakedRegistrations;
+
+                provider.OnResolve = null;
+                MessageRegistrationToken retry = component.Create(listener);
+                int retryResolves = provider.Resolves - resolvesBefore - cycleResolves;
+                int calls = 0;
+                _ = retry.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                retry.Enable();
+                SimpleUntargetedMessage payload = new();
+                bus.UntargetedBroadcast(ref payload);
+                int callsBeforeRelease = calls;
+                bool released = component.Release(listener);
+                bus.UntargetedBroadcast(ref payload);
+
+                TestContext.WriteLine(
+                    $"{context} providerCalls={cycleResolves}, sentinel={ReferenceEquals(failure, sentinel)}, "
+                        + $"cached={cachedDuringFailure}, retained={retainedDuringFailure}, "
+                        + $"retryCalls={retryResolves}, released={released}, deliveries={callsBeforeRelease}/{calls}."
+                );
+
+                Assert.That(
+                    failure,
+                    Is.Not.SameAs(sentinel),
+                    $"{context} Stop before the fixture sentinel."
+                );
+                Assert.That(
+                    cycleResolves,
+                    Is.EqualTo(2),
+                    $"{context} The third invocation must never call the provider."
+                );
+                Assert.That(
+                    failure.Message,
+                    Does.Contain("Configure a concrete message bus"),
+                    $"{context} Explain how to avoid the recursive resolution."
+                );
+                Assert.That(
+                    cachedDuringFailure,
+                    Is.False,
+                    $"{context} Failed creation must not cache a token."
+                );
+                Assert.That(
+                    retainedDuringFailure,
+                    Is.Zero,
+                    $"{context} Failed creation must not leave a registration."
+                );
+                Assert.That(
+                    retryResolves,
+                    Is.EqualTo(1),
+                    $"{context} Retry must resolve the provider once."
+                );
+                Assert.That(callsBeforeRelease, Is.EqualTo(1), $"{context} Retry must deliver.");
+                Assert.That(
+                    released,
+                    Is.True,
+                    $"{context} The owner must release the retried token."
+                );
+                Assert.That(calls, Is.EqualTo(1), $"{context} Release must stop delivery.");
+                Assert.That(
+                    watcher.LeakedRegistrations,
+                    Is.Zero,
+                    $"{context} Release must drain the bus."
+                );
+            }
+            finally
+            {
+                provider.OnResolve = null;
+                component.Release(listener);
+            }
+        }
+
+        /// <summary>Accepts a concrete bus and later provider resolution once the handler exists.</summary>
+        [Test]
+        public void NestedProviderResolutionAllowsConfigurationAfterHandlerPublication()
+        {
+            GameObject host = new(
+                nameof(NestedProviderResolutionAllowsConfigurationAfterHandlerPublication)
+            );
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus superseded = new();
+            MessageBus concrete = new();
+            MessageBus later = new();
+            ConfigurationProbeProvider initialProvider = new(superseded);
+            ConfigurationProbeProvider laterProvider = new(later);
+            component.Configure(initialProvider, MessageBusRebindMode.RebindActive);
+            int resolvesBefore = initialProvider.Resolves;
+
+            using LeakWatcher supersededWatcher = new(superseded);
+            using LeakWatcher concreteWatcher = new(concrete);
+            using LeakWatcher laterWatcher = new(later);
+            MessageRegistrationToken nested = null;
+            MessageRegistrationToken fromConcrete = null;
+            MessageRegistrationToken fromLaterProvider = null;
+            laterProvider.OnResolve = () => fromLaterProvider = component.Create(listener);
+            initialProvider.OnResolve = () =>
+            {
+                initialProvider.OnResolve = () =>
+                {
+                    component.Configure(concrete, MessageBusRebindMode.RebindActive);
+                    fromConcrete = component.Create(listener);
+                    component.Configure(laterProvider, MessageBusRebindMode.RebindActive);
+                };
+                nested = component.Create(listener);
+            };
+
+            try
+            {
+                MessageRegistrationToken outer = component.Create(listener);
+                Assert.That(
+                    initialProvider.Resolves - resolvesBefore,
+                    Is.EqualTo(2),
+                    "Two unresolved provider calls are supported."
+                );
+                Assert.That(
+                    laterProvider.Resolves,
+                    Is.EqualTo(1),
+                    "The later provider resolves after handler publication."
+                );
+                Assert.That(outer, Is.SameAs(nested), "The nested request shares the outer token.");
+                Assert.That(
+                    outer,
+                    Is.SameAs(fromConcrete),
+                    "The concrete configuration supplies the owned token."
+                );
+                Assert.That(
+                    outer,
+                    Is.SameAs(fromLaterProvider),
+                    "The later provider sees the same token."
+                );
+                int calls = 0;
+                _ = outer.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                outer.Enable();
+                SimpleUntargetedMessage payload = new();
+                superseded.UntargetedBroadcast(ref payload);
+                Assert.That(
+                    calls,
+                    Is.Zero,
+                    "The initial provider must not receive the registration."
+                );
+                concrete.UntargetedBroadcast(ref payload);
+                Assert.That(
+                    calls,
+                    Is.Zero,
+                    "The first published bus must not receive the registration."
+                );
+                later.UntargetedBroadcast(ref payload);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(1),
+                    "The later provider's bus must receive the registration."
+                );
+                Assert.That(
+                    component.Release(listener),
+                    Is.True,
+                    "The owner must release the shared token."
+                );
+                later.UntargetedBroadcast(ref payload);
+                Assert.That(
+                    calls,
+                    Is.EqualTo(1),
+                    "Release must stop delivery on the later provider's bus."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+            }
+        }
+
+        /// <summary>Reconciles the final flag unless the provider explicitly toggled the published handler.</summary>
+        [TestCase(false, true, null, false)]
+        [TestCase(true, false, null, false)]
+        [TestCase(false, true, false, false)]
+        [TestCase(true, false, true, false)]
+        [TestCase(true, true, false, false)]
+        [TestCase(false, true, null, true)]
+        public void FirstHandlerUsesFinalLifecycleStateOrExplicitToggle(
+            bool initialFlag,
+            bool finalFlag,
+            bool? explicitActive,
+            bool cycleHost
+        )
+        {
+            string context =
+                $"initialFlag={initialFlag}, finalFlag={finalFlag}, explicit={explicitActive}, cycle={cycleHost}";
+            GameObject host = new(nameof(FirstHandlerUsesFinalLifecycleStateOrExplicitToggle));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = initialFlag;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            ConfigurationProbeProvider provider = new(bus);
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+            provider.OnResolve = () =>
+            {
+                component.Configure(bus, MessageBusRebindMode.RebindActive);
+                if (cycleHost)
+                {
+                    host.SetActive(true);
+                    host.SetActive(false);
+                }
+                if (explicitActive.HasValue)
+                {
+                    component.ToggleMessageHandler(explicitActive.Value);
+                }
+                component.emitMessagesWhenDisabled = finalFlag;
+            };
+
+            using LeakWatcher watcher = new(bus, label: context);
+            try
+            {
+                MessageRegistrationToken token = component.Create(listener);
+                int calls = 0;
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                token.Enable();
+                SimpleUntargetedMessage payload = new();
+                bus.UntargetedBroadcast(ref payload);
+                int delivered = calls;
+                bool released = component.Release(listener);
+                bus.UntargetedBroadcast(ref payload);
+                int expected = (explicitActive ?? finalFlag) ? 1 : 0;
+
+                TestContext.WriteLine(
+                    $"{context} expected={expected}, delivered={delivered}, released={released}, afterRelease={calls}."
+                );
+                Assert.That(
+                    delivered,
+                    Is.EqualTo(expected),
+                    $"{context} Use the final lifecycle state or explicit toggle."
+                );
+                Assert.That(released, Is.True, $"{context} Release the component-owned token.");
+                Assert.That(calls, Is.EqualTo(delivered), $"{context} Release must stop delivery.");
+                Assert.That(
+                    watcher.LeakedRegistrations,
+                    Is.Zero,
+                    $"{context} Release must drain the bus."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+            }
+        }
+
+        /// <summary>Reconciles a retained nested owner while propagating the outer provider's exception.</summary>
+        [Test]
+        public void FailedInitialProviderKeepsNestedHandlerLifecycleState()
+        {
+            GameObject host = new(nameof(FailedInitialProviderKeepsNestedHandlerLifecycleState));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            ConfigurationProbeProvider provider = new(bus);
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+
+            using LeakWatcher watcher = new(bus);
+            InvalidOperationException original = new(
+                "Outer provider failed after creating the listener token."
+            );
+            MessageRegistrationToken nested = null;
+            int calls = 0;
+            provider.OnResolve = () =>
+            {
+                component.Configure(bus, MessageBusRebindMode.RebindActive);
+                nested = component.Create(listener);
+                _ = nested.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                nested.Enable();
+                component.emitMessagesWhenDisabled = true;
+                throw original;
+            };
+
+            try
+            {
+                Assert.That(
+                    Assert.Throws<InvalidOperationException>(() => component.Create(listener)),
+                    Is.SameAs(original),
+                    "The outer Create must rethrow the original provider exception."
+                );
+                Assert.That(
+                    component.TryGetToken(listener, out MessageRegistrationToken retained),
+                    Is.True,
+                    "The nested creation remains owned."
+                );
+                Assert.That(retained, Is.SameAs(nested), "The same nested token remains cached.");
+                SimpleUntargetedMessage payload = new();
+                bus.UntargetedBroadcast(ref payload);
+                int delivered = calls;
+                bool released = component.Release(listener);
+                bus.UntargetedBroadcast(ref payload);
+                TestContext.WriteLine(
+                    $"delivered={delivered}, released={released}, afterRelease={calls}, retained={watcher.LeakedRegistrations}."
+                );
+                Assert.That(
+                    delivered,
+                    Is.EqualTo(1),
+                    "The retained handler uses the final lifecycle state."
+                );
+                Assert.That(released, Is.True, "The component can release the nested owner.");
+                Assert.That(calls, Is.EqualTo(1), "Release must stop the retained registration.");
+                Assert.That(
+                    watcher.LeakedRegistrations,
+                    Is.Zero,
+                    "No accepted registration remains after release."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+                nested?.Dispose();
+            }
+        }
+
+        /// <summary>Retains a selected provider when the guard refuses its immediate resolution.</summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void RefusedInitialProviderResolutionRetainsSelection(bool useHandle)
+        {
+            string context = $"useHandle={useHandle}";
+            GameObject host = new(nameof(RefusedInitialProviderResolutionRetainsSelection));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus first = new();
+            MessageBus selected = new();
+            ConfigurationProbeProvider initial = new(first);
+            ConfigurationProbeProvider replacement = new(selected);
+            component.Configure(initial, MessageBusRebindMode.RebindActive);
+            int initialResolves = initial.Resolves;
+            initial.OnResolve = () =>
+            {
+                initial.OnResolve = () =>
+                {
+                    if (useHandle)
+                    {
+                        component.Configure(
+                            MessageBusProviderHandle.FromProvider(replacement),
+                            MessageBusRebindMode.RebindActive
+                        );
+                    }
+                    else
+                    {
+                        component.Configure(replacement, MessageBusRebindMode.RebindActive);
+                    }
+                };
+                component.Create(listener);
+            };
+
+            using LeakWatcher firstWatcher = new(first, label: context);
+            using LeakWatcher selectedWatcher = new(selected, label: context);
+            try
+            {
+                InvalidOperationException failure = Assert.Throws<InvalidOperationException>(
+                    () => component.Create(listener),
+                    $"{context} Refuse the third active provider call."
+                );
+                Assert.That(
+                    failure.Message,
+                    Does.Contain("Configure a concrete message bus"),
+                    context
+                );
+                Assert.That(
+                    initial.Resolves - initialResolves,
+                    Is.EqualTo(2),
+                    $"{context} Reach the initial limit."
+                );
+                Assert.That(
+                    replacement.Resolves,
+                    Is.Zero,
+                    $"{context} Refusal must precede the new provider callback."
+                );
+                Assert.That(
+                    component.TryGetToken(listener, out _),
+                    Is.False,
+                    $"{context} Refusal must leave no token."
+                );
+
+                MessageRegistrationToken token = component.Create(listener);
+                Assert.That(
+                    replacement.Resolves,
+                    Is.EqualTo(1),
+                    $"{context} Later resolution must use the selected provider."
+                );
+                int calls = 0;
+                _ = token.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                token.Enable();
+                SimpleUntargetedMessage payload = new();
+                first.UntargetedBroadcast(ref payload);
+                Assert.That(calls, Is.Zero, $"{context} Superseded bus must have no registration.");
+                selected.UntargetedBroadcast(ref payload);
+                Assert.That(calls, Is.EqualTo(1), $"{context} Retained provider's bus delivers.");
+                Assert.That(
+                    component.Release(listener),
+                    Is.True,
+                    $"{context} Release the retried listener."
+                );
+                selected.UntargetedBroadcast(ref payload);
+                Assert.That(calls, Is.EqualTo(1), $"{context} Release stops delivery.");
+            }
+            finally
+            {
+                component.Release(listener);
+            }
+        }
+
+        /// <summary>Restores the last explicit activity request after initialization lifecycle callbacks.</summary>
+        [TestCase(false, false)]
+        [TestCase(true, false)]
+        [TestCase(true, true)]
+        public void InitialExplicitToggleWinsAfterInterveningLifecycleWrites(
+            bool requestedActive,
+            bool requestOppositeFirst
+        )
+        {
+            string context =
+                $"requestedActive={requestedActive}, requestOppositeFirst={requestOppositeFirst}";
+            GameObject host = new(nameof(InitialExplicitToggleWinsAfterInterveningLifecycleWrites));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            ConfigurationProbeProvider provider = new(bus);
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+
+            using LeakWatcher watcher = new(bus, label: context);
+            MessageRegistrationToken nested = null;
+            int calls = 0;
+            int duringLifecycle = -1;
+            provider.OnResolve = () =>
+            {
+                component.Configure(bus, MessageBusRebindMode.RebindActive);
+                nested = component.Create(listener);
+                _ = nested.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                nested.Enable();
+                if (requestOppositeFirst)
+                {
+                    component.ToggleMessageHandler(!requestedActive);
+                }
+                component.ToggleMessageHandler(requestedActive);
+                host.SetActive(true);
+                if (requestedActive)
+                {
+                    host.SetActive(false);
+                }
+
+                SimpleUntargetedMessage during = new();
+                bus.UntargetedBroadcast(ref during);
+                duringLifecycle = calls;
+                component.emitMessagesWhenDisabled = requestedActive && !requestOppositeFirst;
+            };
+
+            try
+            {
+                MessageRegistrationToken outer = component.Create(listener);
+                SimpleUntargetedMessage payload = new();
+                bus.UntargetedBroadcast(ref payload);
+                int afterCompletion = calls - duringLifecycle;
+
+                component.emitMessagesWhenDisabled = false;
+                host.SetActive(false);
+                host.SetActive(true);
+                int beforeEnable = calls;
+                bus.UntargetedBroadcast(ref payload);
+                int afterEnable = calls - beforeEnable;
+
+                host.SetActive(false);
+                int beforeDisable = calls;
+                bus.UntargetedBroadcast(ref payload);
+                int afterDisable = calls - beforeDisable;
+
+                bool released = component.Release(listener);
+                host.SetActive(true);
+                int beforeReleaseProbe = calls;
+                bus.UntargetedBroadcast(ref payload);
+
+                TestContext.WriteLine(
+                    $"{context} during={duringLifecycle}, completed={afterCompletion}, "
+                        + $"enabled={afterEnable}, disabled={afterDisable}, released={released}, "
+                        + $"afterRelease={calls - beforeReleaseProbe}, retained={watcher.LeakedRegistrations}."
+                );
+                Assert.That(outer, Is.SameAs(nested), $"{context} Keep the nested token owned.");
+                Assert.That(
+                    duringLifecycle,
+                    Is.EqualTo(requestedActive ? 0 : 1),
+                    $"{context} Lifecycle writes take effect during resolution."
+                );
+                Assert.That(
+                    afterCompletion,
+                    Is.EqualTo(requestedActive ? 1 : 0),
+                    $"{context} Completion restores the last explicit request."
+                );
+                Assert.That(
+                    afterEnable,
+                    Is.EqualTo(1),
+                    $"{context} Later OnEnable may activate the handler."
+                );
+                Assert.That(
+                    afterDisable,
+                    Is.Zero,
+                    $"{context} Later OnDisable may deactivate the handler."
+                );
+                Assert.That(released, Is.True, $"{context} Release the owned token.");
+                Assert.That(
+                    calls,
+                    Is.EqualTo(beforeReleaseProbe),
+                    $"{context} Release stops delivery when active."
+                );
+                Assert.That(
+                    watcher.LeakedRegistrations,
+                    Is.Zero,
+                    $"{context} Release drains the bus."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+                nested?.Dispose();
+            }
+        }
+
         /// <summary>Drains accepted work after failures and reports every original error before recovery.</summary>
         [Test]
         public void QueuedConfigurationFailuresPreserveErrorsAndRecovery(

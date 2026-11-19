@@ -252,6 +252,18 @@ single original error unchanged, or reports multiple errors in an `AggregateExce
 cleanup remains retryable through the component's owning APIs. Released or replaced listeners are
 rechecked when each migration runs, so independently owned work is not migrated by the component.
 
+Before the first handler exists, a component permits one nested provider resolution inside the
+initial provider call. A third active resolution throws `InvalidOperationException` before invoking
+the provider. A provider-based `Configure` call selects the provider before it attempts resolution.
+The guard keeps the component's current selection for any later resolution. Call the concrete-bus
+overload of `Configure` before creating a listener from a deeper provider callback.
+
+If `Configure` publishes the first handler during a provider callback, nested creation uses that
+handler. Unity's enable and disable callbacks continue to follow `emitMessagesWhenDisabled`.
+At the end of initial resolution, the component reapplies the last explicit `ToggleMessageHandler`
+request made for that handler after publication. When there is no explicit request, the handler
+uses the final lifecycle settings.
+
 ### Retarget a Token Directly
 
 You can also retarget individual `MessageRegistrationToken` instances:

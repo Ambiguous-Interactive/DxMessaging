@@ -151,7 +151,7 @@ public class DiagnosticLogger : MonoBehaviour
 - A ScriptableObject provider (design-time configuration)
 - A runtime provider instance (runtime configuration)
 
-The handle resolves the runtime provider when one is set; otherwise it resolves the asset. That way the same field accepts an editor-assigned ScriptableObject or a runtime override without branching at every call site.
+The handle selects an available runtime provider first, then the serialized asset. It calls only the selected provider's `Resolve()` method. A null result does not try the other provider or select the global bus. Provider exceptions propagate to the caller.
 
 ### Key Methods
 
@@ -176,14 +176,18 @@ IMessageBus bus = handle.ResolveBus();
 
 The handle has two fields:
 
-1. `Provider` -- A serialized reference to a ScriptableObject provider (visible in Inspector)
+1. `_provider` -- A private serialized reference to a ScriptableObject provider (visible in Inspector)
 1. A runtime provider instance (not serialized)
 
 When you call `TryGetProvider()` or `ResolveBus()`, it checks:
 
-1. Is there a runtime provider? Use that first.
-1. Otherwise, use the serialized ScriptableObject provider.
-1. If neither exists, return null or the global default.
+1. Use the runtime provider if it is available.
+1. Otherwise, use an available serialized ScriptableObject provider.
+1. With no provider, `TryGetProvider()` returns false and sets its output to null. `ResolveBus()` returns null.
+
+`ResolveBus()` returns the selected provider's result unchanged, including null. Code that requires a bus must handle that result or choose a fallback explicitly. Component configuration and the [registration builder](registration-builders.md#message-bus-selection) apply their own fallback rules; the handle does not apply those rules itself.
+
+`WithRuntimeProvider()` returns a new handle. Assign the return value to keep the override; the original struct stays unchanged. Passing null removes the runtime override and permits the serialized asset to be selected again.
 
 **Why this matters:** You can design your prefabs with ScriptableObject references, then override them at runtime with DI-provided buses. No code changes needed.
 
@@ -513,16 +517,16 @@ public class RuntimeReconfiguration : MonoBehaviour
 
 ## Quick Reference
 
-| Type                                   | Purpose                                       | Use Case                          |
-| -------------------------------------- | --------------------------------------------- | --------------------------------- |
-| `IMessageBusProvider`                  | Interface for bus resolution                  | Create custom providers           |
-| `CurrentGlobalMessageBusProvider`      | ScriptableObject returning current global bus | Follow the active global bus      |
-| `InitialGlobalMessageBusProvider`      | ScriptableObject returning startup bus        | Diagnostics, stable reference     |
-| `MessageBusProviderHandle`             | Serializable wrapper for providers            | Design-time + runtime flexibility |
-| `handle.FromProvider(provider)`        | Create handle from runtime provider           | Runtime configuration             |
-| `handle.WithRuntimeProvider(provider)` | Add runtime provider to handle                | Override design-time config       |
-| `handle.TryGetProvider(out provider)`  | Resolve provider from handle                  | Get the actual provider           |
-| `handle.ResolveBus()`                  | Resolve bus directly                          | Shortcut to get bus               |
+| Type                                              | Purpose                                       | Use Case                          |
+| ------------------------------------------------- | --------------------------------------------- | --------------------------------- |
+| `IMessageBusProvider`                             | Interface for bus resolution                  | Create custom providers           |
+| `CurrentGlobalMessageBusProvider`                 | ScriptableObject returning current global bus | Follow the active global bus      |
+| `InitialGlobalMessageBusProvider`                 | ScriptableObject returning startup bus        | Diagnostics, stable reference     |
+| `MessageBusProviderHandle`                        | Serializable wrapper for providers            | Design-time + runtime flexibility |
+| `MessageBusProviderHandle.FromProvider(provider)` | Create handle from runtime provider           | Runtime configuration             |
+| `handle.WithRuntimeProvider(provider)`            | Add runtime provider to handle                | Override design-time config       |
+| `handle.TryGetProvider(out provider)`             | Resolve provider from handle                  | Get the actual provider           |
+| `handle.ResolveBus()`                             | Resolve bus directly                          | Shortcut to get bus               |
 
 ---
 
