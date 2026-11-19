@@ -588,6 +588,146 @@ namespace DxMessaging.Tests.Runtime.Core
             Assert.That(hooks, Is.EqualTo(expectedHooks), observed + ": lifecycle hook order");
         }
 
+        /// <summary>Lets nested deactivation finish without publishing another activation.</summary>
+        [Test]
+        public void DeactivationDoesNotPublishNestedLeaseActivation(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool attemptActivation
+        )
+        {
+            string label = $"{scenario}, attemptActivation={attemptActivation}";
+            using Scope scope = new Scope(label);
+            List<string> hooks = new List<string>();
+            bool firstDeactivation = true;
+            bool activeDuringHook = false;
+            int liveDuringHook = 0;
+            int deliveries = 0;
+            scope.Lease = scope.Builder.Build(
+                new MessageRegistrationBuildOptions
+                {
+                    ActivateOnBuild = true,
+                    Configure = token =>
+                    {
+                        scope.Token = token;
+                        Register(token, scenario, 0, () => ++deliveries);
+                    },
+                    Lifecycle = new MessageRegistrationLifecycle(
+                        null,
+                        _ => hooks.Add("activate"),
+                        _ =>
+                        {
+                            hooks.Add("deactivate");
+                            if (!firstDeactivation)
+                            {
+                                return;
+                            }
+                            firstDeactivation = false;
+                            scope.Lease.Deactivate();
+                            Assert.That(
+                                scope.Lease.IsActive,
+                                Is.False,
+                                label + ": nested cleanup finishes"
+                            );
+                            Assert.That(
+                                scope.Token.Enabled,
+                                Is.False,
+                                label + ": nested cleanup disables the token"
+                            );
+                            Assert.That(
+                                Total(scope.Inner),
+                                Is.Zero,
+                                label + ": nested cleanup removes registrations"
+                            );
+                            if (attemptActivation)
+                            {
+                                scope.Lease.Activate();
+                            }
+                            activeDuringHook = scope.Lease.IsActive;
+                            liveDuringHook = Total(scope.Inner);
+                            Emit(scope.Inner, scenario);
+                        },
+                        _ => hooks.Add("dispose")
+                    ),
+                }
+            );
+
+            Emit(scope.Inner, scenario);
+            Assert.That(deliveries, Is.EqualTo(1), label + ": initial activation delivers");
+            scope.Lease.Deactivate();
+            int deliveriesAfterDeactivation = deliveries;
+            Assert.That(scope.Lease.IsActive, Is.False, label + ": outer deactivation finishes");
+            Assert.That(
+                scope.Token.Enabled,
+                Is.False,
+                label + ": outer deactivation leaves the token disabled"
+            );
+            Assert.That(
+                Total(scope.Inner),
+                Is.Zero,
+                label + ": outer deactivation leaves no registrations"
+            );
+
+            scope.Lease.Activate();
+            Assert.That(scope.Lease.IsActive, Is.True, label + ": outside activation succeeds");
+            Assert.That(
+                Total(scope.Inner),
+                Is.EqualTo(1),
+                label + ": outside activation registers once"
+            );
+            Emit(scope.Inner, scenario);
+            int deliveriesAfterReactivation = deliveries;
+            Assert.That(
+                deliveriesAfterReactivation,
+                Is.EqualTo(deliveriesAfterDeactivation + 1),
+                label + ": outside activation delivers once"
+            );
+            scope.Lease.Dispose();
+            Emit(scope.Inner, scenario);
+            Assert.That(
+                deliveries,
+                Is.EqualTo(deliveriesAfterReactivation),
+                label + ": final disposal prevents delivery"
+            );
+            Assert.That(
+                Total(scope.Inner),
+                Is.Zero,
+                label + ": final disposal leaves no registrations"
+            );
+
+            TestContext.WriteLine(
+                $"{label}: hooks={string.Join(",", hooks)}, active during hook={activeDuringHook}, live during hook={liveDuringHook}, deliveries during hook={deliveriesAfterDeactivation - 1}"
+            );
+            Action assertions = () =>
+            {
+                Assert.That(
+                    activeDuringHook,
+                    Is.False,
+                    label + ": lease stays inactive during its deactivation hook"
+                );
+                Assert.That(
+                    liveDuringHook,
+                    Is.Zero,
+                    label + ": hook cannot publish a new registration"
+                );
+                Assert.That(
+                    deliveriesAfterDeactivation,
+                    Is.EqualTo(1),
+                    label + ": hook cannot trigger a new delivery"
+                );
+                CollectionAssert.AreEqual(
+                    new[] { "activate", "deactivate", "activate", "deactivate", "dispose" },
+                    hooks,
+                    label + ": lifecycle hook order"
+                );
+            };
+#if UNITY_2021_3_OR_NEWER
+            assertions();
+#else
+            Assert.Multiple(assertions);
+#endif
+        }
+
         private static IEnumerable<TestCaseData> BuildRecoveryCases()
         {
             foreach (MessageScenario scenario in MessageScenarios.AllKinds)

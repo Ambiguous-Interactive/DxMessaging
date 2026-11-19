@@ -124,8 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a retryable lease when cleanup fails ([#677](https://github.com/Ambiguous-Interactive/DxMessaging/issues/677)).
 - Keep lease cleanup retryable when callbacks add subscriptions during disposal, and prevent
   duplicate activation notifications ([#676](https://github.com/Ambiguous-Interactive/DxMessaging/issues/676)).
-- Prevent registration lease callbacks from reactivating the lease during disposal
-  ([#779](https://github.com/Ambiguous-Interactive/DxMessaging/issues/779)).
+- Prevent registration lease callbacks from reactivating the lease during deactivation or disposal
+  ([#790](https://github.com/Ambiguous-Interactive/DxMessaging/issues/790), [#779](https://github.com/Ambiguous-Interactive/DxMessaging/issues/779)).
 - Clean up subscriptions when registration-builder setup callbacks throw, preserving a retryable
   lease when cleanup fails ([#675](https://github.com/Ambiguous-Interactive/DxMessaging/issues/675)).
 - Preserve activation when a custom bus registration callback calls `Enable()` on the same token.

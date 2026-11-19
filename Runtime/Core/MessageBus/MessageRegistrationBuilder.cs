@@ -213,6 +213,7 @@ namespace DxMessaging.Core.MessageBus
         private bool _deactivateHookInvoked;
         private bool _disposeHookInvoked;
         private bool _activationInProgress;
+        private bool _deactivationInProgress;
         private bool _disposeInProgress;
         private bool _disposeRequestedDuringActivation;
 
@@ -274,7 +275,7 @@ namespace DxMessaging.Core.MessageBus
         /// </summary>
         /// <remarks>
         /// A nested call from a registration callback returns while the outer call owns activation.
-        /// The current disposal pass takes precedence over a nested activation request.
+        /// The current deactivation or disposal pass takes precedence over a nested activation request.
         /// Disposal during registration suppresses the activation hook and attempts cleanup of accepted
         /// subscriptions. Failed cleanup remains retryable through <see cref="Dispose"/>.
         /// </remarks>
@@ -282,7 +283,7 @@ namespace DxMessaging.Core.MessageBus
         public void Activate()
         {
             EnsureNotDisposed();
-            if (_isActive || _activationInProgress || _disposeInProgress)
+            if (_isActive || _activationInProgress || _deactivationInProgress || _disposeInProgress)
             {
                 return;
             }
@@ -361,6 +362,8 @@ namespace DxMessaging.Core.MessageBus
                 return;
             }
 
+            bool wasDeactivating = _deactivationInProgress;
+            _deactivationInProgress = true;
             Exception deactivateFailure = null;
             try
             {
@@ -391,6 +394,7 @@ namespace DxMessaging.Core.MessageBus
                 {
                     _messageHandler.active = _token.Enabled;
                     _isActive = _token.Enabled;
+                    _deactivationInProgress = wasDeactivating;
                 }
             }
 
