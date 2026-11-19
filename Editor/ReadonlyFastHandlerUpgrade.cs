@@ -1748,12 +1748,27 @@ namespace DxMessaging.Editor
             TextSpan operand = new(grouping.Index, scopeEnd - grouping.Index);
             Group name = use.Groups["name"];
             int targetStart = name.Index;
-            int following = NextNonWhitespace(source, name.Index + name.Length);
+            int following = NextAfterBlockComments(source, name.Index + name.Length, scopeEnd);
             return TryReadDirectTarget(source, operand, ref targetStart, ref following)
                 && targetStart == operand.Start
                 && (
                     following < 0 || scopeEnd <= following || ",);]".IndexOf(source[following]) >= 0
                 );
+        }
+
+        private static int NextAfterBlockComments(string source, int start, int limit)
+        {
+            int next = NextNonWhitespace(source, start);
+            while (0 <= next && next + 1 < limit && source[next] == '/' && source[next + 1] == '*')
+            {
+                int end = FindBlockCommentEnd(source, next, limit);
+                if (end < 0)
+                {
+                    break;
+                }
+                next = NextNonWhitespace(source, end);
+            }
+            return next;
         }
 
         private static string FindInterpolatedParameterIssue(
@@ -2472,8 +2487,8 @@ namespace DxMessaging.Editor
                 }
                 if (index + 1 < source.Length && source[index] == '/' && source[index + 1] == '*')
                 {
-                    int end = source.IndexOf("*/", index + 2, StringComparison.Ordinal);
-                    end = end < 0 ? source.Length : end + 2;
+                    int end = FindBlockCommentEnd(source, index, source.Length);
+                    end = end < 0 ? source.Length : end;
                     Mask(masked, index, end);
                     index = end;
                     continue;
@@ -2541,6 +2556,18 @@ namespace DxMessaging.Editor
                 index++;
             }
             return new string(masked);
+        }
+
+        private static int FindBlockCommentEnd(string source, int start, int limit)
+        {
+            int contentStart = start + 2;
+            int closing = source.IndexOf(
+                "*/",
+                contentStart,
+                limit - contentStart,
+                StringComparison.Ordinal
+            );
+            return closing < 0 ? -1 : closing + 2;
         }
 
         private static int FindQuotedEnd(string source, int start, char quote, bool verbatim)
