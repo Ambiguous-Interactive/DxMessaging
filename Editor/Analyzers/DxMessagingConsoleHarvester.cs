@@ -924,15 +924,7 @@ namespace DxMessaging.Editor.Analyzers
                     foreach (CompilerMessage compilerMessage in messages)
                     {
                         string body = compilerMessage.message;
-                        if (string.IsNullOrEmpty(body))
-                        {
-                            continue;
-                        }
-                        /*
-                            Quick prefilter so we don't parse every CS0123 in the build. The
-                            analyzer always emits "DXMSG00" inside the diagnostic id.
-                        */
-                        if (body.IndexOf("DXMSG00", StringComparison.Ordinal) < 0)
+                        if (!BaseCallLogMessageParser.IsDiagnosticCandidate(body))
                         {
                             continue;
                         }
