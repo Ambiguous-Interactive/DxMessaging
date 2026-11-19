@@ -546,6 +546,22 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                     + " => { source = default; Observe(message); });",
                 "source"
             ).SetName("Context assignment keeps both parameters unchanged");
+            yield return new TestCaseData(
+                "token.RegisterBroadcastWithoutSource<Pulse>((ref InstanceId source, ref Pulse message)"
+                    + " => (message, source) = (default(Pulse), default(InstanceId)));",
+                "source"
+            ).SetName("Tuple assignment preserves both original parameters");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> { int local; (message.Value, local) = (1, 2); Observe(local); });",
+                "message"
+            ).SetName("A direct member tuple target requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> { int first, second; ((message[0], first), second) = ((1, 2), 3);"
+                    + " Observe(first + second); });",
+                "message"
+            ).SetName("A nested tuple indexer target requires manual review");
         }
 
         private static IEnumerable<TestCaseData> SafeParameterUseCases()
@@ -600,6 +616,14 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "Observe(message.Value + +message.Value); Observe(message.Value - -message.Value);"
             ).SetName("Separate unary operators still migrate");
+            yield return new TestCaseData(
+                "Pulse copy; int value; (copy, value) = (message, message.Value);"
+                    + " Observe(copy); Observe(value);"
+            ).SetName("Reading a parameter on a tuple right hand side still migrates");
+            yield return new TestCaseData(
+                "int[] buffer = new int[1]; int messageOther;"
+                    + " (buffer[message.Value], messageOther) = (1, 2); Observe(messageOther);"
+            ).SetName("Reading a parameter in another tuple target index still migrates");
         }
 
         private static IEnumerable<TestCaseData> InterpolatedByReferenceUseCases()

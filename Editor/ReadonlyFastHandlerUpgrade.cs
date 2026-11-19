@@ -1816,6 +1816,14 @@ namespace DxMessaging.Editor
                     {
                         return true;
                     }
+
+                    if (
+                        (following == ',' || following == ')')
+                        && IsDirectDeconstructionTarget(masked, body, use.Index, next)
+                    )
+                    {
+                        return true;
+                    }
                 }
 
                 if (body.Start < previous)
@@ -1831,6 +1839,86 @@ namespace DxMessaging.Editor
                         return true;
                     }
                 }
+            }
+            return false;
+        }
+
+        private static bool IsDirectDeconstructionTarget(
+            string text,
+            TextSpan body,
+            int targetStart,
+            int targetDelimiter
+        )
+        {
+            int bodyEnd = body.Start + body.Length;
+            int targetEnd = PreviousNonWhitespace(text, targetDelimiter - 1);
+            for (
+                int tupleStart = FindEnclosingOpenParenthesis(text, targetStart);
+                body.Start <= tupleStart;
+                tupleStart = FindEnclosingOpenParenthesis(text, tupleStart)
+            )
+            {
+                int beforeTuple = PreviousNonWhitespace(text, tupleStart - 1);
+                // Tuple expressions start at a delimiter. An invocation has a callable before its opening parenthesis.
+                if (body.Start <= beforeTuple && "({[};,:?=".IndexOf(text[beforeTuple]) < 0)
+                {
+                    return false;
+                }
+
+                int tupleEnd = FindMatching(text, tupleStart, '(', ')');
+                if (tupleEnd < 0 || bodyEnd <= tupleEnd)
+                {
+                    return false;
+                }
+
+                int afterTuple = NextNonWhitespace(text, tupleEnd + 1);
+                if (afterTuple < 0 || bodyEnd <= afterTuple)
+                {
+                    return false;
+                }
+
+                char following = text[afterTuple];
+                bool assigned =
+                    following == '='
+                    && DirectWriteOperatorRegex
+                        .Match(text, afterTuple, bodyEnd - afterTuple)
+                        .Success;
+                if (!assigned && following != ',' && following != ')')
+                {
+                    return false;
+                }
+
+                List<TextSpan> elements = SplitArguments(text, tupleStart + 1, tupleEnd);
+                if (elements.Count < 2)
+                {
+                    return false;
+                }
+
+                bool directElement = false;
+                foreach (TextSpan element in elements)
+                {
+                    if (
+                        NextNonWhitespace(text, element.Start) == targetStart
+                        && PreviousNonWhitespace(text, element.Start + element.Length - 1)
+                            == targetEnd
+                    )
+                    {
+                        directElement = true;
+                        break;
+                    }
+                }
+
+                if (!directElement)
+                {
+                    return false;
+                }
+                if (assigned)
+                {
+                    return true;
+                }
+
+                targetStart = tupleStart;
+                targetEnd = tupleEnd;
             }
             return false;
         }
