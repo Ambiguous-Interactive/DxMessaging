@@ -491,7 +491,7 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
       );
     }
     // prettier-ignore
-    assert.match(job, new RegExp(`\\n    timeout-minutes: ${jobTimeout ?? (file === "unity-tests.yml" ? 1050 : 900)}\\n`), `${label}: lifecycle budget`);
+    assert.match(job, new RegExp(`\\n    timeout-minutes: ${jobTimeout ?? (file === "unity-tests.yml" ? 1060 : 900)}\\n`), `${label}: lifecycle budget`);
     if (["perf-numbers.yml", "unity-benchmarks.yml", "unity-tests.yml"].includes(file)) {
       assert.match(job, /\n      fail-fast: false\n      max-parallel: 1\n/, `${label} fairness`);
     }
