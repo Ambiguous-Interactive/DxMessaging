@@ -125,6 +125,11 @@ namespace DxMessaging.Editor
             RegexOptions.CultureInvariant
         );
 
+        private static readonly Regex TupleControlKeywordRegex = new(
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?:(?<condition>if|while|for|lock)|else|do)\z",
+            RegexOptions.CultureInvariant
+        );
+
         private static readonly Regex TypeDeclarationRegex = new(
             @"\b(?:class|struct|record(?:\s+(?:class|struct))?)\s+[A-Za-z_]\w*(?:\s*<[^>{};]+>)?",
             RegexOptions.CultureInvariant
@@ -1859,8 +1864,11 @@ namespace DxMessaging.Editor
             )
             {
                 int beforeTuple = PreviousNonWhitespace(text, tupleStart - 1);
-                // Tuple expressions start at a delimiter. An invocation has a callable before its opening parenthesis.
-                if (body.Start <= beforeTuple && "({[};,:?=".IndexOf(text[beforeTuple]) < 0)
+                if (
+                    body.Start <= beforeTuple
+                    && "({[};,:?=".IndexOf(text[beforeTuple]) < 0
+                    && !FollowsTupleControlStatement(text, body.Start, beforeTuple)
+                )
                 {
                     return false;
                 }
@@ -1921,6 +1929,34 @@ namespace DxMessaging.Editor
                 targetEnd = tupleEnd;
             }
             return false;
+        }
+
+        private static bool FollowsTupleControlStatement(
+            string text,
+            int bodyStart,
+            int beforeTuple
+        )
+        {
+            bool followsCondition = text[beforeTuple] == ')';
+            int keywordEnd = beforeTuple;
+            if (followsCondition)
+            {
+                int conditionStart = FindMatchingBackward(text, beforeTuple, '(', ')');
+                if (conditionStart < bodyStart)
+                {
+                    return false;
+                }
+                keywordEnd = PreviousNonWhitespace(text, conditionStart - 1);
+            }
+            if (keywordEnd < bodyStart)
+            {
+                return false;
+            }
+
+            // Leave one character before the longest keyword for the identifier boundary check.
+            int start = Math.Max(bodyStart, keywordEnd - "while".Length);
+            Match keyword = TupleControlKeywordRegex.Match(text, start, keywordEnd - start + 1);
+            return keyword.Success && followsCondition == keyword.Groups["condition"].Success;
         }
 
         private static int FindEnclosingOpenParenthesis(string text, int position)

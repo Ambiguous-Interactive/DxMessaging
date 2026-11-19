@@ -562,6 +562,18 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                     + " Observe(first + second); });",
                 "message"
             ).SetName("A nested tuple indexer target requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> { int local; if (message.Value != 0) (message.Value, local) = (1, 2);"
+                    + " Observe(message); });",
+                "message"
+            ).SetName("A tuple target in an if body without braces requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> { int local; if (message.Value == 0) Observe(message);"
+                    + " else (message.Value, local) = (1, 2); });",
+                "message"
+            ).SetName("A tuple target in an else body without braces requires manual review");
         }
 
         private static IEnumerable<TestCaseData> SafeParameterUseCases()
