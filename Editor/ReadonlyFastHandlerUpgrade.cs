@@ -1742,7 +1742,7 @@ namespace DxMessaging.Editor
                 use = use.NextMatch()
             )
             {
-                int start = NextAfterBlockComments(source, use.Index + use.Length, scopeEnd);
+                int start = NextAfterComments(source, use.Index + use.Length, scopeEnd);
                 if (start < 0 || scopeEnd <= start)
                 {
                     continue;
@@ -1788,11 +1788,7 @@ namespace DxMessaging.Editor
             int scopeEnd = scope.Start + scope.Length;
             TextSpan rightHandSide = new(operand.Index, scopeEnd - operand.Index);
             int targetStart = operand.Groups["name"].Index;
-            int following = NextAfterBlockComments(
-                source,
-                operand.Index + operand.Length,
-                scopeEnd
-            );
+            int following = NextAfterComments(source, operand.Index + operand.Length, scopeEnd);
             ExpandStandaloneGrouping(source, rightHandSide, ref targetStart, ref following);
             return targetStart == rightHandSide.Start
                 && 0 <= following
@@ -1812,7 +1808,7 @@ namespace DxMessaging.Editor
             TextSpan operand = new(grouping.Index, scopeEnd - grouping.Index);
             Group name = use.Groups["name"];
             int targetStart = name.Index;
-            int following = NextAfterBlockComments(source, name.Index + name.Length, scopeEnd);
+            int following = NextAfterComments(source, name.Index + name.Length, scopeEnd);
             return ReadDirectTarget(source, operand, ref targetStart, ref following)
                     == DirectTargetKind.Storage
                 && targetStart == operand.Start
@@ -1821,12 +1817,12 @@ namespace DxMessaging.Editor
                 );
         }
 
-        private static int NextAfterBlockComments(string source, int start, int limit)
+        private static int NextAfterComments(string source, int start, int limit)
         {
             int next = NextNonWhitespace(source, start);
-            while (0 <= next && next + 1 < limit && source[next] == '/' && source[next + 1] == '*')
+            while (0 <= next && next + 1 < limit && source[next] == '/')
             {
-                int end = FindBlockCommentEnd(source, next, limit);
+                int end = FindCommentEnd(source, next, limit);
                 if (end < 0)
                 {
                     break;
@@ -1898,13 +1894,17 @@ namespace DxMessaging.Editor
                 }
 
                 int previous = PreviousNonWhitespace(masked, use.Index - 1);
-                if (body.Start <= previous && masked[previous] == '.')
+                if (
+                    body.Start <= previous
+                    && masked[previous] == '.'
+                    && !FollowsRangeOperator(masked, body.Start, previous)
+                )
                 {
                     continue;
                 }
 
                 int targetStart = use.Index;
-                int next = NextAfterBlockComments(masked, use.Index + use.Length, bodyEnd);
+                int next = NextAfterComments(masked, use.Index + use.Length, bodyEnd);
                 DirectTargetKind target = ReadDirectTarget(masked, body, ref targetStart, ref next);
                 if (target == DirectTargetKind.MemberInvocation)
                 {
@@ -1958,12 +1958,11 @@ namespace DxMessaging.Editor
         {
             int bodyEnd = body.Start + body.Length;
             ExpandStandaloneGrouping(text, body, ref targetStart, ref following);
-            bool hasIndexer = false;
             bool followsMember = false;
             while (0 <= following && following < bodyEnd)
             {
                 following = SkipNullForgivingReceiver(text, following, bodyEnd);
-                if (text[following] == '[' && !hasIndexer)
+                if (text[following] == '[')
                 {
                     int indexerEnd = FindMatching(text, following, '[', ']');
                     if (indexerEnd < 0 || bodyEnd <= indexerEnd)
@@ -1971,13 +1970,17 @@ namespace DxMessaging.Editor
                         return DirectTargetKind.Unsupported;
                     }
 
-                    hasIndexer = true;
                     followsMember = false;
-                    following = NextNonWhitespace(text, indexerEnd + 1);
+                    following = NextAfterComments(text, indexerEnd + 1, bodyEnd);
                 }
                 else if (text[following] == '.')
                 {
-                    int memberStart = NextNonWhitespace(text, following + 1);
+                    if (following + 1 < bodyEnd && text[following + 1] == '.')
+                    {
+                        return DirectTargetKind.Storage;
+                    }
+
+                    int memberStart = NextAfterComments(text, following + 1, bodyEnd);
                     if (memberStart < 0 || bodyEnd <= memberStart)
                     {
                         return DirectTargetKind.Unsupported;
@@ -1994,7 +1997,7 @@ namespace DxMessaging.Editor
                     }
 
                     followsMember = true;
-                    following = NextNonWhitespace(text, member.Index + member.Length);
+                    following = NextAfterComments(text, member.Index + member.Length, bodyEnd);
                 }
                 else
                 {
@@ -2024,7 +2027,7 @@ namespace DxMessaging.Editor
                 return start;
             }
 
-            int access = NextNonWhitespace(text, start + 1);
+            int access = NextAfterComments(text, start + 1, bodyEnd);
             return 0 <= access && access < bodyEnd && (text[access] == '.' || text[access] == '[')
                 ? access
                 : start;
@@ -2051,6 +2054,7 @@ namespace DxMessaging.Editor
                 if (
                     !FollowsTargetBoundary(text, body.Start, beforeOpening)
                     && "+-*/%&|^~<".IndexOf(text[beforeOpening]) < 0
+                    && !FollowsRangeOperator(text, body.Start, beforeOpening)
                     && !FollowsStandaloneGreaterThan(text, body.Start, beforeOpening)
                 )
                 {
@@ -2058,9 +2062,12 @@ namespace DxMessaging.Editor
                 }
 
                 targetStart = opening;
-                following = NextNonWhitespace(text, following + 1);
+                following = NextAfterComments(text, following + 1, bodyEnd);
             }
         }
+
+        private static bool FollowsRangeOperator(string text, int bodyStart, int previous) =>
+            bodyStart < previous && text[previous - 1] == '.' && text[previous] == '.';
 
         private static bool FollowsStandaloneGreaterThan(
             string text,
@@ -2669,18 +2676,14 @@ namespace DxMessaging.Editor
             {
                 return FindQuotedEnd(source, start + 1, '\'', verbatim: false);
             }
-            if (source[start] == '/' && start + 1 < source.Length)
+            if (
+                source[start] == '/'
+                && start + 1 < source.Length
+                && source[start + 1] is '/' or '*'
+            )
             {
-                if (source[start + 1] == '/')
-                {
-                    int end = source.IndexOf('\n', start + 2);
-                    return end < 0 ? source.Length : end;
-                }
-                if (source[start + 1] == '*')
-                {
-                    int end = FindBlockCommentEnd(source, start, source.Length);
-                    return end < 0 ? source.Length : end;
-                }
+                int end = FindCommentEnd(source, start, source.Length);
+                return end < 0 ? source.Length : end;
             }
 
             return FindStringEnd(source, start, interpolatedExpressions);
@@ -2711,7 +2714,8 @@ namespace DxMessaging.Editor
                 return start;
             }
 
-            int quoteCount = CountRun(source, quoteStart, '"');
+            // The opening quote of a verbatim string can be followed by a doubled quote.
+            int quoteCount = verbatim ? 1 : CountRun(source, quoteStart, '"');
             if (quoteCount < 3)
             {
                 return interpolated
@@ -2837,15 +2841,21 @@ namespace DxMessaging.Editor
             return source.Length;
         }
 
-        private static int FindBlockCommentEnd(string source, int start, int limit)
+        private static int FindCommentEnd(string source, int start, int limit)
         {
             int contentStart = start + 2;
-            int closing = source.IndexOf(
-                "*/",
-                contentStart,
-                limit - contentStart,
-                StringComparison.Ordinal
-            );
+            int length = limit - contentStart;
+            if (source[start + 1] == '/')
+            {
+                int newline = source.AsSpan(contentStart, length).IndexOfAny('\r', '\n');
+                return newline < 0 ? limit : contentStart + newline;
+            }
+            if (source[start + 1] != '*')
+            {
+                return -1;
+            }
+
+            int closing = source.IndexOf("*/", contentStart, length, StringComparison.Ordinal);
             return closing < 0 ? -1 : closing + 2;
         }
 

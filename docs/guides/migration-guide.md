@@ -184,11 +184,15 @@ migration.
 
 The preview defers assignments, compound assignments, and increment or decrement operations on a
 callback parameter, a direct indexer such as `message[0]`, or a member chain such as
-`message.Child.Value` or `message.Child[0]`. It also defers writes through a member indexer when
-the member could be an array or another reference type. The scan recognizes simple parentheses
-around a receiver or target, such as `(message).Value`. The preview applies the same grouping rule to direct `ref` and `out` arguments.
-It also checks direct targets in ordinary tuple deconstruction, including bodies of `if`, `else`,
-`while`, `for`, `foreach`, `lock`, and `do` without braces.
+`message.Child.Value` or `message.Child[0]`. It also defers writes through repeated indexers, such as
+`message[0][0] = 1`. A readonly receiver can copy a struct before calling its getter. The getter can
+then update that copy even when the array write reaches the original array. Review writes through
+these indexers even when they compile with `in`.
+
+The scan recognizes simple parentheses around a receiver or target, such as `(message).Value`, and
+applies the same grouping rule to direct `ref` and `out` arguments. It checks direct targets in ordinary
+tuple deconstruction, including bodies of `if`, `else`, `while`, `for`, `foreach`, `lock`, and `do`
+without braces.
 
 The preview flags calls such as `message.Increment()` and `message.Child.Increment()` because an
 `in` parameter can cause a mutable struct method to run on a defensive copy. The text scan checks
