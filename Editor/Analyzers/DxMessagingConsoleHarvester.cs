@@ -111,56 +111,19 @@ namespace DxMessaging.Editor.Analyzers
             StringComparer.Ordinal
         );
 
-        /*
-            Per-assembly attribution for the LEGACY CompilationPipeline.assemblyCompilationFinished
-            feed (only consulted when DxMessagingSettings.UseConsoleBridge is true). When a
-            recompile no longer reports a previously-seen type (because the user fixed the missing
-            base call), we drop it from the bridge merged view. Without per-assembly tracking we'd
-            never know which entries to retire.
-
-            Lifecycle: writes happen inside _compilationFeedLock from
-            OnAssemblyCompilationFinished. Reads happen on the editor main thread inside RescanNow,
-            also under the lock to flush + clear the channel atomically.
-
-            The merge + retirement bookkeeping for these maps lives in
-            <see cref="BaseCallReportAggregator"/> as a pure helper so it can be tested via
-            dotnet-test (the harvester itself is Unity-only and cannot be loaded outside the
-            editor). Mutations to _typesByAssembly and _compilationMerged go through that helper
-            exclusively to keep the test surface and runtime behaviour identical.
-
-            Note: starting in v2.3, the IL-reflection scanner (BaseCallTypeScanner) is the primary
-            source of truth; it runs unconditionally on every rescan, regardless of bridge state.
-            The bridge only contributes ADDITIONAL data, never overrides the scanner.
-        */
-        private static readonly Dictionary<string, HashSet<string>> _typesByAssembly = new(
-            StringComparer.OrdinalIgnoreCase
-        );
-
-        /*
-            Per-FQN merged view of every assembly's latest reports, kept in sync with
-            _typesByAssembly by BaseCallReportAggregator.ApplyAssemblyReports. The final inspector
-            snapshot is built by unioning this with the LogEntries-derived report.
-        */
-        private static readonly Dictionary<string, ParsedTypeReport> _compilationMerged = new(
-            StringComparer.Ordinal
-        );
+        // The Editor thread owns applied compiler reports and the merged snapshot.
+        private static readonly BaseCallReportAggregator.CompilerReports _compilerReports = new();
 
         private static readonly HashSet<string> AlreadyWarned = new(StringComparer.Ordinal);
 
         /*
-            Lock guarding all reads/writes to _typesByAssembly and the parsed-message buffer that
-            flows from OnAssemblyCompilationFinished (worker thread for the parse) into
-            DrainScheduledRescan (editor main thread for snapshot integration). Unity can fire
-            assemblyCompilationFinished from a non-main thread on some Editor versions; the rest
-            of the harvester (LogEntries reflection, AssetDatabase, persistence) is main-thread
-            only and uses simple read order, so the lock is scoped to the cross-thread channel.
+            Unity can report compiler messages from a worker thread. The lock protects the pending
+            channel until the Editor thread takes ownership of the parsed reports.
         */
         private static readonly object _compilationFeedLock = new();
 
         /*
-            Drained by DrainScheduledRescan on the next editor tick. Holds the union of all
-            CompilerMessage payloads captured since the last drain, attributed to their source
-            assembly so we can retire entries that the user has fixed.
+            Holds the latest CompilerMessage report for each assembly since the last idle drain.
         */
         private static readonly Dictionary<
             string,
@@ -419,14 +382,7 @@ namespace DxMessaging.Editor.Analyzers
             {
                 bool wasNonEmpty = 0 < SnapshotInternal.Count;
                 SnapshotInternal.Clear();
-                /*
-                    S3: keep the per-assembly bookkeeping (_typesByAssembly + _compilationMerged)
-                    in lock-step. Clearing only one half leaves stale rows that the next
-                    ApplyAssemblyReports call would silently re-promote into the snapshot when the
-                    user toggles the master switch back on without an intervening recompile.
-                */
-                _typesByAssembly.Clear();
-                _compilationMerged.Clear();
+                _compilerReports.Clear();
                 lock (_compilationFeedLock)
                 {
                     _pendingByAssembly.Clear();
@@ -522,9 +478,8 @@ namespace DxMessaging.Editor.Analyzers
                 try
                 {
                     Dictionary<string, BaseCallReportEntryDto> bridgeSnapshot =
-                        BaseCallReportAggregator.BuildSnapshot(
-                            logEntriesHarvested ? logEntriesAggregate : null,
-                            _compilationMerged
+                        _compilerReports.BuildSnapshot(
+                            logEntriesHarvested ? logEntriesAggregate : null
                         );
                     UnionBridgeIntoSnapshot(bridgeSnapshot, nextSnapshot);
                 }
@@ -548,8 +503,7 @@ namespace DxMessaging.Editor.Analyzers
                 {
                     _pendingByAssembly.Clear();
                 }
-                _typesByAssembly.Clear();
-                _compilationMerged.Clear();
+                _compilerReports.Clear();
             }
 
             /*
@@ -787,13 +741,7 @@ namespace DxMessaging.Editor.Analyzers
             }
         }
 
-        /*
-            Folds a freshly-drained per-assembly batch into the long-lived per-assembly bookkeeping
-            via <see cref="BaseCallReportAggregator.ApplyAssemblyReports"/>. The aggregator owns the
-            retirement logic (a type the user fixed disappears as soon as the assembly recompiles
-            without re-reporting it) and the cross-assembly survival rule (a type stays in the
-            merged view as long as ANY assembly still reports it).
-        */
+        // Apply each assembly's own latest report, including empty batches that retire it.
         private static void ApplyCompilerMessageDrain(
             Dictionary<string, Dictionary<string, ParsedTypeReport>> drained
         )
@@ -805,12 +753,7 @@ namespace DxMessaging.Editor.Analyzers
 
             foreach (KeyValuePair<string, Dictionary<string, ParsedTypeReport>> kvp in drained)
             {
-                BaseCallReportAggregator.ApplyAssemblyReports(
-                    kvp.Key,
-                    kvp.Value ?? new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal),
-                    _typesByAssembly,
-                    _compilationMerged
-                );
+                _compilerReports.Replace(kvp.Key, kvp.Value);
             }
         }
 
