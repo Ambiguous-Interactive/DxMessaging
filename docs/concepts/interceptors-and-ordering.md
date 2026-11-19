@@ -27,8 +27,9 @@ from an interceptor-selected route still finishes the current emission.
 
 Global accept-all subscriptions freeze each `MessageHandler`'s lists when the bus
 reaches that handler. An earlier handler can change what a later handler
-receives in the same emission. Fast callbacks run before Action callbacks. If callbacks remove all
-Action registrations before that phase begins, the bus skips the Action phase.
+receives in the same emission. Each handler's fast callbacks run before its `Action` callbacks.
+If that handler has no live `Action` registrations when the bus reaches its `Action` list,
+the bus skips that list.
 
 Without-context handle phases have separate acquisition points. The bus captures targeted without-targeting
 handlers when that phase begins, so a keyed handler can change its callbacks.
@@ -90,21 +91,30 @@ follow the snapshot rules above. Reset and exception handling still apply.
 
 ---
 
-Execution order (precise)
+## Execution order
 
-DxMessaging runs emissions through a fixed pipeline. This section documents the exact order used at runtime for every category. Unless otherwise noted:
+The built-in `MessageBus` orders typed handlers and post-processors within each message type,
+route, and phase.
 
-- Priority: lower numbers run earlier.
-- Same priority: registration order is preserved.
-- Within a priority group, fast handlers (readonly by-reference) run before action handlers.
-- Each category (Untargeted, Targeted, Broadcast) has its own pipeline.
+1. Lower priority values run first.
+1. At the same priority, the bus visits each `MessageHandler` in the order it joined that group.
+   A handler joins when the bus receives its first live registration for the group.
+1. Within each `MessageHandler`, fast (readonly by-reference) callbacks run before `Action`
+   callbacks. The callbacks of each kind run in registration order.
+
+For example, register an `Action` on handler A, a fast callback on handler B, and a fast callback
+on handler A at the same priority. The bus calls A's fast callback, A's `Action`, then B's fast
+callback.
+
+Interceptors run by ascending priority and use registration order at the same priority.
+Global accept-all callbacks run in a separate phase using the per-handler lists described above.
 
 Untargeted pipeline
 
-1. Interceptors for `T` (ascending priority; within priority by registration order)
-1. Global Accept-All Untargeted handlers (in the MessageHandler that registered them)
-1. Untargeted handlers for `T` (ascending priority; within priority by registration order)
-1. Untargeted Post-Processors for `T` (ascending priority; within priority by registration order)
+1. Interceptors for `T`
+1. Global Accept-All Untargeted handlers
+1. Untargeted handlers for `T`
+1. Untargeted Post-Processors for `T`
 
 Targeted pipeline
 
@@ -124,10 +134,8 @@ Broadcast pipeline
 1. Broadcast Post-Processors for `T` registered for the specific `source`
 1. Broadcast-Without-Source Post-Processors for `T` (listen for all sources)
 
-Notes on handler groups
-
-- Fast vs Action: At a given priority, fast handlers (readonly by-reference delegates) are invoked before action handlers, and within each group the registration order is preserved.
-- "Without Targeting/Source" registrations run in their own groups and do not replace the specific target/source groups.
+Without-targeting and without-source registrations run in separate phases after their
+corresponding specific-target or specific-source phases.
 
 Visual overview
 
@@ -186,7 +194,7 @@ sequenceDiagram
     H->>PP: after all handlers complete
 ```
 
-Interceptors
+## Interceptors
 
 - Mutate or cancel messages before any handler runs. Return `false` to cancel.
 - Define per category: `RegisterUntargetedInterceptor<T>`, `RegisterTargetedInterceptor<T>`, `RegisterBroadcastInterceptor<T>`.
@@ -219,7 +227,7 @@ Calls through `MessageRegistrationToken` are owned by that token. Calls made dir
 `IMessageBus` return raw handles; retain them and call `Deregister<T>(in registration)` with
 the exact registered message type when the owner shuts down.
 
-Real-World Use Cases
+### Real-world use cases
 
 #### State-Based Message Cancellation
 

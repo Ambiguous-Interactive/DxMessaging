@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -2345,6 +2346,8 @@ def run_maintenance_push_loop(
     calls, pushes = root / "check-calls", root / "push-calls"
     calls.write_text("0", encoding="utf-8")
     pushes.write_text("0", encoding="utf-8")
+    check_counter = shlex.quote(str(calls))
+    push_counter = shlex.quote(str(pushes))
     npm = bin_dir / "npm"
     # Whichever generator is under test counts its own calls and fails the first
     # `failing_check_calls` of them; the other always converges. Both branches of
@@ -2370,7 +2373,7 @@ def run_maintenance_push_loop(
         f'  "run update:issue-template-versions") {writes_template} ;;\n'
         f'  "run {steady}") exit 0 ;;\n'
         f'  "run {flaky}")\n'
-        f"     n=$(cat {calls}); n=$((n+1)); echo $n > {calls}\n"
+        f"     n=$(cat {check_counter}); n=$((n+1)); echo $n > {check_counter}\n"
         f'     [ "$n" -le {failing_check_calls} ] && exit 1\n'
         "     exit 0 ;;\n"
         "esac\nexit 0\n",
@@ -2386,7 +2389,7 @@ def run_maintenance_push_loop(
         on_push_failure = "      exit 1\n"
     else:
         on_push_failure = (
-            f"      (cd {other} && /usr/bin/git pull -q --rebase; echo $n > z$n.txt; "
+            f"      (cd {shlex.quote(str(other))} && /usr/bin/git pull -q --rebase; echo $n > z$n.txt; "
             "/usr/bin/git add -A; /usr/bin/git commit -qm concurrent; "
             "/usr/bin/git push -q origin master) > /dev/null 2>&1\n"
             "      exit 1\n"
@@ -2395,7 +2398,7 @@ def run_maintenance_push_loop(
         "#!/bin/bash\n"
         'for a in "$@"; do\n'
         '  if [ "$a" = "push" ]; then\n'
-        f"    n=$(cat {pushes}); n=$((n+1)); echo $n > {pushes}\n"
+        f"    n=$(cat {push_counter}); n=$((n+1)); echo $n > {push_counter}\n"
         f'    if [ "$n" -le {failing_pushes} ]; then\n'
         f"{on_push_failure}"
         "    fi\n  fi\ndone\n"
@@ -3307,7 +3310,8 @@ def validate_post_merge_push_loop() -> None:
     # pending change, so the loop leaves through that branch -- and it was one of
     # two exit sites where `exit "${regenerate_failed}"` could become `exit 0`
     # undetected, reinstating the always-green bug 764540b1 claims to have fixed.
-    with tempfile.TemporaryDirectory() as directory:
+    # A custom TMPDIR can contain spaces. Exercise the fixture's shell operands here.
+    with tempfile.TemporaryDirectory(prefix="dxm post merge ") as directory:
         code, pushed = run_maintenance_push_loop(
             script, Path(directory), 99, 1, "llms", quiet_other=True
         )

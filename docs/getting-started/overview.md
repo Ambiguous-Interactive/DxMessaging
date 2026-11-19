@@ -106,7 +106,7 @@ Core ideas
   - Untargeted: Global notifications (e.g., settings changed).
   - Targeted: Sent to one specific target (e.g., Heal(10) to Player).
   - Broadcast: Emitted from a source; anyone can observe (e.g., TookDamage from Enemy).
-- Ordering: Lower priority runs earlier; same priority uses registration order.
+- Within a dispatch phase, lower priority runs earlier. See [execution order](../concepts/interceptors-and-ordering.md#execution-order) for equal priorities.
 - Pipeline: Interceptors -> Handlers -> Post-Processors, with diagnostics optionally enabled.
 - Unity integration: `MessageAwareComponent` manages its component-owned token. Direct token and lease owners control activation and cleanup.
 
