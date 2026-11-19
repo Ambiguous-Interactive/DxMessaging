@@ -28,7 +28,7 @@ internal sealed class CompilationMessageHarvestTests
 {
     /*
         Verbatim shape of what `CompilerMessage.message` carries on Unity 2021 for a Roslyn
-        analyzer warning. The harvester's prefilter only checks for the substring "DXMSG00".
+        analyzer warning. The harvester screens candidates before parsing.
     */
     private const string Unity2021Dxmsg009 =
         "Assets/Sample/BrokenThing.cs(12,21): warning DXMSG009: 'Sample.BrokenThing' declares OnEnable without 'override' or 'new'; "
@@ -117,9 +117,8 @@ internal sealed class CompilationMessageHarvestTests
     public void AggregateDropsLinesWithoutAnyDxmsgPrefix()
     {
         /*
-            The harvester's hot-path filter on `OnAssemblyCompilationFinished` skips lines that
-            don't contain "DXMSG00" before parsing. The parser itself must also be tolerant of
-            unrelated lines (the LogEntries scan path doesn't pre-filter as aggressively).
+            The callback and Console scan screen candidates before parsing. The parser itself
+            must also be tolerant of unrelated lines.
         */
         Dictionary<string, ParsedTypeReport> aggregated = BaseCallLogMessageParser.Aggregate(
             new[]
@@ -654,6 +653,98 @@ internal sealed class CompilationMessageHarvestTests
             "First-assembly-seen line must persist when a second assembly also reports the FQN."
         );
     }
+
+    [Test]
+    public void LatestCompilerReportsRetireOnlyTheOwningAssemblyContribution()
+    {
+        const string sharedType = "Sample.Shared";
+        const string independentType = "Sample.Independent";
+        BaseCallReportAggregator.CompilerReports reports = new();
+        string[] awake = { "Awake" };
+        string[] onEnable = { "OnEnable" };
+        string[] onDisable = { "OnDisable" };
+        string[] onDestroy = { "OnDestroy" };
+        string[] start = { "Start" };
+
+        reports.Replace("A.dll", MakeReports((sharedType, awake, "DXMSG006", "Assets/A.cs", 10)));
+        reports.Replace(
+            "B.dll",
+            MakeReports(
+                (sharedType, onEnable, "DXMSG009", "Assets/B.cs", 20),
+                (independentType, onDestroy, "DXMSG006", "Assets/B.cs", 21)
+            )
+        );
+        Assert.That(
+            DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]),
+            Is.EqualTo(("Awake,OnEnable", "DXMSG006,DXMSG009", "Assets/A.cs", 10))
+        );
+
+        reports.Replace(
+            "A.DLL",
+            MakeReports((sharedType, awake, "DXMSG006", "Assets/MovedA.cs", 11))
+        );
+        Assert.That(
+            DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]),
+            Is.EqualTo(("Awake,OnEnable", "DXMSG006,DXMSG009", "Assets/MovedA.cs", 11))
+        );
+
+        reports.Replace("a.DLL", BaseCallLogMessageParser.Aggregate(Array.Empty<string>()));
+        Dictionary<string, BaseCallReportEntryDto> afterAClears = reports.BuildMergedSnapshot(null);
+        Assert.That(afterAClears, Has.Count.EqualTo(2));
+        Assert.That(
+            DescribeCompilerReport(afterAClears[independentType]),
+            Is.EqualTo(("OnDestroy", "DXMSG006", "Assets/B.cs", 21))
+        );
+        Assert.That(
+            DescribeCompilerReport(afterAClears[sharedType]),
+            Is.EqualTo(("OnEnable", "DXMSG009", "Assets/B.cs", 20))
+        );
+
+        reports.Replace(
+            "a.dll",
+            MakeReports((sharedType, onDisable, "DXMSG007", "Assets/NewA.cs", 30))
+        );
+        reports.Replace(
+            "A.dll",
+            MakeReports((sharedType, onDestroy, "DXMSG010", "Assets/NewA.cs", 31))
+        );
+        Assert.That(
+            DescribeCompilerReport(reports.BuildMergedSnapshot(null)[sharedType]),
+            Is.EqualTo(("OnDestroy,OnEnable", "DXMSG009,DXMSG010", "Assets/B.cs", 20))
+        );
+
+        reports.Replace("B.DLL", null);
+        Dictionary<string, BaseCallReportEntryDto> afterBClears = reports.BuildMergedSnapshot(null);
+        Assert.That(afterBClears, Has.Count.EqualTo(1));
+        Assert.That(
+            DescribeCompilerReport(afterBClears[sharedType]),
+            Is.EqualTo(("OnDestroy", "DXMSG010", "Assets/NewA.cs", 31))
+        );
+
+        Dictionary<string, ParsedTypeReport> logReports = MakeReports(
+            (sharedType, start, "DXMSG006", "Assets/Console.cs", 40)
+        );
+        Assert.That(
+            DescribeCompilerReport(reports.BuildMergedSnapshot(logReports)[sharedType]),
+            Is.EqualTo(("OnDestroy,Start", "DXMSG006,DXMSG010", "Assets/Console.cs", 40))
+        );
+
+        reports.Clear();
+        Assert.That(reports.BuildMergedSnapshot(null), Is.Empty);
+    }
+
+    private static (
+        string Methods,
+        string DiagnosticIds,
+        string Path,
+        int Line
+    ) DescribeCompilerReport(BaseCallReportEntryDto report) =>
+        (
+            string.Join(",", report.MissingBaseFor),
+            string.Join(",", report.DiagnosticIds.OrderBy(id => id, StringComparer.Ordinal)),
+            report.FilePath,
+            report.Line
+        );
 
     private static Dictionary<string, ParsedTypeReport> MakeReports(
         params (

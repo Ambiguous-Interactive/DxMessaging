@@ -71,6 +71,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reduce diagnostic scan buffering in the opt-in Editor Console bridge and release its Console
+  enumeration reliably ([#801](https://github.com/Ambiguous-Interactive/DxMessaging/issues/801)).
+- Preserve broken-base-chain warnings (`DXMSG010`) in the opt-in Editor compiler-message bridge
+  ([#802](https://github.com/Ambiguous-Interactive/DxMessaging/issues/802)).
+- Remove stale compiler diagnostics from the Editor bridge when assemblies report the same type
+  name and one assembly's report changes ([#803](https://github.com/Ambiguous-Interactive/DxMessaging/issues/803)).
 - Fix arithmetic overflow when a token receives a handle it does not own in projects with checked arithmetic enabled
   ([#738](https://github.com/Ambiguous-Interactive/DxMessaging/issues/738)).
 - Accept npm 12 package metadata when validating packages and exporting `.unitypackage` files.

@@ -40,29 +40,8 @@ namespace DxMessaging.Editor.Analyzers
     }
 
     /// <summary>
-    /// Pure (Unity-API-free) aggregator for the per-assembly merge + retirement logic at the heart
-    /// of <see cref="DxMessagingConsoleHarvester"/>. Extracted so the merge contract is covered by
-    /// <c>dotnet test</c> via the linked-source pattern (see
-    /// <c>WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj</c>).
+    /// Merges Console and assembly compilation diagnostics into per-type report rows.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The harvester must own two pieces of cross-call state to do its job correctly:
-    /// </para>
-    /// <list type="number">
-    /// <item><description><c>typesByAssembly</c>: which FQNs each compiled assembly has reported.
-    /// When an assembly recompiles WITHOUT reporting a previously-seen FQN, that FQN is retired
-    /// -- the user fixed the offending base call.</description></item>
-    /// <item><description><c>mergedReports</c>: the per-FQN union of every assembly's latest
-    /// report. The final snapshot merges this with whatever the LogEntries scan yielded.</description></item>
-    /// </list>
-    /// <para>
-    /// Both maps mutate in lock-step inside <see cref="ApplyAssemblyReports"/>. Because retirement
-    /// crosses assembly boundaries (an FQN may live in two assemblies; only when neither still
-    /// reports it does it disappear from <c>mergedReports</c>), the bookkeeping is the most
-    /// failure-prone slice of the harvester. Keeping it pure makes it test-driven.
-    /// </para>
-    /// </remarks>
 #if UNITY_EDITOR
     public
 #else
@@ -71,19 +50,20 @@ namespace DxMessaging.Editor.Analyzers
     static class BaseCallReportAggregator
     {
         /// <summary>
-        /// Apply a single assembly's freshly-parsed report batch. Replaces that assembly's prior
-        /// FQN attribution wholesale (so types the user fixed disappear) and rebuilds the merged
-        /// per-FQN map by unioning every assembly's latest reports.
+        /// Applies a single assembly's freshly parsed batch to its type-name membership and
+        /// refreshes the combined per-type report.
         /// </summary>
+        /// <remarks>
+        /// An assembly's earlier diagnostic details may remain while another assembly still
+        /// reports the same type name. The inputs carry one combined payload per type.
+        /// </remarks>
         /// <param name="assemblyKey">Stable identifier for the source assembly (typically the
         /// assembly path Unity passes via <c>CompilationPipeline.assemblyCompilationFinished</c>).</param>
         /// <param name="latestReportsForAssembly">Reports parsed from this assembly's most recent
         /// compilation. May be empty -- that case is the retirement path (every FQN this assembly
         /// previously reported is dropped).</param>
         /// <param name="typesByAssembly">Per-assembly FQN bookkeeping. Mutated in place.</param>
-        /// <param name="mergedReports">Per-FQN union across every assembly. Mutated in place;
-        /// rebuilt from scratch on every call so retirement Just Works regardless of which
-        /// assembly drops its claim.</param>
+        /// <param name="mergedReports">Combined diagnostic payload per type. Mutated in place.</param>
         public static void ApplyAssemblyReports(
             string assemblyKey,
             IReadOnlyDictionary<string, ParsedTypeReport>? latestReportsForAssembly,
@@ -131,10 +111,8 @@ namespace DxMessaging.Editor.Analyzers
             }
 
             /*
-                2. Rebuild mergedReports from the per-assembly view. We can't simply remove "the
-                   types this assembly retired" because another assembly may still report them; the
-                   only correct algorithm is to start fresh from typesByAssembly + the freshest
-                   payload for each (assembly, FQN) pair.
+                2. Rebuild mergedReports for the remaining type memberships. If another assembly
+                   still reports a type, its diagnostic details come from the prior combined payload.
 
                    Per-FQN merge semantics:
                    - Method list: union, deduplicated ordinally, stored in deterministic
@@ -253,24 +231,88 @@ namespace DxMessaging.Editor.Analyzers
         )
         {
             Dictionary<string, BaseCallReportEntryDto> snapshot = new(StringComparer.Ordinal);
-
-            if (logEntriesReports is not null)
-            {
-                foreach (KeyValuePair<string, ParsedTypeReport> kvp in logEntriesReports)
-                {
-                    AddOrMerge(snapshot, kvp.Key, kvp.Value);
-                }
-            }
-
-            if (mergedReports is not null)
-            {
-                foreach (KeyValuePair<string, ParsedTypeReport> kvp in mergedReports)
-                {
-                    AddOrMerge(snapshot, kvp.Key, kvp.Value);
-                }
-            }
-
+            MergeReports(snapshot, logEntriesReports);
+            MergeReports(snapshot, mergedReports);
             return snapshot;
+        }
+
+        private static void MergeReports(
+            Dictionary<string, BaseCallReportEntryDto> snapshot,
+            IReadOnlyDictionary<string, ParsedTypeReport>? reports
+        )
+        {
+            if (reports is null)
+            {
+                return;
+            }
+            foreach (KeyValuePair<string, ParsedTypeReport> report in reports)
+            {
+                AddOrMerge(snapshot, report.Key, report.Value);
+            }
+        }
+
+        /// <summary>Keeps the latest compiler diagnostics for each reporting assembly.</summary>
+        internal sealed class CompilerReports
+        {
+            private readonly List<(
+                string AssemblyPath,
+                IReadOnlyDictionary<string, ParsedTypeReport> Reports
+            )> _reports = new();
+
+            /// <summary>Replaces the assembly's report while preserving active assembly order.</summary>
+            internal void Replace(
+                string assemblyPath,
+                IReadOnlyDictionary<string, ParsedTypeReport>? reports
+            )
+            {
+                for (int index = 0; index < _reports.Count; index++)
+                {
+                    if (
+                        !string.Equals(
+                            _reports[index].AssemblyPath,
+                            assemblyPath,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    if (reports is null || reports.Count == 0)
+                    {
+                        _reports.RemoveAt(index);
+                    }
+                    else
+                    {
+                        _reports[index] = (assemblyPath, reports);
+                    }
+                    return;
+                }
+
+                if (reports is { Count: > 0 })
+                {
+                    _reports.Add((assemblyPath, reports));
+                }
+            }
+
+            /// <summary>Releases the reports for all assemblies.</summary>
+            internal void Clear() => _reports.Clear();
+
+            /// <summary>Unions Console rows and the latest reports in their active order.</summary>
+            internal Dictionary<string, BaseCallReportEntryDto> BuildMergedSnapshot(
+                IReadOnlyDictionary<string, ParsedTypeReport>? logEntriesReports
+            )
+            {
+                Dictionary<string, BaseCallReportEntryDto> snapshot = new(StringComparer.Ordinal);
+                MergeReports(snapshot, logEntriesReports);
+                foreach (
+                    (string _, IReadOnlyDictionary<string, ParsedTypeReport> reports) in _reports
+                )
+                {
+                    MergeReports(snapshot, reports);
+                }
+                return snapshot;
+            }
         }
 
         private static void AddOrMerge(
