@@ -193,7 +193,8 @@ The preview flags calls such as `message.Increment()` and `message.Child.Increme
 `in` parameter can cause a mutable struct method to run on a defensive copy. The text scan checks
 these calls, writes, and `ref` or `out` arguments in simple interpolated strings, including C# 11
 raw interpolation. It can also flag read-only calls, class members, initializer members that share
-the parameter's name, and text that resembles code. Review explicit method type arguments,
+the parameter's name, and text that resembles code. Calls through delegate fields and readonly
+aliases to nested members can also require manual review. Inspect explicit method type arguments,
 conditional access, complex interpolation, casts, and indirect targets manually.
 
 Copy a struct message to a local when the callback needs writable scratch data. Move payload or
