@@ -498,6 +498,14 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("A grouped member receiver requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(1 + (message).Value++));",
+                "message"
+            ).SetName("A grouped write after addition requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(1 < (message).Value++));",
+                "message"
+            ).SetName("A grouped write after a comparison operator requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => ++((message).Value));",
                 "message"
             ).SetName("A grouped prefix increment requires manual review");
@@ -655,6 +663,15 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "Observe((message).Value); Observe(((message)));"
             ).SetName("Grouped parameter reads still migrate");
+            yield return new TestCaseData("Observe(1 + (message).Value);").SetName(
+                "A grouped read after addition still migrates"
+            );
+            yield return new TestCaseData("GetRef<int>(message).Value = 1;").SetName(
+                "Writing to a generic call result still migrates"
+            );
+            yield return new TestCaseData(
+                "RefPulseCallback callback = RefPulse; callback!(message).Value = 2;"
+            ).SetName("Writing to a null-forgiven delegate result still migrates");
             yield return new TestCaseData(
                 "RefPulse(message).Value = 1; RefCell((message.Value)) = 2;"
             ).SetName("Grouped call arguments in unrelated targets still migrate");

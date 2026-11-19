@@ -1904,9 +1904,10 @@ namespace DxMessaging.Editor
                 }
 
                 int beforeOpening = PreviousNonWhitespace(text, opening - 1);
+                // A generic call or null-forgiven delegate invocation can follow > or !.
                 if (
                     !FollowsTargetBoundary(text, body.Start, beforeOpening)
-                    && !FollowsPrefixWriteOperator(text, body.Start, beforeOpening)
+                    && "+-*/%&|^~<".IndexOf(text[beforeOpening]) < 0
                 )
                 {
                     return;
