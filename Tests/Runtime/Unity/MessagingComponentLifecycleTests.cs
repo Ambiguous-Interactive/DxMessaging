@@ -671,6 +671,147 @@ namespace DxMessaging.Tests.Runtime.Unity
             }
         }
 
+        /// <summary>Revalidates token ownership after a genuine repeat invokes the warning receiver.</summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void CachedCreateReturnsOwnedTokenAfterWarning(bool replaceDuringWarning)
+        {
+            string context = $"replaceDuringWarning={replaceDuringWarning}";
+            GameObject host = new(nameof(CachedCreateReturnsOwnedTokenAfterWarning));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            MessageBus bus = new();
+            component.Configure(bus, MessageBusRebindMode.RebindActive);
+
+            using LeakWatcher watcher = new(bus, label: context);
+            MessageRegistrationToken original = component.Create(listener);
+            MessageRegistrationToken replacement = null;
+            MessageRegistrationToken returned = null;
+            bool previousDebug = MessagingDebug.enabled;
+            Action<LogLevel, string> previousLog = MessagingDebug.LogFunction;
+            string expectedWarning = $"Ignoring double RegistrationToken request for {listener}.";
+            int warnings = 0;
+            bool releasedOriginal = false;
+            try
+            {
+                MessagingDebug.enabled = true;
+                MessagingDebug.LogFunction = (level, message) =>
+                {
+                    if (level == LogLevel.Warn && message == expectedWarning)
+                    {
+                        ++warnings;
+                        releasedOriginal = component.Release(listener);
+                        if (replaceDuringWarning)
+                        {
+                            replacement = component.Create(listener);
+                        }
+                    }
+                    else
+                    {
+                        previousLog?.Invoke(level, message);
+                    }
+                };
+
+                returned = component.Create(listener);
+                int calls = 0;
+                _ = returned.RegisterUntargeted<SimpleUntargetedMessage>(_ => ++calls);
+                returned.Enable();
+                SimpleUntargetedMessage payload = new();
+                bus.UntargetedBroadcast(ref payload);
+                int callsBeforeRelease = calls;
+                bool sameAsOriginal = ReferenceEquals(returned, original);
+                bool sameAsReplacement = ReferenceEquals(returned, replacement);
+                bool released = component.Release(listener);
+                bus.UntargetedBroadcast(ref payload);
+                int retained = watcher.LeakedRegistrations;
+                TestContext.WriteLine(
+                    $"{context} warnings={warnings}, releasedOriginal={releasedOriginal}, "
+                        + $"sameAsOriginal={sameAsOriginal}, sameAsReplacement={sameAsReplacement}, "
+                        + $"released={released}, deliveries={callsBeforeRelease}/{calls}, retained={retained}."
+                );
+
+                Assert.That(warnings, Is.EqualTo(1), $"{context} The repeat must warn once.");
+                Assert.That(
+                    releasedOriginal,
+                    Is.True,
+                    $"{context} The warning released the original token."
+                );
+                Assert.That(
+                    sameAsOriginal,
+                    Is.False,
+                    $"{context} Create must not return the detached token."
+                );
+                Assert.That(
+                    sameAsReplacement,
+                    Is.EqualTo(replaceDuringWarning),
+                    $"{context} Use the logger's replacement when present."
+                );
+                Assert.That(
+                    callsBeforeRelease,
+                    Is.EqualTo(1),
+                    $"{context} The returned token must receive."
+                );
+                Assert.That(
+                    released,
+                    Is.True,
+                    $"{context} The owner must release the returned token."
+                );
+                Assert.That(calls, Is.EqualTo(1), $"{context} Release must stop delivery.");
+                Assert.That(retained, Is.Zero, $"{context} Release must remove the registration.");
+            }
+            finally
+            {
+                MessagingDebug.enabled = previousDebug;
+                MessagingDebug.LogFunction = previousLog;
+                component.Release(listener);
+                original.Dispose();
+                replacement?.Dispose();
+                returned?.Dispose();
+            }
+        }
+
+        /// <summary>Preserves the warning receiver's exception and original cache entry.</summary>
+        [Test]
+        public void CachedCreatePropagatesWarningException()
+        {
+            GameObject host = new(nameof(CachedCreatePropagatesWarningException));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            component.Configure(new MessageBus(), MessageBusRebindMode.RebindActive);
+            MessageRegistrationToken original = component.Create(listener);
+            InvalidOperationException failure = new("Warning receiver failed.");
+            bool previousDebug = MessagingDebug.enabled;
+            Action<LogLevel, string> previousLog = MessagingDebug.LogFunction;
+            try
+            {
+                MessagingDebug.enabled = true;
+                MessagingDebug.LogFunction = (_, _) => throw failure;
+
+                Assert.That(
+                    Assert.Throws<InvalidOperationException>(() => component.Create(listener)),
+                    Is.SameAs(failure),
+                    "Create must propagate the original warning exception."
+                );
+                Assert.That(
+                    component.TryGetToken(listener, out MessageRegistrationToken retained),
+                    Is.True,
+                    "The failing warning must leave the cache entry available."
+                );
+                Assert.That(retained, Is.SameAs(original), "The original token must remain owned.");
+            }
+            finally
+            {
+                MessagingDebug.enabled = previousDebug;
+                MessagingDebug.LogFunction = previousLog;
+                component.Release(listener);
+            }
+        }
+
         /// <summary>Drains accepted work after failures and reports every original error before recovery.</summary>
         [Test]
         public void QueuedConfigurationFailuresPreserveErrorsAndRecovery(

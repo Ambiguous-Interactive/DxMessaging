@@ -118,16 +118,22 @@ namespace DxMessaging.Unity
                 )
             )
             {
-                if (warnOnExisting && MessagingDebug.enabled)
+                if (!warnOnExisting || !MessagingDebug.enabled)
                 {
-                    MessagingDebug.Log(
-                        LogLevel.Warn,
-                        "Ignoring double RegistrationToken request for {0}.",
-                        listener
-                    );
+                    return createdToken;
                 }
 
-                return createdToken;
+                MessagingDebug.Log(
+                    LogLevel.Warn,
+                    "Ignoring double RegistrationToken request for {0}.",
+                    listener
+                );
+                // The warning receiver can release or replace the token.
+                ValidateListener(listener);
+                if (_registeredListeners.TryGetValue(listener, out createdToken))
+                {
+                    return createdToken;
+                }
             }
 
             if (_messageHandler == null)
