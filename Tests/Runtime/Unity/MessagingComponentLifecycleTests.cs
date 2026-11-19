@@ -262,6 +262,304 @@ namespace DxMessaging.Tests.Runtime.Unity
             }
         }
 
+        /// <summary>Keeps registrations made by a reentrant provider under the component's ownership.</summary>
+        [Test]
+        public void ProviderReentryPreservesListenerAndHandlerOwnership(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario,
+            [Values(false, true)] bool usePeer
+        )
+        {
+            string context = $"[{scenario.Kind}, usePeer={usePeer}]";
+            GameObject host = new(nameof(ProviderReentryPreservesListenerAndHandlerOwnership));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            ManualListenerComponent nestedListener = usePeer
+                ? host.AddComponent<ManualListenerComponent>()
+                : listener;
+            InstanceId route = host;
+            MessageBus bus = new();
+            ConfigurationProbeProvider provider = new(bus);
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+
+            using LeakWatcher watcher = new(bus, label: context);
+            MessageRegistrationToken nested = null;
+            MessageRegistrationToken outer = null;
+            int nestedCalls = 0;
+            int outerCalls = 0;
+            provider.OnResolve = () =>
+            {
+                nested = component.Create(nestedListener);
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, nested, route, () =>
+                    ++nestedCalls
+                );
+                nested.Enable();
+            };
+            try
+            {
+                outer = component.Create(listener);
+                Assert.That(nested, Is.Not.Null, $"{context} The first resolve must enter Create.");
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, outer, route, () =>
+                    ++outerCalls
+                );
+                outer.Enable();
+
+                ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                int nestedCallsWhileOn = nestedCalls;
+                int outerCallsWhileOn = outerCalls;
+
+                component.ToggleMessageHandler(false);
+                ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                int nestedCallsWhileOff = nestedCalls;
+                int outerCallsWhileOff = outerCalls;
+                component.ToggleMessageHandler(true);
+
+                bool releasedOuter = component.Release(listener);
+                bool releasedNested = !usePeer || component.Release(nestedListener);
+                ScenarioCallbacks.EmitForKind(scenario, bus, route);
+                bool sameToken = ReferenceEquals(nested, outer);
+                int retained = watcher.LeakedRegistrations;
+                TestContext.WriteLine(
+                    $"Provider reentry {context} sameToken={sameToken}; on={nestedCallsWhileOn},{outerCallsWhileOn}; "
+                        + $"off={nestedCallsWhileOff},{outerCallsWhileOff}; released={releasedOuter},{releasedNested}; "
+                        + $"afterRelease={nestedCalls},{outerCalls}; retained={retained}."
+                );
+                Assert.That(
+                    nestedCallsWhileOn,
+                    Is.EqualTo(1),
+                    $"{context} Nested delivery control."
+                );
+                Assert.That(outerCallsWhileOn, Is.EqualTo(1), $"{context} Outer delivery control.");
+                Assert.That(
+                    sameToken,
+                    Is.EqualTo(!usePeer),
+                    $"{context} Same listener gets one token. Peers get distinct tokens."
+                );
+                Assert.That(
+                    nestedCallsWhileOff,
+                    Is.EqualTo(1),
+                    $"{context} Shared toggle must suspend the nested registration."
+                );
+                Assert.That(
+                    outerCallsWhileOff,
+                    Is.EqualTo(1),
+                    $"{context} Shared toggle must suspend the outer registration."
+                );
+                Assert.That(
+                    releasedOuter && releasedNested,
+                    Is.True,
+                    $"{context} Owner release must succeed."
+                );
+                Assert.That(
+                    nestedCalls,
+                    Is.EqualTo(nestedCallsWhileOff),
+                    $"{context} Release must stop further nested delivery."
+                );
+                Assert.That(
+                    outerCalls,
+                    Is.EqualTo(outerCallsWhileOff),
+                    $"{context} Release must stop further outer delivery."
+                );
+                Assert.That(retained, Is.Zero, $"{context} Release must drain both registrations.");
+            }
+            finally
+            {
+                component.Release(listener);
+                if (usePeer)
+                {
+                    component.Release(nestedListener);
+                }
+                nested?.Dispose();
+                outer?.Dispose();
+            }
+        }
+
+        /// <summary>Keeps the bus accepted while the initial provider call was still running.</summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public void InitialProviderReentryKeepsAcceptedBus(bool initializeOnAwake)
+        {
+            string context = $"initializeOnAwake={initializeOnAwake}";
+            MessageScenario scenario = MessageScenario.Untargeted();
+            GameObject host = new(nameof(InitialProviderReentryKeepsAcceptedBus));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            component.emitMessagesWhenDisabled = true;
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            InstanceId route = host;
+            MessageBus stale = new();
+            MessageBus accepted = new();
+            ConfigurationProbeProvider provider = new(stale);
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+            provider.OnResolve = () =>
+                component.Configure(accepted, MessageBusRebindMode.RebindActive);
+
+            using LeakWatcher staleWatcher = new(stale, label: context);
+            using LeakWatcher acceptedWatcher = new(accepted, label: context);
+            try
+            {
+                if (initializeOnAwake)
+                {
+                    host.SetActive(true);
+                }
+                MessageRegistrationToken token = component.Create(listener);
+                int calls = 0;
+                _ = ScenarioCallbacks.RegisterCountingHandler(scenario, token, route, () =>
+                    ++calls
+                );
+                token.Enable();
+
+                ScenarioCallbacks.EmitForKind(scenario, stale, route);
+                int staleCalls = calls;
+                ScenarioCallbacks.EmitForKind(scenario, accepted, route);
+                TestContext.WriteLine(
+                    $"Provider reentry {context} superseded={staleCalls}; accepted={calls - staleCalls}."
+                );
+                Assert.That(
+                    staleCalls,
+                    Is.Zero,
+                    $"{context} The superseded provider must receive no registrations."
+                );
+                Assert.That(
+                    calls - staleCalls,
+                    Is.EqualTo(1),
+                    $"{context} The accepted bus must deliver."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+            }
+        }
+
+        /// <summary>Retains the first lifecycle owner when its creation reenters the factory.</summary>
+        [Test]
+        public void ProviderReentryRetainsOneLifecycleOwner()
+        {
+            GameObject host = new(nameof(ProviderReentryRetainsOneLifecycleOwner));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            ConfigurationProbeProvider provider = new(new MessageBus());
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+
+            MessagingLifecycle nested = null;
+            MessagingLifecycle outer = null;
+            provider.OnResolve = () => nested = component.CreateLifecycleBound(listener);
+            try
+            {
+                Assert.Throws<InvalidOperationException>(
+                    () => outer = component.CreateLifecycleBound(listener),
+                    "The nested owner already claimed the listener."
+                );
+                Assert.That(
+                    nested.Token,
+                    Is.SameAs(component.Create(listener)),
+                    "The nested owner must retain the cached token."
+                );
+                nested.Dispose();
+                Assert.That(nested.IsDisposed, Is.True, "The sole owner may release its token.");
+                using MessagingLifecycle replacement = component.CreateLifecycleBound(listener);
+                Assert.That(
+                    replacement.IsDisposed,
+                    Is.False,
+                    "An owner may claim the listener after release."
+                );
+            }
+            finally
+            {
+                nested?.Dispose();
+                outer?.Dispose();
+            }
+        }
+
+        /// <summary>Retries handler creation after an initial provider failure.</summary>
+        [Test]
+        public void InitialProviderFailureLeavesCreationRetryable()
+        {
+            GameObject host = new(nameof(InitialProviderFailureLeavesCreationRetryable));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            ConfigurationProbeProvider provider = new(new MessageBus());
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+
+            InvalidOperationException failure = new("Provider failed.");
+            provider.Failure = failure;
+            Assert.That(
+                Assert.Throws<InvalidOperationException>(() => component.Create(listener)),
+                Is.SameAs(failure),
+                "Initial creation must report the original provider exception."
+            );
+            Assert.That(
+                component.Release(listener),
+                Is.False,
+                "Failed creation must not cache a token."
+            );
+
+            provider.Failure = null;
+            try
+            {
+                MessageRegistrationToken token = component.Create(listener);
+                Assert.That(
+                    component.Create(listener),
+                    Is.SameAs(token),
+                    "Retry must cache one reusable token."
+                );
+                Assert.That(
+                    provider.Resolves,
+                    Is.EqualTo(3),
+                    "Configuration, failed creation, and retry each resolve once."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+            }
+        }
+
+        /// <summary>Rejects an initial token request when the provider destroys its listener.</summary>
+        [Test]
+        public void InitialProviderReentryRejectsDestroyedListener()
+        {
+            GameObject host = new(nameof(InitialProviderReentryRejectsDestroyedListener));
+            _spawned.Add(host);
+            host.SetActive(false);
+            MessagingComponent component = host.AddComponent<MessagingComponent>();
+            ManualListenerComponent listener = host.AddComponent<ManualListenerComponent>();
+            ConfigurationProbeProvider provider = new(new MessageBus());
+            component.Configure(provider, MessageBusRebindMode.RebindActive);
+            provider.OnResolve = () => UnityEngine.Object.DestroyImmediate(listener);
+
+            try
+            {
+                Assert.Throws<ArgumentNullException>(
+                    () => component.Create(listener),
+                    "Provider resolution must not cache a token for a destroyed listener."
+                );
+                Assert.That(
+                    listener == null,
+                    Is.True,
+                    "The provider destroyed the original listener."
+                );
+                Assert.That(
+                    component.Release(listener),
+                    Is.False,
+                    "There must be no token to release."
+                );
+            }
+            finally
+            {
+                component.Release(listener);
+            }
+        }
+
         /// <summary>Drains accepted work after failures and reports every original error before recovery.</summary>
         [Test]
         public void QueuedConfigurationFailuresPreserveErrorsAndRecovery(

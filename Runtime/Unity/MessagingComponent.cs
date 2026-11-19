@@ -38,6 +38,7 @@ namespace DxMessaging.Unity
 
         private MessageHandler _messageHandler;
         private bool _destroyed;
+        private bool _resolvingInitialMessageBus;
         private bool _applyingMessageBusConfiguration;
         private Queue<MessageBusConfiguration> _pendingMessageBusConfigurations;
 
@@ -109,21 +110,12 @@ namespace DxMessaging.Unity
         /// <summary>Validates listener ownership and resolves its token with optional duplicate-request logging.</summary>
         private MessageRegistrationToken CreateToken(MonoBehaviour listener, bool warnOnExisting)
         {
-            if (_destroyed)
+            ValidateListener(listener);
+            if (_messageHandler == null)
             {
-                throw new ObjectDisposedException(nameof(MessagingComponent));
-            }
-
-            if (listener == null)
-            {
-                throw new ArgumentNullException(nameof(listener));
-            }
-
-            if (gameObject != listener.gameObject)
-            {
-                throw new ArgumentException(
-                    $"Cannot create a RegistrationToken without a mismatched owner. {listener.gameObject} != existing {gameObject}."
-                );
+                EnsureMessageHandler();
+                // Provider resolution can create a token or destroy an owner before returning.
+                ValidateListener(listener);
             }
 
             if (
@@ -145,10 +137,29 @@ namespace DxMessaging.Unity
                 return createdToken;
             }
 
-            _messageHandler ??= CreateMessageHandler();
             createdToken = MessageRegistrationToken.Create(_messageHandler);
             _registeredListeners[listener] = createdToken;
             return createdToken;
+        }
+
+        private void ValidateListener(MonoBehaviour listener)
+        {
+            if (_destroyed)
+            {
+                throw new ObjectDisposedException(nameof(MessagingComponent));
+            }
+
+            if (listener == null)
+            {
+                throw new ArgumentNullException(nameof(listener));
+            }
+
+            if (gameObject != listener.gameObject)
+            {
+                throw new ArgumentException(
+                    $"Cannot create a RegistrationToken without a mismatched owner. {listener.gameObject} != existing {gameObject}."
+                );
+            }
         }
 
         /// <summary>
@@ -344,7 +355,7 @@ namespace DxMessaging.Unity
                 _messageBusProvider = provider;
             }
 
-            _messageHandler ??= CreateMessageHandler();
+            EnsureMessageHandler();
         }
 
         /// <summary>
@@ -464,18 +475,35 @@ namespace DxMessaging.Unity
             return _registeredListeners.TryGetValue(listener, out token);
         }
 
-        /// <summary>
-        /// Creates the underlying <see cref="Core.MessageHandler"/> bound to this GameObject.
-        /// </summary>
-        private MessageHandler CreateMessageHandler()
+        /// <summary>Resolves the initial bus while preserving a handler published by a provider callback.</summary>
+        private void EnsureMessageHandler()
         {
-            IMessageBus resolvedBus = ResolveConfiguredBus();
-            MessageHandler handler = new(gameObject, resolvedBus)
+            if (_messageHandler != null)
+            {
+                return;
+            }
+
+            bool wasResolving = _resolvingInitialMessageBus;
+            _resolvingInitialMessageBus = true;
+            try
+            {
+                IMessageBus resolvedBus = ResolveConfiguredBus();
+                if (!_destroyed)
+                {
+                    _messageHandler ??= CreateMessageHandler(resolvedBus);
+                }
+            }
+            finally
+            {
+                _resolvingInitialMessageBus = wasResolving;
+            }
+        }
+
+        private MessageHandler CreateMessageHandler(IMessageBus resolvedBus) =>
+            new(gameObject, resolvedBus)
             {
                 active = emitMessagesWhenDisabled || isActiveAndEnabled,
             };
-            return handler;
-        }
 
         /// <summary>Drains accepted requests without overlapping listener migrations.</summary>
         private void ApplyMessageBusConfiguration(MessageBusRebindMode rebindMode)
@@ -555,7 +583,15 @@ namespace DxMessaging.Unity
             {
                 resolvedBus = configuration.Provider.Resolve();
             }
-            _messageHandler?.SetDefaultMessageBus(resolvedBus);
+            if (_messageHandler != null)
+            {
+                _messageHandler.SetDefaultMessageBus(resolvedBus);
+            }
+            else if (_resolvingInitialMessageBus && !_destroyed)
+            {
+                // A configuration accepted during initial resolution owns the first handler.
+                _messageHandler = CreateMessageHandler(resolvedBus);
+            }
             if (_registeredListeners.Count == 0)
             {
                 return;
