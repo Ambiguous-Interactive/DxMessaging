@@ -2,7 +2,6 @@ namespace DxMessaging.Tests
 {
     using System;
     using System.Collections;
-    using System.Collections.Generic;
     using DxMessaging.Core;
     using DxMessaging.Core.Helper;
     using DxMessaging.Core.Internal;
