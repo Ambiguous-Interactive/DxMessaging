@@ -127,7 +127,7 @@ namespace DxMessaging.Editor
         );
 
         private static readonly Regex TupleControlKeywordRegex = new(
-            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?:(?<condition>if|while|for|lock)|else|do)\z",
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?:(?<condition>if|while|for|foreach|lock)|else|do)\z",
             RegexOptions.CultureInvariant
         );
 
@@ -1934,7 +1934,12 @@ namespace DxMessaging.Editor
                     return false;
                 }
 
-                List<TextSpan> elements = SplitArguments(text, tupleStart + 1, tupleEnd);
+                List<TextSpan> elements = SplitArguments(
+                    text,
+                    tupleStart + 1,
+                    tupleEnd,
+                    ignoreBracketedAngles: true
+                );
                 if (elements.Count < 2)
                 {
                     return false;
@@ -1989,7 +1994,7 @@ namespace DxMessaging.Editor
             }
 
             // Leave one character before the longest keyword for the identifier boundary check.
-            int start = Math.Max(bodyStart, keywordEnd - "while".Length);
+            int start = Math.Max(bodyStart, keywordEnd - "foreach".Length);
             Match keyword = TupleControlKeywordRegex.Match(text, start, keywordEnd - start + 1);
             return keyword.Success && followsCondition == keyword.Groups["condition"].Success;
         }
@@ -2269,7 +2274,12 @@ namespace DxMessaging.Editor
             return line;
         }
 
-        private static List<TextSpan> SplitArguments(string text, int start, int end)
+        private static List<TextSpan> SplitArguments(
+            string text,
+            int start,
+            int end,
+            bool ignoreBracketedAngles = false
+        )
         {
             List<TextSpan> arguments = new();
             int argumentStart = start;
@@ -2299,10 +2309,10 @@ namespace DxMessaging.Editor
                     case '}':
                         braces--;
                         break;
-                    case '<':
+                    case '<' when !ignoreBracketedAngles || brackets == 0:
                         angles++;
                         break;
-                    case '>':
+                    case '>' when !ignoreBracketedAngles || brackets == 0:
                         angles = Math.Max(0, angles - 1);
                         break;
                     case ',':

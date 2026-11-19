@@ -186,7 +186,7 @@ The preview defers direct assignments, compound assignments, and increment or de
 on a callback parameter, its direct members, or a direct indexer such as `message[0]`. This includes
 simple parentheses around a receiver or target, such as `(message).Value`. The preview also checks
 these targets in ordinary tuple deconstruction, including bodies of `if`, `else`, `while`, `for`,
-`lock`, and `do` without braces. It checks writes and `ref` or `out` arguments in simple
+`foreach`, `lock`, and `do` without braces. It checks writes and `ref` or `out` arguments in simple
 interpolated strings, including C# 11 raw interpolation. The text scan can flag apparent writes or
 forwarding in literal text, member and indexer writes on class messages, and initializer members with
 the same name as a parameter. Review complex interpolation, casts, and indirect targets manually.

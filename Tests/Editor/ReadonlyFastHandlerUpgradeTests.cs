@@ -586,6 +586,18 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                     + " else (message.Value, local) = (1, 2); });",
                 "message"
             ).SetName("A tuple target in an else body without braces requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> { int local; foreach (int value in new[] { 1 })"
+                    + " (message.Value, local) = (value, 2); });",
+                "message"
+            ).SetName("A tuple target in a foreach body without braces requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> { int index = 0; int[] buffer = new int[2];"
+                    + " (buffer[index < 1 ? 0 : 1], message.Value) = (1, 2); });",
+                "message"
+            ).SetName("A comparison in another tuple index preserves detection of a direct write");
         }
 
         private static IEnumerable<TestCaseData> SafeParameterUseCases()
@@ -654,6 +666,10 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "int[] buffer = new int[1]; int messageOther;"
                     + " (buffer[message.Value], messageOther) = (1, 2); Observe(messageOther);"
             ).SetName("Reading a parameter in another tuple target index still migrates");
+            yield return new TestCaseData(
+                "int[] buffer = new int[2]; int local;"
+                    + " (buffer[message.Value < 1 ? 0 : 1], local) = (1, 2); Observe(local);"
+            ).SetName("Reading a parameter in a tuple index comparison still migrates");
         }
 
         private static IEnumerable<TestCaseData> InterpolatedByReferenceUseCases()
