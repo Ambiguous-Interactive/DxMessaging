@@ -19,6 +19,8 @@ namespace DxMessaging.Core
         private readonly long _id;
         private readonly int _slot;
 
+        internal static ulong LastIssuedId => unchecked((ulong)Volatile.Read(ref StaticIdCount));
+
         internal long Id => _id;
 
         internal int Slot => _slot;
