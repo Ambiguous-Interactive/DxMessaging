@@ -559,21 +559,8 @@ test("every Unity lock window releases with explicit cleanup proof", () => {
     const parsedSteps = YAML.parse(job)[jobId].steps;
     const gateIndex = parsedSteps.findIndex((step) => step.id === "ensure_unity_editor");
     assert.ok(gateIndex >= 0, `${label}: editor gate step must exist`);
-    // The enrollment audit admits only the exact current-head guard before the
-    // editor gate, and requires the cleanup gate to end the job.
-    const preceding = parsedSteps.slice(0, gateIndex);
-    assert.ok(
-      preceding.length === 0 ||
-        (preceding.length === 1 &&
-          /require-current-pr-head@/.test(preceding[0].uses || "") &&
-          preceding[0]["timeout-minutes"] <= 2),
-      `${label}: only the bounded current-head guard may precede the editor gate`
-    );
-    assert.equal(
-      parsedSteps.at(-1).name,
-      "Require confirmed Unity cleanup",
-      `${label}: the cleanup gate must be the last step`
-    );
+    // prettier-ignore
+    assert.ok(parsedSteps.slice(0, gateIndex).every((s) => /require-current-pr-head@/.test(s.uses || "") && s["timeout-minutes"] <= 2) && gateIndex <= 1 && parsedSteps.at(-1).name === "Require confirmed Unity cleanup", `${label}: bounded head guard and terminal cleanup gate`);
     const consumers = UNITY_EDITOR_CONSUMERS.find(
       ([candidateFile, candidateJobId]) => candidateFile === file && candidateJobId === jobId
     );
