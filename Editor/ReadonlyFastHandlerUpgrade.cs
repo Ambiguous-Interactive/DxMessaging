@@ -1783,7 +1783,9 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
+                int targetStart = use.Index;
                 int next = NextNonWhitespace(masked, use.Index + use.Length);
+                ExpandStandaloneGrouping(masked, body, ref targetStart, ref next);
                 if (0 <= next && next < bodyEnd && masked[next] == '.')
                 {
                     int memberStart = NextNonWhitespace(masked, next + 1);
@@ -1812,6 +1814,7 @@ namespace DxMessaging.Editor
                     next = NextNonWhitespace(masked, indexerEnd + 1);
                 }
 
+                ExpandStandaloneGrouping(masked, body, ref targetStart, ref next);
                 if (0 <= next && next < bodyEnd)
                 {
                     char following = masked[next];
@@ -1827,28 +1830,64 @@ namespace DxMessaging.Editor
 
                     if (
                         (following == ',' || following == ')')
-                        && IsDirectDeconstructionTarget(masked, body, use.Index, next)
+                        && IsDirectDeconstructionTarget(masked, body, targetStart, next)
                     )
                     {
                         return true;
                     }
                 }
 
-                if (body.Start < previous)
+                previous = PreviousNonWhitespace(masked, targetStart - 1);
+                if (FollowsPrefixWriteOperator(masked, body.Start, previous))
                 {
-                    char preceding = masked[previous];
-                    // In count+++message, the first two signs are the local's postfix operator.
-                    if (
-                        (preceding == '+' || preceding == '-')
-                        && masked[previous - 1] == preceding
-                        && (previous - 1 == body.Start || masked[previous - 2] != preceding)
-                    )
-                    {
-                        return true;
-                    }
+                    return true;
                 }
             }
             return false;
+        }
+
+        private static void ExpandStandaloneGrouping(
+            string text,
+            TextSpan body,
+            ref int targetStart,
+            ref int following
+        )
+        {
+            int bodyEnd = body.Start + body.Length;
+            while (0 <= following && following < bodyEnd && text[following] == ')')
+            {
+                int opening = PreviousNonWhitespace(text, targetStart - 1);
+                if (opening < body.Start || text[opening] != '(')
+                {
+                    return;
+                }
+
+                int beforeOpening = PreviousNonWhitespace(text, opening - 1);
+                if (
+                    !FollowsTargetBoundary(text, body.Start, beforeOpening)
+                    && !FollowsPrefixWriteOperator(text, body.Start, beforeOpening)
+                )
+                {
+                    return;
+                }
+
+                targetStart = opening;
+                following = NextNonWhitespace(text, following + 1);
+            }
+        }
+
+        private static bool FollowsPrefixWriteOperator(string text, int bodyStart, int previous)
+        {
+            if (previous <= bodyStart)
+            {
+                return false;
+            }
+
+            char preceding = text[previous];
+            // In count+++message, the first two signs are the local's postfix operator.
+            return (preceding == '+' || preceding == '-')
+                && text[previous - 1] == preceding
+                && (previous - 1 == bodyStart || text[previous - 2] != preceding);
         }
 
         private static bool IsDirectDeconstructionTarget(
@@ -1867,11 +1906,7 @@ namespace DxMessaging.Editor
             )
             {
                 int beforeTuple = PreviousNonWhitespace(text, tupleStart - 1);
-                if (
-                    body.Start <= beforeTuple
-                    && "({[};,:?=".IndexOf(text[beforeTuple]) < 0
-                    && !FollowsTupleControlStatement(text, body.Start, beforeTuple)
-                )
+                if (!FollowsTargetBoundary(text, body.Start, beforeTuple))
                 {
                     return false;
                 }
@@ -1925,6 +1960,11 @@ namespace DxMessaging.Editor
             }
             return false;
         }
+
+        private static bool FollowsTargetBoundary(string text, int bodyStart, int beforeTarget) =>
+            beforeTarget < bodyStart
+            || "({[};,:?=".IndexOf(text[beforeTarget]) >= 0
+            || FollowsTupleControlStatement(text, bodyStart, beforeTarget);
 
         private static bool FollowsTupleControlStatement(
             string text,

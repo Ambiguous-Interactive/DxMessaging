@@ -183,15 +183,15 @@ Review project-wide callback uses, inspect the diff, and let Unity compile befor
 migration.
 
 The preview defers direct assignments, compound assignments, and increment or decrement operations
-on a callback parameter, its direct members, or a direct indexer such as `message[0]`. It also checks
+on a callback parameter, its direct members, or a direct indexer such as `message[0]`. This includes
+simple parentheses around a receiver or target, such as `(message).Value`. The preview also checks
 these targets in ordinary tuple deconstruction, including bodies of `if`, `else`, `while`, `for`,
-`lock`, and `do` without braces. The preview checks writes and `ref` or `out` arguments in simple
+`lock`, and `do` without braces. It checks writes and `ref` or `out` arguments in simple
 interpolated strings, including C# 11 raw interpolation. The text scan can flag apparent writes or
-forwarding in literal text, member and indexer writes on class messages, and
-initializer members with the same name as a parameter. Review complex interpolation, parenthesized
-individual targets, and indirect targets manually. Copy a struct message to a local when the
-callback needs writable scratch data. Move payload or context edits to an interceptor when later
-listeners need to see them.
+forwarding in literal text, member and indexer writes on class messages, and initializer members with
+the same name as a parameter. Review complex interpolation, casts, and indirect targets manually.
+Copy a struct message to a local when the callback needs writable scratch data. Move payload or
+context edits to an interceptor when later listeners need to see them.
 
 Apply the same change to both parameters of callbacks that receive a target or source:
 

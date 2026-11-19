@@ -494,6 +494,18 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("Inline field assignment");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => (message).Value = 1);",
+                "message"
+            ).SetName("A grouped member receiver requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => ++((message).Value));",
+                "message"
+            ).SetName("A grouped prefix increment requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => ((message))[0]--);",
+                "message"
+            ).SetName("A grouped indexer decrement requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => \\u006dessage.Value++);",
                 "message"
             ).SetName("Writing through an escaped parameter spelling requires manual review");
@@ -628,6 +640,12 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "Observe(message.Value + +message.Value); Observe(message.Value - -message.Value);"
             ).SetName("Separate unary operators still migrate");
+            yield return new TestCaseData(
+                "Observe((message).Value); Observe(((message)));"
+            ).SetName("Grouped parameter reads still migrate");
+            yield return new TestCaseData(
+                "RefPulse(message).Value = 1; RefCell((message.Value)) = 2;"
+            ).SetName("Grouped call arguments in unrelated targets still migrate");
             yield return new TestCaseData(
                 "Pulse copy; int value; (copy, value) = (message, message.Value);"
                     + " Observe(copy); Observe(value);"
