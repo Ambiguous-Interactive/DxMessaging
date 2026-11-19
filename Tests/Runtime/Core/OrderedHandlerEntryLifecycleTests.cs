@@ -273,6 +273,49 @@ namespace DxMessaging.Tests.Runtime.Core
             }
         }
 
+        [Test]
+        public void EqualPriorityCallbackGroupingUsesHandlerInsertionOrder(
+            [ValueSource(typeof(MessageScenarios), nameof(MessageScenarios.AllKinds))]
+                MessageScenario scenario
+        )
+        {
+            MessageBus bus = new MessageBus { DiagnosticsMode = false };
+            using LeakWatcher leaks = new LeakWatcher(bus, label: scenario.ToString());
+            MessageHandler handlerA = new MessageHandler(new InstanceId(987), bus)
+            {
+                active = true,
+            };
+            MessageHandler handlerB = new MessageHandler(new InstanceId(988), bus)
+            {
+                active = true,
+            };
+            using MessageRegistrationToken tokenA = MessageRegistrationToken.Create(handlerA, bus);
+            using MessageRegistrationToken tokenB = MessageRegistrationToken.Create(handlerB, bus);
+            tokenA.Enable();
+            tokenB.Enable();
+
+            List<int> order = new List<int>();
+            _ = Register(tokenA, scenario, action: true, global: false, new Receiver(1, order));
+            _ = Register(tokenB, scenario, action: false, global: false, new Receiver(2, order));
+            _ = Register(tokenA, scenario, action: false, global: false, new Receiver(3, order));
+            _ = Register(
+                tokenB,
+                scenario,
+                action: true,
+                global: false,
+                new Receiver(4, order),
+                priority: -1
+            );
+
+            Emit(bus, scenario);
+
+            Assert.That(
+                order,
+                Is.EqualTo(new[] { 4, 3, 1, 2 }),
+                $"{scenario}: lower priority first, then each owner's fast and Action callbacks"
+            );
+        }
+
         private static void Remove(
             MessageRegistrationToken token,
             MessageRegistrationHandle[] handles,
@@ -290,7 +333,8 @@ namespace DxMessaging.Tests.Runtime.Core
             MessageScenario scenario,
             bool action,
             bool global,
-            Receiver receiver
+            Receiver receiver,
+            int priority = 0
         )
         {
             if (global)
@@ -310,68 +354,101 @@ namespace DxMessaging.Tests.Runtime.Core
             return (scenario.Kind, scenario.UsePostProcessor, action) switch
             {
                 (MessageKind.Untargeted, false, true) => token.RegisterUntargeted<ProbeMessage>(
-                    receiver.Receive
+                    receiver.Receive,
+                    priority
                 ),
                 (MessageKind.Untargeted, false, false) => token.RegisterUntargeted<ProbeMessage>(
-                    receiver.ReceiveFast
+                    receiver.ReceiveFast,
+                    priority
                 ),
                 (MessageKind.Untargeted, true, _) =>
-                    token.RegisterUntargetedPostProcessor<ProbeMessage>(receiver.ReceiveFast),
+                    token.RegisterUntargetedPostProcessor<ProbeMessage>(
+                        receiver.ReceiveFast,
+                        priority
+                    ),
                 (MessageKind.Targeted, false, true) => token.RegisterTargeted<ProbeMessage>(
                     Context,
-                    receiver.Receive
+                    receiver.Receive,
+                    priority
                 ),
                 (MessageKind.Targeted, false, false) => token.RegisterTargeted<ProbeMessage>(
                     Context,
-                    receiver.ReceiveFast
+                    receiver.ReceiveFast,
+                    priority
                 ),
                 (MessageKind.Targeted, true, true) =>
-                    token.RegisterTargetedPostProcessor<ProbeMessage>(Context, receiver.Receive),
+                    token.RegisterTargetedPostProcessor<ProbeMessage>(
+                        Context,
+                        receiver.Receive,
+                        priority
+                    ),
                 (MessageKind.Targeted, true, false) =>
                     token.RegisterTargetedPostProcessor<ProbeMessage>(
                         Context,
-                        receiver.ReceiveFast
+                        receiver.ReceiveFast,
+                        priority
                     ),
                 (MessageKind.Broadcast, false, true) => token.RegisterBroadcast<ProbeMessage>(
                     Context,
-                    receiver.Receive
+                    receiver.Receive,
+                    priority
                 ),
                 (MessageKind.Broadcast, false, false) => token.RegisterBroadcast<ProbeMessage>(
                     Context,
-                    receiver.ReceiveFast
+                    receiver.ReceiveFast,
+                    priority
                 ),
                 (MessageKind.Broadcast, true, true) =>
-                    token.RegisterBroadcastPostProcessor<ProbeMessage>(Context, receiver.Receive),
+                    token.RegisterBroadcastPostProcessor<ProbeMessage>(
+                        Context,
+                        receiver.Receive,
+                        priority
+                    ),
                 (MessageKind.Broadcast, true, false) =>
                     token.RegisterBroadcastPostProcessor<ProbeMessage>(
                         Context,
-                        receiver.ReceiveFast
+                        receiver.ReceiveFast,
+                        priority
                     ),
                 (MessageKind.TargetedWithoutTargeting, false, true) =>
-                    token.RegisterTargetedWithoutTargeting<ProbeMessage>(receiver.ReceiveContext),
+                    token.RegisterTargetedWithoutTargeting<ProbeMessage>(
+                        receiver.ReceiveContext,
+                        priority
+                    ),
                 (MessageKind.TargetedWithoutTargeting, false, false) =>
                     token.RegisterTargetedWithoutTargeting<ProbeMessage>(
-                        receiver.ReceiveContextFast
+                        receiver.ReceiveContextFast,
+                        priority
                     ),
                 (MessageKind.TargetedWithoutTargeting, true, true) =>
                     token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(
-                        receiver.ReceiveContext
+                        receiver.ReceiveContext,
+                        priority
                     ),
                 (MessageKind.TargetedWithoutTargeting, true, false) =>
                     token.RegisterTargetedWithoutTargetingPostProcessor<ProbeMessage>(
-                        receiver.ReceiveContextFast
+                        receiver.ReceiveContextFast,
+                        priority
                     ),
                 (MessageKind.BroadcastWithoutSource, false, true) =>
-                    token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContext),
+                    token.RegisterBroadcastWithoutSource<ProbeMessage>(
+                        receiver.ReceiveContext,
+                        priority
+                    ),
                 (MessageKind.BroadcastWithoutSource, false, false) =>
-                    token.RegisterBroadcastWithoutSource<ProbeMessage>(receiver.ReceiveContextFast),
+                    token.RegisterBroadcastWithoutSource<ProbeMessage>(
+                        receiver.ReceiveContextFast,
+                        priority
+                    ),
                 (MessageKind.BroadcastWithoutSource, true, true) =>
                     token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(
-                        receiver.ReceiveContext
+                        receiver.ReceiveContext,
+                        priority
                     ),
                 (MessageKind.BroadcastWithoutSource, true, false) =>
                     token.RegisterBroadcastWithoutSourcePostProcessor<ProbeMessage>(
-                        receiver.ReceiveContextFast
+                        receiver.ReceiveContextFast,
+                        priority
                     ),
                 _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
             };

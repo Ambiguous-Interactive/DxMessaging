@@ -377,7 +377,7 @@ Message handlers are called **synchronously** and **immediately** when a message
 
 - The emitting code blocks until all handlers complete
 - Long-running handlers will cause frame hitches
-- Handlers execute in registration order (modified by priority)
+- Handler order depends on priority and callback ownership. See [execution order](interceptors-and-ordering.md#execution-order).
 - Exceptions in handlers can affect other handlers if not caught
 
 Design your handlers to be fast and non-blocking.
