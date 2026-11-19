@@ -515,6 +515,23 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("A grouped write after a variable comparison requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " { Observe(1 < message.Value); Observe(1 > (message).Value++); });",
+                "message"
+            ).SetName(
+                "A grouped comparison write after a separate comparison requires manual review"
+            );
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " { int limit = 2; Observe(1 < limit && 1 > (message).Value++); });",
+                "message"
+            ).SetName("A grouped comparison write after logical and requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " { int limit = 2; Observe(1 < limit || 1 > (message).Value++); });",
+                "message"
+            ).SetName("A grouped comparison write after logical or requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => ++((message).Value));",
                 "message"
             ).SetName("A grouped prefix increment requires manual review");
@@ -684,6 +701,9 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData("Observe(1 > (message).Value);").SetName(
                 "A grouped comparison read still migrates"
             );
+            yield return new TestCaseData(
+                "int limit = 2; Observe(1 < limit && 1 > (message).Value);"
+            ).SetName("Grouped reads in mixed comparisons still migrate");
             yield return new TestCaseData(
                 "RefPulseCallback callback = RefPulse; callback!(message).Value = 2;"
             ).SetName("Writing to a null-forgiven delegate result still migrates");

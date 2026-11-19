@@ -1654,7 +1654,12 @@ namespace DxMessaging.Editor
                     foreach (string parameterName in parameterNames)
                     {
                         string parameterValue = IdentifierValue(parameterName);
-                        reason = WritesParameterOrDirectAccess(masked, body, parameterValue)
+                        reason = WritesParameterOrDirectAccess(
+                            masked,
+                            body,
+                            parameterValue,
+                            stopAtTypeArgumentBarriers: true
+                        )
                             ? $"writes to parameter '{parameterName}' or its member"
                             : FindInterpolatedParameterIssue(
                                 source,
@@ -1788,7 +1793,8 @@ namespace DxMessaging.Editor
         private static bool WritesParameterOrDirectAccess(
             string masked,
             TextSpan body,
-            string parameterValue
+            string parameterValue,
+            bool stopAtTypeArgumentBarriers = false
         )
         {
             int bodyEnd = body.Start + body.Length;
@@ -1811,7 +1817,15 @@ namespace DxMessaging.Editor
 
                 int targetStart = use.Index;
                 int next = NextNonWhitespace(masked, use.Index + use.Length);
-                if (!TryReadDirectTarget(masked, body, ref targetStart, ref next))
+                if (
+                    !TryReadDirectTarget(
+                        masked,
+                        body,
+                        ref targetStart,
+                        ref next,
+                        stopAtTypeArgumentBarriers
+                    )
+                )
                 {
                     continue;
                 }
@@ -1847,11 +1861,18 @@ namespace DxMessaging.Editor
             string text,
             TextSpan body,
             ref int targetStart,
-            ref int following
+            ref int following,
+            bool stopAtTypeArgumentBarriers = false
         )
         {
             int bodyEnd = body.Start + body.Length;
-            ExpandStandaloneGrouping(text, body, ref targetStart, ref following);
+            ExpandStandaloneGrouping(
+                text,
+                body,
+                ref targetStart,
+                ref following,
+                stopAtTypeArgumentBarriers
+            );
             if (0 <= following && following < bodyEnd && text[following] == '.')
             {
                 int memberStart = NextNonWhitespace(text, following + 1);
@@ -1883,7 +1904,13 @@ namespace DxMessaging.Editor
                 following = NextNonWhitespace(text, indexerEnd + 1);
             }
 
-            ExpandStandaloneGrouping(text, body, ref targetStart, ref following);
+            ExpandStandaloneGrouping(
+                text,
+                body,
+                ref targetStart,
+                ref following,
+                stopAtTypeArgumentBarriers
+            );
             return following < 0 || bodyEnd <= following || ".[(".IndexOf(text[following]) < 0;
         }
 
@@ -1891,7 +1918,8 @@ namespace DxMessaging.Editor
             string text,
             TextSpan body,
             ref int targetStart,
-            ref int following
+            ref int following,
+            bool stopAtTypeArgumentBarriers
         )
         {
             int bodyEnd = body.Start + body.Length;
@@ -1908,7 +1936,12 @@ namespace DxMessaging.Editor
                 if (
                     !FollowsTargetBoundary(text, body.Start, beforeOpening)
                     && "+-*/%&|^~<".IndexOf(text[beforeOpening]) < 0
-                    && !FollowsStandaloneGreaterThan(text, body.Start, beforeOpening)
+                    && !FollowsStandaloneGreaterThan(
+                        text,
+                        body.Start,
+                        beforeOpening,
+                        stopAtTypeArgumentBarriers
+                    )
                 )
                 {
                     return;
@@ -1922,14 +1955,16 @@ namespace DxMessaging.Editor
         private static bool FollowsStandaloneGreaterThan(
             string text,
             int bodyStart,
-            int previous
+            int previous,
+            bool stopAtTypeArgumentBarriers
         ) =>
             text[previous] == '>'
             && bodyStart < previous
             && text[previous - 1] != '>'
             && text[previous - 1] != '='
             // A matched angle can belong to a generic call's type arguments.
-            && FindMatchingBackward(text, previous, '<', '>', bodyStart) < 0;
+            && FindMatchingBackward(text, previous, '<', '>', bodyStart, stopAtTypeArgumentBarriers)
+                < 0;
 
         private static bool FollowsPrefixWriteOperator(string text, int bodyStart, int previous)
         {
@@ -2580,7 +2615,8 @@ namespace DxMessaging.Editor
             int close,
             char openValue,
             char closeValue,
-            int minimum = 0
+            int minimum = 0,
+            bool stopAtTypeArgumentBarriers = false
         )
         {
             int depth = 0;
@@ -2594,9 +2630,22 @@ namespace DxMessaging.Editor
                 {
                     return index;
                 }
+                else if (stopAtTypeArgumentBarriers && IsTypeArgumentBarrier(text, index, minimum))
+                {
+                    break;
+                }
             }
             return -1;
         }
+
+        // This check is only enabled for masked code, where comments and literals are absent.
+        private static bool IsTypeArgumentBarrier(string text, int index, int minimum) =>
+            text[index] == ';'
+            || (
+                minimum < index
+                && (text[index] == '&' || text[index] == '|')
+                && text[index - 1] == text[index]
+            );
 
         private static int NextNonWhitespace(string text, int start)
         {
