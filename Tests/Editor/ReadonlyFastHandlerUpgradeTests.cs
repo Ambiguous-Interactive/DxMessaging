@@ -506,6 +506,15 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("A grouped write after a comparison operator requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(1 > (message).Value++));",
+                "message"
+            ).SetName("A grouped write after greater-than requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " { int threshold = 1; Observe(threshold>(message).Value++); });",
+                "message"
+            ).SetName("A grouped write after a variable comparison requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => ++((message).Value));",
                 "message"
             ).SetName("A grouped prefix increment requires manual review");
@@ -668,6 +677,12 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             );
             yield return new TestCaseData("GetRef<int>(message).Value = 1;").SetName(
                 "Writing to a generic call result still migrates"
+            );
+            yield return new TestCaseData("GetRef<Box<Box<int>>> (message).Value = 3;").SetName(
+                "Writing to a nested generic call result still migrates"
+            );
+            yield return new TestCaseData("Observe(1 > (message).Value);").SetName(
+                "A grouped comparison read still migrates"
             );
             yield return new TestCaseData(
                 "RefPulseCallback callback = RefPulse; callback!(message).Value = 2;"

@@ -1904,10 +1904,11 @@ namespace DxMessaging.Editor
                 }
 
                 int beforeOpening = PreviousNonWhitespace(text, opening - 1);
-                // A generic call or null-forgiven delegate invocation can follow > or !.
+                // A null-forgiven delegate invocation can follow !.
                 if (
                     !FollowsTargetBoundary(text, body.Start, beforeOpening)
                     && "+-*/%&|^~<".IndexOf(text[beforeOpening]) < 0
+                    && !FollowsStandaloneGreaterThan(text, body.Start, beforeOpening)
                 )
                 {
                     return;
@@ -1917,6 +1918,18 @@ namespace DxMessaging.Editor
                 following = NextNonWhitespace(text, following + 1);
             }
         }
+
+        private static bool FollowsStandaloneGreaterThan(
+            string text,
+            int bodyStart,
+            int previous
+        ) =>
+            text[previous] == '>'
+            && bodyStart < previous
+            && text[previous - 1] != '>'
+            && text[previous - 1] != '='
+            // A matched angle can belong to a generic call's type arguments.
+            && FindMatchingBackward(text, previous, '<', '>', bodyStart) < 0;
 
         private static bool FollowsPrefixWriteOperator(string text, int bodyStart, int previous)
         {
@@ -2566,11 +2579,12 @@ namespace DxMessaging.Editor
             string text,
             int close,
             char openValue,
-            char closeValue
+            char closeValue,
+            int minimum = 0
         )
         {
             int depth = 0;
-            for (int index = close; 0 <= index; index--)
+            for (int index = close; minimum <= index; index--)
             {
                 if (text[index] == closeValue)
                 {
