@@ -7843,18 +7843,16 @@ function Test-NUnitResults {
         Write-CiError "0 tests ran for $Label -- check assembly selection and package testables.$exitNote"
         throw "0 tests ran for $Label."
     }
-    if ($failed -gt 0) {
-        # Enumerate WHICH tests failed (fullname + message + stack) BEFORE the
-        # throw so the operator sees the actionable detail, not just the count.
-        # Best-effort inside the helper's own try/catch -- it never masks the
-        # real failure below. ($exitNote is intentionally omitted here: when tests
-        # genuinely failed, the named failing tests ARE the actionable signal and
-        # the producing process's exit code is noise. The exit note is folded into
-        # the missing-file / invalid / zero-test branches above, where the exit
-        # code IS the most informative remaining clue.)
+    if ($failed -gt 0 -or $run.GetAttribute('result') -ceq 'Failed') {
+        # NUnit can fail a fixture during teardown without changing the failed-case count.
         Write-UnityFailedTestAnnotations -Xml $xml -Label $Label
-        Write-CiError "$failed tests failed for $Label."
-        throw "$failed tests failed for $Label."
+        $problem = if ($failed -gt 0) {
+            "$failed tests failed for $Label."
+        } else {
+            "$Label reported a failed NUnit run without failed test cases."
+        }
+        Write-CiError $problem
+        throw $problem
     }
 
     # PASS. If the producing process exited non-zero despite the valid passing

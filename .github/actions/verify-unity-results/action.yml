@@ -1,8 +1,8 @@
 name: Verify Unity tests actually ran
 description: >-
-  Fail unless an NUnit results.xml under results-dir reports total > 0 and
-  failed = 0. When XML is absent, list editor-validation diagnostics and scan the
-  Unity log for catastrophic compile-time failures.
+  Require an NUnit results.xml under results-dir with total > 0, failed = 0, and
+  no Failed run verdict. When XML is absent, list editor-validation diagnostics
+  and scan the Unity log for catastrophic compile-time failures.
 inputs:
   results-dir:
     description: "Directory the Unity runner wrote the NUnit results XML into."
@@ -529,9 +529,14 @@ runs:
           Write-Host "::error::0 tests ran for $label -- check the assembly list / filter"
           exit 1
         }
-        if ($failed -gt 0) {
+        if ($failed -gt 0 -or $run.GetAttribute('result') -ceq 'Failed') {
           Write-FailedTestAnnotations -Doc $doc -Label $label
-          Write-Host "::error::$label reported $failed failed test(s); see $($xml.FullName)"
+          $problem = if ($failed -gt 0) {
+            "$label reported $failed failed test(s)"
+          } else {
+            "$label reported a failed NUnit run without failed test cases"
+          }
+          Write-Host "::error::$problem; see $($xml.FullName)"
           exit 1
         }
         Write-Host "::notice::${label}: total=$total passed=$passed failed=$failed skipped=$skipped"
