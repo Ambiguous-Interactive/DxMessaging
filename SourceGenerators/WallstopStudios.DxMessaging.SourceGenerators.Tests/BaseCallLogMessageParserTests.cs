@@ -49,6 +49,44 @@ internal sealed class BaseCallLogMessageParserTests
     };
 
     [Test]
+    public void ConsoleCandidateScreenPreservesParsedDiagnostics()
+    {
+        (string Id, string Body)[] diagnostics =
+        {
+            ("DXMSG006", Dxmsg006Bare),
+            ("DXMSG007", Dxmsg007Bare),
+            ("DXMSG008", Dxmsg008Bare),
+            ("DXMSG009", Dxmsg009Bare),
+            ("DXMSG010", Dxmsg010Bare),
+        };
+
+        foreach ((string id, string body) in diagnostics)
+        {
+            string prefixed = $"Assets/Sample/Player.cs(12,9): warning {id}: {body}";
+            foreach (string line in new[] { body, prefixed })
+            {
+                Assert.That(
+                    BaseCallLogMessageParser.ParseLine(line)?.DiagnosticId,
+                    Is.EqualTo(id),
+                    $"The parser should recognize {line}."
+                );
+                Assert.That(
+                    BaseCallLogMessageParser.IsDiagnosticCandidate(line),
+                    Is.True,
+                    $"The Console screen must preserve {line}."
+                );
+            }
+        }
+
+        const string unrelated = "Assets/Other.cs(3,9): warning CS0168: Unused variable.";
+        Assert.That(
+            BaseCallLogMessageParser.IsDiagnosticCandidate(unrelated),
+            Is.False,
+            "The Console buffer should skip ordinary unrelated warnings."
+        );
+    }
+
+    [Test]
     public void ParseLineBareDxmsg006CapturesIdTypeAndMethod()
     {
         ParsedEntry? parsed = BaseCallLogMessageParser.ParseLine(Dxmsg006Bare);

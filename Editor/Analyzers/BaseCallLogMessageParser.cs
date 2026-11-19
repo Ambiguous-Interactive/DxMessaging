@@ -176,6 +176,14 @@ namespace DxMessaging.Editor.Analyzers
             SharedOptions
         );
 
+        /// <summary>Rejects rows outside both supported diagnostic text shapes.</summary>
+        internal static bool IsDiagnosticCandidate(string? logLine)
+        {
+            // Bare bodies start with a quote. Location prefixes contain the uppercase diagnostic ID.
+            return !string.IsNullOrEmpty(logLine)
+                && (logLine[0] == '\'' || 0 <= logLine.IndexOf("DXMSG0", StringComparison.Ordinal));
+        }
+
         /// <summary>
         /// Parses one console log line. Returns <c>null</c> if the line is not a recognised
         /// DXMSG006/DXMSG007/DXMSG008/DXMSG009/DXMSG010 message.

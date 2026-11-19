@@ -102,9 +102,8 @@ namespace DxMessaging.Editor.Analyzers
         private const double PollIntervalSeconds = 0.25;
 
         /*
-            N1: cap the per-rescan list capacity so a 100k-warning console doesn't allocate a
-            pathologically large initial backing array. The list still grows freely if the console
-            really does hold more entries than this, but the OOM-edge becomes a non-issue.
+            Bound the initial buffer allocation. It can still grow when the console contains
+            more diagnostic candidates.
         */
         private const int MaxLineListInitialCapacity = 1024;
 
@@ -679,7 +678,8 @@ namespace DxMessaging.Editor.Analyzers
                 and a ReportUpdated fire that drops stale rows.
             */
 
-            // B2 + S6: enter the get/end pair only AFTER StartGettingEntries actually succeeded.
+            // Allocate before acquiring the Console enumeration so failure cannot skip its release.
+            List<string> lines = new(Math.Min(currentCount, MaxLineListInitialCapacity));
             try
             {
                 _startGettingEntries.Invoke(null, null);
@@ -690,12 +690,6 @@ namespace DxMessaging.Editor.Analyzers
                 return new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal);
             }
 
-            /*
-                N1: clamp the initial capacity to a sane ceiling. The list is allowed to grow past
-                this if the console really does hold more entries; we just don't blow up the heap on
-                first allocation.
-            */
-            List<string> lines = new(Math.Min(currentCount, MaxLineListInitialCapacity));
             int harvestedCount = currentCount;
             try
             {
@@ -755,7 +749,7 @@ namespace DxMessaging.Editor.Analyzers
                         continue;
                     }
 
-                    if (!string.IsNullOrEmpty(message))
+                    if (BaseCallLogMessageParser.IsDiagnosticCandidate(message))
                     {
                         lines.Add(message);
                     }
