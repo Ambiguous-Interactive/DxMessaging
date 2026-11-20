@@ -120,9 +120,9 @@ namespace DxMessaging.Editor
         );
 
         private static readonly Regex LocalFunctionParameterRegex = new(
-            @"\G\s*(?:(?:scoped|ref|readonly|in|out|params)\s+)*"
+            @"\G\s*(?<modifiers>(?:(?:scoped|ref|readonly|in|out|params)\s+)*)(?<type>"
                 + SimpleDeclaredTypePattern
-                + @"\s+(?<name>"
+                + @")\s+(?<name>"
                 + IdentifierSpellingPattern
                 + @")\s*\z",
             RegexOptions.CultureInvariant,
@@ -1585,6 +1585,13 @@ namespace DxMessaging.Editor
                 return;
             }
 
+            List<TextSpan> overrideParameters = SplitArguments(
+                masked,
+                declaration.ParametersStart,
+                declaration.ParametersEnd
+            );
+            List<(string Parameter, TextSpan Declaration)> localShadows =
+                CollectLocalFunctionShadows(masked, body);
             Regex baseCall = new(
                 @"\bbase\s*\.\s*" + Regex.Escape(methodName) + @"\s*\(",
                 RegexOptions.CultureInvariant
@@ -1601,24 +1608,135 @@ namespace DxMessaging.Editor
                 {
                     continue;
                 }
-                foreach (TextSpan argument in SplitArguments(masked, open + 1, close))
+                List<TextSpan> arguments = SplitArguments(masked, open + 1, close);
+                for (int argumentIndex = 0; argumentIndex < arguments.Count; argumentIndex++)
                 {
-                    string argumentText = masked.Substring(argument.Start, argument.Length);
-                    Match forwarded = BaseRefArgumentRegex.Match(argumentText);
+                    TextSpan argument = GetArgumentValueSpan(masked, arguments[argumentIndex]);
+                    int refStart = NextNonWhitespace(masked, argument.Start);
+                    if (
+                        argument.Start + argument.Length <= refStart
+                        || !StartsWithIdentifier(masked, refStart, "ref")
+                    )
+                    {
+                        continue;
+                    }
+
+                    // A withheld base-argument edit also defers every callback that contains it.
+                    baseForwardingOwners[refStart] = declaration.ParametersStart - 1;
+                    Match forwarded = BaseRefArgumentRegex.Match(
+                        masked.Substring(argument.Start, argument.Length)
+                    );
                     if (
                         forwarded.Success
-                        && refParameterNames.Contains(
-                            IdentifierValue(forwarded.Groups["name"].Value)
+                        && argument.Start == arguments[argumentIndex].Start
+                        && argumentIndex < overrideParameters.Count
+                        && CanRewriteBaseArgument(
+                            masked,
+                            match.Index,
+                            overrideParameters[argumentIndex],
+                            localShadows,
+                            IdentifierValue(forwarded.Groups["name"].Value),
+                            refParameterNames,
+                            replacementStarts
                         )
                     )
                     {
-                        int refStart = argument.Start + forwarded.Index;
-                        refStart = NextNonWhitespace(masked, refStart);
                         replacementStarts.Add(refStart);
-                        baseForwardingOwners[refStart] = declaration.ParametersStart - 1;
                     }
                 }
             }
+        }
+
+        private static bool CanRewriteBaseArgument(
+            string masked,
+            int callStart,
+            TextSpan overrideParameter,
+            List<(string Parameter, TextSpan Declaration)> localShadows,
+            string argumentName,
+            HashSet<string> overrideParameterNames,
+            HashSet<int> replacementStarts
+        )
+        {
+            TextSpan local = localShadows
+                .LastOrDefault(shadow =>
+                    shadow.Declaration.Start < callStart
+                    && callStart < shadow.Declaration.Start + shadow.Declaration.Length
+                )
+                .Declaration;
+            bool existingNameMatch = overrideParameterNames.Contains(argumentName);
+            if (local.Length == 0)
+            {
+                return existingNameMatch;
+            }
+
+            int close = FindMatching(masked, local.Start, '(', ')');
+            if (close < 0 || !TryFindCallableBody(masked, close, out TextSpan localBody))
+            {
+                return false;
+            }
+            if (!existingNameMatch && !IsDirectBaseCallWithinLocal(masked, localBody, callStart))
+            {
+                return false;
+            }
+
+            string expectedType = GetDeclaredRefType(masked, overrideParameter);
+            HashSet<int> requiredReplacements = existingNameMatch ? null : replacementStarts;
+            return expectedType != null
+                && SplitArguments(masked, local.Start + 1, close)
+                    .Any(parameter =>
+                        GetDeclaredRefType(masked, parameter, argumentName, requiredReplacements)
+                        == expectedType
+                    );
+        }
+
+        private static string GetDeclaredRefType(
+            string masked,
+            TextSpan parameter,
+            string name = null,
+            HashSet<int> requiredReplacements = null
+        )
+        {
+            Match declared = LocalFunctionParameterRegex.Match(
+                masked,
+                parameter.Start,
+                parameter.Length
+            );
+            return
+                declared.Success
+                && declared.Groups["modifiers"].Value.Trim() == "ref"
+                && (name == null || IdentifierValue(declared.Groups["name"].Value) == name)
+                && requiredReplacements?.Contains(declared.Groups["modifiers"].Index) != false
+                ? declared.Groups["type"].Value
+                : null;
+        }
+
+        private static bool IsDirectBaseCallWithinLocal(string masked, TextSpan body, int callStart)
+        {
+            if (callStart < body.Start || body.Start + body.Length <= callStart)
+            {
+                return false;
+            }
+            int preceding = PreviousNonWhitespace(masked, callStart - 1);
+            if (body.Start <= preceding && masked[preceding] is not (';' or '}'))
+            {
+                return false;
+            }
+            // A renamed argument is proved only at the callable's own statement level.
+            // A deeper expression or block might belong to an unrecognized nested callable.
+            int depth = 0;
+            for (int index = body.Start; index < callStart; index++)
+            {
+                switch (masked[index])
+                {
+                    case '(' or '[' or '{':
+                        depth++;
+                        break;
+                    case ')' or ']' or '}':
+                        depth--;
+                        break;
+                }
+            }
+            return depth == 0;
         }
 
         private static void PruneIncompatibleParameterUses(
@@ -1716,19 +1834,8 @@ namespace DxMessaging.Editor
                 }
             }
 
-            List<(string Parameter, TextSpan Declaration)> localShadows;
-            try
-            {
-                localShadows = FindLocalFunctionShadows(masked, body).ToList();
-            }
-            catch (RegexMatchTimeoutException exception)
-            {
-                DxMessagingEditorLog.LogWarning(
-                    "Local function scope detection timed out. Scanning all parameter uses.",
-                    exception
-                );
-                localShadows = new();
-            }
+            List<(string Parameter, TextSpan Declaration)> localShadows =
+                CollectLocalFunctionShadows(masked, body);
 
             List<int> forwardingStarts = new();
             int enclosingOverride = -1;
@@ -1906,6 +2013,25 @@ namespace DxMessaging.Editor
                 }
             }
             return false;
+        }
+
+        private static List<(string Parameter, TextSpan Declaration)> CollectLocalFunctionShadows(
+            string masked,
+            TextSpan body
+        )
+        {
+            try
+            {
+                return FindLocalFunctionShadows(masked, body).ToList();
+            }
+            catch (RegexMatchTimeoutException exception)
+            {
+                DxMessagingEditorLog.LogWarning(
+                    "Local function scope detection timed out. Scanning all parameter uses.",
+                    exception
+                );
+                return new();
+            }
         }
 
         private static IEnumerable<(

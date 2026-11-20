@@ -1866,6 +1866,132 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(2));
         }
 
+        [TestCase(
+            "HandleGlobalStringMessage",
+            "GlobalStringMessage",
+            "void Forward(ref PAYLOAD forwarded) => base.HANDLER(ref forwarded);\n"
+                + "        FAST_HANDLER first = Forward; Consume(first, outer);",
+            3,
+            TestName = "A global override binds a renamed local ref parameter for base forwarding"
+        )]
+        [TestCase(
+            "HandleStringComponentMessage",
+            "StringMessage",
+            "PAYLOAD copy = outer;\n        if (true) {\n"
+                + "            void Forward(int source, ref PAYLOAD forwarded) => base.HANDLER(ref forwarded);\n"
+                + "            DxMessaging.Core.MessageHandler.FastHandlerWithContext<int, PAYLOAD> handler = Forward;\n"
+                + "            Consume(handler, copy);\n        }",
+            3,
+            TestName = "A component override binds a renamed second local parameter for base forwarding"
+        )]
+        [TestCase(
+            "HandleStringGameObjectMessage",
+            "StringMessage",
+            "void Forward(ref PAYLOAD first) => base.HANDLER(ref first);\n"
+                + "        void Relay(ref PAYLOAD second) { base.HANDLER(ref second); }\n"
+                + "        FAST_HANDLER firstHandler = Forward; FAST_HANDLER secondHandler = Relay;\n"
+                + "        Consume(firstHandler, outer); Consume(secondHandler, outer);",
+            5,
+            TestName = "A GameObject override migrates two renamed local base forwarding callbacks"
+        )]
+        public void AnalyzeMigratesRenamedLocalBaseForwarding(
+            string method,
+            string payload,
+            string body,
+            int expectedReplacements
+        )
+        {
+            string source = CreateRenamedForwardingSource(method, payload, body);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(expectedReplacements));
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+            Assert.That(result.UpgradedSource, Does.Contain($"{method}(in {payload} outer)"));
+            Assert.That(result.UpgradedSource, Does.Not.Contain("ref "));
+        }
+
+        [TestCase(
+            "void Forward(ref PAYLOAD forwarded) => base.HANDLER(ref forwarded);\n"
+                + "        FAST_HANDLER handler = Forward; outer = default; Consume(handler, outer);",
+            2,
+            TestName = "An outer write defers a renamed local base forwarding callback"
+        )]
+        [TestCase(
+            "void Forward(ref PAYLOAD forwarded) { forwarded = default; base.HANDLER(ref forwarded); }\n"
+                + "        void Relay(ref PAYLOAD outer) => base.HANDLER(ref outer);\n"
+                + "        FAST_HANDLER first = Forward; FAST_HANDLER second = Relay; Consume(first, outer); Consume(second, outer);",
+            3,
+            TestName = "A write to a renamed parameter defers its sibling base forwarding callback"
+        )]
+        [TestCase(
+            "void Forward(ref PAYLOAD forwarded) => base.HANDLER(ref forwarded);\n"
+                + "        FAST_HANDLER handler = Forward; PAYLOAD copy = outer; Forward(ref copy);",
+            2,
+            TestName = "A direct ref caller defers a renamed local base forwarding callback"
+        )]
+        [TestCase(
+            "void Forward(ref PAYLOAD forwarded) { PAYLOAD copy = forwarded; base.HANDLER(ref copy); }\n"
+                + "        FAST_HANDLER handler = Forward; Consume(handler, outer);",
+            2,
+            TestName = "An unbound local copy defers the connected base forwarding edits"
+        )]
+        [TestCase(
+            "void Forward(ref int forwarded) => base.HANDLER(ref forwarded);\n"
+                + "        DxMessaging.Core.MessageHandler.FastHandler<int> handler = Forward; ConsumeInt(handler, 7);",
+            2,
+            TestName = "A different local ref type defers the connected base forwarding edits"
+        )]
+        [TestCase(
+            "void Forward(PAYLOAD forwarded) => base.HANDLER(ref forwarded);\n"
+                + "        Forward(outer);",
+            1,
+            TestName = "A by-value local parameter defers the connected base forwarding edits"
+        )]
+        public void AnalyzeDefersRenamedBaseForwardingWithoutProvedBinding(
+            string body,
+            int expectedReviews
+        )
+        {
+            string source = CreateRenamedForwardingSource(
+                "HandleGlobalStringMessage",
+                "GlobalStringMessage",
+                body
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(expectedReviews));
+        }
+
+        private static string CreateRenamedForwardingSource(
+            string method,
+            string payload,
+            string body
+        )
+        {
+            const string Template =
+                @"
+class Receiver : DxMessaging.Unity.MessageAwareComponent
+{
+    protected override void HANDLER(ref PAYLOAD outer)
+    {
+        BODY
+    }
+}";
+            return Template
+                .Replace("BODY", body)
+                .Replace("FAST_HANDLER", "DxMessaging.Core.MessageHandler.FastHandler<PAYLOAD>")
+                .Replace("HANDLER", method)
+                .Replace("PAYLOAD", payload);
+        }
+
         [Test]
         public void AnalyzeLeavesExpressionBodyWithGenericRefForwardingForManualReview()
         {
