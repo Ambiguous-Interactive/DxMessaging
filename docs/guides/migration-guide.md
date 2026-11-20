@@ -175,8 +175,10 @@ again before rollback, the tool preserves the newer edit and its backup instead 
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
 ambiguous receivers unchanged. It also leaves a callback unchanged when its newly readonly
 parameter is passed as a `ref` or `out` argument, except for the matching `base` call in a changed
-`MessageAwareComponent` override, which it can update safely. The tool detects callbacks passed
-directly to both a handler and an interceptor in the same script. It lists these cases in the
+`MessageAwareComponent` override, which it can update safely. When a local callback forwards to the
+base override, the preview keeps the related signature and argument edits together. It defers those
+edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks
+passed directly to both a handler and an interceptor in the same script. It lists these cases in the
 Console for manual review. Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
 Review project-wide callback uses, inspect the diff, and let Unity compile before committing the
