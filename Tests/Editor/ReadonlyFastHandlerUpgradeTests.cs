@@ -926,6 +926,9 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "Observe(flag switch { true => Wrap(message).Next, _ => 0 });"
             ).SetName("A switch result reading an unrelated call result still migrates");
+            yield return new TestCaseData("Observe(@checked(message).Next);").SetName(
+                "An escaped checked callable still migrates"
+            );
             yield return new TestCaseData(
                 "ObserveTuple((GetHolder(low < high).Value, message));"
             ).SetName("A tuple value beside a nested comparison still migrates");
@@ -948,6 +951,12 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
 
         private static IEnumerable<TestCaseData> UnresolvedMemberReadCases()
         {
+            yield return new TestCaseData("Observe(checked(message).Next);").SetName(
+                "Reading a parameter member in a checked expression requires review"
+            );
+            yield return new TestCaseData("Observe(unchecked(checked(message)).Next);").SetName(
+                "Reading a parameter member in nested checked expressions requires review"
+            );
             yield return new TestCaseData(
                 "Observe(flag switch { true => (message).Next, _ => 0 });"
             ).SetName("A grouped parameter member read after a switch arrow requires review");
@@ -1320,6 +1329,37 @@ sealed class Receiver : MessageAwareComponent
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
+        [TestCase(
+            "message = default;",
+            "writes to parameter 'message'",
+            TestName = "A write between disabled ordinary quotes requires review"
+        )]
+        [TestCase(
+            "Observe(message.Next);",
+            "reads a member or indexer on parameter 'message'",
+            TestName = "A member read between disabled ordinary quotes requires review"
+        )]
+        public void AnalyzeKeepsActiveCodeVisibleBetweenDisabledQuotes(
+            string statement,
+            string expectedReason
+        )
+        {
+            string source =
+                "DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = "
+                + "(ref Pulse message) => {\n#if false\n\"\n#endif\n"
+                + statement
+                + "\n#if false\n\"\n#endif\n};";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain(expectedReason));
+        }
+
         private static IEnumerable<TestCaseData> SourceLineTerminatorCases()
         {
             yield return new TestCaseData("\u0085").SetName(
@@ -1363,6 +1403,28 @@ sealed class Receiver : MessageAwareComponent
         }
 
         [TestCaseSource(nameof(ExplicitParameterWriteCases))]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) => { ++checked(message); });",
+            "message",
+            TestName = "Incrementing a checked parameter requires manual review"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                + " { int item; (checked(message), item) = (default(Pulse), 83); });",
+            "message",
+            TestName = "Writing a checked tuple target requires manual review"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) => { message!++; });",
+            "message",
+            TestName = "Incrementing a null-forgiven parameter requires manual review"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                + " { int item; (message!, item) = (default(Pulse), 83); });",
+            "message",
+            TestName = "Writing a null-forgiven tuple target requires manual review"
+        )]
         [TestCase(
             "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
                 + " { int[] buffer = { 1 }; fixed (int* p = buffer) (message).Value++; });",
@@ -1430,6 +1492,10 @@ sealed class Receiver : MessageAwareComponent
         }
 
         [TestCaseSource(nameof(ReceiverInvocationCases))]
+        [TestCase(
+            "unsafe { fixed (int* pointer = unchecked(message)) Observe(*pointer); }",
+            TestName = "Pinning a checked expression around the parameter requires manual review"
+        )]
         [TestCase(
             "unsafe { fixed (int* pointer = message) Observe(*pointer); }",
             TestName = "Pinning the whole callback parameter requires manual review"

@@ -2480,7 +2480,16 @@ namespace DxMessaging.Editor
             while (0 <= following && following < bodyEnd && text[following] == '!')
             {
                 int after = NextAfterComments(text, following + 1, bodyEnd);
-                if (after < 0 || bodyEnd <= after || text[after] is not ('.' or '[' or ')' or '?'))
+                if (after < 0 || bodyEnd <= after)
+                {
+                    return;
+                }
+
+                bool postfixWrite =
+                    after + 1 < bodyEnd
+                    && (text[after] is '+' or '-')
+                    && text[after] == text[after + 1];
+                if (text[after] is not ('.' or '[' or ')' or '?' or ',') && !postfixWrite)
                 {
                     return;
                 }
@@ -2507,13 +2516,25 @@ namespace DxMessaging.Editor
                 }
 
                 int beforeOpening = PreviousNonWhitespace(text, opening - 1);
+                int groupingStart = opening;
+                // Checked expressions preserve the classification of their operand.
+                if (FollowsKeyword(text, body.Start, beforeOpening, "checked"))
+                {
+                    groupingStart = beforeOpening - "checked".Length + 1;
+                }
+                else if (FollowsKeyword(text, body.Start, beforeOpening, "unchecked"))
+                {
+                    groupingStart = beforeOpening - "unchecked".Length + 1;
+                }
+
                 // A preceding ! can be a prefix operator or null forgiveness on a callable.
                 while (body.Start <= beforeOpening && text[beforeOpening] == '!')
                 {
                     beforeOpening = PreviousNonWhitespace(text, beforeOpening - 1);
                 }
                 if (
-                    !FollowsTargetBoundary(text, body.Start, beforeOpening)
+                    groupingStart == opening
+                    && !FollowsTargetBoundary(text, body.Start, beforeOpening)
                     && "+-*/%&|^~<".IndexOf(text[beforeOpening]) < 0
                     && !FollowsRangeOperator(text, body.Start, beforeOpening)
                     && !FollowsStandaloneGreaterThan(text, body.Start, beforeOpening)
@@ -2523,7 +2544,7 @@ namespace DxMessaging.Editor
                     return;
                 }
 
-                targetStart = opening;
+                targetStart = groupingStart;
                 following = NextAfterComments(text, following + 1, bodyEnd);
             }
         }
@@ -3289,7 +3310,12 @@ namespace DxMessaging.Editor
             for (int index = start; index < source.Length; index++)
             {
                 char current = source[index];
-                if (current == '\\' && !verbatim)
+                if (!verbatim && CSharpLineTerminators.Contains(current))
+                {
+                    return index;
+                }
+
+                if (!verbatim && StartsQuotedEscape(source, index))
                 {
                     index++;
                 }
@@ -3418,9 +3444,16 @@ namespace DxMessaging.Editor
         {
             for (int index = start; index < source.Length; index++)
             {
-                if (source[index] != quote)
+                char current = source[index];
+                if (!verbatim && CSharpLineTerminators.Contains(current))
                 {
-                    if (!verbatim && source[index] == '\\')
+                    // An unmatched ordinary quote in skipped conditional text ends on this line.
+                    return index;
+                }
+
+                if (current != quote)
+                {
+                    if (!verbatim && StartsQuotedEscape(source, index))
                     {
                         index++;
                     }
@@ -3435,6 +3468,11 @@ namespace DxMessaging.Editor
             }
             return source.Length;
         }
+
+        private static bool StartsQuotedEscape(string source, int position) =>
+            source[position] == '\\'
+            && position + 1 < source.Length
+            && !CSharpLineTerminators.Contains(source[position + 1]);
 
         private static int FindRawStringEnd(
             string source,

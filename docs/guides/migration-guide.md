@@ -181,8 +181,8 @@ edits if a direct call still needs the local callback's `ref` signature. The too
 passed directly to both a handler and an interceptor in the same script. It lists these cases in the
 Console for manual review. Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
-Review project-wide callback uses, inspect the diff, and let Unity compile before committing the
-migration.
+Review project-wide callback uses and conditional compilation. Inspect the diff and let Unity
+compile before committing the migration.
 
 The preview defers assignments, compound assignments, and increment or decrement operations on a
 callback parameter, a direct indexer such as `message[0]`, or a member chain such as
@@ -198,7 +198,9 @@ the member before converting the callback by hand. A callback that only passes t
 by value, such as `Observe(message)`, can still migrate automatically.
 
 The scan recognizes simple parentheses around a receiver or target, such as `(message).Value`, and
-applies the same grouping rule to direct `ref` and `out` arguments. It checks direct targets in ordinary
+applies the same grouping rule to direct `ref` and `out` arguments. It also follows single-operand
+`checked` and `unchecked` wrappers and recognizes null-forgiving postfix writes and tuple targets.
+It checks direct targets in ordinary
 tuple deconstruction, including bodies of `if`, `else`, `while`, `for`, `foreach`, `using`, `lock`,
 `fixed`, and `do` without braces.
 
