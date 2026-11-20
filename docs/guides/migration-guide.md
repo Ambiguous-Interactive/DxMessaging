@@ -205,8 +205,10 @@ The preview flags calls such as `message.Increment()` and `message.Child.Increme
 these calls, writes, and `ref` or `out` arguments in regular, verbatim, and C# 11 raw interpolations.
 The scan ignores literal text and format specifiers. It can flag read-only calls, class members,
 initializer members that share the parameter's name, calls through delegate fields, and readonly
-aliases to nested members. Inspect explicit method type arguments, conditional access, complex
-interpolation, casts, and indirect targets manually.
+aliases to nested members. The preview scopes parameters of simple, explicitly typed local
+functions to their own declarations. Inspect more complex local function declarations, explicit
+method type arguments, conditional access, complex interpolation, casts, and indirect targets
+manually.
 
 Copy a struct message to a local when the callback needs writable scratch data. Move payload or
 context edits to an interceptor when later listeners need to see them.
