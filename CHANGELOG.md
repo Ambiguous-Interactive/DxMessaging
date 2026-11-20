@@ -69,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve the serialized message bus fallback configured before `MessageAwareComponent.Awake` when a runtime provider is destroyed
+  ([#810](https://github.com/Ambiguous-Interactive/DxMessaging/issues/810)).
 - Preserve `MessagingComponent` listener ownership during callbacks and report unresolved provider
   recursion during initial setup ([#805](https://github.com/Ambiguous-Interactive/DxMessaging/issues/805)).
 - Reduce diagnostic scan buffering in the opt-in Editor Console bridge and release its Console
