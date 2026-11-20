@@ -242,7 +242,9 @@ namespace DxMessaging.Editor
         );
 
         private static readonly Regex TypeDeclarationRegex = new(
-            @"\b(?:class|struct|record(?:\s+(?:class|struct))?)\s+[A-Za-z_]\w*(?:\s*<[^>{};]+>)?",
+            @"(?<![\w@])(?:class|struct|record(?:\s+(?:class|struct))?)\s+(?<name>"
+                + IdentifierSpellingPattern
+                + @")(?:\s*<[^>{};]+>)?",
             RegexOptions.CultureInvariant
         );
 
@@ -860,20 +862,24 @@ namespace DxMessaging.Editor
                     {
                         continue;
                     }
-                    if (
-                        TypeScopeDeclaresStringHandlerOptIn(
-                            masked,
-                            typeStart,
-                            metadata,
-                            out bool requiresConfigurationReview
-                        )
-                    )
+                    StringHandlerProperty setting = FindStringHandlerProperty(
+                        masked,
+                        typeStart,
+                        metadata
+                    );
+                    if (setting != StringHandlerProperty.Missing)
                     {
-                        if (requiresConfigurationReview)
+                        if (setting == StringHandlerProperty.ConditionalOverride)
                         {
                             manualReview.Add(
                                 $"{CallbackLocation(masked, declaration.ParametersStart - 1)} has a conditional "
                                     + "RegisterForStringMessages override; check the inherited setting in each build configuration"
+                            );
+                        }
+                        else if (setting == StringHandlerProperty.Collision)
+                        {
+                            manualReview.Add(
+                                $"{CallbackLocation(masked, declaration.ParametersStart - 1)} has a RegisterForStringMessages property that hides the inherited setting; review the opt-in manually"
                             );
                         }
                         continue;
@@ -922,16 +928,22 @@ namespace DxMessaging.Editor
             return false;
         }
 
-        private static bool TypeScopeDeclaresStringHandlerOptIn(
+        private enum StringHandlerProperty
+        {
+            Missing,
+            Override,
+            ConditionalOverride,
+            Collision,
+        }
+
+        private static StringHandlerProperty FindStringHandlerProperty(
             string masked,
             int typeStart,
-            SourceMetadata metadata,
-            out bool requiresConfigurationReview
+            SourceMetadata metadata
         )
         {
-            requiresConfigurationReview = false;
             Regex memberRegex = new(
-                @"(?<![\w@])override\s+"
+                @"(?<![\w@])(?:(?<modifier>private|protected|internal|public|new|override|virtual|abstract|sealed|static|readonly|required|unsafe|extern|partial)\s+)*"
                     + SimpleDeclaredTypePattern
                     + @"\s+(?<name>"
                     + IdentifierSpellingPattern
@@ -942,8 +954,9 @@ namespace DxMessaging.Editor
             int typeEnd = FindMatching(masked, typeStart, '{', '}');
             if (typeEnd < 0)
             {
-                return false;
+                return StringHandlerProperty.Missing;
             }
+            StringHandlerProperty setting = StringHandlerProperty.Missing;
             for (
                 Match match = memberRegex.Match(masked, typeStart + 1, typeEnd - typeStart - 1);
                 match.Success;
@@ -952,24 +965,49 @@ namespace DxMessaging.Editor
             {
                 if (
                     IdentifierValue(match.Groups["name"].Value) != "RegisterForStringMessages"
-                    || FindContainingTypeStart(masked, match.Index) != typeStart
+                    || !IsDirectTypeMember(masked, typeStart, match.Index)
                 )
                 {
                     continue;
                 }
                 if (
-                    !metadata.UncertainBranches.Exists(branch =>
-                        branch.Start < match.Index + match.Length
-                        && match.Index < branch.Start + branch.Length
-                    )
+                    !match
+                        .Groups["modifier"]
+                        .Captures.Cast<Capture>()
+                        .Any(modifier => modifier.Value == "override")
                 )
                 {
-                    requiresConfigurationReview = false;
-                    return true;
+                    return StringHandlerProperty.Collision;
                 }
-                requiresConfigurationReview = true;
+                bool conditional = metadata.UncertainBranches.Exists(branch =>
+                    branch.Start < match.Index + match.Length
+                    && match.Index < branch.Start + branch.Length
+                );
+                if (!conditional || setting == StringHandlerProperty.Missing)
+                {
+                    setting = conditional
+                        ? StringHandlerProperty.ConditionalOverride
+                        : StringHandlerProperty.Override;
+                }
             }
-            return requiresConfigurationReview;
+            return setting;
+        }
+
+        private static bool IsDirectTypeMember(string masked, int typeStart, int position)
+        {
+            for (int index = typeStart + 1; index < position; index++)
+            {
+                if (masked[index] == '{')
+                {
+                    int end = FindMatching(masked, index, '{', '}');
+                    if (end < 0 || position <= end)
+                    {
+                        return false;
+                    }
+                    index = end;
+                }
+            }
+            return true;
         }
 
         private static bool TypeScopeIsPartial(string masked, int typeStart)
@@ -1093,6 +1131,7 @@ namespace DxMessaging.Editor
             if (
                 HasDirectWritableCall(
                     masked,
+                    metadata,
                     metadata.CallableUses(source, masked, methodName),
                     usageScope,
                     declaration
@@ -1111,11 +1150,15 @@ namespace DxMessaging.Editor
 
         private static bool HasDirectWritableCall(
             string masked,
+            SourceMetadata metadata,
             IEnumerable<(string Code, Match Name, int Offset)> callableUses,
             int typeStart,
             ParameterList declaration
         )
         {
+            bool isTypeMember =
+                typeStart < 0
+                || IsDirectTypeMember(masked, typeStart, declaration.DeclarationStart);
             foreach ((string code, Match use, int offset) in callableUses)
             {
                 int sourceStart = use.Index + offset;
@@ -1125,17 +1168,21 @@ namespace DxMessaging.Editor
                 }
                 int previous = PreviousNonWhitespace(code, use.Index - 1);
                 if (
-                    (
+                    FindContainingTypeStart(masked, sourceStart) != typeStart
+                    || (
                         0 <= previous
                         && code[previous] == '.'
-                        && !FollowsKeyword(
-                            code,
-                            0,
-                            PreviousNonWhitespace(code, previous - 1),
-                            "this"
+                        && (
+                            !isTypeMember
+                            || HasIndependentCallReceiver(
+                                masked,
+                                metadata,
+                                code,
+                                previous,
+                                typeStart
+                            )
                         )
                     )
-                    || FindContainingTypeStart(masked, sourceStart) != typeStart
                 )
                 {
                     continue;
@@ -1155,6 +1202,91 @@ namespace DxMessaging.Editor
                 }
             }
             return false;
+        }
+
+        private static bool HasIndependentCallReceiver(
+            string masked,
+            SourceMetadata metadata,
+            string code,
+            int dot,
+            int typeStart
+        )
+        {
+            int receiverEnd = PreviousNonWhitespace(code, dot - 1);
+            if (FollowsKeyword(code, 0, receiverEnd, "base"))
+            {
+                return true;
+            }
+            int receiverStart = FindIdentifierStart(code, receiverEnd);
+            if (receiverStart < 0 || !IsRootTypeQualifier(code, receiverStart))
+            {
+                return false;
+            }
+            string receiver = IdentifierValue(
+                code.Substring(receiverStart, receiverEnd - receiverStart + 1)
+            );
+            bool foundDeclaration = false;
+            foreach (Match declaration in metadata.ReceiverDeclarations(masked, receiver))
+            {
+                if (FindContainingTypeStart(masked, declaration.Index) != typeStart)
+                {
+                    continue;
+                }
+                Group type = declaration.Groups["type"];
+                string typeName = IdentifierValue(type.Value);
+                Match[] typeDeclarations = TypeDeclarationRegex
+                    .Matches(masked)
+                    .Cast<Match>()
+                    .Where(match => IdentifierValue(match.Groups["name"].Value) == typeName)
+                    .Take(2)
+                    .ToArray();
+                if (
+                    !IsRootTypeQualifier(masked, type.Index)
+                    || ContainsNamespaceAlias(masked, typeName)
+                    || typeDeclarations.Length != 1
+                )
+                {
+                    return false;
+                }
+                Match independentType = typeDeclarations[0];
+                int body = NextNonWhitespace(
+                    masked,
+                    independentType.Index + independentType.Length
+                );
+                if (
+                    body < 0
+                    || masked[body] != '{'
+                    || body == typeStart
+                    || FindEnclosingBrace(masked, independentType.Index)
+                        != FindEnclosingBrace(masked, typeStart)
+                    || TypeScopeIsPartial(masked, body)
+                    || metadata.UncertainBranches.Exists(branch =>
+                        branch.Start <= independentType.Index
+                        && independentType.Index < branch.Start + branch.Length
+                    )
+                )
+                {
+                    return false;
+                }
+                foundDeclaration = true;
+            }
+            return foundDeclaration;
+        }
+
+        private static int FindEnclosingBrace(string masked, int position)
+        {
+            for (int index = position - 1; 0 <= index; index--)
+            {
+                switch (masked[index])
+                {
+                    case '{':
+                        return index;
+                    case '}':
+                        index = FindMatchingBackward(masked, index, '{', '}');
+                        break;
+                }
+            }
+            return -1;
         }
 
         private static List<ParameterList> FindMethodDeclarations(
@@ -1348,16 +1480,14 @@ namespace DxMessaging.Editor
         private static bool HasTypeOrAliasDeclaration(string masked, string typeName)
         {
             return Regex.IsMatch(
-                masked,
-                @"\b(?:class|struct|interface|enum|record(?:\s+(?:class|struct))?)\s+"
-                    + Regex.Escape(typeName)
-                    + @"\b|\bdelegate\s+[A-Za-z_]\w*(?:\s*<[^;={}()]+>)?\s+"
-                    + Regex.Escape(typeName)
-                    + @"\b|\busing\s+"
-                    + Regex.Escape(typeName)
-                    + @"\s*=",
-                RegexOptions.CultureInvariant
-            );
+                    masked,
+                    @"\b(?:class|struct|interface|enum|record(?:\s+(?:class|struct))?)\s+"
+                        + Regex.Escape(typeName)
+                        + @"\b|\bdelegate\s+[A-Za-z_]\w*(?:\s*<[^;={}()]+>)?\s+"
+                        + Regex.Escape(typeName)
+                        + @"\b",
+                    RegexOptions.CultureInvariant
+                ) || ContainsNamespaceAlias(masked, typeName);
         }
 
         private static bool IsRootTypeQualifier(string text, int typeStart)
@@ -1426,7 +1556,7 @@ namespace DxMessaging.Editor
                 declarations.Any(match =>
                     match.Groups["type"].Value != "MessageRegistrationToken"
                     && FindContainingTypeStart(masked, match.Index) == usageScope
-                ) || HasTypeOrAliasDeclaration(masked, "MessageRegistrationToken")
+                )
             )
             {
                 return false;
@@ -1457,7 +1587,8 @@ namespace DxMessaging.Editor
                             masked,
                             "DxMessaging.Core",
                             metadata.HasConditionalDirectives
-                        );
+                        )
+                        && !HasTypeOrAliasDeclaration(masked, "MessageRegistrationToken");
                 }
                 if (!isProven)
                 {
@@ -4158,7 +4289,7 @@ namespace DxMessaging.Editor
 
             public bool HasDxMessagingAlias(string masked)
             {
-                _hasDxMessagingAlias ??= ContainsDxMessagingAlias(masked);
+                _hasDxMessagingAlias ??= ContainsNamespaceAlias(masked, "DxMessaging");
                 return _hasDxMessagingAlias.Value;
             }
 
@@ -4924,14 +5055,14 @@ namespace DxMessaging.Editor
             return true;
         }
 
-        private static bool ContainsDxMessagingAlias(string text)
+        private static bool ContainsNamespaceAlias(string text, string name)
         {
             try
             {
                 return NamespaceAliasRegex
                     .Matches(text)
                     .Cast<Match>()
-                    .Any(alias => IdentifierValue(alias.Groups["alias"].Value) == "DxMessaging");
+                    .Any(alias => IdentifierValue(alias.Groups["alias"].Value) == name);
             }
             catch (RegexMatchTimeoutException)
             {

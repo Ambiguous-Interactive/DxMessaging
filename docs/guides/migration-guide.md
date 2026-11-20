@@ -181,8 +181,9 @@ It can update proven `base` calls in a changed
 methods, the preview keeps the related signature and argument edits together. It defers those
 edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks
 passed directly to both a handler and an interceptor in the same script. It lists these cases in the
-Console for manual review. It also checks unqualified and `this`-qualified `ref` calls to named
-callbacks in the same type, including calls in interpolated expressions. Reports for deferred
+Console for manual review. It also checks `ref` calls to named callbacks in the same type,
+including calls in interpolated expressions. The preview defers the callback when it cannot rule
+out a matching writable call. Reports for deferred
 callback bodies and unproven registrations include the source line and column.
 Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
@@ -243,7 +244,7 @@ For example, use `base.HandleGlobalStringMessage(in message)`.
 Check `RegisterForStringMessages` in each build configuration. Preserve explicit opt-ins, opt-outs,
 and computed overrides where they exist. Add `protected override bool RegisterForStringMessages => true;`
 only in configurations that previously relied on the inherited 3.x default. The preview flags
-conditional properties for manual review.
+conditional properties and properties that hide the inherited setting for manual review.
 
 If a local function serves as a `FastHandler` and also has direct calls, update its signature and
 those calls together. For example, change `Forward(ref copy)` to `Forward(in copy)` when the call
