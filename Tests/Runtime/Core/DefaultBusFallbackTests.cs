@@ -394,6 +394,140 @@ namespace DxMessaging.Tests.Runtime.Core
             );
         }
 
+        /// <summary>Checks fallback for new leases without moving a listener already registered on another bus.</summary>
+        [TestCase(true, false, false)]
+        [TestCase(true, true, false)]
+        [TestCase(false, false, false)]
+        [TestCase(true, false, true)]
+        public void SerializedProviderHandleSurvivesAwake(
+            bool configureBeforeAwake,
+            bool destroyBeforeAwake,
+            bool useProtectedProviderOverride
+        )
+        {
+            string context =
+                $"configureBeforeAwake={configureBeforeAwake}, destroyBeforeAwake={destroyBeforeAwake}, protectedOverride={useProtectedProviderOverride}";
+            MessageBus globalBus = new();
+            MessageBus serializedBus = new();
+            MessageBus runtimeBus = new();
+            using MessageHandler.GlobalMessageBusScope global =
+                MessageHandler.OverrideGlobalMessageBus(globalBus);
+            using LeakWatcher globalWatcher = new(globalBus, label: context + " global");
+            using LeakWatcher serializedWatcher = new(
+                serializedBus,
+                label: context + " serialized"
+            );
+            using LeakWatcher runtimeWatcher = new(runtimeBus, label: context + " runtime");
+            TestScriptableMessageBusProvider serializedProvider =
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            TestScriptableMessageBusProvider runtimeProvider =
+                ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
+            GameObject host = null;
+            try
+            {
+                serializedProvider.Configure(serializedBus);
+                runtimeProvider.Configure(runtimeBus);
+                MessageBusProviderHandle handle = new(serializedProvider);
+                if (!useProtectedProviderOverride)
+                {
+                    handle = handle.WithRuntimeProvider(runtimeProvider);
+                }
+
+                host = new GameObject(nameof(SerializedProviderHandleSurvivesAwake));
+                host.SetActive(false);
+                _spawned.Add(host);
+                MessagingComponent companion = host.AddComponent<MessagingComponent>();
+                BusAwareComponent listener = host.AddComponent<BusAwareComponent>();
+                if (configureBeforeAwake)
+                {
+                    listener.ConfigureMessageBus(handle, MessageBusRebindMode.RebindActive);
+                }
+                if (useProtectedProviderOverride)
+                {
+                    listener.SelectProtectedProvider(runtimeProvider);
+                }
+                if (destroyBeforeAwake)
+                {
+                    Object.DestroyImmediate(runtimeProvider);
+                }
+                host.SetActive(true);
+                if (!configureBeforeAwake)
+                {
+                    listener.ConfigureMessageBus(handle, MessageBusRebindMode.RebindActive);
+                }
+
+                MessageBus[] buses = { globalBus, serializedBus, runtimeBus };
+                MessageBus listenerBus = destroyBeforeAwake ? serializedBus : runtimeBus;
+                SimpleUntargetedMessage message = new();
+                foreach (MessageBus bus in buses)
+                {
+                    int previousCalls = listener.Received;
+                    message.EmitUntargeted(bus);
+                    Assert.That(
+                        listener.Received - previousCalls,
+                        Is.EqualTo(ReferenceEquals(bus, listenerBus) ? 1 : 0),
+                        context + ": the listener must use its initially selected bus."
+                    );
+                }
+
+                if (!destroyBeforeAwake)
+                {
+                    Object.DestroyImmediate(runtimeProvider);
+                }
+                int leaseCalls = 0;
+                using MessageRegistrationLease lease = companion
+                    .CreateRegistrationBuilder()
+                    .Build(
+                        new MessageRegistrationBuildOptions
+                        {
+                            ActivateOnBuild = true,
+                            Configure = token =>
+                                token.RegisterUntargeted<SimpleUntargetedMessage>(_ =>
+                                    ++leaseCalls
+                                ),
+                        }
+                    );
+                MessageBus expectedLeaseBus = useProtectedProviderOverride
+                    ? globalBus
+                    : serializedBus;
+                int[] actualLeaseCalls = new int[buses.Length];
+                int[] expectedLeaseCalls = new int[buses.Length];
+                for (int index = 0; index < buses.Length; ++index)
+                {
+                    int previousListenerCalls = listener.Received;
+                    int previousLeaseCalls = leaseCalls;
+                    MessageBus bus = buses[index];
+                    message.EmitUntargeted(bus);
+                    Assert.That(
+                        listener.Received - previousListenerCalls,
+                        Is.EqualTo(ReferenceEquals(bus, listenerBus) ? 1 : 0),
+                        context
+                            + ": availability changes must leave the accepted listener in place."
+                    );
+                    actualLeaseCalls[index] = leaseCalls - previousLeaseCalls;
+                    expectedLeaseCalls[index] = ReferenceEquals(bus, expectedLeaseBus) ? 1 : 0;
+                }
+                CollectionAssert.AreEqual(
+                    expectedLeaseCalls,
+                    actualLeaseCalls,
+                    context + ": fresh lease calls on the global, serialized and runtime buses."
+                );
+            }
+            finally
+            {
+                if (host != null)
+                {
+                    _ = _spawned.Remove(host);
+                    Object.DestroyImmediate(host);
+                }
+                if (runtimeProvider != null)
+                {
+                    Object.DestroyImmediate(runtimeProvider);
+                }
+                Object.DestroyImmediate(serializedProvider);
+            }
+        }
+
         private void AssertMessageAwareComponentClearingProviderBeforeAwakeRevertsToGlobalBus(
             ProviderConfigurationClearKind clearKind
         )
@@ -525,6 +659,11 @@ namespace DxMessaging.Tests.Runtime.Core
         private sealed class BusAwareComponent : MessageAwareComponent
         {
             internal int Received { get; private set; }
+
+            internal void SelectProtectedProvider(IMessageBusProvider provider)
+            {
+                _configuredMessageBusProvider = provider;
+            }
 
             protected override void RegisterMessageHandlers()
             {

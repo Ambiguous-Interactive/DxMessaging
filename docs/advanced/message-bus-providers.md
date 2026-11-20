@@ -206,9 +206,9 @@ public class PlayerController : MessageAwareComponent
     protected override void Awake()
     {
         // Configure with the handle before base.Awake()
-        if (providerHandle.TryGetProvider(out var provider))
+        if (providerHandle.TryGetProvider(out _))
         {
-            ConfigureMessageBus(provider, MessageBusRebindMode.RebindActive);
+            ConfigureMessageBus(providerHandle, MessageBusRebindMode.RebindActive);
         }
 
         base.Awake();
@@ -217,6 +217,8 @@ public class PlayerController : MessageAwareComponent
 ```
 
 In the Inspector, you can drag a `CurrentGlobalMessageBusProvider` or `InitialGlobalMessageBusProvider` asset onto the `providerHandle` field.
+
+Pass the full handle to keep the serialized provider available after `Awake`. If a runtime override is destroyed, a new builder from `MessagingComponent.CreateRegistrationBuilder()` resolves the available serialized provider. Existing registrations keep their bus until you explicitly rebind them.
 
 ### Example: Runtime Override
 

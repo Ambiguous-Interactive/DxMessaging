@@ -122,10 +122,16 @@ namespace DxMessaging.Unity
             IMessageBusProvider configuredProvider = ResolveConfiguredMessageBusProvider();
             if (configuredProvider != null)
             {
-                _messagingComponent.Configure(
-                    configuredProvider,
-                    MessageBusRebindMode.PreserveRegistrations
-                );
+                MessageBusProviderHandle handle = _configuredMessageBusProviderHandle;
+                if (
+                    !handle.TryGetProvider(out IMessageBusProvider handleProvider)
+                    || !ReferenceEquals(handleProvider, configuredProvider)
+                )
+                {
+                    // A subclass can select a different provider through the protected field.
+                    handle = MessageBusProviderHandle.FromProvider(configuredProvider);
+                }
+                _messagingComponent.Configure(handle, MessageBusRebindMode.PreserveRegistrations);
             }
             else if (_configuredMessageBus != null)
             {
