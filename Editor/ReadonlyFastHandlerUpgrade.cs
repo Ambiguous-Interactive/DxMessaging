@@ -3614,7 +3614,8 @@ namespace DxMessaging.Editor
         )
         {
             char[] masked = source.ToCharArray();
-            ConditionalMask conditional = uncertainBranches == null ? null : new(uncertainBranches);
+            ConditionalMask conditional =
+                uncertainBranches != null && source.Contains('#') ? new(uncertainBranches) : null;
             for (int index = 0; index < source.Length; )
             {
                 if (
