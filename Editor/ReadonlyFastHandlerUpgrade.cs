@@ -2812,9 +2812,10 @@ namespace DxMessaging.Editor
             int quoteStart = start;
             bool verbatim = source[start] == '@';
             bool interpolated = source[start] == '$';
+            int interpolationDollarCount = interpolated ? CountRun(source, start, '$') : 0;
             if (verbatim || interpolated)
             {
-                quoteStart++;
+                quoteStart += verbatim ? 1 : interpolationDollarCount;
                 char alternatePrefix = verbatim ? '$' : '@';
                 if (quoteStart < source.Length && source[quoteStart] == alternatePrefix)
                 {
@@ -2843,7 +2844,7 @@ namespace DxMessaging.Editor
             }
 
             int contentStart = quoteStart + quoteCount;
-            int end = FindRawStringEnd(source, contentStart, quoteCount);
+            int end = FindRawStringEnd(source, contentStart, quoteCount, interpolationDollarCount);
             int contentEnd = end - quoteCount;
             if (
                 interpolated
@@ -2914,7 +2915,8 @@ namespace DxMessaging.Editor
             string source,
             int start,
             List<InterpolatedSpan> interpolatedExpressions,
-            out int expressionEnd
+            out int expressionEnd,
+            int closingBraceCount = 1
         )
         {
             int nesting = 0;
@@ -2932,7 +2934,12 @@ namespace DxMessaging.Editor
                     case '(' or '[' or '{':
                         nesting++;
                         break;
-                    case '}' when nesting == 0:
+                    case '}'
+                        when nesting == 0
+                            && (
+                                closingBraceCount == 1
+                                || closingBraceCount <= CountRun(source, index, '}')
+                            ):
                         expressionEnd = index;
                         return index;
                     case ')' or ']' or '}':
@@ -2947,7 +2954,14 @@ namespace DxMessaging.Editor
                         }
 
                         expressionEnd = index;
-                        int close = source.IndexOf('}', index + 1);
+                        int close =
+                            closingBraceCount == 1
+                                ? source.IndexOf('}', index + 1)
+                                : source.IndexOf(
+                                    new string('}', closingBraceCount),
+                                    index + 1,
+                                    StringComparison.Ordinal
+                                );
                         return close < 0 ? source.Length : close;
                 }
             }
@@ -2995,11 +3009,54 @@ namespace DxMessaging.Editor
             return source.Length;
         }
 
-        private static int FindRawStringEnd(string source, int start, int quoteCount)
+        private static int FindRawStringEnd(
+            string source,
+            int start,
+            int quoteCount,
+            int interpolationDollarCount
+        )
         {
-            string terminator = new('"', quoteCount);
-            int end = source.IndexOf(terminator, start, StringComparison.Ordinal);
-            return end < 0 ? source.Length : end + quoteCount;
+            if (interpolationDollarCount == 0)
+            {
+                string terminator = new('"', quoteCount);
+                int end = source.IndexOf(terminator, start, StringComparison.Ordinal);
+                return end < 0 ? source.Length : end + quoteCount;
+            }
+
+            for (int index = start; index < source.Length; )
+            {
+                if (source[index] == '"')
+                {
+                    int quoteRun = CountRun(source, index, '"');
+                    if (quoteCount <= quoteRun)
+                    {
+                        return index + quoteCount;
+                    }
+                    index += quoteRun;
+                    continue;
+                }
+                if (source[index] != '{')
+                {
+                    index++;
+                    continue;
+                }
+
+                int openingBraceCount = CountRun(source, index, '{');
+                index += openingBraceCount;
+                if (interpolationDollarCount <= openingBraceCount)
+                {
+                    // A quote run within an interpolation belongs to the expression.
+                    int closing = FindInterpolationEnd(
+                        source,
+                        index,
+                        interpolatedExpressions: null,
+                        out _,
+                        interpolationDollarCount
+                    );
+                    index = closing == source.Length ? closing : closing + interpolationDollarCount;
+                }
+            }
+            return source.Length;
         }
 
         private static int CountRun(string source, int start, char value)
