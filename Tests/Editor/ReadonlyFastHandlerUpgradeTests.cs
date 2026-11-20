@@ -936,6 +936,25 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData("Observe(@checked(message).Next);").SetName(
                 "An escaped checked callable still migrates"
             );
+            yield return new TestCaseData("Observe((Pulse)(message));").SetName(
+                "Casting the whole parameter by value still migrates"
+            );
+            yield return new TestCaseData("Observe(((Pulse)(message)).Next);").SetName(
+                "Reading a member on a copy from a cast still migrates"
+            );
+            yield return new TestCaseData("Observe((long)Wrap(message).Next);").SetName(
+                "Casting a member of a call result still migrates"
+            );
+            yield return new TestCaseData(
+                "System.Func<Pulse, Pulse> wrap = Wrap; Observe(((wrap))(message).Next);"
+            ).SetName("Reading a member of a grouped callable result still migrates");
+            yield return new TestCaseData(
+                "int option = 0; Observe(GetWrap(option)(message).Next);"
+            ).SetName("Reading a member of a returned callable result still migrates");
+            yield return new TestCaseData(
+                "var wraps = new System.Func<Pulse, Pulse>[] { Wrap };"
+                    + " Observe((wraps[0])(message).Next);"
+            ).SetName("Reading a member of an indexed callable result still migrates");
             yield return new TestCaseData(
                 "ObserveTuple((GetHolder(low < high).Value, message));"
             ).SetName("A tuple value beside a nested comparison still migrates");
@@ -958,6 +977,15 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
 
         private static IEnumerable<TestCaseData> UnresolvedMemberReadCases()
         {
+            yield return new TestCaseData("Observe((long)(message).Next);").SetName(
+                "Casting a read on a grouped parameter requires manual review"
+            );
+            yield return new TestCaseData(
+                "Observe((long)(global::System.Int32)((message)).Next);"
+            ).SetName("Nested casts around a grouped parameter member require review");
+            yield return new TestCaseData("Observe((Box<long>)(message).Next);").SetName(
+                "Casting to a generic type after a grouped parameter member requires review"
+            );
             yield return new TestCaseData("Observe(checked(message).Next);").SetName(
                 "Reading a parameter member in a checked expression requires review"
             );

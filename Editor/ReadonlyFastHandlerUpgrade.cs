@@ -109,6 +109,19 @@ namespace DxMessaging.Editor
             + IdentifierSpellingPattern
             + @")*(?:\s*[?*]|\s*\[[,\s]*\])*";
 
+        private const string CastTypeNamePattern =
+            IdentifierSpellingPattern + @"(?:\s*<[\w\p{Nl}\p{Mc}\p{Cf}\s.,:<>?*\[\]@\\]+>)?";
+
+        private static readonly Regex GroupedCastTypeRegex = new(
+            @"\G\s*"
+                + CastTypeNamePattern
+                + @"(?:\s*(?:\.|::)\s*"
+                + CastTypeNamePattern
+                + @")*(?:\s*[?*]|\s*\[[,\s]*\])*\s*\z",
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1)
+        );
+
         private static readonly Regex LocalFunctionDeclarationRegex = new(
             @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?:(?:static|async|unsafe|ref|readonly)\s+)*"
                 + SimpleDeclaredTypePattern
@@ -2683,11 +2696,8 @@ namespace DxMessaging.Editor
                 }
                 if (
                     groupingStart == opening
-                    && !FollowsTargetBoundary(text, body.Start, beforeOpening)
-                    && "+-*/%&|^~<".IndexOf(text[beforeOpening]) < 0
-                    && !FollowsRangeOperator(text, body.Start, beforeOpening)
-                    && !FollowsStandaloneGreaterThan(text, body.Start, beforeOpening)
-                    && !FollowsGroupingOperandKeyword(text, body.Start, beforeOpening)
+                    && !FollowsGroupingBoundary(text, body.Start, beforeOpening)
+                    && !FollowsCast(text, body.Start, beforeOpening)
                 )
                 {
                     return;
@@ -2696,6 +2706,38 @@ namespace DxMessaging.Editor
                 targetStart = groupingStart;
                 following = NextAfterComments(text, following + 1, bodyEnd);
             }
+        }
+
+        private static bool FollowsGroupingBoundary(string text, int bodyStart, int previous) =>
+            FollowsTargetBoundary(text, bodyStart, previous)
+            || "+-*/%&|^~<".Contains(text[previous])
+            || FollowsRangeOperator(text, bodyStart, previous)
+            || FollowsStandaloneGreaterThan(text, bodyStart, previous)
+            || FollowsGroupingOperandKeyword(text, bodyStart, previous);
+
+        private static bool FollowsCast(string text, int bodyStart, int previous)
+        {
+            // A type-shaped group at an operand boundary can precede another cast or grouping.
+            while (bodyStart <= previous && text[previous] == ')')
+            {
+                int opening = FindMatchingBackward(text, previous, '(', ')', bodyStart);
+                if (
+                    opening < bodyStart
+                    || !GroupedCastTypeRegex
+                        .Match(text, opening + 1, previous - opening - 1)
+                        .Success
+                )
+                {
+                    return false;
+                }
+
+                previous = PreviousNonWhitespace(text, opening - 1);
+                if (FollowsGroupingBoundary(text, bodyStart, previous))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static bool FollowsGroupingOperandKeyword(string text, int bodyStart, int previous)
