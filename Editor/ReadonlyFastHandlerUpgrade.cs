@@ -398,12 +398,14 @@ namespace DxMessaging.Editor
             );
             HashSet<int> replacementStarts = new();
             SortedSet<string> manualReview = new(StringComparer.Ordinal);
+            Dictionary<string, string> unprovenMethodGroups = new(StringComparer.Ordinal);
             List<Invocation> readonlyInvocations = FindInvocations(
                 masked,
                 ReadonlyRegistrationNames,
                 manualReview,
                 metadata,
-                requireProvenReceiver: true
+                requireProvenReceiver: true,
+                unprovenMethodGroups: unprovenMethodGroups
             );
             List<Invocation> mutableInvocations = FindInvocations(
                 masked,
@@ -452,7 +454,8 @@ namespace DxMessaging.Editor
                 metadata,
                 replacementStarts,
                 manualReview,
-                methodGroups
+                methodGroups,
+                unprovenMethodGroups
             );
             foreach (
                 var group in methodGroups.GroupBy(use =>
@@ -468,6 +471,11 @@ namespace DxMessaging.Editor
                     );
                     continue;
                 }
+                if (unprovenMethodGroups.TryGetValue(group.Key, out string reason))
+                {
+                    manualReview.Add(reason);
+                    continue;
+                }
                 TextSpan conditionalUse = group
                     .Select(entry => entry.Use)
                     .FirstOrDefault(span =>
@@ -478,6 +486,7 @@ namespace DxMessaging.Editor
                     );
                 AddMethodDeclarationReplacements(
                     masked,
+                    metadata,
                     name,
                     use.Start,
                     conditionalUse,
@@ -644,7 +653,8 @@ namespace DxMessaging.Editor
             SourceMetadata metadata,
             HashSet<int> replacementStarts,
             SortedSet<string> manualReview,
-            List<(string Name, TextSpan Use)> methodGroups
+            List<(string Name, TextSpan Use)> methodGroups,
+            Dictionary<string, string> unprovenMethodGroups
         )
         {
             int searchStart = 0;
@@ -661,7 +671,14 @@ namespace DxMessaging.Editor
                 }
                 searchStart = fastHandler + "FastHandler".Length;
 
-                if (!TryClassifyFastDelegateType(masked, fastHandler, metadata, out bool isProven))
+                bool isCandidate = TryClassifyFastDelegateType(
+                    masked,
+                    fastHandler,
+                    metadata,
+                    out bool isProven,
+                    out bool hasHandlerSyntax
+                );
+                if (!hasHandlerSyntax)
                 {
                     continue;
                 }
@@ -686,6 +703,19 @@ namespace DxMessaging.Editor
                 TextSpan rightHandSideSpan = new(equals + 1, statementEnd - equals - 1);
                 if (!isProven)
                 {
+                    string reason =
+                        $"{CallbackLocation(masked, fastHandler)} uses a delegate whose MessageHandler type cannot be proven; inspect its binding manually";
+                    if (TryGetMethodGroup(masked, rightHandSideSpan, out string name, out _))
+                    {
+                        unprovenMethodGroups.TryAdd(
+                            ScopedMethodKey(masked, name, rightHandSideSpan.Start),
+                            reason
+                        );
+                    }
+                    if (!isCandidate)
+                    {
+                        continue;
+                    }
                     bool needsReview = TryGetInlineDelegateParameters(
                         masked,
                         expression,
@@ -699,9 +729,7 @@ namespace DxMessaging.Editor
                         : MethodGroupMayNeedMigration(masked, rightHandSideSpan);
                     if (needsReview)
                     {
-                        manualReview.Add(
-                            $"{CallbackLocation(masked, fastHandler)} uses a delegate whose MessageHandler type cannot be proven; inspect its binding manually"
-                        );
+                        manualReview.Add(reason);
                     }
                     continue;
                 }
@@ -897,9 +925,11 @@ namespace DxMessaging.Editor
         {
             requiresConfigurationReview = false;
             Regex memberRegex = new(
-                @"\boverride\s+(?:(?:global::)?System\s*\.\s*)?(?:Boolean|bool)\s+(?<name>"
+                @"(?<![\w@])override\s+"
+                    + SimpleDeclaredTypePattern
+                    + @"\s+(?<name>"
                     + IdentifierSpellingPattern
-                    + ")",
+                    + @")\s*(?=\{|=>)",
                 RegexOptions.CultureInvariant,
                 TimeSpan.FromSeconds(1)
             );
@@ -1008,6 +1038,7 @@ namespace DxMessaging.Editor
 
         private static void AddMethodDeclarationReplacements(
             string masked,
+            SourceMetadata metadata,
             string methodName,
             int usagePosition,
             TextSpan conditionalUse,
@@ -1052,12 +1083,73 @@ namespace DxMessaging.Editor
             }
 
             ParameterList declaration = byRefDeclarations[0];
+            if (
+                HasDirectWritableCall(
+                    masked,
+                    metadata.CallableUses(masked, methodName),
+                    usageScope,
+                    declaration
+                )
+            )
+            {
+                metadata.NamedCallbacksWithDirectWritableCalls.Add(declaration.ParametersStart - 1);
+            }
             AddRefReplacements(
                 masked,
                 declaration.ParametersStart,
                 declaration.ParametersEnd,
                 replacementStarts
             );
+        }
+
+        private static bool HasDirectWritableCall(
+            string masked,
+            IEnumerable<Match> callableUses,
+            int typeStart,
+            ParameterList declaration
+        )
+        {
+            foreach (Match use in callableUses)
+            {
+                if (use.Index == declaration.DeclarationStart)
+                {
+                    continue;
+                }
+                int previous = PreviousNonWhitespace(masked, use.Index - 1);
+                if (
+                    (
+                        0 <= previous
+                        && masked[previous] == '.'
+                        && !FollowsKeyword(
+                            masked,
+                            0,
+                            PreviousNonWhitespace(masked, previous - 1),
+                            "this"
+                        )
+                    )
+                    || FindContainingTypeStart(masked, use.Index) != typeStart
+                )
+                {
+                    continue;
+                }
+                int open = NextNonWhitespace(masked, use.Index + use.Length);
+                int close = FindMatching(masked, open, '(', ')');
+                if (
+                    0 <= close
+                    && SplitArguments(masked, open + 1, close)
+                        .Exists(argument =>
+                            0
+                            <= FindBaseArgumentRefStart(
+                                masked,
+                                GetArgumentValueSpan(masked, argument)
+                            )
+                        )
+                )
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static List<ParameterList> FindMethodDeclarations(
@@ -1406,7 +1498,8 @@ namespace DxMessaging.Editor
             HashSet<string> acceptedNames,
             SortedSet<string> manualReview,
             SourceMetadata metadata,
-            bool requireProvenReceiver
+            bool requireProvenReceiver,
+            Dictionary<string, string> unprovenMethodGroups = null
         )
         {
             List<Invocation> invocations = new();
@@ -1438,11 +1531,15 @@ namespace DxMessaging.Editor
                         && !HasProvenTokenReceiver(masked, match.Index, metadata)
                     )
                     {
+                        string reason =
+                            $"{name} has a receiver whose MessageRegistrationToken type cannot be proven";
+                        foreach (string group in FindCallbackMethodGroupKeys(masked, invocation))
+                        {
+                            unprovenMethodGroups?.TryAdd(group, reason);
+                        }
                         if (manualReview != null && InvocationMayNeedMigration(masked, invocation))
                         {
-                            manualReview.Add(
-                                $"{name} has a receiver whose MessageRegistrationToken type cannot be proven"
-                            );
+                            manualReview.Add(reason);
                         }
                         continue;
                     }
@@ -1457,18 +1554,23 @@ namespace DxMessaging.Editor
             List<Invocation> invocations
         )
         {
-            HashSet<string> groups = new(StringComparer.Ordinal);
-            foreach (Invocation invocation in invocations)
+            return invocations
+                .SelectMany(invocation => FindCallbackMethodGroupKeys(masked, invocation))
+                .ToHashSet(StringComparer.Ordinal);
+        }
+
+        private static IEnumerable<string> FindCallbackMethodGroupKeys(
+            string masked,
+            Invocation invocation
+        )
+        {
+            foreach (TextSpan callback in GetCallbackArguments(masked, invocation))
             {
-                foreach (TextSpan callback in GetCallbackArguments(masked, invocation))
+                if (TryGetMethodGroup(masked, callback, out string methodName, out _))
                 {
-                    if (TryGetMethodGroup(masked, callback, out string methodName, out _))
-                    {
-                        groups.Add(ScopedMethodKey(masked, methodName, callback.Start));
-                    }
+                    yield return ScopedMethodKey(masked, methodName, callback.Start);
                 }
             }
-            return groups;
         }
 
         private static IEnumerable<TextSpan> GetCallbackArguments(
@@ -1637,6 +1739,10 @@ namespace DxMessaging.Editor
         {
             parameters = default;
             int start = NextNonWhitespace(masked, invocation.Start);
+            if (StartsWithIdentifier(masked, start, "static"))
+            {
+                start = NextNonWhitespace(masked, start + "static".Length);
+            }
             if (StartsWithIdentifier(masked, start, "delegate"))
             {
                 int open = NextNonWhitespace(masked, start + "delegate".Length);
@@ -2209,6 +2315,13 @@ namespace DxMessaging.Editor
             )
             {
                 reason = "has a direct local function call that depends on its 'ref' parameter";
+            }
+            if (
+                reason == null
+                && metadata.NamedCallbacksWithDirectWritableCalls.Contains(entry.Key)
+            )
+            {
+                reason = "has a direct call that depends on its 'ref' parameter";
             }
             reason ??= FindParameterUseIssue(
                 source,
@@ -4012,10 +4125,12 @@ namespace DxMessaging.Editor
             public readonly List<TextSpan> InterpolatedExpressions = new();
             public readonly List<TextSpan> UncertainBranches = new();
             public readonly List<int> ConditionalDirectives = new();
+            public readonly HashSet<int> NamedCallbacksWithDirectWritableCalls = new();
 
             private bool? _hasDxMessagingAlias;
             private ILookup<string, Match> _receiverDeclarations;
             private ILookup<string, Match> _packageReceiverDeclarations;
+            private ILookup<string, Match> _callableUses;
 
             public bool HasConditionalDirectives => 0 < ConditionalDirectives.Count;
 
@@ -4043,6 +4158,20 @@ namespace DxMessaging.Editor
                 return _packageReceiverDeclarations[receiver];
             }
 
+            public IEnumerable<Match> CallableUses(string masked, string name)
+            {
+                _callableUses ??= IdentifierUseRegex
+                    .Matches(masked)
+                    .Cast<Match>()
+                    .Where(use =>
+                    {
+                        int next = NextNonWhitespace(masked, use.Index + use.Length);
+                        return 0 <= next && masked[next] == '(';
+                    })
+                    .ToLookup(use => IdentifierValue(use.Value), StringComparer.Ordinal);
+                return _callableUses[name];
+            }
+
             private static ILookup<string, Match> IndexReceiverDeclarations(
                 Regex pattern,
                 string masked
@@ -4051,10 +4180,53 @@ namespace DxMessaging.Editor
                 return pattern
                     .Matches(masked)
                     .Cast<Match>()
+                    .SelectMany(declaration =>
+                        ReceiverNames(masked, declaration)
+                            .Select(name => (Name: name, Declaration: declaration))
+                    )
                     .ToLookup(
-                        match => IdentifierValue(match.Groups["name"].Value),
+                        entry => entry.Name,
+                        entry => entry.Declaration,
                         StringComparer.Ordinal
                     );
+            }
+
+            private static IEnumerable<string> ReceiverNames(string masked, Match declaration)
+            {
+                Group name = declaration.Groups["name"];
+                yield return IdentifierValue(name.Value);
+                int next = NextNonWhitespace(masked, name.Index + name.Length);
+                while (0 <= next && next < masked.Length)
+                {
+                    if (
+                        masked[next] == '='
+                        && (next + 1 == masked.Length || masked[next + 1] != '>')
+                    )
+                    {
+                        next = FindExpressionEnd(masked, next + 1);
+                    }
+                    if (masked.Length <= next || masked[next] != ',')
+                    {
+                        yield break;
+                    }
+                    int start = NextNonWhitespace(masked, next + 1);
+                    if (start < 0)
+                    {
+                        yield break;
+                    }
+                    Match additional = DirectMemberIdentifierRegex.Match(masked, start);
+                    if (!additional.Success)
+                    {
+                        yield break;
+                    }
+                    next = NextNonWhitespace(masked, start + additional.Length);
+                    if (next < 0 || masked[next] is not ('=' or ',' or ';'))
+                    {
+                        // A following parameter carries its own type.
+                        yield break;
+                    }
+                    yield return IdentifierValue(additional.Value);
+                }
             }
         }
 
@@ -4110,13 +4282,26 @@ namespace DxMessaging.Editor
 
             public void ObserveMaskedToken(ReadOnlySpan<char> token)
             {
-                if (
-                    0 <= token.IndexOf('#')
-                    && 0 <= token.IndexOfAny(CSharpLineTerminators.AsSpan())
-                )
+                int firstLineEnd = token.IndexOfAny(CSharpLineTerminators.AsSpan());
+                if (firstLineEnd < 0)
                 {
-                    // In another branch this token may be disabled text containing live directives.
-                    _uncertainTail = Math.Min(_uncertainTail, _scopes.Peek().Start);
+                    return;
+                }
+                for (int next = firstLineEnd + 1; next < token.Length; )
+                {
+                    int offset = token.Slice(next).IndexOf('#');
+                    if (offset < 0)
+                    {
+                        return;
+                    }
+                    int hash = next + offset;
+                    if (IsDirectiveStart(token, hash))
+                    {
+                        // A directive-position hash can become active when this token is disabled.
+                        _uncertainTail = Math.Min(_uncertainTail, _scopes.Peek().Start);
+                        return;
+                    }
+                    next = hash + 1;
                 }
             }
 
@@ -4618,10 +4803,12 @@ namespace DxMessaging.Editor
             string text,
             int fastHandlerStart,
             SourceMetadata metadata,
-            out bool isProven
+            out bool isProven,
+            out bool hasHandlerSyntax
         )
         {
             isProven = false;
+            hasHandlerSyntax = false;
             int typeEnd = fastHandlerStart + "FastHandler".Length;
             if (StartsWithIdentifier(text, typeEnd, "WithContext"))
             {
@@ -4659,6 +4846,7 @@ namespace DxMessaging.Editor
             {
                 return false;
             }
+            hasHandlerSyntax = true;
 
             if (
                 Regex.IsMatch(

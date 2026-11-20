@@ -1599,6 +1599,43 @@ sealed class Receiver : MessageAwareComponent
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
+        [TestCase(
+            "item #42",
+            false,
+            TestName = "A midline hash in a conditional string leaves a later callback eligible"
+        )]
+        [TestCase(
+            "    #if INNER\n    #endif",
+            true,
+            TestName = "Possible directives in a conditional string still require review"
+        )]
+        [TestCase(
+            "   #if INNER\r\n   #endif",
+            true,
+            TestName = "Possible directives after CRLF still require review"
+        )]
+        public void AnalyzeLimitsUncertaintyToPossibleDirectiveLines(string stringBody, bool defer)
+        {
+            string source =
+                "#if UNKNOWN\nstring note = @\"label\n"
+                + stringBody
+                + "\n\";\n#endif\n"
+                + "global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = (ref Pulse message) => Read(message);";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(defer ? 0 : 1));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(defer ? source : source.Replace("ref Pulse", "in Pulse"))
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(defer ? 1 : 0));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("depend on conditional compilation")
+            );
+        }
+
         [Test]
         public void AnalyzeDefersAfterAnUnresolvedConditionalOpeningBrace()
         {
@@ -1761,6 +1798,12 @@ sealed class Receiver : MessageAwareComponent
         )]
         [TestCase(
             "FastHandler<Pulse>",
+            "static delegate(ref Pulse message) { Read(message); }",
+            1,
+            TestName = "A conditionally bound static anonymous fast delegate requires review"
+        )]
+        [TestCase(
+            "FastHandler<Pulse>",
             "Forward",
             1,
             TestName = "A conditionally bound fast method group requires review"
@@ -1879,6 +1922,240 @@ class Receiver
                 result.ManualReviewMethods[0],
                 Does.Contain("conditional callback binding")
             );
+        }
+
+        [TestCase(
+            "delegate",
+            "Forward",
+            0,
+            TestName = "A relative fast delegate blocks its globally bound shared method group"
+        )]
+        [TestCase(
+            "receiver",
+            "Forward",
+            0,
+            TestName = "An unproven registration blocks its globally bound shared method group"
+        )]
+        [TestCase(
+            "delegate",
+            "Other",
+            1,
+            TestName = "An unproven delegate leaves a separate global method group eligible"
+        )]
+        [TestCase(
+            "receiver",
+            "Other",
+            1,
+            TestName = "An unproven receiver leaves a separate global method group eligible"
+        )]
+        [TestCase(
+            "vendor",
+            "Forward",
+            0,
+            TestName = "A foreign fast delegate blocks a shared method group"
+        )]
+        [TestCase(
+            "vendor",
+            "Other",
+            1,
+            TestName = "A foreign fast delegate does not report a separate method group"
+        )]
+        [TestCase(
+            "none",
+            "Forward",
+            1,
+            TestName = "A global-only method group stays eligible under a relative alias"
+        )]
+        public void AnalyzeKeepsUnprovenUsesOfSharedMethodGroups(
+            string kind,
+            string name,
+            int edits
+        )
+        {
+            string setup = kind switch
+            {
+                "delegate" => "DxMessaging.Core.MessageHandler.FastHandler<Pulse> relative = "
+                    + name
+                    + ";",
+                "receiver" => "relativeToken.RegisterUntargeted<Pulse>(" + name + ");",
+                "vendor" => "global::Vendor.Core.MessageHandler.FastHandler<Pulse> foreign = "
+                    + name
+                    + ";",
+                _ => "",
+            };
+            string source = @"
+namespace Consumer
+{
+#if USE_VENDOR
+    using DxMessaging = global::Vendor;
+#endif
+    class Receiver
+    {
+        DxMessaging.Core.MessageRegistrationToken relativeToken;
+        void SetUp()
+        {
+            global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> known = Forward;
+            SETUP
+        }
+        static void Forward(ref Pulse message) => Read(message);
+        static void Other(ref Pulse message) => Read(message);
+        static void Read(Pulse message) { }
+    }
+}".Replace("SETUP", setup);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(edits));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(edits == 0 ? source : source.Replace("Forward(ref", "Forward(in"))
+            );
+            bool reports = kind is "delegate" or "receiver" || (kind == "vendor" && edits == 0);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(reports ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains("cannot be proven"));
+        }
+
+        [TestCase(
+            "Forward(ref copy);",
+            true,
+            TestName = "A direct writable call defers a named fast callback"
+        )]
+        [TestCase(
+            "this.Forward(message: ref copy);",
+            true,
+            TestName = "A this-qualified writable call defers a named fast callback"
+        )]
+        [TestCase(
+            "other.Forward(ref copy);",
+            false,
+            TestName = "A direct call on another receiver does not defer the named callback"
+        )]
+        public void AnalyzePreservesDirectWritableCallsToNamedCallbacks(string use, bool defer)
+        {
+            string source = @"
+class Receiver
+{
+    OtherReceiver other;
+    void SetUp()
+    {
+        global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> known = Forward;
+        Pulse copy = default;
+        USE
+    }
+    void Forward(ref Pulse message) => Read(message);
+    void Read(Pulse message) { }
+}".Replace("USE", use);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(defer ? 0 : 1));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(defer ? source : source.Replace("void Forward(ref", "void Forward(in"))
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(defer ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains("direct call"));
+        }
+
+        [TestCase(
+            "spare, token",
+            false,
+            TestName = "An alternate receiver later in a field list requires review"
+        )]
+        [TestCase(
+            "spare = Create<int, string>(), prep, @token",
+            false,
+            TestName = "An initialized alternate receiver list requires review"
+        )]
+        [TestCase(
+            "spare = new CustomToken { Count = 1 }, token = null",
+            false,
+            TestName = "An object initializer does not hide an alternate receiver declarator"
+        )]
+        [TestCase(
+            "spare = Choose((first < second), TrueToken, FalseToken), token",
+            false,
+            TestName = "A comparison initializer does not hide an alternate receiver declarator"
+        )]
+        [TestCase(
+            "spare, token",
+            true,
+            TestName = "Equivalent package receivers in field lists remain eligible"
+        )]
+        [TestCase(
+            "spare = Create<int, string>(), @token",
+            true,
+            TestName = "An initialized package receiver list remains eligible"
+        )]
+        public void AnalyzeIndexesEveryReceiverDeclarator(string declarations, bool migrate)
+        {
+            const string Package = "global::DxMessaging.Core.MessageRegistrationToken";
+            string source = @"
+class Receiver
+{
+#if USE_DX
+    BASE_TYPE FIRST_DECLARATORS;
+#else
+    OTHER_TYPE DECLARATIONS;
+#endif
+    void SetUp()
+    {
+        token.RegisterUntargeted<Pulse>((ref Pulse message) => Read(message));
+    }
+    static void Read(Pulse message) { }
+}".Replace("BASE_TYPE", Package).Replace(
+                "FIRST_DECLARATORS",
+                migrate ? "firstToken, token" : "token, firstToken"
+            ).Replace("OTHER_TYPE", migrate ? Package : "global::Vendor.CustomToken").Replace(
+                "DECLARATIONS",
+                declarations
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("receiver whose MessageRegistrationToken type cannot be proven")
+            );
+        }
+
+        [TestCase(
+            "Read(message);",
+            false,
+            TestName = "A static anonymous handler with a read migrates"
+        )]
+        [TestCase(
+            "message = default;",
+            true,
+            TestName = "A static anonymous handler with a write requires review"
+        )]
+        [TestCase(
+            "Run((int item) => Read(item)); Read(message);",
+            false,
+            TestName = "A nested lambda leaves the static anonymous handler eligible"
+        )]
+        public void AnalyzeChecksStaticAnonymousHandlerParameters(string body, bool writable)
+        {
+            string source =
+                "global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> h = static delegate(ref Pulse message) { "
+                + body
+                + " };";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(writable ? 0 : 1));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(writable ? source : source.Replace("ref Pulse", "in Pulse"))
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(writable ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains("writes to parameter"));
         }
 
         // cspell:ignore oken
@@ -2268,6 +2545,50 @@ class Receiver
                     Has.All.Contains("each build configuration")
                 );
             }
+        }
+
+        [TestCase(
+            "protected override Flag RegisterForStringMessages => false;",
+            0,
+            0,
+            TestName = "A string opt-out with a type alias stays in place"
+        )]
+        [TestCase(
+            "protected override Flag RegisterForStringMessages { get { return false; } }",
+            0,
+            0,
+            TestName = "An aliased string property with a block getter stays in place"
+        )]
+        [TestCase(
+            "#if ACTIVE\n    protected override Flag RegisterForStringMessages => false;\n#endif",
+            0,
+            1,
+            TestName = "A conditional string opt-out with a type alias requires review"
+        )]
+        [TestCase(
+            "class Nested { private Flag RegisterForStringMessages; }",
+            1,
+            0,
+            TestName = "An unrelated nested member does not stop opt-in insertion"
+        )]
+        public void AnalyzePreservesExplicitStringPropertyTypeAliases(
+            string property,
+            int insertions,
+            int reviews
+        )
+        {
+            string source =
+                "using Flag = global::System.Boolean;\n"
+                + "class Receiver : global::DxMessaging.Unity.MessageAwareComponent\n{\n    "
+                + property
+                + "\n    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }\n}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(insertions));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(reviews));
+            Assert.That(result.UpgradedSource, Does.Contain(property));
         }
 
         [TestCase(

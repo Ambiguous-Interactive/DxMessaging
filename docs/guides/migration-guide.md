@@ -181,12 +181,14 @@ It can update proven `base` calls in a changed
 methods, the preview keeps the related signature and argument edits together. It defers those
 edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks
 passed directly to both a handler and an interceptor in the same script. It lists these cases in the
-Console for manual review. Reports for deferred callback bodies include the source line and column.
+Console for manual review. It also checks unqualified and `this`-qualified `ref` calls to named
+callbacks in the same type. Reports for deferred callbacks include the source line and column.
 Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
 Review project-wide callback uses. The preview skips branches it can prove inactive from literal
 conditions. It defers callbacks whose boundaries or method-group bindings depend on unresolved
-branches. Check those callbacks in each build configuration. Inspect the diff and let Unity
+branches. Check those callbacks in each build configuration. Use separate callback declarations
+when two delegate types require different parameter modifiers. Inspect the diff and let Unity
 compile before committing the migration.
 
 The preview defers assignments, compound assignments, and increment or decrement operations on a
