@@ -2465,7 +2465,7 @@ namespace DxMessaging.Editor
             int end = expressions.Count;
             while (first < end)
             {
-                int middle = first + (end - first) / 2;
+                int middle = first + ((end - first) / 2);
                 if (expressions[middle].Start < start)
                 {
                     first = middle + 1;
