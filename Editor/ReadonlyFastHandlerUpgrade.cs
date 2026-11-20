@@ -101,6 +101,32 @@ namespace DxMessaging.Editor
             RegexOptions.CultureInvariant
         );
 
+        private const string SimpleDeclaredTypePattern =
+            IdentifierSpellingPattern
+            + @"(?:\s*(?:\.|::)\s*"
+            + IdentifierSpellingPattern
+            + @")*(?:\s*[?*]|\s*\[[,\s]*\])*";
+
+        private static readonly Regex LocalFunctionDeclarationRegex = new(
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?:(?:static|async|unsafe|ref|readonly)\s+)*"
+                + SimpleDeclaredTypePattern
+                + @"\s+"
+                + IdentifierSpellingPattern
+                + @"\s*\(",
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1)
+        );
+
+        private static readonly Regex LocalFunctionParameterRegex = new(
+            @"\G\s*(?:(?:scoped|ref|readonly|in|out|params)\s+)*"
+                + SimpleDeclaredTypePattern
+                + @"\s+(?<name>"
+                + IdentifierSpellingPattern
+                + @")\s*\z",
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1)
+        );
+
         private static readonly Regex ByReferenceModifierRegex = new(
             @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?<modifier>ref|out)(?=\s|[(@]|/\*)",
             RegexOptions.CultureInvariant
@@ -1643,6 +1669,19 @@ namespace DxMessaging.Editor
                     }
                 }
 
+                List<(string Parameter, TextSpan Declaration)> localShadows;
+                try
+                {
+                    localShadows = FindLocalFunctionShadows(masked, body).ToList();
+                }
+                catch (RegexMatchTimeoutException exception)
+                {
+                    DxMessagingEditorLog.LogWarning(
+                        "Local function scope detection timed out. Scanning all parameter uses.",
+                        exception
+                    );
+                    localShadows = new();
+                }
                 List<int> forwardingStarts = new();
                 string reason = null;
                 foreach (string parameterName in parameterNames)
@@ -1651,7 +1690,10 @@ namespace DxMessaging.Editor
                     foreach (Match match in FindByReferenceUses(masked, body, parameterValue))
                     {
                         forwardingStarts.Add(match.Index);
-                        if (!replacementStarts.Contains(match.Index))
+                        if (
+                            !replacementStarts.Contains(match.Index)
+                            && !IsLocalFunctionShadow(localShadows, parameterValue, match.Index)
+                        )
                         {
                             reason =
                                 $"passes parameter '{parameterName}' by {match.Groups["modifier"].Value}";
@@ -1670,7 +1712,8 @@ namespace DxMessaging.Editor
                         masked,
                         body,
                         interpolatedExpressions,
-                        parameterNames
+                        parameterNames,
+                        localShadows
                     );
                 }
                 if (reason == null)
@@ -1691,12 +1734,93 @@ namespace DxMessaging.Editor
             }
         }
 
+        private static IEnumerable<(
+            string Parameter,
+            TextSpan Declaration
+        )> FindLocalFunctionShadows(string masked, TextSpan body)
+        {
+            // Conditional compilation can change the declaration or the end of its scope.
+            if (0 <= masked.IndexOf('#', body.Start, body.Length))
+            {
+                yield break;
+            }
+
+            int bodyEnd = body.Start + body.Length;
+            for (
+                Match function = LocalFunctionDeclarationRegex.Match(
+                    masked,
+                    body.Start,
+                    body.Length
+                );
+                function.Success;
+                function = function.NextMatch()
+            )
+            {
+                int before = PreviousNonWhitespace(masked, function.Index - 1);
+                if (body.Start <= before && "{;}:".IndexOf(masked[before]) < 0)
+                {
+                    continue;
+                }
+
+                int open = function.Index + function.Length - 1;
+                int close = FindMatching(masked, open, '(', ')');
+                int next = close < 0 ? -1 : NextNonWhitespace(masked, close + 1);
+                if (next < 0 || bodyEnd <= next)
+                {
+                    continue;
+                }
+
+                int end = masked[next] switch
+                {
+                    '{' => FindMatching(masked, next, '{', '}'),
+                    '=' when next + 1 < bodyEnd && masked[next + 1] == '>' => FindStatementEnd(
+                        masked,
+                        next + 2
+                    ),
+                    _ => -1,
+                };
+                if (end < 0 || bodyEnd <= end)
+                {
+                    continue;
+                }
+
+                foreach (TextSpan parameter in SplitArguments(masked, open + 1, close))
+                {
+                    Match declared = LocalFunctionParameterRegex.Match(
+                        masked,
+                        parameter.Start,
+                        parameter.Length
+                    );
+                    if (declared.Success)
+                    {
+                        yield return (
+                            IdentifierValue(declared.Groups["name"].Value),
+                            new TextSpan(open, end - open)
+                        );
+                    }
+                }
+            }
+        }
+
+        private static bool IsLocalFunctionShadow(
+            List<(string Parameter, TextSpan Declaration)> shadows,
+            string parameterValue,
+            int start,
+            int length = 1
+        ) =>
+            shadows?.Exists(shadow =>
+                shadow.Parameter == parameterValue
+                && shadow.Declaration.Start <= start
+                && start + length <= shadow.Declaration.Start + shadow.Declaration.Length
+            ) == true;
+
         private static string FindParameterUseIssue(
             string source,
             string masked,
             TextSpan body,
             List<TextSpan> interpolatedExpressions,
-            HashSet<string> parameterNames
+            HashSet<string> parameterNames,
+            List<(string Parameter, TextSpan Declaration)> localShadows
         )
         {
             // Record unresolved reads while continuing to look for established incompatibilities.
@@ -1709,7 +1833,8 @@ namespace DxMessaging.Editor
                     body,
                     parameterName,
                     parameterValue,
-                    ref unverifiedRead
+                    ref unverifiedRead,
+                    localShadows
                 )
                     ?? FindInterpolatedParameterIssue(
                         source,
@@ -1717,7 +1842,8 @@ namespace DxMessaging.Editor
                         interpolatedExpressions,
                         parameterName,
                         parameterValue,
-                        ref unverifiedRead
+                        ref unverifiedRead,
+                        localShadows
                     );
                 if (issue != null)
                 {
@@ -1858,7 +1984,8 @@ namespace DxMessaging.Editor
             List<TextSpan> interpolatedExpressions,
             string parameterName,
             string parameterValue,
-            ref string unverifiedRead
+            ref string unverifiedRead,
+            List<(string Parameter, TextSpan Declaration)> localShadows
         )
         {
             int bodyEnd = body.Start + body.Length;
@@ -1869,6 +1996,10 @@ namespace DxMessaging.Editor
                     break;
                 }
                 if (scope.Start < body.Start || bodyEnd < scope.Start + scope.Length)
+                {
+                    continue;
+                }
+                if (IsLocalFunctionShadow(localShadows, parameterValue, scope.Start, scope.Length))
                 {
                     continue;
                 }
@@ -1901,7 +2032,8 @@ namespace DxMessaging.Editor
             TextSpan body,
             string parameterName,
             string parameterValue,
-            ref string unverifiedRead
+            ref string unverifiedRead,
+            List<(string Parameter, TextSpan Declaration)> localShadows = null
         )
         {
             int bodyEnd = body.Start + body.Length;
@@ -1911,7 +2043,10 @@ namespace DxMessaging.Editor
                 use = use.NextMatch()
             )
             {
-                if (IdentifierValue(use.Value) != parameterValue)
+                if (
+                    IdentifierValue(use.Value) != parameterValue
+                    || IsLocalFunctionShadow(localShadows, parameterValue, use.Index, use.Length)
+                )
                 {
                     continue;
                 }

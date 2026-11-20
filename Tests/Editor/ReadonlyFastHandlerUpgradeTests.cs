@@ -886,6 +886,23 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "Observe($$\"\"\"{{ F(\"\"\"hi\"\"\", message) }}\"\"\");"
             ).SetName("A nested raw literal with a whole parameter still migrates");
             yield return new TestCaseData(
+                "void BumpLocal(ref Pulse message) { message.Value++; }"
+                    + " Pulse copy = message; BumpLocal(ref copy); Observe(copy);"
+            ).SetName("A write to a shadowing local function parameter still migrates");
+            yield return new TestCaseData(
+                "int BumpLocal(ref Pulse message) => Bump(ref message);"
+                    + " Pulse copy = message; BumpLocal(ref copy); Observe(copy);"
+            ).SetName("A byref use in a shadowing local function still migrates");
+            yield return new TestCaseData(
+                "static void BumpLocal(ref Pulse @\\u006dessage)"
+                    + " { Observe($\"{@message.Value++}\"); }"
+                    + " Pulse copy = message; BumpLocal(ref copy); Observe(copy);"
+            ).SetName("An interpolated write to a shadowing escaped parameter still migrates");
+            yield return new TestCaseData(
+                "void BumpLocal(Pulse message) { message.Value++; Observe(message); }"
+                    + " BumpLocal(message);"
+            ).SetName("A write to a shadowing by-value local function parameter still migrates");
+            yield return new TestCaseData(
                 "foreach (var item in Whole(message)) Observe(item);"
             ).SetName("Foreach over an unrelated call with the whole parameter still migrates");
             yield return new TestCaseData("Observe(when(message).Next);").SetName(
@@ -1372,6 +1389,16 @@ sealed class Receiver : MessageAwareComponent
             "Observe(message.Next); message.Child.Increment();",
             "invokes a method on parameter 'message'"
         )]
+        [TestCase(
+            "void BumpLocal(ref Pulse message) { message.Value++; }"
+                + " Pulse copy = message; BumpLocal(ref copy); Observe($\"{message.Value++}\");",
+            "writes to parameter 'message'"
+        )]
+        [TestCase(
+            "int BumpLocal(ref Pulse message) => Bump(ref message);"
+                + " Pulse copy = message; BumpLocal(ref copy); Bump(ref message);",
+            "passes parameter 'message' by ref"
+        )]
         public void AnalyzePrefersSpecificWriteAndBindingReasons(string body, string expectedReason)
         {
             string source =
@@ -1473,6 +1500,36 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
     {
         message = default;
         base.HandleGlobalStringMessage(ref message);
+    }
+}";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("writes to parameter 'message'")
+            );
+        }
+
+        [Test]
+        public void AnalyzeKeepsNestedBaseForwardingWhenTheOuterOverrideIsDeferred()
+        {
+            const string Source =
+                @"
+class Receiver : DxMessaging.Unity.MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message)
+    {
+        void Forward(ref GlobalStringMessage message) => base.HandleGlobalStringMessage(ref message);
+        message = default;
+        GlobalStringMessage copy = message;
+        Forward(ref copy);
     }
 }";
 
