@@ -661,6 +661,18 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("A raw indexer write with a quoted opening bracket requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " Observe($$\"\"\"{{ ((buffer[\"[\"], message) = (1, default(Pulse))) }}\"\"\"));",
+                "message"
+            ).SetName(
+                "A raw tuple write after a sibling with a quoted bracket requires manual review"
+            );
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " Observe($$\"\"\"{{ Echo($$\"\"\"{{ message.Value++ }}\"\"\") }}\"\"\"));",
+                "message"
+            ).SetName("A write in a nested raw interpolation requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => message.\u0394 = 1);",
                 "message"
             ).SetName("Unicode member assignment requires manual review");
@@ -818,6 +830,21 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData("Observe($$\"\"\"{{message}}\"\"\");").SetName(
                 "A whole parameter in a raw interpolation still migrates"
             );
+            yield return new TestCaseData("Observe($$\"\"\"{{ ByValue(message) }}\"\"\");").SetName(
+                "A whole parameter passed by value in a raw interpolation still migrates"
+            );
+            yield return new TestCaseData(
+                "Observe($$\"\"\"{{ (buffer[\"[\"], message) }}\"\"\");"
+            ).SetName("A raw tuple value with a quoted bracket still migrates");
+            yield return new TestCaseData(
+                "Observe($$\"\"\"Bump(ref message) {{ ByValue(message) }}\"\"\");"
+            ).SetName("Write-like literal text beside a raw interpolation still migrates");
+            yield return new TestCaseData(
+                "Observe($$\"\"\"{{ message:message.Value++}}\"\"\");"
+            ).SetName("Write-like raw interpolation format text still migrates");
+            yield return new TestCaseData(
+                "Observe($$\"\"\"{{ Echo(\"\"\"message.Value++\"\"\") }} {{ message }}\"\"\");"
+            ).SetName("Write-like text in a nested raw literal still migrates");
             yield return new TestCaseData(
                 "int count = 1; Observe(count+++ToInt(message)); Observe(count---ToInt(message));"
             ).SetName("Postfix operators before an unrelated call still migrate");
@@ -1143,6 +1170,16 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             ).SetName(
                 "A comment inside an interpolated grouped ref operand requires manual review"
             );
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> Observe($$\"\"\"{{ Bump(ref (/* note */ message)) }}\"\"\"));",
+                "ref"
+            ).SetName("A comment inside a raw grouped ref operand requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) "
+                    + "=> Observe($$\"\"\"\n{{ Assign(out ((// unused\n message))) }}\n\"\"\"));",
+                "out"
+            ).SetName("A line comment inside a raw grouped out operand requires manual review");
             yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => Bump(ref(message).Value));",
                 "ref"

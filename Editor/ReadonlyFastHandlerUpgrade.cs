@@ -302,11 +302,9 @@ namespace DxMessaging.Editor
                 throw new ArgumentNullException(nameof(source));
             }
 
-            List<InterpolatedSpan> interpolatedExpressions = new();
+            List<TextSpan> interpolatedExpressions = new();
             string masked = MaskNonCode(source, interpolatedExpressions);
-            interpolatedExpressions.Sort(
-                static (left, right) => left.Content.Start.CompareTo(right.Content.Start)
-            );
+            interpolatedExpressions.Sort(static (left, right) => left.Start.CompareTo(right.Start));
             HashSet<int> replacementStarts = new();
             SortedSet<string> manualReview = new(StringComparer.Ordinal);
             List<Invocation> readonlyInvocations = FindInvocations(
@@ -1591,7 +1589,7 @@ namespace DxMessaging.Editor
         private static void PruneIncompatibleParameterUses(
             string source,
             string masked,
-            List<InterpolatedSpan> interpolatedExpressions,
+            List<TextSpan> interpolatedExpressions,
             HashSet<int> replacementStarts,
             SortedSet<string> manualReview
         )
@@ -1697,7 +1695,7 @@ namespace DxMessaging.Editor
             string source,
             string masked,
             TextSpan body,
-            List<InterpolatedSpan> interpolatedExpressions,
+            List<TextSpan> interpolatedExpressions,
             HashSet<string> parameterNames
         )
         {
@@ -1857,16 +1855,15 @@ namespace DxMessaging.Editor
         private static string FindInterpolatedParameterIssue(
             string source,
             TextSpan body,
-            List<InterpolatedSpan> interpolatedExpressions,
+            List<TextSpan> interpolatedExpressions,
             string parameterName,
             string parameterValue,
             ref string unverifiedRead
         )
         {
             int bodyEnd = body.Start + body.Length;
-            foreach (InterpolatedSpan expression in interpolatedExpressions)
+            foreach (TextSpan scope in interpolatedExpressions)
             {
-                TextSpan scope = expression.Content;
                 if (bodyEnd <= scope.Start)
                 {
                     break;
@@ -1876,13 +1873,9 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
-                string code = source;
-                if (!expression.IsRaw)
-                {
-                    code = MaskNonCode(source.Substring(scope.Start, scope.Length), null);
-                    scope = new TextSpan(0, code.Length);
-                }
-                Match forwarding = FindByReferenceUses(code, scope, parameterValue)
+                string code = MaskNonCode(source.Substring(scope.Start, scope.Length), null);
+                TextSpan maskedScope = new(0, code.Length);
+                Match forwarding = FindByReferenceUses(code, maskedScope, parameterValue)
                     .FirstOrDefault();
                 if (forwarding != null)
                 {
@@ -1890,7 +1883,7 @@ namespace DxMessaging.Editor
                 }
                 string issue = FindDirectParameterIssue(
                     code,
-                    scope,
+                    maskedScope,
                     parameterName,
                     parameterValue,
                     ref unverifiedRead
@@ -2077,14 +2070,6 @@ namespace DxMessaging.Editor
             int depth = 1;
             for (int index = opening + 1; index < bodyEnd; index++)
             {
-                // Raw interpolation spans retain quoted keys and comments.
-                int nonCodeEnd = FindNonCodeEnd(text, index, interpolatedExpressions: null);
-                if (index < nonCodeEnd)
-                {
-                    index = nonCodeEnd - 1;
-                    continue;
-                }
-
                 if (text[index] == '[')
                 {
                     depth++;
@@ -2818,10 +2803,7 @@ namespace DxMessaging.Editor
             return -1;
         }
 
-        private static string MaskNonCode(
-            string source,
-            List<InterpolatedSpan> interpolatedExpressions
-        )
+        private static string MaskNonCode(string source, List<TextSpan> interpolatedExpressions)
         {
             char[] masked = source.ToCharArray();
             for (int index = 0; index < source.Length; )
@@ -2843,7 +2825,7 @@ namespace DxMessaging.Editor
         private static int FindNonCodeEnd(
             string source,
             int start,
-            List<InterpolatedSpan> interpolatedExpressions
+            List<TextSpan> interpolatedExpressions
         )
         {
             if (source[start] == '\'')
@@ -2866,7 +2848,7 @@ namespace DxMessaging.Editor
         private static int FindStringEnd(
             string source,
             int start,
-            List<InterpolatedSpan> interpolatedExpressions
+            List<TextSpan> interpolatedExpressions
         )
         {
             int quoteStart = start;
@@ -2903,27 +2885,20 @@ namespace DxMessaging.Editor
                     : FindQuotedEnd(source, quoteStart + 1, '"', verbatim);
             }
 
-            int contentStart = quoteStart + quoteCount;
-            int end = FindRawStringEnd(source, contentStart, quoteCount, interpolationDollarCount);
-            int contentEnd = end - quoteCount;
-            if (
-                interpolated
-                && contentStart < contentEnd
-                && CountRun(source, contentEnd, '"') == quoteCount
-            )
-            {
-                interpolatedExpressions?.Add(
-                    new InterpolatedSpan(contentStart, contentEnd - contentStart, isRaw: true)
-                );
-            }
-            return end;
+            return FindRawStringEnd(
+                source,
+                quoteStart + quoteCount,
+                quoteCount,
+                interpolationDollarCount,
+                interpolatedExpressions
+            );
         }
 
         private static int FindInterpolatedStringEnd(
             string source,
             int start,
             bool verbatim,
-            List<InterpolatedSpan> interpolatedExpressions
+            List<TextSpan> interpolatedExpressions
         )
         {
             for (int index = start; index < source.Length; index++)
@@ -2949,34 +2924,39 @@ namespace DxMessaging.Editor
                         continue;
                     }
 
-                    int expressionStart = index + 1;
-                    index = FindInterpolationEnd(
-                        source,
-                        expressionStart,
-                        interpolatedExpressions,
-                        out int expressionEnd
-                    );
-                    if (index < source.Length && expressionStart < expressionEnd)
-                    {
-                        interpolatedExpressions?.Add(
-                            new InterpolatedSpan(
-                                expressionStart,
-                                expressionEnd - expressionStart,
-                                isRaw: false
-                            )
-                        );
-                    }
+                    index = ReadInterpolation(source, index + 1, interpolatedExpressions);
                 }
             }
             return source.Length;
         }
 
+        private static int ReadInterpolation(
+            string source,
+            int start,
+            List<TextSpan> interpolatedExpressions,
+            int closingBraceCount = 1
+        )
+        {
+            int close = FindInterpolationEnd(
+                source,
+                start,
+                interpolatedExpressions,
+                out int expressionEnd,
+                closingBraceCount
+            );
+            if (close < source.Length && start < expressionEnd)
+            {
+                interpolatedExpressions?.Add(new TextSpan(start, expressionEnd - start));
+            }
+            return close;
+        }
+
         private static int FindInterpolationEnd(
             string source,
             int start,
-            List<InterpolatedSpan> interpolatedExpressions,
+            List<TextSpan> interpolatedExpressions,
             out int expressionEnd,
-            int closingBraceCount = 1
+            int closingBraceCount
         )
         {
             int nesting = 0;
@@ -3073,7 +3053,8 @@ namespace DxMessaging.Editor
             string source,
             int start,
             int quoteCount,
-            int interpolationDollarCount
+            int interpolationDollarCount,
+            List<TextSpan> interpolatedExpressions
         )
         {
             if (interpolationDollarCount == 0)
@@ -3106,11 +3087,10 @@ namespace DxMessaging.Editor
                 if (interpolationDollarCount <= openingBraceCount)
                 {
                     // A quote run within an interpolation belongs to the expression.
-                    int closing = FindInterpolationEnd(
+                    int closing = ReadInterpolation(
                         source,
                         index,
-                        interpolatedExpressions: null,
-                        out _,
+                        interpolatedExpressions,
                         interpolationDollarCount
                     );
                     index = closing == source.Length ? closing : closing + interpolationDollarCount;
@@ -3492,18 +3472,6 @@ namespace DxMessaging.Editor
             public int ParametersStart { get; }
 
             public int ParametersEnd { get; }
-        }
-
-        private readonly struct InterpolatedSpan
-        {
-            public readonly TextSpan Content;
-            public readonly bool IsRaw;
-
-            public InterpolatedSpan(int start, int length, bool isRaw)
-            {
-                Content = new TextSpan(start, length);
-                IsRaw = isRaw;
-            }
         }
 
         private readonly struct TextSpan
