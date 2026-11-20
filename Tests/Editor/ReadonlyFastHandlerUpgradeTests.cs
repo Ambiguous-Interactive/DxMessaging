@@ -2155,6 +2155,128 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
                 .Replace("PAYLOAD", payload);
         }
 
+        [TestCase(
+            "PAYLOAD copy = outer; Observe($\"{Run(() => base.HANDLER(ref copy))}\");",
+            1,
+            TestName = "A regular interpolation base call defers the string override"
+        )]
+        [TestCase(
+            "PAYLOAD copy = outer; Observe($@\"{Run(() => base.HANDLER(ref copy))}\");",
+            1,
+            TestName = "A verbatim interpolation base call defers the string override"
+        )]
+        [TestCase(
+            "PAYLOAD copy = outer; Observe($$\"\"\"{{ Echo($\"{Run(() => base.HANDLER(ref copy))}\") }}\"\"\");",
+            1,
+            TestName = "A nested raw interpolation base call defers the string override"
+        )]
+        [TestCase(
+            "void Forward(ref PAYLOAD forwarded) { base.HANDLER(ref forwarded); PAYLOAD copy = forwarded;\n"
+                + "            Observe($\"{Run(() => base.HANDLER(ref copy))}\"); }\n"
+                + "        FAST_HANDLER handler = Forward; Consume(handler, outer);",
+            2,
+            TestName = "An interpolated base call defers both connected callbacks"
+        )]
+        [TestCase(
+            "base.HANDLER(ref outer); PAYLOAD copy = outer;\n"
+                + "        Observe($\"{Run(() => base.HANDLER(message: ref copy))}\");",
+            1,
+            TestName = "An interpolated base call also defers a proven direct base call"
+        )]
+        public void AnalyzeDefersBaseForwardingInExecutableInterpolation(
+            string body,
+            int expectedReviews
+        )
+        {
+            string source = CreateRenamedForwardingSource(
+                "HandleGlobalStringMessage",
+                "GlobalStringMessage",
+                body
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(expectedReviews));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("depends on a base forwarding argument")
+            );
+        }
+
+        [TestCase(
+            "Observe($\"base.HANDLER(ref copy) {outer:base.HANDLER(ref copy)}\");\n"
+                + "        Observe($\"{Echo(\"base.HANDLER(ref copy)\")}\");",
+            TestName = "Code in interpolation text leaves a direct base call eligible"
+        )]
+        [TestCase(
+            "Observe($$\"\"\"base.HANDLER(ref copy) {{outer:base.HANDLER(ref copy)}}\"\"\");",
+            TestName = "Code in raw interpolation text leaves a direct base call eligible"
+        )]
+        [TestCase(
+            "PAYLOAD copy = outer; Observe($\"{Run(() => @base.HANDLER(ref copy))}\");",
+            TestName = "An escaped receiver in interpolation leaves a direct base call eligible"
+        )]
+        public void AnalyzePreservesVerifiedBaseForwardingBesideInterpolation(string body)
+        {
+            string source = CreateRenamedForwardingSource(
+                "HandleGlobalStringMessage",
+                "GlobalStringMessage",
+                "base.HANDLER(ref outer); " + body
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(2));
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("base.HandleGlobalStringMessage(in outer);")
+            );
+            Assert.That(result.UpgradedSource, Does.Contain("ref copy"));
+        }
+
+        [Test]
+        public void AnalyzeIgnoresInterpolatedBaseCallsOutsideTheOverrideScope()
+        {
+            const string Source =
+                @"
+class Receiver : DxMessaging.Unity.MessageAwareComponent
+{
+    void Before(GlobalStringMessage copy) =>
+        Observe($""{Run(() => base.HandleGlobalStringMessage(ref copy))}"");
+
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) =>
+        base.HandleGlobalStringMessage(ref message);
+
+    void After(GlobalStringMessage copy) =>
+        Observe($""{Run(() => base.HandleGlobalStringMessage(ref copy))}"");
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(2));
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("base.HandleGlobalStringMessage(in message);")
+            );
+            Assert.That(
+                result.UpgradedSource.Split(
+                    new[] { "base.HandleGlobalStringMessage(ref copy)" },
+                    StringSplitOptions.None
+                ),
+                Has.Length.EqualTo(3)
+            );
+        }
+
         [Test]
         public void AnalyzeLeavesExpressionBodyWithGenericRefForwardingForManualReview()
         {

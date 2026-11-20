@@ -426,7 +426,9 @@ namespace DxMessaging.Editor
             foreach (string overrideName in ChangedOverrideNames)
             {
                 AddOverrideDeclarationReplacements(
+                    source,
                     masked,
+                    interpolatedExpressions,
                     overrideName,
                     replacementStarts,
                     baseForwardingOwners,
@@ -697,7 +699,9 @@ namespace DxMessaging.Editor
         }
 
         private static void AddOverrideDeclarationReplacements(
+            string source,
             string masked,
+            List<TextSpan> interpolatedExpressions,
             string methodName,
             HashSet<int> replacementStarts,
             Dictionary<int, int> baseForwardingOwners,
@@ -731,7 +735,9 @@ namespace DxMessaging.Editor
                     replacementStarts
                 );
                 AddBaseOverrideForwardingReplacements(
+                    source,
                     masked,
+                    interpolatedExpressions,
                     declaration,
                     methodName,
                     replacementStarts,
@@ -1590,7 +1596,9 @@ namespace DxMessaging.Editor
         }
 
         private static void AddBaseOverrideForwardingReplacements(
+            string source,
             string masked,
+            List<TextSpan> interpolatedExpressions,
             ParameterList declaration,
             string methodName,
             HashSet<int> replacementStarts,
@@ -1623,33 +1631,26 @@ namespace DxMessaging.Editor
                 @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])base\s*\.\s*" + Regex.Escape(methodName) + @"\s*\(",
                 RegexOptions.CultureInvariant
             );
-            foreach (Match match in baseCall.Matches(masked, body.Start))
+            int owner = declaration.ParametersStart - 1;
+            foreach (
+                (int callStart, List<TextSpan> arguments) in FindBaseCallArguments(
+                    masked,
+                    body,
+                    baseCall
+                )
+            )
             {
-                if (body.Start + body.Length <= match.Index)
-                {
-                    break;
-                }
-                int open = masked.IndexOf('(', match.Index, match.Length);
-                int close = FindMatching(masked, open, '(', ')');
-                if (close < 0 || body.Start + body.Length < close)
-                {
-                    continue;
-                }
-                List<TextSpan> arguments = SplitArguments(masked, open + 1, close);
                 for (int argumentIndex = 0; argumentIndex < arguments.Count; argumentIndex++)
                 {
                     TextSpan argument = GetArgumentValueSpan(masked, arguments[argumentIndex]);
-                    int refStart = NextNonWhitespace(masked, argument.Start);
-                    if (
-                        argument.Start + argument.Length <= refStart
-                        || !StartsWithIdentifier(masked, refStart, "ref")
-                    )
+                    int refStart = FindBaseArgumentRefStart(masked, argument);
+                    if (refStart < 0)
                     {
                         continue;
                     }
 
                     // A withheld base-argument edit also defers every callback that contains it.
-                    baseForwardingOwners[refStart] = declaration.ParametersStart - 1;
+                    baseForwardingOwners[refStart] = owner;
                     Match forwarded = BaseRefArgumentRegex.Match(
                         masked.Substring(argument.Start, argument.Length)
                     );
@@ -1659,7 +1660,7 @@ namespace DxMessaging.Editor
                         && argumentIndex < overrideParameters.Count
                         && CanRewriteBaseArgument(
                             masked,
-                            match.Index,
+                            callStart,
                             overrideParameters[argumentIndex],
                             localShadows,
                             IdentifierValue(forwarded.Groups["name"].Value),
@@ -1672,6 +1673,74 @@ namespace DxMessaging.Editor
                     }
                 }
             }
+
+            int bodyEnd = body.Start + body.Length;
+            foreach (TextSpan expression in interpolatedExpressions)
+            {
+                if (bodyEnd <= expression.Start)
+                {
+                    break;
+                }
+                if (expression.Start < body.Start || bodyEnd < expression.Start + expression.Length)
+                {
+                    continue;
+                }
+
+                string code = MaskNonCode(
+                    source.Substring(expression.Start, expression.Length),
+                    null
+                );
+                TextSpan scope = new(0, code.Length);
+                foreach (
+                    (_, List<TextSpan> arguments) in FindBaseCallArguments(code, scope, baseCall)
+                )
+                {
+                    foreach (TextSpan argument in arguments)
+                    {
+                        int refStart = FindBaseArgumentRefStart(
+                            code,
+                            GetArgumentValueSpan(code, argument)
+                        );
+                        if (0 <= refStart)
+                        {
+                            // The hole may contain a nested callable with a different binding.
+                            baseForwardingOwners[expression.Start + refStart] = owner;
+                        }
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<(int CallStart, List<TextSpan> Arguments)> FindBaseCallArguments(
+            string code,
+            TextSpan scope,
+            Regex baseCall
+        )
+        {
+            int scopeEnd = scope.Start + scope.Length;
+            foreach (Match match in baseCall.Matches(code, scope.Start))
+            {
+                if (scopeEnd <= match.Index)
+                {
+                    break;
+                }
+                int open = match.Index + match.Length - 1;
+                int close = FindMatching(code, open, '(', ')');
+                if (0 <= close && close < scopeEnd)
+                {
+                    yield return (match.Index, SplitArguments(code, open + 1, close));
+                }
+            }
+        }
+
+        private static int FindBaseArgumentRefStart(string code, TextSpan argument)
+        {
+            int refStart = NextNonWhitespace(code, argument.Start);
+            return
+                refStart < argument.Start + argument.Length
+                && StartsWithIdentifier(code, refStart, "ref")
+                ? refStart
+                : -1;
         }
 
         private static bool CanRewriteBaseArgument(
