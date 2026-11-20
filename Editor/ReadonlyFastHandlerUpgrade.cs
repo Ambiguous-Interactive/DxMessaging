@@ -2070,7 +2070,14 @@ namespace DxMessaging.Editor
                     ref next,
                     out bool accessedMemberOrIndexer
                 );
-                if (target == DirectTargetKind.MemberInvocation)
+                if (
+                    target == DirectTargetKind.MemberInvocation
+                    || (
+                        target == DirectTargetKind.Storage
+                        && !accessedMemberOrIndexer
+                        && IsDirectForeachSource(masked, body, targetStart, next)
+                    )
+                )
                 {
                     return $"invokes a method on parameter '{parameterName}' or its member";
                 }
@@ -2088,6 +2095,30 @@ namespace DxMessaging.Editor
                 }
             }
             return null;
+        }
+
+        private static bool IsDirectForeachSource(
+            string text,
+            TextSpan body,
+            int targetStart,
+            int following
+        )
+        {
+            if (following < 0 || body.Start + body.Length <= following || text[following] != ')')
+            {
+                return false;
+            }
+
+            int beforeTarget = PreviousNonWhitespace(text, targetStart - 1);
+            if (!FollowsKeyword(text, body.Start, beforeTarget, "in"))
+            {
+                return false;
+            }
+
+            // An ordinary argument can also follow in and precede a closing parenthesis.
+            int opening = FindMatchingBackward(text, following, '(', ')', body.Start);
+            int beforeOpening = PreviousNonWhitespace(text, opening - 1);
+            return FollowsKeyword(text, body.Start, beforeOpening, "foreach");
         }
 
         private static bool IsDirectParameterWrite(

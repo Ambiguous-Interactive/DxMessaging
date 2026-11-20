@@ -905,6 +905,15 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "foreach (var item in Whole(message)) Observe(item);"
             ).SetName("Foreach over an unrelated call with the whole parameter still migrates");
+            yield return new TestCaseData(
+                "Pulse copy = message; foreach (var item in copy) Observe(item);"
+            ).SetName("Foreach over a local copy of the whole parameter still migrates");
+            yield return new TestCaseData(
+                "foreach (var item in (Whole(((message))))) Observe(item);"
+            ).SetName("Foreach over a grouped call with a grouped argument still migrates");
+            yield return new TestCaseData(
+                "foreach (var item in Whole(in message)) Observe(item);"
+            ).SetName("Foreach over a call taking a readonly reference still migrates");
             yield return new TestCaseData("Observe(when(message).Next);").SetName(
                 "A member of an unrelated when callable result still migrates"
             );
@@ -1337,6 +1346,17 @@ sealed class Receiver : MessageAwareComponent
             yield return new TestCaseData("message.Child.Increment();").SetName(
                 "A method call on a nested message member requires manual review"
             );
+            yield return new TestCaseData("foreach (var item in message) Observe(item);").SetName(
+                "Foreach over the whole parameter requires manual review"
+            );
+            yield return new TestCaseData(
+                "foreach (int item in /* source */ ((message)) /* end */) Observe(item);"
+            ).SetName(
+                "Foreach over a grouped whole parameter with comments requires manual review"
+            );
+            yield return new TestCaseData(
+                "if (true) foreach (var item in (message!)) Observe(item);"
+            ).SetName("Foreach over a null-forgiven whole parameter requires manual review");
         }
 
         [TestCaseSource(nameof(ReceiverInvocationCases))]
