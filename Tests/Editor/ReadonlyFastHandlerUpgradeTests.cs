@@ -921,6 +921,18 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "ref Pulse alias = ref (Read(in (message)) > 0 ? ref fallback : ref fallback); "
                     + "ObserveValue(alias);"
             ).SetName("A grouped value used to choose a reference still migrates");
+            yield return new TestCaseData(
+                "ref readonly Pulse alias = ref checked(message); ObserveValue(alias);"
+            ).SetName("A checked whole-parameter readonly alias still migrates");
+            yield return new TestCaseData(
+                "ref readonly Pulse alias = ref checked(message)!; ObserveValue(alias);"
+            ).SetName("A null-forgiven checked readonly alias still migrates");
+            yield return new TestCaseData("Read(in unchecked((message)));").SetName(
+                "A checked whole-parameter in argument still migrates"
+            );
+            yield return new TestCaseData("Bump(ref @checked(message));").SetName(
+                "An escaped checked callable with a by-value argument still migrates"
+            );
             yield return new TestCaseData("Observe(when(message).Next);").SetName(
                 "A member of an unrelated when callable result still migrates"
             );
@@ -1328,6 +1340,49 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
         }
 
         [TestCaseSource(nameof(GroupedByReferenceUseCases))]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) => Bump(ref checked(message)));",
+            "ref",
+            TestName = "A checked parameter passed by ref requires manual review"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) => Assign(out unchecked((message))));",
+            "out",
+            TestName = "An unchecked grouped parameter passed by out requires manual review"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) => { "
+                + "ref Pulse alias = ref (choose ? ref checked((message)) : ref fallback); "
+                + "Observe(++alias.Value); });",
+            "ref",
+            TestName = "A checked first ref conditional operand requires manual review"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) => { "
+                + "ref Pulse alias = ref (choose ? ref fallback : ref unchecked((message))); "
+                + "Observe(++alias.Value); });",
+            "ref",
+            TestName = "An unchecked second ref conditional operand requires manual review"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) => "
+                + "Observe($\"{Bump(ref unchecked(checked(message)))}\"));",
+            "ref",
+            TestName = "A checked ref argument inside an interpolation requires manual review"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) => { "
+                + "ref Pulse alias = ref checked(message)!; Observe(++alias.Value); });",
+            "ref",
+            TestName = "A null-forgiven checked ref initializer requires manual review"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) => { "
+                + "ref Pulse alias = ref (choose ? ref checked(message)! : ref fallback); "
+                + "Observe(++alias.Value); });",
+            "ref",
+            TestName = "A null-forgiven checked ref conditional operand requires manual review"
+        )]
         public void AnalyzeLeavesGroupedByReferenceUsesForManualReview(
             string registration,
             string modifier
@@ -1993,6 +2048,14 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             1,
             TestName = "A by-value local parameter defers the connected base forwarding edits"
         )]
+        [TestCase(
+            "void Forward(ref PAYLOAD forwarded) { "
+                + "ref PAYLOAD alias = ref (Choose ? ref checked(forwarded) : ref fallback); "
+                + "alias = default; base.HANDLER(ref forwarded); }\n"
+                + "        FAST_HANDLER handler = Forward; Consume(handler, outer);",
+            2,
+            TestName = "A checked writable alias defers its renamed local base forwarding edits"
+        )]
         public void AnalyzeDefersRenamedBaseForwardingWithoutProvedBinding(
             string body,
             int expectedReviews
@@ -2011,6 +2074,63 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             Assert.That(result.ReplacementCount, Is.Zero);
             Assert.That(result.StringHandlerOptInCount, Is.Zero);
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(expectedReviews));
+        }
+
+        [Test]
+        public void AnalyzeKeepsAnEscapedBaseReceiverArgumentWritable()
+        {
+            string source = CreateRenamedForwardingSource(
+                "HandleGlobalStringMessage",
+                "GlobalStringMessage",
+                "@base.HANDLER(ref outer);"
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("passes parameter 'outer' by ref")
+            );
+        }
+
+        [TestCase(
+            "outer",
+            TestName = "An escaped base receiver leaves same-name local forwarding writable"
+        )]
+        [TestCase(
+            "forwarded",
+            TestName = "An escaped base receiver leaves renamed local forwarding writable"
+        )]
+        public void AnalyzeDefersOnlyTheCallbackThatPassesAReferenceToAnEscapedBaseReceiver(
+            string parameter
+        )
+        {
+            string source = CreateRenamedForwardingSource(
+                "HandleGlobalStringMessage",
+                "GlobalStringMessage",
+                $"void Forward(ref PAYLOAD {parameter}) {{ @base.HANDLER(ref {parameter}); }}"
+                    + " FAST_HANDLER handler = Forward; Consume(handler, outer);"
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain($"@base.HandleGlobalStringMessage(ref {parameter});")
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain($"passes parameter '{parameter}' by ref")
+            );
         }
 
         private static string CreateRenamedForwardingSource(

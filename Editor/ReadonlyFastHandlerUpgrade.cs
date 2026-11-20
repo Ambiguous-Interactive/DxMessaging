@@ -160,7 +160,9 @@ namespace DxMessaging.Editor
         );
 
         private static readonly Regex ByReferenceOperandRegex = new(
-            @"\G(?<grouping>(?:\(\s*)*)(?<name>" + IdentifierSpellingPattern + ")",
+            @"\G(?<grouping>(?:(?:(?:checked|unchecked)\s*)?\(\s*)*)(?<name>"
+                + IdentifierSpellingPattern
+                + ")",
             RegexOptions.CultureInvariant
         );
 
@@ -1618,7 +1620,7 @@ namespace DxMessaging.Editor
             List<(string Parameter, TextSpan Declaration)> localShadows =
                 CollectLocalFunctionShadows(masked, body);
             Regex baseCall = new(
-                @"\bbase\s*\.\s*" + Regex.Escape(methodName) + @"\s*\(",
+                @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])base\s*\.\s*" + Regex.Escape(methodName) + @"\s*\(",
                 RegexOptions.CultureInvariant
             );
             foreach (Match match in baseCall.Matches(masked, body.Start))
@@ -2260,7 +2262,7 @@ namespace DxMessaging.Editor
             TextSpan rightHandSide = new(operand.Index, scopeEnd - operand.Index);
             int targetStart = operand.Groups["name"].Index;
             int following = NextAfterComments(source, operand.Index + operand.Length, scopeEnd);
-            ExpandStandaloneGrouping(source, rightHandSide, ref targetStart, ref following);
+            ExpandDirectReceiver(source, rightHandSide, ref targetStart, ref following);
             return targetStart == rightHandSide.Start
                 && 0 <= following
                 && following < scopeEnd
@@ -2663,7 +2665,10 @@ namespace DxMessaging.Editor
                     after + 1 < bodyEnd
                     && (text[after] is '+' or '-')
                     && text[after] == text[after + 1];
-                if (text[after] is not ('.' or '[' or ')' or '?' or ',') && !postfixWrite)
+                if (
+                    text[after] is not ('.' or '[' or ')' or '?' or ',' or ':' or ';')
+                    && !postfixWrite
+                )
                 {
                     return;
                 }
