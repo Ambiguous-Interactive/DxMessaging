@@ -1621,6 +1621,126 @@ sealed class Receiver : MessageAwareComponent
             );
         }
 
+        [TestCase(
+            "\r",
+            true,
+            TestName = "A conditional namespace after carriage returns needs review"
+        )]
+        [TestCase(
+            "\u0085",
+            true,
+            TestName = "A conditional namespace after next-line characters needs review"
+        )]
+        [TestCase(
+            "\u2028",
+            true,
+            TestName = "A conditional namespace after line separators needs review"
+        )]
+        [TestCase(
+            "\u2029",
+            true,
+            TestName = "A conditional namespace after paragraph separators needs review"
+        )]
+        [TestCase(
+            "\r",
+            false,
+            TestName = "An unconditional namespace after carriage returns still migrates"
+        )]
+        [TestCase(
+            "\u0085",
+            false,
+            TestName = "An unconditional namespace after next-line characters still migrates"
+        )]
+        [TestCase(
+            "\u2028",
+            false,
+            TestName = "An unconditional namespace after line separators still migrates"
+        )]
+        [TestCase(
+            "\u2029",
+            false,
+            TestName = "An unconditional namespace after paragraph separators still migrates"
+        )]
+        public void AnalyzeUsesLogicalLineEndingsInNamespaceProof(string newline, bool conditional)
+        {
+            string imports = conditional
+                ? "# if USE_DX\nusing DxMessaging.Core;\n#else\nusing Writable;\n#endif"
+                : "using DxMessaging.Core;";
+            string source = (
+                "// Heading\n"
+                + imports
+                + "\nMessageRegistrationToken token;"
+                + "\ntoken.RegisterUntargeted<Pulse>((ref Pulse message) => Read(message));"
+            ).Replace("\n", newline);
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            if (conditional)
+            {
+                Assert.That(result.UpgradedSource, Is.EqualTo(source));
+                Assert.That(result.ReplacementCount, Is.Zero);
+                Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+                Assert.That(
+                    result.ManualReviewMethods[0],
+                    Does.Contain("receiver whose MessageRegistrationToken type cannot be proven")
+                );
+                return;
+            }
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(source.Replace("ref Pulse message", "in Pulse message"))
+            );
+        }
+
+        [TestCase(
+            "Forward(ref\n#if true\nmessage\n#endif\n);",
+            true,
+            TestName = "A resolved directive does not hide a writable argument"
+        )]
+        [TestCase(
+            "Forward(ref\n#if false\nother\n#elif true\nmessage\n#endif\n);",
+            true,
+            TestName = "A selected elif operand still requires writable argument review"
+        )]
+        [TestCase(
+            "Read(\n#if true\nmessage\n#endif\n);",
+            false,
+            TestName = "A by-value argument across resolved directives still migrates"
+        )]
+        public void AnalyzeScansOperandsAcrossResolvedDirectives(string statement, bool writable)
+        {
+            string source =
+                "DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = "
+                + "(ref Pulse message) => { "
+                + statement
+                + " };";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            if (writable)
+            {
+                Assert.That(result.UpgradedSource, Is.EqualTo(source));
+                Assert.That(result.ReplacementCount, Is.Zero);
+                Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+                Assert.That(
+                    result.ManualReviewMethods[0],
+                    Does.Contain("passes parameter 'message' by ref")
+                );
+                return;
+            }
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(source.Replace("ref Pulse message", "in Pulse message"))
+            );
+        }
+
         private static IEnumerable<TestCaseData> SourceLineTerminatorCases()
         {
             yield return new TestCaseData("\u0085").SetName(

@@ -364,22 +364,26 @@ namespace DxMessaging.Editor
                 throw new ArgumentNullException(nameof(source));
             }
 
-            List<TextSpan> interpolatedExpressions = new();
-            List<TextSpan> uncertainBranches = new();
-            string masked = MaskNonCode(source, interpolatedExpressions, uncertainBranches);
-            interpolatedExpressions.Sort(static (left, right) => left.Start.CompareTo(right.Start));
+            SourceMetadata metadata = new();
+            string masked = MaskNonCode(source, metadata.InterpolatedExpressions, metadata);
+            metadata.InterpolatedExpressions.Sort(
+                static (left, right) => left.Start.CompareTo(right.Start)
+            );
+            bool hasConditionalDirectives = 0 < metadata.ConditionalDirectives.Count;
             HashSet<int> replacementStarts = new();
             SortedSet<string> manualReview = new(StringComparer.Ordinal);
             List<Invocation> readonlyInvocations = FindInvocations(
                 masked,
                 ReadonlyRegistrationNames,
                 manualReview,
+                hasConditionalDirectives,
                 requireProvenReceiver: true
             );
             List<Invocation> mutableInvocations = FindInvocations(
                 masked,
                 MutableRegistrationNames,
                 manualReview: null,
+                hasConditionalDirectives,
                 requireProvenReceiver: false
             );
             HashSet<string> mutableMethodGroups = CollectCallbackMethodGroups(
@@ -425,6 +429,7 @@ namespace DxMessaging.Editor
 
             AddFastDelegateReplacements(
                 masked,
+                hasConditionalDirectives,
                 mutableMethodGroups,
                 replacementStarts,
                 manualReview
@@ -436,7 +441,7 @@ namespace DxMessaging.Editor
                 AddOverrideDeclarationReplacements(
                     source,
                     masked,
-                    interpolatedExpressions,
+                    metadata,
                     overrideName,
                     replacementStarts,
                     baseForwardingOwners,
@@ -447,15 +452,20 @@ namespace DxMessaging.Editor
             PruneIncompatibleParameterUses(
                 source,
                 masked,
-                interpolatedExpressions,
-                uncertainBranches,
+                metadata,
                 replacementStarts,
                 baseForwardingOwners,
                 manualReview
             );
 
             SortedDictionary<int, string> insertions = new();
-            AddStringHandlerOptIns(masked, replacementStarts, insertions, manualReview);
+            AddStringHandlerOptIns(
+                masked,
+                hasConditionalDirectives,
+                replacementStarts,
+                insertions,
+                manualReview
+            );
 
             List<int> orderedStarts = new(replacementStarts);
             orderedStarts.Sort();
@@ -586,6 +596,7 @@ namespace DxMessaging.Editor
 
         private static void AddFastDelegateReplacements(
             string masked,
+            bool hasConditionalDirectives,
             HashSet<string> mutableMethodGroups,
             HashSet<int> replacementStarts,
             SortedSet<string> manualReview
@@ -605,7 +616,7 @@ namespace DxMessaging.Editor
                 }
                 searchStart = fastHandler + "FastHandler".Length;
 
-                if (!IsMessageHandlerQualified(masked, fastHandler))
+                if (!IsMessageHandlerQualified(masked, fastHandler, hasConditionalDirectives))
                 {
                     continue;
                 }
@@ -710,7 +721,7 @@ namespace DxMessaging.Editor
         private static void AddOverrideDeclarationReplacements(
             string source,
             string masked,
-            List<TextSpan> interpolatedExpressions,
+            SourceMetadata metadata,
             string methodName,
             HashSet<int> replacementStarts,
             Dictionary<int, int> baseForwardingOwners,
@@ -720,7 +731,13 @@ namespace DxMessaging.Editor
             foreach (ParameterList declaration in FindMethodDeclarations(masked, methodName, true))
             {
                 int typeStart = FindContainingTypeStart(masked, declaration.DeclarationStart);
-                if (!TypeScopeDerivesFromMessageAwareComponent(masked, typeStart))
+                if (
+                    !TypeScopeDerivesFromMessageAwareComponent(
+                        masked,
+                        typeStart,
+                        0 < metadata.ConditionalDirectives.Count
+                    )
+                )
                 {
                     if (
                         RefRegex.IsMatch(
@@ -746,7 +763,7 @@ namespace DxMessaging.Editor
                 AddBaseOverrideForwardingReplacements(
                     source,
                     masked,
-                    interpolatedExpressions,
+                    metadata,
                     declaration,
                     methodName,
                     replacementStarts,
@@ -757,6 +774,7 @@ namespace DxMessaging.Editor
 
         private static void AddStringHandlerOptIns(
             string masked,
+            bool hasConditionalDirectives,
             HashSet<int> replacementStarts,
             SortedDictionary<int, string> insertions,
             SortedSet<string> manualReview
@@ -771,7 +789,11 @@ namespace DxMessaging.Editor
                 {
                     int typeStart = FindContainingTypeStart(masked, declaration.DeclarationStart);
                     if (
-                        !TypeScopeDerivesFromMessageAwareComponent(masked, typeStart)
+                        !TypeScopeDerivesFromMessageAwareComponent(
+                            masked,
+                            typeStart,
+                            hasConditionalDirectives
+                        )
                         || !HasReplacementInRange(
                             replacementStarts,
                             declaration.ParametersStart,
@@ -855,10 +877,6 @@ namespace DxMessaging.Editor
             Match declaration = null;
             foreach (Match match in TypeDeclarationRegex.Matches(masked))
             {
-                if (IsOnPreprocessorDirectiveLine(masked, match.Index))
-                {
-                    continue;
-                }
                 int open = masked.IndexOf('{', match.Index + match.Length);
                 if (open != typeStart)
                 {
@@ -886,17 +904,6 @@ namespace DxMessaging.Editor
                 @"\bpartial\b",
                 RegexOptions.CultureInvariant
             );
-        }
-
-        private static bool IsOnPreprocessorDirectiveLine(string source, int index)
-        {
-            int lineStart = source.LastIndexOf('\n', index);
-            lineStart = lineStart < 0 ? 0 : lineStart + 1;
-            while (lineStart < index && (source[lineStart] == ' ' || source[lineStart] == '\t'))
-            {
-                lineStart++;
-            }
-            return lineStart < index && source[lineStart] == '#';
         }
 
         private static bool TryCreateMemberInsertion(
@@ -1108,7 +1115,8 @@ namespace DxMessaging.Editor
 
         private static bool TypeScopeDerivesFromMessageAwareComponent(
             string masked,
-            int typeScopeStart
+            int typeScopeStart,
+            bool hasConditionalDirectives
         )
         {
             if (typeScopeStart < 0)
@@ -1137,7 +1145,7 @@ namespace DxMessaging.Editor
                     @"\bMessageAwareComponent\b",
                     RegexOptions.CultureInvariant
                 );
-                return HasNamespaceImport(masked, "DxMessaging.Unity")
+                return HasNamespaceImport(masked, "DxMessaging.Unity", hasConditionalDirectives)
                     && !HasTypeOrAliasDeclaration(masked, "MessageAwareComponent")
                     && unqualifiedBase.Success
                     && IsRootTypeQualifier(header, unqualifiedBase.Index);
@@ -1145,15 +1153,13 @@ namespace DxMessaging.Editor
             return false;
         }
 
-        private static bool HasNamespaceImport(string masked, string namespaceName)
+        private static bool HasNamespaceImport(
+            string masked,
+            string namespaceName,
+            bool hasConditionalDirectives
+        )
         {
-            if (
-                Regex.IsMatch(
-                    masked,
-                    @"^[ \t]*#[ \t]*(?:if|elif|else|endif)\b",
-                    RegexOptions.CultureInvariant | RegexOptions.Multiline
-                )
-            )
+            if (hasConditionalDirectives)
             {
                 return false;
             }
@@ -1208,7 +1214,11 @@ namespace DxMessaging.Editor
             return earlier < 0 || text[earlier] != ':';
         }
 
-        private static bool HasProvenTokenReceiver(string masked, int methodNameStart)
+        private static bool HasProvenTokenReceiver(
+            string masked,
+            int methodNameStart,
+            bool hasConditionalDirectives
+        )
         {
             int dot = PreviousNonWhitespace(masked, methodNameStart - 1);
             if (dot < 0 || masked[dot] != '.')
@@ -1231,7 +1241,13 @@ namespace DxMessaging.Editor
             int usageScope = FindContainingTypeStart(masked, methodNameStart);
             if (receiver == "Token")
             {
-                if (!TypeScopeDerivesFromMessageAwareComponent(masked, usageScope))
+                if (
+                    !TypeScopeDerivesFromMessageAwareComponent(
+                        masked,
+                        usageScope,
+                        hasConditionalDirectives
+                    )
+                )
                 {
                     return false;
                 }
@@ -1283,7 +1299,8 @@ namespace DxMessaging.Editor
                     int typePrefix = PreviousNonWhitespace(masked, match.Index - 1);
                     return (
                             typePrefix < 0 || masked[typePrefix] != '.' && masked[typePrefix] != ':'
-                        ) && HasNamespaceImport(masked, "DxMessaging.Core");
+                        )
+                        && HasNamespaceImport(masked, "DxMessaging.Core", hasConditionalDirectives);
                 }
             }
             return false;
@@ -1321,6 +1338,7 @@ namespace DxMessaging.Editor
             string masked,
             HashSet<string> acceptedNames,
             SortedSet<string> manualReview,
+            bool hasConditionalDirectives,
             bool requireProvenReceiver
         )
         {
@@ -1348,7 +1366,10 @@ namespace DxMessaging.Editor
                 if (0 <= close)
                 {
                     Invocation invocation = new(name, cursor + 1, close);
-                    if (requireProvenReceiver && !HasProvenTokenReceiver(masked, match.Index))
+                    if (
+                        requireProvenReceiver
+                        && !HasProvenTokenReceiver(masked, match.Index, hasConditionalDirectives)
+                    )
                     {
                         if (manualReview != null && InvocationMayNeedMigration(masked, invocation))
                         {
@@ -1607,7 +1628,7 @@ namespace DxMessaging.Editor
         private static void AddBaseOverrideForwardingReplacements(
             string source,
             string masked,
-            List<TextSpan> interpolatedExpressions,
+            SourceMetadata metadata,
             ParameterList declaration,
             string methodName,
             HashSet<int> replacementStarts,
@@ -1635,7 +1656,7 @@ namespace DxMessaging.Editor
                 declaration.ParametersEnd
             );
             List<(string Parameter, TextSpan Declaration)> localShadows =
-                CollectLocalFunctionShadows(masked, body);
+                CollectLocalFunctionShadows(masked, body, metadata);
             int owner = declaration.ParametersStart - 1;
             foreach (
                 (int callStart, List<TextSpan> arguments) in FindBaseCallArguments(
@@ -1680,10 +1701,13 @@ namespace DxMessaging.Editor
             }
 
             int bodyEnd = body.Start + body.Length;
-            int first = FindFirstInterpolationAtOrAfter(interpolatedExpressions, body.Start);
-            for (int index = first; index < interpolatedExpressions.Count; index++)
+            int first = FindFirstInterpolationAtOrAfter(
+                metadata.InterpolatedExpressions,
+                body.Start
+            );
+            for (int index = first; index < metadata.InterpolatedExpressions.Count; index++)
             {
-                TextSpan expression = interpolatedExpressions[index];
+                TextSpan expression = metadata.InterpolatedExpressions[index];
                 if (bodyEnd <= expression.Start)
                 {
                     break;
@@ -1849,8 +1873,7 @@ namespace DxMessaging.Editor
         private static void PruneIncompatibleParameterUses(
             string source,
             string masked,
-            List<TextSpan> interpolatedExpressions,
-            List<TextSpan> uncertainBranches,
+            SourceMetadata metadata,
             HashSet<int> replacementStarts,
             Dictionary<int, int> baseForwardingOwners,
             SortedSet<string> manualReview
@@ -1895,7 +1918,7 @@ namespace DxMessaging.Editor
                 {
                     removedBaseForwarding |= PruneConditionalCallback(
                         masked,
-                        uncertainBranches,
+                        metadata.UncertainBranches,
                         replacementStarts,
                         baseForwardingOwners,
                         manualReview,
@@ -1904,7 +1927,7 @@ namespace DxMessaging.Editor
                         ?? PruneCallback(
                             source,
                             masked,
-                            interpolatedExpressions,
+                            metadata,
                             replacementStarts,
                             baseForwardingOwners,
                             manualReview,
@@ -1963,7 +1986,7 @@ namespace DxMessaging.Editor
         private static bool PruneCallback(
             string source,
             string masked,
-            List<TextSpan> interpolatedExpressions,
+            SourceMetadata metadata,
             HashSet<int> replacementStarts,
             Dictionary<int, int> baseForwardingOwners,
             SortedSet<string> manualReview,
@@ -1997,7 +2020,7 @@ namespace DxMessaging.Editor
             }
 
             List<(string Parameter, TextSpan Declaration)> localShadows =
-                CollectLocalFunctionShadows(masked, body);
+                CollectLocalFunctionShadows(masked, body, metadata);
 
             List<int> forwardingStarts = new();
             int enclosingOverride = -1;
@@ -2046,7 +2069,7 @@ namespace DxMessaging.Editor
                 && HasDirectLocalFunctionCall(
                     source,
                     masked,
-                    interpolatedExpressions,
+                    metadata.InterpolatedExpressions,
                     enclosingOverride,
                     entry.Key
                 )
@@ -2058,7 +2081,7 @@ namespace DxMessaging.Editor
                 source,
                 masked,
                 body,
-                interpolatedExpressions,
+                metadata.InterpolatedExpressions,
                 parameterNames,
                 localShadows
             );
@@ -2182,9 +2205,19 @@ namespace DxMessaging.Editor
 
         private static List<(string Parameter, TextSpan Declaration)> CollectLocalFunctionShadows(
             string masked,
-            TextSpan body
+            TextSpan body,
+            SourceMetadata metadata
         )
         {
+            // Conditional compilation can change the declaration or the end of its scope.
+            if (
+                metadata.ConditionalDirectives.Exists(position =>
+                    body.Start <= position && position < body.Start + body.Length
+                )
+            )
+            {
+                return new();
+            }
             try
             {
                 return FindLocalFunctionShadows(masked, body).ToList();
@@ -2204,12 +2237,6 @@ namespace DxMessaging.Editor
             TextSpan Declaration
         )> FindLocalFunctionShadows(string masked, TextSpan body)
         {
-            // Conditional compilation can change the declaration or the end of its scope.
-            if (0 <= masked.IndexOf('#', body.Start, body.Length))
-            {
-                yield break;
-            }
-
             int bodyEnd = body.Start + body.Length;
             for (
                 Match function = LocalFunctionDeclarationRegex.Match(
@@ -3617,12 +3644,12 @@ namespace DxMessaging.Editor
         private static string MaskNonCode(
             string source,
             List<TextSpan> interpolatedExpressions,
-            List<TextSpan> uncertainBranches = null
+            SourceMetadata metadata = null
         )
         {
             char[] masked = source.ToCharArray();
             ConditionalMask conditional =
-                uncertainBranches != null && source.Contains('#') ? new(uncertainBranches) : null;
+                metadata != null && source.Contains('#') ? new(metadata) : null;
             for (int index = 0; index < source.Length; )
             {
                 if (
@@ -3685,13 +3712,8 @@ namespace DxMessaging.Editor
             if (keyword is "if" or "elif" or "else" or "endif")
             {
                 conditional.Visit(keyword, source.AsSpan(keywordEnd, lineEnd - keywordEnd), index);
-                // Keep directive names visible to the existing namespace and scope safeguards.
-                Mask(masked, keywordEnd, lineEnd);
             }
-            else
-            {
-                Mask(masked, index, lineEnd);
-            }
+            Mask(masked, index, lineEnd);
             return lineEnd;
         }
 
@@ -3724,22 +3746,30 @@ namespace DxMessaging.Editor
             Uncertain,
         }
 
+        private sealed class SourceMetadata
+        {
+            public readonly List<TextSpan> InterpolatedExpressions = new();
+            public readonly List<TextSpan> UncertainBranches = new();
+            public readonly List<int> ConditionalDirectives = new();
+        }
+
         private sealed class ConditionalMask
         {
             private readonly Stack<(int Start, BranchState Outer, BranchState Remaining)> _scopes =
                 new();
-            private readonly List<TextSpan> _uncertainBranches;
+            private readonly SourceMetadata _metadata;
             private int _uncertainTail = int.MaxValue;
 
-            public ConditionalMask(List<TextSpan> uncertainBranches)
+            public ConditionalMask(SourceMetadata metadata)
             {
-                _uncertainBranches = uncertainBranches;
+                _metadata = metadata;
             }
 
             public BranchState State { get; private set; } = BranchState.Active;
 
             public void Visit(string keyword, ReadOnlySpan<char> condition, int start)
             {
+                _metadata.ConditionalDirectives.Add(start);
                 BranchState outer = State;
                 BranchState remaining = outer;
                 if (keyword != "if")
@@ -3794,7 +3824,7 @@ namespace DxMessaging.Editor
                     State = outer;
                 }
                 foreach (
-                    TextSpan branch in _uncertainBranches.Where(branch =>
+                    TextSpan branch in _metadata.UncertainBranches.Where(branch =>
                         !IsContainedBranch(masked, branch)
                     )
                 )
@@ -3803,7 +3833,7 @@ namespace DxMessaging.Editor
                 }
                 if (_uncertainTail < masked.Length)
                 {
-                    _uncertainBranches.Add(
+                    _metadata.UncertainBranches.Add(
                         new TextSpan(_uncertainTail, masked.Length - _uncertainTail)
                     );
                 }
@@ -3813,7 +3843,7 @@ namespace DxMessaging.Editor
             {
                 if (State == BranchState.Uncertain)
                 {
-                    _uncertainBranches.Add(new TextSpan(start, end - start));
+                    _metadata.UncertainBranches.Add(new TextSpan(start, end - start));
                 }
             }
 
@@ -3849,11 +3879,6 @@ namespace DxMessaging.Editor
                 for (int index = branch.Start; index < end; index++)
                 {
                     char value = masked[index];
-                    if (value == '#' && IsDirectiveStart(masked, index))
-                    {
-                        index = FindDirectiveLineEnd(masked, index) - 1;
-                        continue;
-                    }
                     if (char.IsWhiteSpace(value))
                     {
                         continue;
@@ -4284,7 +4309,11 @@ namespace DxMessaging.Editor
             return char.IsLetterOrDigit(value) || value == '_';
         }
 
-        private static bool IsMessageHandlerQualified(string text, int fastHandlerStart)
+        private static bool IsMessageHandlerQualified(
+            string text,
+            int fastHandlerStart,
+            bool hasConditionalDirectives
+        )
         {
             int typeEnd = fastHandlerStart + "FastHandler".Length;
             if (StartsWithIdentifier(text, typeEnd, "WithContext"))
@@ -4340,7 +4369,7 @@ namespace DxMessaging.Editor
                 || (
                     handlerQualifier < 0
                     || text[handlerQualifier] != '.' && text[handlerQualifier] != ':'
-                ) && HasNamespaceImport(text, "DxMessaging.Core");
+                ) && HasNamespaceImport(text, "DxMessaging.Core", hasConditionalDirectives);
         }
 
         private static bool HasDxMessagingCoreQualifier(string text, int messageHandlerStart)
