@@ -1834,6 +1834,220 @@ sealed class Receiver : MessageAwareComponent
             );
         }
 
+        [TestCase(
+            "handler = (ref Pulse @ref) => Observe(@ref);",
+            TestName = "An escaped ref lambda parameter keeps its name"
+        )]
+        [TestCase(
+            "handler = delegate(ref Pulse @ref) { Observe(@ref); };",
+            TestName = "An escaped ref anonymous delegate parameter keeps its name"
+        )]
+        [TestCase(
+            "handler = Forward;\nvoid Forward([Mark] ref Pulse @ref) => Observe(@ref);",
+            TestName = "An attributed escaped ref method parameter keeps its name"
+        )]
+        public void AnalyzeReplacesOnlyTheRefParameterModifier(string statement)
+        {
+            string source = "DxMessaging.Core.MessageHandler.FastHandler<Pulse> " + statement;
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+            Assert.That(result.UpgradedSource, Is.EqualTo(source.Replace("ref Pulse", "in Pulse")));
+        }
+
+        [TestCase(
+            "System.TypedReference reference = __makeref(message);",
+            true,
+            TestName = "A typed reference to the parameter requires manual review"
+        )]
+        [TestCase(
+            "System.TypedReference reference = __makeref(((message)));",
+            true,
+            TestName = "A grouped typed reference to the parameter requires manual review"
+        )]
+        [TestCase(
+            "Observe($\"{Read(__makeref(message))}\");",
+            true,
+            TestName = "A typed reference inside interpolation requires manual review"
+        )]
+        [TestCase(
+            "Pulse copy = message; System.TypedReference reference = __makeref(copy);",
+            false,
+            TestName = "A typed reference to an independent copy still migrates"
+        )]
+        [TestCase(
+            "@__makeref(message);",
+            false,
+            TestName = "An escaped method name passes the parameter by value"
+        )]
+        [TestCase("Observe(message);", false, TestName = "A by-value method call still migrates")]
+        public void AnalyzeDefersDirectTypedReferenceOperands(string body, bool requiresReview)
+        {
+            string source =
+                "DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = "
+                + "(ref Pulse message) => { "
+                + body
+                + " };";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(requiresReview ? 0 : 1));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(requiresReview ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(requiresReview ? source : source.Replace("ref Pulse", "in Pulse"))
+            );
+            if (requiresReview)
+            {
+                Assert.That(result.ManualReviewMethods, Has.All.Contains("with __makeref"));
+            }
+        }
+
+        [TestCase(
+            "UNKNOWN",
+            "DxMessaging",
+            "",
+            true,
+            TestName = "A conditional namespace alias requires review"
+        )]
+        [TestCase(
+            "UNKNOWN",
+            "@DxMessaging",
+            "",
+            true,
+            TestName = "An escaped namespace alias requires review"
+        )]
+        [TestCase(
+            "UNKNOWN",
+            "\\u0044xMessaging",
+            "",
+            true,
+            TestName = "A Unicode escaped namespace alias requires review"
+        )]
+        [TestCase(
+            "true",
+            "DxMessaging",
+            "",
+            true,
+            TestName = "A known active namespace alias requires review"
+        )]
+        [TestCase(
+            "false",
+            "DxMessaging",
+            "",
+            false,
+            TestName = "A proven inactive namespace alias still allows migration"
+        )]
+        [TestCase(
+            "UNKNOWN",
+            "DxMessaging",
+            "global::",
+            false,
+            TestName = "A global qualifier bypasses a namespace alias"
+        )]
+        [TestCase(
+            "UNKNOWN",
+            "Other",
+            "",
+            false,
+            TestName = "An unrelated namespace alias still allows migration"
+        )]
+        public void AnalyzeReportsRelativeFastDelegateNamespaceAliases(
+            string condition,
+            string alias,
+            string qualifier,
+            bool requiresReview
+        )
+        {
+            string source =
+                "namespace Consumer {\n#if "
+                + condition
+                + "\nusing "
+                + alias
+                + " = global::Writable;\n#endif\nclass Receiver { void Register() { "
+                + qualifier
+                + "DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = "
+                + "(ref Pulse message) => Observe(message); } } }";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(requiresReview ? 0 : 1));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(requiresReview ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(requiresReview ? source : source.Replace("ref Pulse", "in Pulse"))
+            );
+            if (requiresReview)
+            {
+                Assert.That(
+                    result.ManualReviewMethods,
+                    Has.All.Contains("MessageHandler type cannot be proven")
+                );
+            }
+        }
+
+        [TestCase(
+            false,
+            "",
+            TestName = "A relative token receiver under a namespace alias requires review"
+        )]
+        [TestCase(
+            false,
+            "global::",
+            TestName = "A global token qualification bypasses a namespace alias"
+        )]
+        [TestCase(
+            true,
+            "",
+            TestName = "A relative component override under a namespace alias requires review"
+        )]
+        [TestCase(
+            true,
+            "global::",
+            TestName = "A global base qualification bypasses a namespace alias"
+        )]
+        public void AnalyzeUsesTheSameNamespaceProofForTokensAndOverrides(
+            bool isOverride,
+            string qualifier
+        )
+        {
+            const string OpenNamespace =
+                "namespace Consumer {\n#if USE_WRITABLE\nusing DxMessaging = global::Writable;\n#endif\n";
+            string consumer = isOverride
+                ? "class Receiver : "
+                    + qualifier
+                    + "DxMessaging.Unity.MessageAwareComponent\n{\n    "
+                    + "protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) "
+                    + "=> Observe(message);\n}"
+                : "class Receiver { void Register() { "
+                    + qualifier
+                    + "DxMessaging.Core.MessageRegistrationToken token; "
+                    + "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(message)); } }";
+            string source = OpenNamespace + consumer + " }";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            bool qualified = 0 < qualifier.Length;
+            Assert.That(result.ReplacementCount, Is.EqualTo(qualified ? 1 : 0));
+            Assert.That(
+                result.StringHandlerOptInCount,
+                Is.EqualTo(qualified && isOverride ? 1 : 0)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(qualified ? 0 : 1));
+            if (!qualified)
+            {
+                Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            }
+        }
+
         private static IEnumerable<TestCaseData> SourceLineTerminatorCases()
         {
             yield return new TestCaseData("\u0085").SetName(

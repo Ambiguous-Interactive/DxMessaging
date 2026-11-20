@@ -173,8 +173,10 @@ UTF-32 encoding. It also keeps line endings unchanged and checks for edits immed
 replacement. It attempts to restore every earlier write if a later write fails. If a script changes
 again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
-ambiguous receivers or delegate types unchanged. It defers a callback that passes its newly
-readonly parameter as a `ref` or `out` argument. It can update proven `base` calls in a changed
+ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
+alias can hide the `DxMessaging` namespace. The preview defers a callback that passes
+its newly readonly parameter as a `ref` or `out` argument or takes its address with `__makeref`.
+It can update proven `base` calls in a changed
 `MessageAwareComponent` override. When a local callback forwards to one of the changed base
 methods, the preview keeps the related signature and argument edits together. It defers those
 edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks

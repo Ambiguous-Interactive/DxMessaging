@@ -80,7 +80,10 @@ namespace DxMessaging.Editor
             RegexOptions.CultureInvariant
         );
 
-        private static readonly Regex RefRegex = new(@"\bref\b", RegexOptions.CultureInvariant);
+        private static readonly Regex RefRegex = new(
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])ref(?![\w\p{Nl}\p{Mc}\p{Cf}\\])",
+            RegexOptions.CultureInvariant
+        );
 
         private const string CSharpLineTerminators = "\r\n\u0085\u2028\u2029";
 
@@ -101,6 +104,12 @@ namespace DxMessaging.Editor
         private static readonly Regex DirectMemberIdentifierRegex = new(
             @"\G" + IdentifierSpellingPattern,
             RegexOptions.CultureInvariant
+        );
+
+        private static readonly Regex NamespaceAliasRegex = new(
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])using\s+(?<alias>" + IdentifierSpellingPattern + @")\s*=",
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1)
         );
 
         private const string SimpleDeclaredTypePattern =
@@ -369,21 +378,20 @@ namespace DxMessaging.Editor
             metadata.InterpolatedExpressions.Sort(
                 static (left, right) => left.Start.CompareTo(right.Start)
             );
-            bool hasConditionalDirectives = 0 < metadata.ConditionalDirectives.Count;
             HashSet<int> replacementStarts = new();
             SortedSet<string> manualReview = new(StringComparer.Ordinal);
             List<Invocation> readonlyInvocations = FindInvocations(
                 masked,
                 ReadonlyRegistrationNames,
                 manualReview,
-                hasConditionalDirectives,
+                metadata,
                 requireProvenReceiver: true
             );
             List<Invocation> mutableInvocations = FindInvocations(
                 masked,
                 MutableRegistrationNames,
                 manualReview: null,
-                hasConditionalDirectives,
+                metadata,
                 requireProvenReceiver: false
             );
             HashSet<string> mutableMethodGroups = CollectCallbackMethodGroups(
@@ -429,7 +437,7 @@ namespace DxMessaging.Editor
 
             AddFastDelegateReplacements(
                 masked,
-                hasConditionalDirectives,
+                metadata,
                 mutableMethodGroups,
                 replacementStarts,
                 manualReview
@@ -459,13 +467,7 @@ namespace DxMessaging.Editor
             );
 
             SortedDictionary<int, string> insertions = new();
-            AddStringHandlerOptIns(
-                masked,
-                hasConditionalDirectives,
-                replacementStarts,
-                insertions,
-                manualReview
-            );
+            AddStringHandlerOptIns(masked, metadata, replacementStarts, insertions, manualReview);
 
             List<int> orderedStarts = new(replacementStarts);
             orderedStarts.Sort();
@@ -596,7 +598,7 @@ namespace DxMessaging.Editor
 
         private static void AddFastDelegateReplacements(
             string masked,
-            bool hasConditionalDirectives,
+            SourceMetadata metadata,
             HashSet<string> mutableMethodGroups,
             HashSet<int> replacementStarts,
             SortedSet<string> manualReview
@@ -616,14 +618,7 @@ namespace DxMessaging.Editor
                 }
                 searchStart = fastHandler + "FastHandler".Length;
 
-                if (
-                    !TryClassifyFastDelegateType(
-                        masked,
-                        fastHandler,
-                        hasConditionalDirectives,
-                        out bool isProven
-                    )
-                )
+                if (!TryClassifyFastDelegateType(masked, fastHandler, metadata, out bool isProven))
                 {
                     continue;
                 }
@@ -653,7 +648,11 @@ namespace DxMessaging.Editor
                         expression,
                         out TextSpan parameters
                     )
-                        ? RefRegex.IsMatch(masked.Substring(parameters.Start, parameters.Length))
+                        ? HasRefParameter(
+                            masked,
+                            parameters.Start,
+                            parameters.Start + parameters.Length
+                        )
                         : MethodGroupMayNeedMigration(masked, rightHandSideSpan);
                     if (needsReview)
                     {
@@ -756,20 +755,13 @@ namespace DxMessaging.Editor
             foreach (ParameterList declaration in FindMethodDeclarations(masked, methodName, true))
             {
                 int typeStart = FindContainingTypeStart(masked, declaration.DeclarationStart);
-                if (
-                    !TypeScopeDerivesFromMessageAwareComponent(
-                        masked,
-                        typeStart,
-                        0 < metadata.ConditionalDirectives.Count
-                    )
-                )
+                if (!TypeScopeDerivesFromMessageAwareComponent(masked, typeStart, metadata))
                 {
                     if (
-                        RefRegex.IsMatch(
-                            masked.Substring(
-                                declaration.ParametersStart,
-                                declaration.ParametersEnd - declaration.ParametersStart
-                            )
+                        HasRefParameter(
+                            masked,
+                            declaration.ParametersStart,
+                            declaration.ParametersEnd
                         )
                     )
                     {
@@ -799,7 +791,7 @@ namespace DxMessaging.Editor
 
         private static void AddStringHandlerOptIns(
             string masked,
-            bool hasConditionalDirectives,
+            SourceMetadata metadata,
             HashSet<int> replacementStarts,
             SortedDictionary<int, string> insertions,
             SortedSet<string> manualReview
@@ -814,11 +806,7 @@ namespace DxMessaging.Editor
                 {
                     int typeStart = FindContainingTypeStart(masked, declaration.DeclarationStart);
                     if (
-                        !TypeScopeDerivesFromMessageAwareComponent(
-                            masked,
-                            typeStart,
-                            hasConditionalDirectives
-                        )
+                        !TypeScopeDerivesFromMessageAwareComponent(masked, typeStart, metadata)
                         || !HasReplacementInRange(
                             replacementStarts,
                             declaration.ParametersStart,
@@ -990,12 +978,7 @@ namespace DxMessaging.Editor
                 );
             }
             List<ParameterList> byRefDeclarations = declarations.FindAll(declaration =>
-                RefRegex.IsMatch(
-                    masked.Substring(
-                        declaration.ParametersStart,
-                        declaration.ParametersEnd - declaration.ParametersStart
-                    )
-                )
+                HasRefParameter(masked, declaration.ParametersStart, declaration.ParametersEnd)
             );
             if (byRefDeclarations.Count == 0)
             {
@@ -1141,7 +1124,7 @@ namespace DxMessaging.Editor
         private static bool TypeScopeDerivesFromMessageAwareComponent(
             string masked,
             int typeScopeStart,
-            bool hasConditionalDirectives
+            SourceMetadata metadata
         )
         {
             if (typeScopeStart < 0)
@@ -1158,19 +1141,24 @@ namespace DxMessaging.Editor
                 string header = masked.Substring(match.Index, typeScopeStart - match.Index);
                 Match qualifiedBase = Regex.Match(
                     header,
-                    @"(?:global::)?DxMessaging\s*\.\s*Unity\s*\.\s*MessageAwareComponent\b",
+                    @"(?<global>global\s*::\s*)?DxMessaging\s*\.\s*Unity\s*\.\s*MessageAwareComponent\b",
                     RegexOptions.CultureInvariant
                 );
                 if (qualifiedBase.Success && IsRootTypeQualifier(header, qualifiedBase.Index))
                 {
-                    return true;
+                    return qualifiedBase.Groups["global"].Success
+                        || !metadata.HasDxMessagingAlias(masked);
                 }
                 Match unqualifiedBase = Regex.Match(
                     header,
                     @"\bMessageAwareComponent\b",
                     RegexOptions.CultureInvariant
                 );
-                return HasNamespaceImport(masked, "DxMessaging.Unity", hasConditionalDirectives)
+                return HasNamespaceImport(
+                        masked,
+                        "DxMessaging.Unity",
+                        metadata.HasConditionalDirectives
+                    )
                     && !HasTypeOrAliasDeclaration(masked, "MessageAwareComponent")
                     && unqualifiedBase.Success
                     && IsRootTypeQualifier(header, unqualifiedBase.Index);
@@ -1227,7 +1215,7 @@ namespace DxMessaging.Editor
             {
                 return true;
             }
-            if (text[prefix] == '.')
+            if (text[prefix] is '.' or '@')
             {
                 return false;
             }
@@ -1242,7 +1230,7 @@ namespace DxMessaging.Editor
         private static bool HasProvenTokenReceiver(
             string masked,
             int methodNameStart,
-            bool hasConditionalDirectives
+            SourceMetadata metadata
         )
         {
             int dot = PreviousNonWhitespace(masked, methodNameStart - 1);
@@ -1266,13 +1254,7 @@ namespace DxMessaging.Editor
             int usageScope = FindContainingTypeStart(masked, methodNameStart);
             if (receiver == "Token")
             {
-                if (
-                    !TypeScopeDerivesFromMessageAwareComponent(
-                        masked,
-                        usageScope,
-                        hasConditionalDirectives
-                    )
-                )
+                if (!TypeScopeDerivesFromMessageAwareComponent(masked, usageScope, metadata))
                 {
                     return false;
                 }
@@ -1291,7 +1273,7 @@ namespace DxMessaging.Editor
             }
 
             Regex declaration = new(
-                @"(?<qualified>(?:global::)?DxMessaging\s*\.\s*Core\s*\.\s*)?\bMessageRegistrationToken\s+"
+                @"(?<qualified>(?<global>global\s*::\s*)?DxMessaging\s*\.\s*Core\s*\.\s*)?\bMessageRegistrationToken\s+"
                     + Regex.Escape(receiver)
                     + @"\b",
                 RegexOptions.CultureInvariant
@@ -1319,13 +1301,21 @@ namespace DxMessaging.Editor
                 {
                     if (match.Groups["qualified"].Success)
                     {
-                        return IsRootTypeQualifier(masked, match.Groups["qualified"].Index);
+                        return IsRootTypeQualifier(masked, match.Groups["qualified"].Index)
+                            && (
+                                match.Groups["global"].Success
+                                || !metadata.HasDxMessagingAlias(masked)
+                            );
                     }
                     int typePrefix = PreviousNonWhitespace(masked, match.Index - 1);
                     return (
                             typePrefix < 0 || masked[typePrefix] != '.' && masked[typePrefix] != ':'
                         )
-                        && HasNamespaceImport(masked, "DxMessaging.Core", hasConditionalDirectives);
+                        && HasNamespaceImport(
+                            masked,
+                            "DxMessaging.Core",
+                            metadata.HasConditionalDirectives
+                        );
                 }
             }
             return false;
@@ -1353,11 +1343,10 @@ namespace DxMessaging.Editor
             return TryGetMethodGroup(masked, callback, out string methodName, out _)
                 && FindMethodDeclarations(masked, methodName, requireOverride: false)
                     .Exists(declaration =>
-                        RefRegex.IsMatch(
-                            masked.Substring(
-                                declaration.ParametersStart,
-                                declaration.ParametersEnd - declaration.ParametersStart
-                            )
+                        HasRefParameter(
+                            masked,
+                            declaration.ParametersStart,
+                            declaration.ParametersEnd
                         )
                     );
         }
@@ -1366,7 +1355,7 @@ namespace DxMessaging.Editor
             string masked,
             HashSet<string> acceptedNames,
             SortedSet<string> manualReview,
-            bool hasConditionalDirectives,
+            SourceMetadata metadata,
             bool requireProvenReceiver
         )
         {
@@ -1396,7 +1385,7 @@ namespace DxMessaging.Editor
                     Invocation invocation = new(name, cursor + 1, close);
                     if (
                         requireProvenReceiver
-                        && !HasProvenTokenReceiver(masked, match.Index, hasConditionalDirectives)
+                        && !HasProvenTokenReceiver(masked, match.Index, metadata)
                     )
                     {
                         if (manualReview != null && InvocationMayNeedMigration(masked, invocation))
@@ -1664,12 +1653,53 @@ namespace DxMessaging.Editor
             HashSet<int> replacementStarts
         )
         {
-            Match match = RefRegex.Match(text, start);
-            while (match.Success && match.Index < end)
+            foreach (TextSpan parameter in SplitArguments(text, start, end))
             {
-                replacementStarts.Add(match.Index);
-                match = match.NextMatch();
+                int modifier = FindRefParameterModifier(text, parameter);
+                if (0 <= modifier)
+                {
+                    replacementStarts.Add(modifier);
+                }
             }
+        }
+
+        private static bool HasRefParameter(string text, int start, int end) =>
+            SplitArguments(text, start, end)
+                .Exists(parameter => 0 <= FindRefParameterModifier(text, parameter));
+
+        private static int FindRefParameterModifier(string text, TextSpan parameter)
+        {
+            int end = parameter.Start + parameter.Length;
+            int start = NextNonWhitespace(text, parameter.Start);
+            while (0 <= start && start < end)
+            {
+                if (text[start] == '[')
+                {
+                    int close = FindMatching(text, start, '[', ']');
+                    if (close < 0 || end <= close)
+                    {
+                        break;
+                    }
+                    start = NextNonWhitespace(text, close + 1);
+                    continue;
+                }
+
+                Match token = IdentifierUseRegex.Match(text, start, end - start);
+                if (!token.Success || token.Index != start)
+                {
+                    break;
+                }
+                if (token.Value == "ref")
+                {
+                    return start;
+                }
+                if (token.Value is not ("this" or "scoped"))
+                {
+                    break;
+                }
+                start = NextNonWhitespace(text, start + token.Length);
+            }
+            return -1;
         }
 
         private static void AddBaseOverrideForwardingReplacements(
@@ -2676,6 +2706,13 @@ namespace DxMessaging.Editor
                 }
                 if (
                     target == DirectTargetKind.Storage
+                    && IsDirectTypedReferenceOperand(masked, body, targetStart, next)
+                )
+                {
+                    return $"takes a writable reference to parameter '{parameterName}' or its member with __makeref";
+                }
+                if (
+                    target == DirectTargetKind.Storage
                     && IsDirectParameterWrite(masked, body, targetStart, next)
                 )
                 {
@@ -2688,6 +2725,29 @@ namespace DxMessaging.Editor
                 }
             }
             return null;
+        }
+
+        private static bool IsDirectTypedReferenceOperand(
+            string text,
+            TextSpan body,
+            int targetStart,
+            int following
+        )
+        {
+            if (following < 0 || body.Start + body.Length <= following || text[following] != ')')
+            {
+                return false;
+            }
+
+            int opening = PreviousNonWhitespace(text, targetStart - 1);
+            return body.Start <= opening
+                && text[opening] == '('
+                && FollowsKeyword(
+                    text,
+                    body.Start,
+                    PreviousNonWhitespace(text, opening - 1),
+                    "__makeref"
+                );
         }
 
         private static bool IsDirectForeachSource(
@@ -3349,11 +3409,11 @@ namespace DxMessaging.Editor
             HashSet<string> names = new(StringComparer.Ordinal);
             foreach (TextSpan parameter in SplitArguments(text, start, end))
             {
-                string parameterText = text.Substring(parameter.Start, parameter.Length);
-                if (!RefRegex.IsMatch(parameterText))
+                if (FindRefParameterModifier(text, parameter) < 0)
                 {
                     continue;
                 }
+                string parameterText = text.Substring(parameter.Start, parameter.Length);
                 MatchCollection identifiers = IdentifierUseRegex.Matches(parameterText);
                 if (0 < identifiers.Count)
                 {
@@ -3807,6 +3867,16 @@ namespace DxMessaging.Editor
             public readonly List<TextSpan> InterpolatedExpressions = new();
             public readonly List<TextSpan> UncertainBranches = new();
             public readonly List<int> ConditionalDirectives = new();
+
+            private bool? _hasDxMessagingAlias;
+
+            public bool HasConditionalDirectives => 0 < ConditionalDirectives.Count;
+
+            public bool HasDxMessagingAlias(string masked)
+            {
+                _hasDxMessagingAlias ??= ContainsDxMessagingAlias(masked);
+                return _hasDxMessagingAlias.Value;
+            }
         }
 
         private sealed class ConditionalMask
@@ -4368,7 +4438,7 @@ namespace DxMessaging.Editor
         private static bool TryClassifyFastDelegateType(
             string text,
             int fastHandlerStart,
-            bool hasConditionalDirectives,
+            SourceMetadata metadata,
             out bool isProven
         )
         {
@@ -4422,9 +4492,9 @@ namespace DxMessaging.Editor
                 return false;
             }
 
-            if (HasDxMessagingCoreQualifier(text, identifierStart))
+            if (HasDxMessagingCoreQualifier(text, identifierStart, out bool globallyQualified))
             {
-                isProven = true;
+                isProven = globallyQualified || !metadata.HasDxMessagingAlias(text);
                 return true;
             }
 
@@ -4438,12 +4508,32 @@ namespace DxMessaging.Editor
             }
 
             // A possible import identifies a review candidate but does not prove its binding.
-            isProven = !hasConditionalDirectives;
+            isProven = !metadata.HasConditionalDirectives;
             return true;
         }
 
-        private static bool HasDxMessagingCoreQualifier(string text, int messageHandlerStart)
+        private static bool ContainsDxMessagingAlias(string text)
         {
+            try
+            {
+                return NamespaceAliasRegex
+                    .Matches(text)
+                    .Cast<Match>()
+                    .Any(alias => IdentifierValue(alias.Groups["alias"].Value) == "DxMessaging");
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                return true;
+            }
+        }
+
+        private static bool HasDxMessagingCoreQualifier(
+            string text,
+            int messageHandlerStart,
+            out bool globallyQualified
+        )
+        {
+            globallyQualified = false;
             int coreDot = PreviousNonWhitespace(text, messageHandlerStart - 1);
             if (coreDot < 0 || text[coreDot] != '.')
             {
@@ -4478,14 +4568,18 @@ namespace DxMessaging.Editor
             }
             dxMessagingStart++;
             int qualifierPrefix = PreviousNonWhitespace(text, dxMessagingStart - 1);
+            globallyQualified =
+                0 <= qualifierPrefix
+                && text[qualifierPrefix] == ':'
+                && Regex.IsMatch(
+                    text.Substring(0, dxMessagingStart),
+                    @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])global\s*::\s*$",
+                    RegexOptions.CultureInvariant
+                );
             bool rootQualified =
                 qualifierPrefix < 0
                 || text[qualifierPrefix] != '.' && text[qualifierPrefix] != ':'
-                || Regex.IsMatch(
-                    text.Substring(0, dxMessagingStart),
-                    @"\bglobal\s*::\s*$",
-                    RegexOptions.CultureInvariant
-                );
+                || globallyQualified;
             return rootQualified
                 && dxMessagingStart <= dxMessagingEnd
                 && string.CompareOrdinal(
