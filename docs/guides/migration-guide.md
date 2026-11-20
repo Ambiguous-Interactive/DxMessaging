@@ -197,8 +197,8 @@ by value, such as `Observe(message)`, can still migrate automatically.
 
 The scan recognizes simple parentheses around a receiver or target, such as `(message).Value`, and
 applies the same grouping rule to direct `ref` and `out` arguments. It checks direct targets in ordinary
-tuple deconstruction, including bodies of `if`, `else`, `while`, `for`, `foreach`, `using`, `lock`, and
-`do` without braces.
+tuple deconstruction, including bodies of `if`, `else`, `while`, `for`, `foreach`, `using`, `lock`,
+`fixed`, and `do` without braces.
 
 The preview flags calls such as `message.Increment()` and `message.Child.Increment()` because an
 `in` parameter can cause a mutable struct method to run on a defensive copy. The preview also flags
@@ -212,8 +212,10 @@ functions to their own declarations. Inspect more complex local function declara
 method type arguments, conditional access, complex interpolation, casts, and indirect targets
 manually.
 
-Copy a struct message to a local when the callback needs writable scratch data. Move payload or
-context edits to an interceptor when later listeners need to see them.
+Copy a struct message to a local when the callback needs writable scratch data. Interceptors run
+before handlers, so move a payload or context edit to an interceptor only when earlier handlers can
+also see the edited value. If those handlers need the original, create the edited value at the
+original stage and pass it explicitly to the listeners that need it.
 
 When you migrate a deferred string-handler override by hand, change its parameter from `ref` to
 `in`. If the override calls the base implementation, change the matching argument too. For example,

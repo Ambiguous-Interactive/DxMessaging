@@ -929,6 +929,15 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "ObserveTuple((GetHolder(low < high).Value, message));"
             ).SetName("A tuple value beside a nested comparison still migrates");
+            yield return new TestCaseData(
+                "int[] buffer = { 1 }; fixed (int* p = buffer) Wrap(message).Value++;"
+            ).SetName("Writing to a call result in a fixed statement still migrates");
+            yield return new TestCaseData(
+                "// note\tmessage = default;\nObserveValue(message);"
+            ).SetName("A tab keeps a write inside its single-line comment");
+            yield return new TestCaseData(
+                "/* note\u2028message = default; */\nObserveValue(message);"
+            ).SetName("A line separator keeps a write inside its block comment");
         }
 
         private static IEnumerable<TestCaseData> UnresolvedMemberReadCases()
@@ -1305,7 +1314,62 @@ sealed class Receiver : MessageAwareComponent
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
+        private static IEnumerable<TestCaseData> SourceLineTerminatorCases()
+        {
+            yield return new TestCaseData("\u0085").SetName(
+                "A next-line character ends a single-line comment"
+            );
+            yield return new TestCaseData("\u2028").SetName(
+                "A line separator ends a single-line comment"
+            );
+            yield return new TestCaseData("\u2029").SetName(
+                "A paragraph separator ends a single-line comment"
+            );
+            yield return new TestCaseData("\r").SetName(
+                "A carriage return ends a single-line comment"
+            );
+            yield return new TestCaseData("\r\n").SetName(
+                "A carriage return and line feed end a single-line comment on one source line"
+            );
+        }
+
+        [TestCaseSource(nameof(SourceLineTerminatorCases))]
+        public void AnalyzeDetectsWritesAfterLineComments(string lineEnding)
+        {
+            string source =
+                "DxMessaging.Core.MessageRegistrationToken token;"
+                + lineEnding
+                + "token.RegisterUntargeted<Pulse>((ref Pulse message) => { // note"
+                + lineEnding
+                + "message = default;\n});";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("callback on line 2 writes to parameter 'message'")
+            );
+        }
+
         [TestCaseSource(nameof(ExplicitParameterWriteCases))]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                + " { int[] buffer = { 1 }; fixed (int* p = buffer) (message).Value++; });",
+            "message",
+            TestName = "A grouped field write in an unbraced fixed statement requires review"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                + " { int[] buffer = { 1 }; int copy;"
+                + " fixed (int* p = buffer) (copy, message) = (1, default(Pulse)); });",
+            "message",
+            TestName = "A tuple target in an unbraced fixed statement requires review"
+        )]
         [TestCase(
             "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
                 + " { (GetHolder(low < high).Value, message) = (1, default(Pulse)); });",

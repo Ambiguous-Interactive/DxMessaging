@@ -82,6 +82,8 @@ namespace DxMessaging.Editor
 
         private static readonly Regex RefRegex = new(@"\bref\b", RegexOptions.CultureInvariant);
 
+        private const string CSharpLineTerminators = "\r\n\u0085\u2028\u2029";
+
         private const string UnicodeEscapePattern = @"\\(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})";
 
         private const string IdentifierSpellingPattern =
@@ -169,7 +171,7 @@ namespace DxMessaging.Editor
         );
 
         private static readonly Regex TupleControlKeywordRegex = new(
-            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?:(?<condition>if|while|for|foreach|lock|using)|else|do)\z",
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?:(?<condition>if|while|for|foreach|lock|using|fixed)|else|do)\z",
             RegexOptions.CultureInvariant
         );
 
@@ -2874,7 +2876,11 @@ namespace DxMessaging.Editor
             int line = 1;
             for (int index = 0; index < position; index++)
             {
-                if (text[index] == '\n')
+                char current = text[index];
+                if (
+                    CSharpLineTerminators.Contains(current)
+                    && (current != '\n' || index == 0 || text[index - 1] != '\r')
+                )
                 {
                     line++;
                 }
@@ -3187,7 +3193,9 @@ namespace DxMessaging.Editor
             int length = limit - contentStart;
             if (source[start + 1] == '/')
             {
-                int newline = source.AsSpan(contentStart, length).IndexOfAny('\r', '\n');
+                int newline = source
+                    .AsSpan(contentStart, length)
+                    .IndexOfAny(CSharpLineTerminators.AsSpan());
                 return newline < 0 ? limit : contentStart + newline;
             }
             if (source[start + 1] != '*')
@@ -3285,7 +3293,7 @@ namespace DxMessaging.Editor
         {
             for (int index = start; index < end; index++)
             {
-                if (text[index] != '\r' && text[index] != '\n')
+                if (!CSharpLineTerminators.Contains(text[index]))
                 {
                     text[index] = ' ';
                 }
