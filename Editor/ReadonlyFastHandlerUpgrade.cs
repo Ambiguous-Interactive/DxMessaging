@@ -2510,7 +2510,7 @@ namespace DxMessaging.Editor
                     text,
                     tupleStart + 1,
                     tupleEnd,
-                    ignoreBracketedAngles: true
+                    ignoreNestedAngles: true
                 );
                 if (elements.Count < 2)
                 {
@@ -2541,6 +2541,11 @@ namespace DxMessaging.Editor
         private static bool FollowsTargetBoundary(string text, int bodyStart, int beforeTarget) =>
             beforeTarget < bodyStart
             || "({[};,:?=".IndexOf(text[beforeTarget]) >= 0
+            || (
+                bodyStart < beforeTarget
+                && text[beforeTarget - 1] == '='
+                && text[beforeTarget] == '>'
+            )
             || FollowsTupleControlStatement(text, bodyStart, beforeTarget);
 
         private static bool FollowsTupleControlStatement(
@@ -2850,7 +2855,7 @@ namespace DxMessaging.Editor
             string text,
             int start,
             int end,
-            bool ignoreBracketedAngles = false
+            bool ignoreNestedAngles = false
         )
         {
             List<TextSpan> arguments = new();
@@ -2881,11 +2886,12 @@ namespace DxMessaging.Editor
                     case '}':
                         braces--;
                         break;
-                    case '<' when !ignoreBracketedAngles || brackets == 0:
-                        angles++;
-                        break;
-                    case '>' when !ignoreBracketedAngles || brackets == 0:
-                        angles = Math.Max(0, angles - 1);
+                    // Nested expressions already protect their commas, including in comparisons.
+                    case '<'
+                    or '>'
+                        when !ignoreNestedAngles
+                            || (parentheses == 0 && brackets == 0 && braces == 0):
+                        angles = text[index] == '<' ? angles + 1 : Math.Max(0, angles - 1);
                         break;
                     case ',':
                         if (parentheses == 0 && brackets == 0 && braces == 0 && angles == 0)

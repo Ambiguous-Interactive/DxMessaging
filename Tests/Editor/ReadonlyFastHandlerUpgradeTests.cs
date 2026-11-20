@@ -914,10 +914,19 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "switch (0) { case 0 when when (message).Next > 0: Observe(1); break; }"
             ).SetName("A member of an unrelated when call in a switch guard still migrates");
+            yield return new TestCaseData(
+                "Observe(flag switch { true => Wrap(message).Next, _ => 0 });"
+            ).SetName("A switch result reading an unrelated call result still migrates");
+            yield return new TestCaseData(
+                "ObserveTuple((GetHolder(low < high).Value, message));"
+            ).SetName("A tuple value beside a nested comparison still migrates");
         }
 
         private static IEnumerable<TestCaseData> UnresolvedMemberReadCases()
         {
+            yield return new TestCaseData(
+                "Observe(flag switch { true => (message).Next, _ => 0 });"
+            ).SetName("A grouped parameter member read after a switch arrow requires review");
             yield return new TestCaseData(
                 "if (message.Value == 3 || message.Value != 4 || message.Value <= 5 "
                     + "|| message.Value >= 6) Observe(message);"
@@ -1288,6 +1297,18 @@ sealed class Receiver : MessageAwareComponent
         }
 
         [TestCaseSource(nameof(ExplicitParameterWriteCases))]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                + " { (GetHolder(low < high).Value, message) = (1, default(Pulse)); });",
+            "message",
+            TestName = "A tuple target after a nested comparison requires manual review"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                + " { (GetHolder<Key, (int, int)>().Value, message) = (1, default(Pulse)); });",
+            "message",
+            TestName = "A tuple target after a call with generic arguments requires manual review"
+        )]
         public void AnalyzeLeavesExplicitParameterWritesForManualReview(
             string registration,
             string parameter
