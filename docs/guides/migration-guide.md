@@ -224,8 +224,11 @@ before handlers, so move a payload or context edit to an interceptor only when e
 also see the edited value. If those handlers need the original, create the edited value at the
 original stage and pass it explicitly to the listeners that need it.
 
-When you migrate a deferred string-handler override by hand, change its parameter from `ref` to
-`in`. Search for calls to `base.HandleStringGameObjectMessage`, `base.HandleStringComponentMessage`,
+When you migrate a deferred string-handler override by hand, resolve its writable uses first.
+Use a local copy for scratch writes. Preserve caller-visible writes at the stage that owns the
+writable data. Then change the override parameter from `ref` to `in`.
+
+Search for calls to `base.HandleStringGameObjectMessage`, `base.HandleStringComponentMessage`,
 and `base.HandleGlobalStringMessage` throughout the class, including in helper methods. Check these
 calls even when the preview converted the override. Change any remaining `ref` arguments to `in`.
 For example, use `base.HandleGlobalStringMessage(in message)`. To keep inherited string delivery, add
