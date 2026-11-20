@@ -143,7 +143,7 @@ namespace DxMessaging.Editor
         );
 
         private static readonly Regex TupleControlKeywordRegex = new(
-            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?:(?<condition>if|while|for|foreach|lock)|else|do)\z",
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?:(?<condition>if|while|for|foreach|lock|using)|else|do)\z",
             RegexOptions.CultureInvariant
         );
 
@@ -1964,8 +1964,8 @@ namespace DxMessaging.Editor
                 following = SkipNullForgivingReceiver(text, following, bodyEnd);
                 if (text[following] == '[')
                 {
-                    int indexerEnd = FindMatching(text, following, '[', ']');
-                    if (indexerEnd < 0 || bodyEnd <= indexerEnd)
+                    int indexerEnd = FindIndexerEnd(text, following, bodyEnd);
+                    if (indexerEnd < 0)
                     {
                         return DirectTargetKind.Unsupported;
                     }
@@ -2018,6 +2018,31 @@ namespace DxMessaging.Editor
                 '.' or '[' or '(' => DirectTargetKind.Unsupported,
                 _ => DirectTargetKind.Storage,
             };
+        }
+
+        private static int FindIndexerEnd(string text, int opening, int bodyEnd)
+        {
+            int depth = 1;
+            for (int index = opening + 1; index < bodyEnd; index++)
+            {
+                // Raw interpolation spans retain quoted keys and comments.
+                int nonCodeEnd = FindNonCodeEnd(text, index, interpolatedExpressions: null);
+                if (index < nonCodeEnd)
+                {
+                    index = nonCodeEnd - 1;
+                    continue;
+                }
+
+                if (text[index] == '[')
+                {
+                    depth++;
+                }
+                else if (text[index] == ']' && --depth == 0)
+                {
+                    return index;
+                }
+            }
+            return -1;
         }
 
         private static int SkipNullForgivingReceiver(string text, int start, int bodyEnd)

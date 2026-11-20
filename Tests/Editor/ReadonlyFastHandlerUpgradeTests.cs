@@ -648,6 +648,16 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("A raw interpolation write after line trivia requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " { Observe($$\"\"\"{{ message[\"]\"]++ }}\"\"\"); });",
+                "message"
+            ).SetName("A raw indexer write with a quoted closing bracket requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " { Observe($$\"\"\"{{ message[\"[\"]++ }}\"\"\"); });",
+                "message"
+            ).SetName("A raw indexer write with a quoted opening bracket requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) => message.\u0394 = 1);",
                 "message"
             ).SetName("Unicode member assignment requires manual review");
@@ -719,6 +729,12 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("A tuple target in a foreach body without braces requires manual review");
             yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) =>"
+                    + " { System.IDisposable resource = new System.IO.MemoryStream();"
+                    + " using (resource) (message.Value, _) = (1, 2); });",
+                "message"
+            ).SetName("A tuple target in a using body without braces requires manual review");
+            yield return new TestCaseData(
                 "token.RegisterUntargeted<Pulse>((ref Pulse message) "
                     + "=> { int index = 0; int[] buffer = new int[2];"
                     + " (buffer[index < 1 ? 0 : 1], message.Value) = (1, 2); });",
@@ -732,6 +748,11 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "if (message.Value == 3 || message.Value != 4 || message.Value <= 5 "
                     + "|| message.Value >= 6) Observe(message);"
             ).SetName("Reads and comparisons still migrate");
+            yield return new TestCaseData(
+                "System.IDisposable resource = new System.IO.MemoryStream();"
+                    + " int first, second; using (resource) (first, second) = (message.Value, 2);"
+                    + " Observe(first + second);"
+            ).SetName("A tuple read in a using body without braces still migrates");
             yield return new TestCaseData("Observe($\"{message.Value}\");").SetName(
                 "An interpolated read still migrates"
             );
@@ -757,6 +778,12 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "Observe($$\"\"\"{{message.Value /* note */}}\"\"\");"
             ).SetName("A commented raw interpolation read still migrates");
+            yield return new TestCaseData("Observe($$\"\"\"{{ message[\"]\"] }}\"\"\");").SetName(
+                "A raw indexer read with a quoted closing bracket still migrates"
+            );
+            yield return new TestCaseData("Observe($$\"\"\"{{ message[\"[\"] }}\"\"\");").SetName(
+                "A raw indexer read with a quoted opening bracket still migrates"
+            );
             yield return new TestCaseData("Observe(\"\"\"{{message.Value++}}\"\"\");").SetName(
                 "Plain raw string text matching an interpolated write still migrates"
             );
