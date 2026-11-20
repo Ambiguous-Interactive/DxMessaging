@@ -1986,12 +1986,15 @@ namespace DxMessaging.Editor
                 return true;
             }
             int scopeEnd = scope.Start + scope.Length;
-            foreach (TextSpan expression in interpolatedExpressions)
+            int first = FindFirstInterpolationAtOrAfter(interpolatedExpressions, scope.Start);
+            for (int index = first; index < interpolatedExpressions.Count; index++)
             {
-                if (
-                    scope.Start <= expression.Start
-                    && expression.Start + expression.Length <= scopeEnd
-                )
+                TextSpan expression = interpolatedExpressions[index];
+                if (scopeEnd <= expression.Start)
+                {
+                    break;
+                }
+                if (expression.Start + expression.Length <= scopeEnd)
                 {
                     string code = MaskNonCode(
                         source.Substring(expression.Start, expression.Length),
@@ -2328,6 +2331,25 @@ namespace DxMessaging.Editor
             return next;
         }
 
+        private static int FindFirstInterpolationAtOrAfter(List<TextSpan> expressions, int start)
+        {
+            int first = 0;
+            int end = expressions.Count;
+            while (first < end)
+            {
+                int middle = first + (end - first) / 2;
+                if (expressions[middle].Start < start)
+                {
+                    first = middle + 1;
+                }
+                else
+                {
+                    end = middle;
+                }
+            }
+            return first;
+        }
+
         private static string FindInterpolatedParameterIssue(
             string source,
             TextSpan body,
@@ -2339,13 +2361,15 @@ namespace DxMessaging.Editor
         )
         {
             int bodyEnd = body.Start + body.Length;
-            foreach (TextSpan scope in interpolatedExpressions)
+            int first = FindFirstInterpolationAtOrAfter(interpolatedExpressions, body.Start);
+            for (int index = first; index < interpolatedExpressions.Count; index++)
             {
+                TextSpan scope = interpolatedExpressions[index];
                 if (bodyEnd <= scope.Start)
                 {
                     break;
                 }
-                if (scope.Start < body.Start || bodyEnd < scope.Start + scope.Length)
+                if (bodyEnd < scope.Start + scope.Length)
                 {
                     continue;
                 }
