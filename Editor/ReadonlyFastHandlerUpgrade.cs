@@ -118,7 +118,9 @@ namespace DxMessaging.Editor
         private static readonly Regex ReceiverDeclarationRegex = new(
             @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?=(?<type>"
                 + IdentifierSpellingPattern
-                + @")(?:\s*<[^;={}()]+>)?(?:\s*[?*]|\s*\[[,\s]*\])*"
+                + ")"
+                + TypeArgumentListPattern
+                + @"(?:\s*[?*]|\s*\[[,\s]*\])*"
                 + ReceiverDeclarationName
                 + ")",
             RegexOptions.CultureInvariant
@@ -136,8 +138,11 @@ namespace DxMessaging.Editor
             + IdentifierSpellingPattern
             + @")*(?:\s*[?*]|\s*\[[,\s]*\])*";
 
+        private const string TypeArgumentListPattern =
+            @"(?:\s*<[\w\p{Nl}\p{Mc}\p{Cf}\s.,:<>?*\[\]()@\\]+>)?";
+
         private const string CastTypeNamePattern =
-            IdentifierSpellingPattern + @"(?:\s*<[\w\p{Nl}\p{Mc}\p{Cf}\s.,:<>?*\[\]()@\\]+>)?";
+            IdentifierSpellingPattern + TypeArgumentListPattern;
 
         private const string CastTypeSuffixPattern =
             @"(?:\s*[?*]|\s*\[[,\s]*\])*(?:\s+(?<elementName>"
@@ -485,6 +490,7 @@ namespace DxMessaging.Editor
                         )
                     );
                 AddMethodDeclarationReplacements(
+                    source,
                     masked,
                     metadata,
                     name,
@@ -1037,6 +1043,7 @@ namespace DxMessaging.Editor
         }
 
         private static void AddMethodDeclarationReplacements(
+            string source,
             string masked,
             SourceMetadata metadata,
             string methodName,
@@ -1086,7 +1093,7 @@ namespace DxMessaging.Editor
             if (
                 HasDirectWritableCall(
                     masked,
-                    metadata.CallableUses(masked, methodName),
+                    metadata.CallableUses(source, masked, methodName),
                     usageScope,
                     declaration
                 )
@@ -1104,45 +1111,43 @@ namespace DxMessaging.Editor
 
         private static bool HasDirectWritableCall(
             string masked,
-            IEnumerable<Match> callableUses,
+            IEnumerable<(string Code, Match Name, int Offset)> callableUses,
             int typeStart,
             ParameterList declaration
         )
         {
-            foreach (Match use in callableUses)
+            foreach ((string code, Match use, int offset) in callableUses)
             {
-                if (use.Index == declaration.DeclarationStart)
+                int sourceStart = use.Index + offset;
+                if (sourceStart == declaration.DeclarationStart)
                 {
                     continue;
                 }
-                int previous = PreviousNonWhitespace(masked, use.Index - 1);
+                int previous = PreviousNonWhitespace(code, use.Index - 1);
                 if (
                     (
                         0 <= previous
-                        && masked[previous] == '.'
+                        && code[previous] == '.'
                         && !FollowsKeyword(
-                            masked,
+                            code,
                             0,
-                            PreviousNonWhitespace(masked, previous - 1),
+                            PreviousNonWhitespace(code, previous - 1),
                             "this"
                         )
                     )
-                    || FindContainingTypeStart(masked, use.Index) != typeStart
+                    || FindContainingTypeStart(masked, sourceStart) != typeStart
                 )
                 {
                     continue;
                 }
-                int open = NextNonWhitespace(masked, use.Index + use.Length);
-                int close = FindMatching(masked, open, '(', ')');
+                int open = NextNonWhitespace(code, use.Index + use.Length);
+                int close = FindMatching(code, open, '(', ')');
                 if (
                     0 <= close
-                    && SplitArguments(masked, open + 1, close)
+                    && SplitArguments(code, open + 1, close)
                         .Exists(argument =>
                             0
-                            <= FindBaseArgumentRefStart(
-                                masked,
-                                GetArgumentValueSpan(masked, argument)
-                            )
+                            <= FindBaseArgumentRefStart(code, GetArgumentValueSpan(code, argument))
                         )
                 )
                 {
@@ -1395,6 +1400,18 @@ namespace DxMessaging.Editor
             string receiver = IdentifierValue(
                 masked.Substring(receiverStart, receiverEnd - receiverStart + 1)
             );
+            int qualifierDot = PreviousNonWhitespace(masked, receiverStart - 1);
+            if (0 <= qualifierDot && masked[qualifierDot] == '.')
+            {
+                int qualifier = PreviousNonWhitespace(masked, qualifierDot - 1);
+                if (
+                    !FollowsKeyword(masked, 0, qualifier, "this")
+                    && !(receiver == "Token" && FollowsKeyword(masked, 0, qualifier, "base"))
+                )
+                {
+                    return false;
+                }
+            }
             int usageScope = FindContainingTypeStart(masked, methodNameStart);
             IEnumerable<Match> declarations = metadata.ReceiverDeclarations(masked, receiver);
             if (receiver == "Token")
@@ -1532,7 +1549,7 @@ namespace DxMessaging.Editor
                     )
                     {
                         string reason =
-                            $"{name} has a receiver whose MessageRegistrationToken type cannot be proven";
+                            $"{CallbackLocation(masked, match.Index)} {name} has a receiver whose MessageRegistrationToken type cannot be proven";
                         foreach (string group in FindCallbackMethodGroupKeys(masked, invocation))
                         {
                             unprovenMethodGroups?.TryAdd(group, reason);
@@ -2979,10 +2996,15 @@ namespace DxMessaging.Editor
             int following
         )
         {
+            int bodyEnd = body.Start + body.Length;
+            while (0 <= following && following < bodyEnd && text[following] == '!')
+            {
+                following = NextAfterComments(text, following + 1, bodyEnd);
+            }
             int beforeTarget = PreviousNonWhitespace(text, targetStart - 1);
             if (
                 following < 0
-                || body.Start + body.Length <= following
+                || bodyEnd <= following
                 || !FollowsKeyword(text, body.Start, beforeTarget, "in")
             )
             {
@@ -4130,7 +4152,7 @@ namespace DxMessaging.Editor
             private bool? _hasDxMessagingAlias;
             private ILookup<string, Match> _receiverDeclarations;
             private ILookup<string, Match> _packageReceiverDeclarations;
-            private ILookup<string, Match> _callableUses;
+            private ILookup<string, (string Code, Match Name, int Offset)> _callableUses;
 
             public bool HasConditionalDirectives => 0 < ConditionalDirectives.Count;
 
@@ -4158,18 +4180,41 @@ namespace DxMessaging.Editor
                 return _packageReceiverDeclarations[receiver];
             }
 
-            public IEnumerable<Match> CallableUses(string masked, string name)
+            public IEnumerable<(string Code, Match Name, int Offset)> CallableUses(
+                string source,
+                string masked,
+                string name
+            )
             {
-                _callableUses ??= IdentifierUseRegex
-                    .Matches(masked)
-                    .Cast<Match>()
-                    .Where(use =>
-                    {
-                        int next = NextNonWhitespace(masked, use.Index + use.Length);
-                        return 0 <= next && masked[next] == '(';
-                    })
-                    .ToLookup(use => IdentifierValue(use.Value), StringComparer.Ordinal);
+                _callableUses ??= FindCallableUses(masked, 0)
+                    .Concat(
+                        InterpolatedExpressions.SelectMany(expression =>
+                            FindCallableUses(
+                                MaskNonCode(
+                                    source.Substring(expression.Start, expression.Length),
+                                    null
+                                ),
+                                expression.Start
+                            )
+                        )
+                    )
+                    .ToLookup(use => IdentifierValue(use.Name.Value), StringComparer.Ordinal);
                 return _callableUses[name];
+            }
+
+            private static IEnumerable<(string Code, Match Name, int Offset)> FindCallableUses(
+                string code,
+                int offset
+            )
+            {
+                foreach (Match use in IdentifierUseRegex.Matches(code))
+                {
+                    int next = NextNonWhitespace(code, use.Index + use.Length);
+                    if (0 <= next && code[next] == '(')
+                    {
+                        yield return (code, use, offset);
+                    }
+                }
             }
 
             private static ILookup<string, Match> IndexReceiverDeclarations(

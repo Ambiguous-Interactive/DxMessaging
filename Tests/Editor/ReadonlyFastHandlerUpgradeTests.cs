@@ -2058,6 +2058,71 @@ class Receiver
         }
 
         [TestCase(
+            "$\"{Run(() => Forward(ref copy))}\"",
+            true,
+            TestName = "A writable named call in an interpolation requires review"
+        )]
+        [TestCase(
+            "$@\"{Run(() => this.Forward(message: ref copy))}\"",
+            true,
+            TestName = "A named writable call in a verbatim interpolation requires review"
+        )]
+        [TestCase(
+            "$\"{Run(() => Forward(ref copy), Choose<int, string>(first, second))}\"",
+            true,
+            TestName = "Trailing generic arguments leave the writable interpolated call visible"
+        )]
+        [TestCase(
+            "$\"{{Forward(ref copy)}}\"",
+            false,
+            TestName = "An interpolated literal does not block a named callback"
+        )]
+        [TestCase(
+            "$\"{42:Forward(ref copy)}\"",
+            false,
+            TestName = "Interpolation format text does not block a named callback"
+        )]
+        [TestCase(
+            "$\"{Run(() => other.Forward(ref copy))}\"",
+            false,
+            TestName = "An interpolated call on another receiver does not block the named callback"
+        )]
+        [TestCase(
+            "$$\"\"\"{{Run(() => Forward(ref copy))}}\"\"\"",
+            true,
+            TestName = "A writable named call in a raw interpolation requires review"
+        )]
+        public void AnalyzeChecksDirectWritableNamedCallsInInterpolations(
+            string expression,
+            bool defer
+        )
+        {
+            string source = @"
+class Receiver
+{
+    OtherReceiver other;
+    void SetUp()
+    {
+        global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> known = Forward;
+        Pulse copy = default;
+        Observe(EXPRESSION);
+    }
+    void Forward(ref Pulse message) => Read(message);
+    void Read(Pulse message) { }
+}".Replace("EXPRESSION", expression);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(defer ? 0 : 1));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(defer ? source : source.Replace("void Forward(ref", "void Forward(in"))
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(defer ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains("direct call"));
+        }
+
+        [TestCase(
             "spare, token",
             false,
             TestName = "An alternate receiver later in a field list requires review"
@@ -2113,6 +2178,96 @@ class Receiver
             ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
                 source
             );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("receiver whose MessageRegistrationToken type cannot be proven")
+            );
+        }
+
+        [TestCase(
+            "global::Vendor.CustomToken<(int, int)>",
+            "token",
+            TestName = "A tuple type argument in an alternate receiver requires review"
+        )]
+        [TestCase(
+            "global::Vendor.CustomToken<Box<(int Left, int Right)>, int[]>",
+            "spare, @token",
+            TestName = "Nested tuple type arguments and multiple declarators do not hide a receiver"
+        )]
+        public void AnalyzeFindsAlternateReceiversWithTupleTypeArguments(
+            string type,
+            string declarators
+        )
+        {
+            string source = @"
+class Receiver
+{
+#if USE_DX
+    global::DxMessaging.Core.MessageRegistrationToken token;
+#else
+    TYPE DECLARATORS;
+#endif
+    void SetUp()
+    {
+        token.RegisterUntargeted<Pulse>((ref Pulse message) => Read(message));
+    }
+    static void Read(Pulse message) { }
+}".Replace("TYPE", type).Replace("DECLARATORS", declarators);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("receiver whose MessageRegistrationToken type cannot be proven")
+            );
+        }
+
+        [TestCase(
+            "other.token",
+            false,
+            TestName = "A matching field name does not prove the receiver on another object"
+        )]
+        [TestCase(
+            "other.@token",
+            false,
+            TestName = "An escaped field on another object still has an unproven receiver"
+        )]
+        [TestCase(
+            "this.token",
+            true,
+            TestName = "An explicitly qualified own receiver still migrates"
+        )]
+        [TestCase("token", true, TestName = "An unqualified own receiver still migrates")]
+        public void AnalyzeChecksTheOwnerOfAQualifiedRegistrationReceiver(
+            string receiver,
+            bool migrate
+        )
+        {
+            string source = @"
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    Other other;
+    void SetUp()
+    {
+        RECEIVER.RegisterUntargeted<Pulse>((ref Pulse message) => Read(message));
+    }
+    static void Read(Pulse message) { }
+}
+class Other { public global::Vendor.CustomToken token; }".Replace("RECEIVER", receiver);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
             Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
             Assert.That(
                 result.UpgradedSource,
@@ -2241,6 +2396,29 @@ class Receiver
             Assert.That(
                 result.ManualReviewMethods,
                 Has.Some.Contains($"callback on line 2, column {secondColumn} writes")
+            );
+        }
+
+        [Test]
+        public void AnalyzeReportsDistinctLocationsForUnprovenRegistrations()
+        {
+            const string Call = "RegisterUntargeted<Pulse>((ref Pulse message) => Read(message));";
+            string line = "first." + Call + " second." + Call;
+            string source = "CustomToken first, second;\n" + line;
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            int firstColumn = line.IndexOf("RegisterUntargeted", StringComparison.Ordinal) + 1;
+            int secondColumn = line.LastIndexOf("RegisterUntargeted", StringComparison.Ordinal) + 1;
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(2));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.Some.Contains($"line 2, column {firstColumn} ")
+            );
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.Some.Contains($"line 2, column {secondColumn} ")
             );
         }
 
@@ -3753,6 +3931,16 @@ void Forward(ref Pulse message) => message = default;";
         [TestCase("Observe(from item in message select item + 1)", true)]
         [TestCase("Observe(from int item in (message) select item + 1)", true)]
         [TestCase(
+            "Observe(from int item in message! select item + 1)",
+            true,
+            TestName = "A null-forgiven typed query source still requires review"
+        )]
+        [TestCase(
+            "Observe(from item in outer join int other in message! on item equals other select item)",
+            true,
+            TestName = "A null-forgiven typed join source still requires review"
+        )]
+        [TestCase(
             "Observe(from item in outer join int other in (message) on item equals other select item)",
             true
         )]
@@ -3761,6 +3949,11 @@ void Forward(ref Pulse message) => message = default;";
             false
         )]
         [TestCase("Pulse copy = message; Observe(from item in copy select item + 1)", false)]
+        [TestCase(
+            "Pulse copy = message; Observe(from int item in copy! select item + 1)",
+            false,
+            TestName = "A null-forgiven independent query copy still migrates"
+        )]
         [TestCase("Observe(from item in Items(message) select item + 1)", false)]
         public void AnalyzeChecksQuerySourceReceiver(string statement, bool requiresReview)
         {
@@ -4024,7 +4217,7 @@ sealed class AliasExternal : Vendor :: DxMessaging.Unity.MessageAwareComponent
 
             Assert.That(result.UpgradedSource, Is.EqualTo(Source));
             Assert.That(result.ReplacementCount, Is.Zero);
-            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(2));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(4));
             Assert.That(
                 string.Join("\n", result.ManualReviewMethods),
                 Does.Contain("receiver whose MessageRegistrationToken type cannot be proven")

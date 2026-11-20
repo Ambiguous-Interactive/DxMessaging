@@ -182,7 +182,8 @@ methods, the preview keeps the related signature and argument edits together. It
 edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks
 passed directly to both a handler and an interceptor in the same script. It lists these cases in the
 Console for manual review. It also checks unqualified and `this`-qualified `ref` calls to named
-callbacks in the same type. Reports for deferred callbacks include the source line and column.
+callbacks in the same type, including calls in interpolated expressions. Reports for deferred
+callback bodies and unproven registrations include the source line and column.
 Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
 Review project-wide callback uses. The preview skips branches it can prove inactive from literal
