@@ -177,6 +177,13 @@ namespace DxMessaging.Editor
             RegexOptions.CultureInvariant
         );
 
+        private static readonly Regex BaseCallRegex = new(
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])base\s*\.\s*(?<member>"
+                + IdentifierSpellingPattern
+                + @")\s*\(",
+            RegexOptions.CultureInvariant
+        );
+
         private static readonly Regex BaseRefArgumentRegex = new(
             @"^\s*ref(?:\s+|(?=@))(?<name>" + IdentifierSpellingPattern + @")\s*$",
             RegexOptions.CultureInvariant
@@ -1494,7 +1501,7 @@ namespace DxMessaging.Editor
             string text = masked.Substring(argument.Start, argument.Length);
             Match match = Regex.Match(
                 text,
-                @"^\s*(?<name>[A-Za-z_]\w*)\s*:\s*",
+                @"^\s*(?<name>" + IdentifierSpellingPattern + @")\s*:(?!:)\s*",
                 RegexOptions.CultureInvariant
             );
             if (!match.Success)
@@ -1504,7 +1511,7 @@ namespace DxMessaging.Editor
                 return false;
             }
 
-            argumentName = match.Groups["name"].Value;
+            argumentName = IdentifierValue(match.Groups["name"].Value);
             int valueStart = argument.Start + match.Length;
             value = new TextSpan(valueStart, argument.Start + argument.Length - valueStart);
             return true;
@@ -1629,16 +1636,12 @@ namespace DxMessaging.Editor
             );
             List<(string Parameter, TextSpan Declaration)> localShadows =
                 CollectLocalFunctionShadows(masked, body);
-            Regex baseCall = new(
-                @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])base\s*\.\s*" + Regex.Escape(methodName) + @"\s*\(",
-                RegexOptions.CultureInvariant
-            );
             int owner = declaration.ParametersStart - 1;
             foreach (
                 (int callStart, List<TextSpan> arguments) in FindBaseCallArguments(
                     masked,
                     body,
-                    baseCall
+                    methodName
                 )
             )
             {
@@ -1696,7 +1699,7 @@ namespace DxMessaging.Editor
                 );
                 TextSpan scope = new(0, code.Length);
                 foreach (
-                    (_, List<TextSpan> arguments) in FindBaseCallArguments(code, scope, baseCall)
+                    (_, List<TextSpan> arguments) in FindBaseCallArguments(code, scope, methodName)
                 )
                 {
                     foreach (TextSpan argument in arguments)
@@ -1718,15 +1721,19 @@ namespace DxMessaging.Editor
         private static IEnumerable<(int CallStart, List<TextSpan> Arguments)> FindBaseCallArguments(
             string code,
             TextSpan scope,
-            Regex baseCall
+            string methodName
         )
         {
             int scopeEnd = scope.Start + scope.Length;
-            foreach (Match match in baseCall.Matches(code, scope.Start))
+            foreach (Match match in BaseCallRegex.Matches(code, scope.Start))
             {
                 if (scopeEnd <= match.Index)
                 {
                     break;
+                }
+                if (IdentifierValue(match.Groups["member"].Value) != methodName)
+                {
+                    continue;
                 }
                 int open = match.Index + match.Length - 1;
                 int close = FindMatching(code, open, '(', ')');

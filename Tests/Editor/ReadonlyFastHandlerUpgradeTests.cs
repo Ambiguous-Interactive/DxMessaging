@@ -2406,6 +2406,69 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             );
         }
 
+        [TestCase(
+            "base.@HANDLER(ref copy);",
+            TestName = "An escaped base member with a local copy defers both forwarding edits"
+        )]
+        [TestCase(
+            "base.HANDLER(@message: ref copy);",
+            TestName = "An escaped named argument with a local copy defers both forwarding edits"
+        )]
+        [TestCase(
+            "Observe($\"{Run(() => base.@HANDLER(@message: ref copy))}\");",
+            TestName = "Escaped base forwarding inside interpolation defers the connected edits"
+        )]
+        public void AnalyzeDefersUnprovedEscapedBaseForwarding(string forwarding)
+        {
+            string source = CreateRenamedForwardingSource(
+                "HandleGlobalStringMessage",
+                "GlobalStringMessage",
+                "base.HANDLER(ref outer); PAYLOAD copy = outer; " + forwarding
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("depends on a base forwarding argument")
+            );
+        }
+
+        [TestCase(
+            "base.@HANDLER(ref outer);",
+            "base.@HandleGlobalStringMessage(in outer);",
+            TestName = "An escaped base member bound to the override parameter still migrates"
+        )]
+        [TestCase(
+            "base.HANDLER(ref outer); PAYLOAD copy = outer; @base.@HANDLER(ref copy);",
+            "@base.@HandleGlobalStringMessage(ref copy);",
+            TestName = "An escaped base receiver and member keep the unrelated call writable"
+        )]
+        public void AnalyzePreservesVerifiedForwardingWithEscapedNames(
+            string body,
+            string expectedCall
+        )
+        {
+            string source = CreateRenamedForwardingSource(
+                "HandleGlobalStringMessage",
+                "GlobalStringMessage",
+                body
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(2));
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+            Assert.That(result.UpgradedSource, Does.Contain(expectedCall));
+        }
+
         [Test]
         public void AnalyzeLeavesExpressionBodyWithGenericRefForwardingForManualReview()
         {
