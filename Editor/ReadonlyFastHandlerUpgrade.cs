@@ -122,7 +122,7 @@ namespace DxMessaging.Editor
                 + CastTypeNamePattern
                 + @"(?:\s*(?:\.|::)\s*"
                 + CastTypeNamePattern
-                + @")*"
+                + ")*"
                 + CastTypeSuffixPattern,
             RegexOptions.CultureInvariant,
             TimeSpan.FromSeconds(1)
