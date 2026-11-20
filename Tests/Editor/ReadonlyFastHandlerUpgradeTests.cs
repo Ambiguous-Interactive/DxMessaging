@@ -11,6 +11,9 @@ namespace DxMessaging.Tests.Editor
 
     public sealed class ReadonlyFastHandlerUpgradeTests
     {
+        private const string UnresolvedMessageRead =
+            "reads a member or indexer on parameter 'message' that cannot be verified safe for 'in'";
+
         private static IEnumerable<TestCaseData> SupportedCallbackCases()
         {
             yield return new TestCaseData(
@@ -745,59 +748,17 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
         private static IEnumerable<TestCaseData> SafeParameterUseCases()
         {
             yield return new TestCaseData(
-                "if (message.Value == 3 || message.Value != 4 || message.Value <= 5 "
-                    + "|| message.Value >= 6) Observe(message);"
-            ).SetName("Reads and comparisons still migrate");
-            yield return new TestCaseData(
-                "System.IDisposable resource = new System.IO.MemoryStream();"
-                    + " int first, second; using (resource) (first, second) = (message.Value, 2);"
-                    + " Observe(first + second);"
-            ).SetName("A tuple read in a using body without braces still migrates");
-            yield return new TestCaseData("Observe($\"{message.Value}\");").SetName(
-                "An interpolated read still migrates"
-            );
-            yield return new TestCaseData(
-                "Observe($\"{{message.Value++}} {message.Value}\");"
-            ).SetName("Escaped braces beside an interpolation read still migrate");
-            yield return new TestCaseData(
                 "Observe($@\"{{message.Value++}}\"); Observe(@$\"{{message.Value++}}\");"
             ).SetName("Escaped braces in verbatim interpolated strings still migrate");
             yield return new TestCaseData(
                 "Observe($@\"\"\"{{message.Value++}}\"\"\");"
                     + " Observe(@$\"\"\"{{message.Value++}}\"\"\");"
             ).SetName("Escaped quotes and braces in verbatim interpolated strings still migrate");
-            yield return new TestCaseData("Observe($\"{message.Value:message.Value++}\");").SetName(
-                "A write-like interpolation format still migrates"
-            );
             yield return new TestCaseData("Observe(\"{message.Value++}\");").SetName(
                 "Plain string text matching an interpolated write still migrates"
             );
-            yield return new TestCaseData("Observe($$\"\"\"{{message.Value}}\"\"\");").SetName(
-                "A raw interpolated read still migrates"
-            );
-            yield return new TestCaseData(
-                "Observe($$\"\"\"{{message.Value /* note */}}\"\"\");"
-            ).SetName("A commented raw interpolation read still migrates");
-            yield return new TestCaseData("Observe($$\"\"\"{{ message[\"]\"] }}\"\"\");").SetName(
-                "A raw indexer read with a quoted closing bracket still migrates"
-            );
-            yield return new TestCaseData("Observe($$\"\"\"{{ message[\"[\"] }}\"\"\");").SetName(
-                "A raw indexer read with a quoted opening bracket still migrates"
-            );
             yield return new TestCaseData("Observe(\"\"\"{{message.Value++}}\"\"\");").SetName(
                 "Plain raw string text matching an interpolated write still migrates"
-            );
-            yield return new TestCaseData("Observe(message.\u0394);").SetName(
-                "A read of a Unicode member still migrates"
-            );
-            yield return new TestCaseData("Observe(message[0]);").SetName(
-                "A direct indexer read still migrates"
-            );
-            yield return new TestCaseData("Observe(message.Child[0]);").SetName(
-                "A nested struct indexer read still migrates"
-            );
-            yield return new TestCaseData("Observe(message[\"items\"][0]);").SetName(
-                "A repeated indexer read still migrates"
             );
             yield return new TestCaseData(
                 "Pulse other = message; other.Value++; Observe(other);"
@@ -805,12 +766,6 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "var holder = (message, index: 0); holder . @message.Value++; Observe(holder);"
             ).SetName("A qualified member named like the parameter still migrates");
-            yield return new TestCaseData(
-                "int count = 1; Observe(count+++message.Value); Observe(count---message.Value);"
-            ).SetName("A preceding postfix operator still migrates");
-            yield return new TestCaseData(
-                "int count = 0; count += message.Value; Observe(count);"
-            ).SetName("Writes to a local still migrate");
             yield return new TestCaseData(
                 "Pulse messageOther; Observe(AssignPulse(out messageOther)); Observe(message);"
             ).SetName("Byref use of a similarly named local still migrates");
@@ -824,27 +779,12 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "Observe(\"message.Value--\"); /* ++message.Value; */ Observe(message);"
             ).SetName("Write-like text still migrates");
-            yield return new TestCaseData(
-                "Observe(message.Value + +message.Value); Observe(message.Value - -message.Value);"
-            ).SetName("Separate unary operators still migrate");
-            yield return new TestCaseData(
-                "Observe((message).Value); Observe(((message)));"
-            ).SetName("Grouped parameter reads still migrate");
-            yield return new TestCaseData("Observe(1 + (message).Value);").SetName(
-                "A grouped read after addition still migrates"
-            );
             yield return new TestCaseData("GetRef<int>(message).Value = 1;").SetName(
                 "Writing to a generic call result still migrates"
             );
             yield return new TestCaseData("GetRef<Box<Box<int>>> (message).Value = 3;").SetName(
                 "Writing to a nested generic call result still migrates"
             );
-            yield return new TestCaseData("Observe(1 > (message).Value);").SetName(
-                "A grouped comparison read still migrates"
-            );
-            yield return new TestCaseData(
-                "int limit = 2; Observe(1 < limit && 1 > (message).Value);"
-            ).SetName("Grouped reads in mixed comparisons still migrate");
             yield return new TestCaseData(
                 "ref readonly Pulse view = ref message; Observe(view);"
             ).SetName("A plain readonly alias still migrates");
@@ -852,38 +792,204 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "ref readonly Pulse view = ref (message); Observe(view);"
             ).SetName("A grouped readonly alias still migrates");
             yield return new TestCaseData(
-                "Pulse other = default; if (message != other) Observe(message!.Value);"
-            ).SetName("An inequality and a null-forgiven read still migrate");
-            yield return new TestCaseData("Observe(message.Child.Value);").SetName(
-                "Nested member reads still migrate"
-            );
-            yield return new TestCaseData(
-                "if (message.Child.Value < (1 + 2)) Observe(message);"
-            ).SetName("A nested member comparison still migrates");
-            yield return new TestCaseData(
                 "RefPulseCallback callback = RefPulse; callback!(message).Value = 2;"
             ).SetName("Writing to a null-forgiven delegate result still migrates");
             yield return new TestCaseData(
-                "RefPulse(message).Value = 1; RefCell((message.Value)) = 2;"
-            ).SetName("Grouped call arguments in unrelated targets still migrate");
+                "RefPulseCallback callback = RefPulse; Observe(callback!(message).Flag);"
+            ).SetName("Reading a null-forgiven unrelated delegate result still migrates");
             yield return new TestCaseData(
-                "Observe(((message)).Value); Observe(Bump(ref RefCell((message).Value)));"
-            ).SetName("Grouped reads inside unrelated byref arguments still migrate");
+                "int value = ToInt(message); if (value == 3 || value != 4 || value <= 5 "
+                    + "|| value >= 6) Observe(message);"
+            ).SetName("Comparisons on a local value still migrate");
+            yield return new TestCaseData(
+                "System.IDisposable resource = new System.IO.MemoryStream();"
+                    + " Pulse copy; int value; using (resource) (copy, value) = (message, 2);"
+                    + " Observe(copy); Observe(value);"
+            ).SetName("A whole parameter on a using tuple right hand side still migrates");
+            yield return new TestCaseData("Observe($\"{message}\");").SetName(
+                "A whole parameter in an interpolation still migrates"
+            );
+            yield return new TestCaseData("Observe($\"{{message.Value++}} {message}\");").SetName(
+                "Escaped braces beside a whole parameter interpolation still migrate"
+            );
+            yield return new TestCaseData("Observe($\"{message:message.Value++}\");").SetName(
+                "Write-like interpolation format text still migrates"
+            );
+            yield return new TestCaseData("Observe($$\"\"\"{{message}}\"\"\");").SetName(
+                "A whole parameter in a raw interpolation still migrates"
+            );
+            yield return new TestCaseData(
+                "int count = 1; Observe(count+++ToInt(message)); Observe(count---ToInt(message));"
+            ).SetName("Postfix operators before an unrelated call still migrate");
+            yield return new TestCaseData(
+                "int count = 0; count += ToInt(message); Observe(count);"
+            ).SetName("Writes to a local from an unrelated call still migrate");
+            yield return new TestCaseData(
+                "Observe(ToInt(message) + +ToInt(message)); Observe(ToInt(message) - -ToInt(message));"
+            ).SetName("Separate unary operators on unrelated values still migrate");
+            yield return new TestCaseData("Observe((message)); Observe(((message)));").SetName(
+                "Grouped whole parameter reads still migrate"
+            );
+            yield return new TestCaseData(
+                "Observe(1 + ToInt((message))); Observe(1 < ToInt((message)));"
+            ).SetName(
+                "Grouped whole parameter reads during arithmetic and comparison still migrate"
+            );
+            yield return new TestCaseData(
+                "Pulse other = default; if (message != other) Observe((message!));"
+            ).SetName("An inequality followed by a null-forgiven whole parameter still migrates");
+            yield return new TestCaseData(
+                "RefPulse(message).Value = 1; RefCell(ToInt((message))) = 2;"
+            ).SetName("Grouped whole parameter reads in unrelated assignments still migrate");
+            yield return new TestCaseData(
+                "Observe(((message))); Observe(Bump(ref RefCell(ToInt((message)))));"
+            ).SetName("A whole parameter read in an unrelated byref argument still migrates");
             yield return new TestCaseData("Observe(@ref (message).Value);").SetName(
                 "An escaped ref callable still migrates"
             );
             yield return new TestCaseData(
+                "Pulse copy; int value; (copy, value) = (message, ToInt(message));"
+                    + " Observe(copy); Observe(value);"
+            ).SetName("A whole parameter on a tuple right hand side still migrates");
+            yield return new TestCaseData(
+                "int[] buffer = new int[2]; int local;"
+                    + " (buffer[ToInt(message) < 1 ? 0 : 1], local) = (1, 2); Observe(local);"
+            ).SetName("A whole parameter in a tuple index comparison still migrates");
+        }
+
+        private static IEnumerable<TestCaseData> UnresolvedMemberReadCases()
+        {
+            yield return new TestCaseData(
+                "if (message.Value == 3 || message.Value != 4 || message.Value <= 5 "
+                    + "|| message.Value >= 6) Observe(message);"
+            ).SetName("Comparisons reading a parameter member require manual review");
+            yield return new TestCaseData(
+                "System.IDisposable resource = new System.IO.MemoryStream();"
+                    + " int first, second; using (resource) (first, second) = (message.Value, 2);"
+                    + " Observe(first + second);"
+            ).SetName(
+                "A using tuple right hand side reading a parameter member requires manual review"
+            );
+            yield return new TestCaseData("Observe($\"{message.Value}\");").SetName(
+                "An interpolated parameter member read requires manual review"
+            );
+            yield return new TestCaseData(
+                "Observe($\"{{message.Value++}} {message.Value}\");"
+            ).SetName(
+                "Escaped braces beside an interpolated parameter member read require manual review"
+            );
+            yield return new TestCaseData("Observe($\"{message.Value:message.Value++}\");").SetName(
+                "An interpolation value read requires review even with a write-like format"
+            );
+            yield return new TestCaseData("Observe($$\"\"\"{{message.Value}}\"\"\");").SetName(
+                "A raw interpolated parameter member read requires manual review"
+            );
+            yield return new TestCaseData(
+                "Observe($$\"\"\"{{message.Value /* note */}}\"\"\");"
+            ).SetName("A commented raw interpolation member read requires manual review");
+            yield return new TestCaseData("Observe($$\"\"\"{{ message[\"]\"] }}\"\"\");").SetName(
+                "A raw indexer read with a quoted closing bracket requires manual review"
+            );
+            yield return new TestCaseData("Observe($$\"\"\"{{ message[\"[\"] }}\"\"\");").SetName(
+                "A raw indexer read with a quoted opening bracket requires manual review"
+            );
+            yield return new TestCaseData("Observe(message.\u0394);").SetName(
+                "A read of a Unicode parameter member requires manual review"
+            );
+            yield return new TestCaseData("Observe(message[0]);").SetName(
+                "A direct parameter indexer read requires manual review"
+            );
+            yield return new TestCaseData("Observe(message.Child[0]);").SetName(
+                "A nested struct indexer read requires manual review"
+            );
+            yield return new TestCaseData("Observe(message[\"items\"][0]);").SetName(
+                "A repeated parameter indexer read requires manual review"
+            );
+            yield return new TestCaseData(
+                "int count = 1; Observe(count+++message.Value); Observe(count---message.Value);"
+            ).SetName("A preceding postfix operator preserves manual review of a member read");
+            yield return new TestCaseData(
+                "int count = 0; count += message.Value; Observe(count);"
+            ).SetName("A local assignment from a parameter member requires manual review");
+            yield return new TestCaseData(
+                "Observe(message.Value + +message.Value); Observe(message.Value - -message.Value);"
+            ).SetName("Separate unary operators preserve manual review of member reads");
+            yield return new TestCaseData(
+                "Observe((message).Value); Observe(((message)));"
+            ).SetName("A grouped parameter member read requires manual review");
+            yield return new TestCaseData("Observe(1 + (message).Value);").SetName(
+                "A grouped member read after addition requires manual review"
+            );
+            yield return new TestCaseData("Observe(1 > (message).Value);").SetName(
+                "A grouped comparison member read requires manual review"
+            );
+            yield return new TestCaseData(
+                "int limit = 2; Observe(1 < limit && 1 > (message).Value);"
+            ).SetName("Grouped member reads in mixed comparisons require manual review");
+            yield return new TestCaseData(
+                "Pulse other = default; if (message != other) Observe(message!.Value);"
+            ).SetName("An inequality and a null-forgiven member read require manual review");
+            yield return new TestCaseData("Observe(message.Child.Value);").SetName(
+                "Nested parameter member reads require manual review"
+            );
+            yield return new TestCaseData(
+                "if (message.Child.Value < (1 + 2)) Observe(message);"
+            ).SetName("A nested parameter member comparison requires manual review");
+            yield return new TestCaseData(
+                "RefPulse(message).Value = 1; RefCell((message.Value)) = 2;"
+            ).SetName(
+                "An unrelated target still requires manual review of a parameter member argument"
+            );
+            yield return new TestCaseData(
+                "Observe(((message)).Value); Observe(Bump(ref RefCell((message).Value)));"
+            ).SetName(
+                "An unrelated byref argument still requires manual review of a parameter member read"
+            );
+            yield return new TestCaseData(
                 "Pulse copy; int value; (copy, value) = (message, message.Value);"
                     + " Observe(copy); Observe(value);"
-            ).SetName("Reading a parameter on a tuple right hand side still migrates");
+            ).SetName(
+                "Reading a parameter member on a tuple right hand side requires manual review"
+            );
             yield return new TestCaseData(
                 "int[] buffer = new int[1]; int messageOther;"
                     + " (buffer[message.Value], messageOther) = (1, 2); Observe(messageOther);"
-            ).SetName("Reading a parameter in another tuple target index still migrates");
+            ).SetName(
+                "Reading a parameter member in another tuple target index requires manual review"
+            );
             yield return new TestCaseData(
                 "int[] buffer = new int[2]; int local;"
                     + " (buffer[message.Value < 1 ? 0 : 1], local) = (1, 2); Observe(local);"
-            ).SetName("Reading a parameter in a tuple index comparison still migrates");
+            ).SetName(
+                "Reading a parameter member in a tuple index comparison requires manual review"
+            );
+            yield return new TestCaseData("Observe(message?.Value);").SetName(
+                "A conditional member read requires manual review"
+            );
+            yield return new TestCaseData("Observe(message?[0]);").SetName(
+                "A conditional indexer read requires manual review"
+            );
+            yield return new TestCaseData("Observe((message!).Value);").SetName(
+                "A grouped null-forgiven parameter member requires manual review"
+            );
+            yield return new TestCaseData("Observe(((message)!).Value);").SetName(
+                "A nested grouped null-forgiven parameter member requires manual review"
+            );
+            yield return new TestCaseData("Observe(message /* comment */ .Value);").SetName(
+                "A commented parameter member read requires manual review"
+            );
+            yield return new TestCaseData("Observe($\"{message /* comment */ .Value}\");").SetName(
+                "A commented interpolated parameter member read requires manual review"
+            );
+            yield return new TestCaseData(
+                "Observe($$$\"\"\"literal {{token}} {{{message.Value}}}\"\"\");"
+            ).SetName("A triple-dollar interpolation reads a parameter member");
+            yield return new TestCaseData("Observe(!(message).Flag);").SetName(
+                "A prefix negation still requires manual review of a grouped member"
+            );
+            yield return new TestCaseData("throw (message).Error;").SetName(
+                "A throw expression reading a grouped parameter member requires manual review"
+            );
         }
 
         private static IEnumerable<TestCaseData> InterpolatedByReferenceUseCases()
@@ -1160,6 +1266,127 @@ sealed class Receiver : MessageAwareComponent
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
+        [TestCaseSource(nameof(UnresolvedMemberReadCases))]
+        public void AnalyzeDefersUnresolvedParameterMemberReads(string body)
+        {
+            string source =
+                "DxMessaging.Core.MessageRegistrationToken token;\n"
+                + "token.RegisterUntargeted<Pulse>((ref Pulse message) => { "
+                + body
+                + " });";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain(UnresolvedMessageRead));
+        }
+
+        [TestCase(
+            "Observe(message.Next); Observe($\"{++message.Value}\");",
+            "writes to parameter 'message'"
+        )]
+        [TestCase(
+            "Observe($\"{message.Next}\"); Assign(out message.Value);",
+            "passes parameter 'message' by out"
+        )]
+        [TestCase(
+            "Observe(message.Next); message.Child.Increment();",
+            "invokes a method on parameter 'message'"
+        )]
+        public void AnalyzePrefersSpecificWriteAndBindingReasons(string body, string expectedReason)
+        {
+            string source =
+                "DxMessaging.Core.MessageRegistrationToken token;\n"
+                + "token.RegisterUntargeted<Pulse>((ref Pulse message) => { "
+                + body
+                + " });";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain(expectedReason));
+        }
+
+        [Test]
+        public void AnalyzeKeepsBothParametersOfDeferredCallbackWithoutBlockingAnotherCallback()
+        {
+            const string Source =
+                @"
+DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterBroadcastWithoutSource<Hit>(
+    (ref InstanceId source, ref Hit message) => Observe(source, message.Next)
+);
+token.RegisterUntargeted<Pulse>((ref Pulse other) => Observe(other));";
+            string expected = Source.Replace("ref Pulse other", "in Pulse other");
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(expected));
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain(UnresolvedMessageRead));
+        }
+
+        [Test]
+        public void AnalyzePrefersAContextCallbackWriteOverAnEarlierMemberRead()
+        {
+            const string Source =
+                @"
+DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit message) =>
+{
+    Observe(source.Value);
+    message.Value++;
+});";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("writes to parameter 'message'")
+            );
+        }
+
+        [Test]
+        public void AnalyzeKeepsDeferredOverrideAndItsBaseForwarding()
+        {
+            const string Source =
+                @"
+class Receiver : DxMessaging.Unity.MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message)
+    {
+        Observe(message.Value);
+        base.HandleGlobalStringMessage(ref message);
+    }
+}";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain(UnresolvedMessageRead));
+        }
+
         [Test]
         public void AnalyzeLeavesOverrideWritesAndBaseForwardingUnchanged()
         {
@@ -1210,57 +1437,67 @@ void OnPulse(ref Pulse message) => Forward<First, Second>(ref message);";
             );
         }
 
-        [Test]
-        public void AnalyzeStopsComparisonExpressionBodyBeforeLaterMethod()
+        [TestCase("message.Value < 10", true)]
+        [TestCase("ToInt(message) < 10", false)]
+        public void AnalyzeStopsComparisonExpressionBodyBeforeLaterMethod(
+            string comparison,
+            bool requiresReview
+        )
         {
-            const string Source =
-                @"
+            string source = @"
 DxMessaging.Core.MessageRegistrationToken token;
 token.RegisterUntargeted<Pulse>(OnPulse);
-void OnPulse(ref Pulse message) => Observe(message.Value < 10);
-void Later(ref Pulse message) => Forward(ref message);";
+void OnPulse(ref Pulse message) => Observe(COMPARISON);
+void Later(ref Pulse message) => Forward(ref message);".Replace("COMPARISON", comparison);
 
             ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
-                Source
+                source
             );
 
-            Assert.That(result.ReplacementCount, Is.EqualTo(1));
-            Assert.That(
-                result.UpgradedSource,
-                Does.Contain("OnPulse(in Pulse message) => Observe(message.Value < 10)")
-            );
-            Assert.That(
-                result.UpgradedSource,
-                Does.Contain("Later(ref Pulse message) => Forward(ref message)")
-            );
-            Assert.That(result.ManualReviewMethods, Is.Empty);
+            AssertComparisonBoundary(result, source, "OnPulse(ref Pulse message)", requiresReview);
         }
 
-        [Test]
-        public void AnalyzeStopsComparisonLambdaBeforeFollowingArgument()
+        [TestCase("message.Value < 10", true)]
+        [TestCase("ToInt(message) < 10", false)]
+        public void AnalyzeStopsComparisonLambdaBeforeFollowingArgument(
+            string comparison,
+            bool requiresReview
+        )
         {
-            const string Source =
-                @"
+            string source = @"
 DxMessaging.Core.MessageRegistrationToken token;
 Pulse message = default;
 token.RegisterUntargeted<Pulse>(
-    (ref Pulse message) => Observe(message.Value < 10),
+    (ref Pulse message) => Observe(COMPARISON),
     priority: ReadPriority(ref message) > 0 ? 1 : 0
-);";
+);".Replace("COMPARISON", comparison);
 
             ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
-                Source
+                source
             );
 
+            AssertComparisonBoundary(result, source, "(ref Pulse message)", requiresReview);
+        }
+
+        private static void AssertComparisonBoundary(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result,
+            string source,
+            string signature,
+            bool requiresReview
+        )
+        {
+            if (requiresReview)
+            {
+                Assert.That(result.UpgradedSource, Is.EqualTo(source));
+                Assert.That(result.ReplacementCount, Is.Zero);
+                Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+                Assert.That(result.ManualReviewMethods[0], Does.Contain(UnresolvedMessageRead));
+                return;
+            }
+
+            string expected = source.Replace(signature, signature.Replace("ref Pulse", "in Pulse"));
+            Assert.That(result.UpgradedSource, Is.EqualTo(expected));
             Assert.That(result.ReplacementCount, Is.EqualTo(1));
-            Assert.That(
-                result.UpgradedSource,
-                Does.Contain("(in Pulse message) => Observe(message.Value < 10)")
-            );
-            Assert.That(
-                result.UpgradedSource,
-                Does.Contain("ReadPriority(ref message) > 0 ? 1 : 0")
-            );
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 

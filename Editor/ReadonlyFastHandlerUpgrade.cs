@@ -1667,27 +1667,13 @@ namespace DxMessaging.Editor
                 }
                 if (reason == null)
                 {
-                    foreach (string parameterName in parameterNames)
-                    {
-                        string parameterValue = IdentifierValue(parameterName);
-                        reason = FindDirectParameterIssue(
-                            masked,
-                            body,
-                            parameterName,
-                            parameterValue
-                        )
-                            ?? FindInterpolatedParameterIssue(
-                                source,
-                                body,
-                                interpolatedExpressions,
-                                parameterName,
-                                parameterValue
-                            );
-                        if (reason != null)
-                        {
-                            break;
-                        }
-                    }
+                    reason = FindParameterUseIssue(
+                        source,
+                        masked,
+                        body,
+                        interpolatedExpressions,
+                        parameterNames
+                    );
                 }
                 if (reason == null)
                 {
@@ -1705,6 +1691,42 @@ namespace DxMessaging.Editor
                     $"callback on line {LineNumber(masked, entry.Key)} {reason}; inspect it manually"
                 );
             }
+        }
+
+        private static string FindParameterUseIssue(
+            string source,
+            string masked,
+            TextSpan body,
+            List<InterpolatedSpan> interpolatedExpressions,
+            HashSet<string> parameterNames
+        )
+        {
+            // Record unresolved reads while continuing to look for established incompatibilities.
+            string unverifiedRead = null;
+            foreach (string parameterName in parameterNames)
+            {
+                string parameterValue = IdentifierValue(parameterName);
+                string issue = FindDirectParameterIssue(
+                    masked,
+                    body,
+                    parameterName,
+                    parameterValue,
+                    ref unverifiedRead
+                )
+                    ?? FindInterpolatedParameterIssue(
+                        source,
+                        body,
+                        interpolatedExpressions,
+                        parameterName,
+                        parameterValue,
+                        ref unverifiedRead
+                    );
+                if (issue != null)
+                {
+                    return issue;
+                }
+            }
+            return unverifiedRead;
         }
 
         private static string IdentifierValue(string spelling)
@@ -1809,7 +1831,7 @@ namespace DxMessaging.Editor
             Group name = use.Groups["name"];
             int targetStart = name.Index;
             int following = NextAfterComments(source, name.Index + name.Length, scopeEnd);
-            return ReadDirectTarget(source, operand, ref targetStart, ref following)
+            return ReadDirectTarget(source, operand, ref targetStart, ref following, out _)
                     == DirectTargetKind.Storage
                 && targetStart == operand.Start
                 && (
@@ -1837,7 +1859,8 @@ namespace DxMessaging.Editor
             TextSpan body,
             List<InterpolatedSpan> interpolatedExpressions,
             string parameterName,
-            string parameterValue
+            string parameterValue,
+            ref string unverifiedRead
         )
         {
             int bodyEnd = body.Start + body.Length;
@@ -1865,7 +1888,13 @@ namespace DxMessaging.Editor
                 {
                     return $"passes parameter '{parameterName}' by {forwarding.Groups["modifier"].Value}";
                 }
-                string issue = FindDirectParameterIssue(code, scope, parameterName, parameterValue);
+                string issue = FindDirectParameterIssue(
+                    code,
+                    scope,
+                    parameterName,
+                    parameterValue,
+                    ref unverifiedRead
+                );
                 if (issue != null)
                 {
                     return issue;
@@ -1878,7 +1907,8 @@ namespace DxMessaging.Editor
             string masked,
             TextSpan body,
             string parameterName,
-            string parameterValue
+            string parameterValue,
+            ref string unverifiedRead
         )
         {
             int bodyEnd = body.Start + body.Length;
@@ -1905,41 +1935,59 @@ namespace DxMessaging.Editor
 
                 int targetStart = use.Index;
                 int next = NextAfterComments(masked, use.Index + use.Length, bodyEnd);
-                DirectTargetKind target = ReadDirectTarget(masked, body, ref targetStart, ref next);
+                DirectTargetKind target = ReadDirectTarget(
+                    masked,
+                    body,
+                    ref targetStart,
+                    ref next,
+                    out bool accessedMemberOrIndexer
+                );
                 if (target == DirectTargetKind.MemberInvocation)
                 {
                     return $"invokes a method on parameter '{parameterName}' or its member";
                 }
-                if (target == DirectTargetKind.Unsupported)
-                {
-                    continue;
-                }
-
-                if (0 <= next && next < bodyEnd)
-                {
-                    char following = masked[next];
-                    Match write = DirectWriteOperatorRegex.Match(masked, next);
-                    if (write.Success && next + write.Length <= bodyEnd)
-                    {
-                        return $"writes to parameter '{parameterName}' or its member";
-                    }
-
-                    if (
-                        (following == ',' || following == ')')
-                        && IsDirectDeconstructionTarget(masked, body, targetStart, next)
-                    )
-                    {
-                        return $"writes to parameter '{parameterName}' or its member";
-                    }
-                }
-
-                previous = PreviousNonWhitespace(masked, targetStart - 1);
-                if (FollowsPrefixWriteOperator(masked, body.Start, previous))
+                if (
+                    target == DirectTargetKind.Storage
+                    && IsDirectParameterWrite(masked, body, targetStart, next)
+                )
                 {
                     return $"writes to parameter '{parameterName}' or its member";
                 }
+                if (accessedMemberOrIndexer)
+                {
+                    unverifiedRead ??=
+                        $"reads a member or indexer on parameter '{parameterName}' that cannot be verified safe for 'in'";
+                }
             }
             return null;
+        }
+
+        private static bool IsDirectParameterWrite(
+            string text,
+            TextSpan body,
+            int targetStart,
+            int following
+        )
+        {
+            int bodyEnd = body.Start + body.Length;
+            if (0 <= following && following < bodyEnd)
+            {
+                Match write = DirectWriteOperatorRegex.Match(text, following);
+                if (write.Success && following + write.Length <= bodyEnd)
+                {
+                    return true;
+                }
+
+                if (
+                    text[following] is ',' or ')'
+                    && IsDirectDeconstructionTarget(text, body, targetStart, following)
+                )
+                {
+                    return true;
+                }
+            }
+            int previous = PreviousNonWhitespace(text, targetStart - 1);
+            return FollowsPrefixWriteOperator(text, body.Start, previous);
         }
 
         private enum DirectTargetKind
@@ -1953,17 +2001,19 @@ namespace DxMessaging.Editor
             string text,
             TextSpan body,
             ref int targetStart,
-            ref int following
+            ref int following,
+            out bool accessedMemberOrIndexer
         )
         {
             int bodyEnd = body.Start + body.Length;
-            ExpandStandaloneGrouping(text, body, ref targetStart, ref following);
+            accessedMemberOrIndexer = false;
+            ExpandDirectReceiver(text, body, ref targetStart, ref following);
             bool followsMember = false;
             while (0 <= following && following < bodyEnd)
             {
-                following = SkipNullForgivingReceiver(text, following, bodyEnd);
                 if (text[following] == '[')
                 {
+                    accessedMemberOrIndexer = true;
                     int indexerEnd = FindIndexerEnd(text, following, bodyEnd);
                     if (indexerEnd < 0)
                     {
@@ -1980,6 +2030,7 @@ namespace DxMessaging.Editor
                         return DirectTargetKind.Storage;
                     }
 
+                    accessedMemberOrIndexer = true;
                     int memberStart = NextAfterComments(text, following + 1, bodyEnd);
                     if (memberStart < 0 || bodyEnd <= memberStart)
                     {
@@ -2004,7 +2055,7 @@ namespace DxMessaging.Editor
                     break;
                 }
 
-                ExpandStandaloneGrouping(text, body, ref targetStart, ref following);
+                ExpandDirectReceiver(text, body, ref targetStart, ref following);
             }
 
             if (following < 0 || bodyEnd <= following)
@@ -2012,6 +2063,7 @@ namespace DxMessaging.Editor
                 return DirectTargetKind.Storage;
             }
 
+            accessedMemberOrIndexer |= IsConditionalMemberAccess(text, following, bodyEnd);
             return text[following] switch
             {
                 '(' when followsMember => DirectTargetKind.MemberInvocation,
@@ -2045,17 +2097,37 @@ namespace DxMessaging.Editor
             return -1;
         }
 
-        private static int SkipNullForgivingReceiver(string text, int start, int bodyEnd)
+        private static bool IsConditionalMemberAccess(string text, int start, int bodyEnd)
         {
-            if (text[start] != '!')
+            if (text[start] != '?')
             {
-                return start;
+                return false;
             }
 
             int access = NextAfterComments(text, start + 1, bodyEnd);
-            return 0 <= access && access < bodyEnd && (text[access] == '.' || text[access] == '[')
-                ? access
-                : start;
+            return 0 <= access && access < bodyEnd && text[access] is '.' or '[';
+        }
+
+        private static void ExpandDirectReceiver(
+            string text,
+            TextSpan body,
+            ref int targetStart,
+            ref int following
+        )
+        {
+            int bodyEnd = body.Start + body.Length;
+            ExpandStandaloneGrouping(text, body, ref targetStart, ref following);
+            while (0 <= following && following < bodyEnd && text[following] == '!')
+            {
+                int after = NextAfterComments(text, following + 1, bodyEnd);
+                if (after < 0 || bodyEnd <= after || text[after] is not ('.' or '[' or ')' or '?'))
+                {
+                    return;
+                }
+
+                following = after;
+                ExpandStandaloneGrouping(text, body, ref targetStart, ref following);
+            }
         }
 
         private static void ExpandStandaloneGrouping(
@@ -2075,12 +2147,17 @@ namespace DxMessaging.Editor
                 }
 
                 int beforeOpening = PreviousNonWhitespace(text, opening - 1);
-                // A null-forgiven delegate invocation can follow !.
+                // A preceding ! can be a prefix operator or null forgiveness on a callable.
+                while (body.Start <= beforeOpening && text[beforeOpening] == '!')
+                {
+                    beforeOpening = PreviousNonWhitespace(text, beforeOpening - 1);
+                }
                 if (
                     !FollowsTargetBoundary(text, body.Start, beforeOpening)
                     && "+-*/%&|^~<".IndexOf(text[beforeOpening]) < 0
                     && !FollowsRangeOperator(text, body.Start, beforeOpening)
                     && !FollowsStandaloneGreaterThan(text, body.Start, beforeOpening)
+                    && !FollowsThrowKeyword(text, body.Start, beforeOpening)
                 )
                 {
                     return;
@@ -2089,6 +2166,18 @@ namespace DxMessaging.Editor
                 targetStart = opening;
                 following = NextAfterComments(text, following + 1, bodyEnd);
             }
+        }
+
+        private static bool FollowsThrowKeyword(string text, int bodyStart, int previous)
+        {
+            const string Keyword = "throw";
+            int keywordStart = previous - Keyword.Length + 1;
+            return bodyStart <= keywordStart
+                && StartsWithIdentifier(text, keywordStart, Keyword)
+                && (
+                    keywordStart == bodyStart
+                    || (text[keywordStart - 1] != '@' && !IsIdentifierPart(text[keywordStart - 1]))
+                );
         }
 
         private static bool FollowsRangeOperator(string text, int bodyStart, int previous) =>

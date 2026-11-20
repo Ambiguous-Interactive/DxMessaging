@@ -189,6 +189,12 @@ callback parameter, a direct indexer such as `message[0]`, or a member chain suc
 then update that copy even when the array write reaches the original array. Review writes through
 these indexers even when they compile with `in`.
 
+The preview also defers direct reads such as `message.Value` or `message[0]` when it cannot verify
+the access. The same source can refer to a field or to a struct getter that changes the receiver.
+After conversion to `in`, a getter can still return the same value while writing to a copy. Inspect
+the member before converting the callback by hand. A callback that only passes the whole message
+by value, such as `Observe(message)`, can still migrate automatically.
+
 The scan recognizes simple parentheses around a receiver or target, such as `(message).Value`, and
 applies the same grouping rule to direct `ref` and `out` arguments. It checks direct targets in ordinary
 tuple deconstruction, including bodies of `if`, `else`, `while`, `for`, `foreach`, `using`, `lock`, and

@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   update consumer callbacks under `Assets`. The command preserves source encoding and line endings,
   applies the batch transactionally, preserves inherited string-handler behavior, upgrades matching
   `base` forwarding calls, and flags ambiguous callbacks, incompatible `ref` or `out` arguments,
-  and direct writes to newly readonly parameters for manual review
+  and writes or unresolved member access on newly readonly parameters for manual review
   ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573),
   [#796](https://github.com/Ambiguous-Interactive/DxMessaging/issues/796)).
 
