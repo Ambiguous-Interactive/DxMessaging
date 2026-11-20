@@ -1675,13 +1675,15 @@ namespace DxMessaging.Editor
             }
 
             int bodyEnd = body.Start + body.Length;
-            foreach (TextSpan expression in interpolatedExpressions)
+            int first = FindFirstInterpolationAtOrAfter(interpolatedExpressions, body.Start);
+            for (int index = first; index < interpolatedExpressions.Count; index++)
             {
+                TextSpan expression = interpolatedExpressions[index];
                 if (bodyEnd <= expression.Start)
                 {
                     break;
                 }
-                if (expression.Start < body.Start || bodyEnd < expression.Start + expression.Length)
+                if (bodyEnd < expression.Start + expression.Length)
                 {
                     continue;
                 }
