@@ -191,8 +191,8 @@ these indexers even when they compile with `in`.
 
 The scan recognizes simple parentheses around a receiver or target, such as `(message).Value`, and
 applies the same grouping rule to direct `ref` and `out` arguments. It checks direct targets in ordinary
-tuple deconstruction, including bodies of `if`, `else`, `while`, `for`, `foreach`, `lock`, and `do`
-without braces.
+tuple deconstruction, including bodies of `if`, `else`, `while`, `for`, `foreach`, `using`, `lock`, and
+`do` without braces.
 
 The preview flags calls such as `message.Increment()` and `message.Child.Increment()` because an
 `in` parameter can cause a mutable struct method to run on a defensive copy. The text scan checks
