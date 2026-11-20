@@ -2157,7 +2157,7 @@ namespace DxMessaging.Editor
                     && "+-*/%&|^~<".IndexOf(text[beforeOpening]) < 0
                     && !FollowsRangeOperator(text, body.Start, beforeOpening)
                     && !FollowsStandaloneGreaterThan(text, body.Start, beforeOpening)
-                    && !FollowsThrowKeyword(text, body.Start, beforeOpening)
+                    && !FollowsGroupingOperandKeyword(text, body.Start, beforeOpening)
                 )
                 {
                     return;
@@ -2168,16 +2168,76 @@ namespace DxMessaging.Editor
             }
         }
 
-        private static bool FollowsThrowKeyword(string text, int bodyStart, int previous)
+        private static bool FollowsGroupingOperandKeyword(string text, int bodyStart, int previous)
         {
-            const string Keyword = "throw";
-            int keywordStart = previous - Keyword.Length + 1;
+            const string Guard = "when";
+            return FollowsKeyword(text, bodyStart, previous, "throw")
+                || FollowsKeyword(text, bodyStart, previous, "in")
+                || (
+                    FollowsKeyword(text, bodyStart, previous, Guard)
+                    && FollowsSwitchPattern(text, bodyStart, previous - Guard.Length)
+                );
+        }
+
+        private static bool FollowsKeyword(string text, int bodyStart, int previous, string keyword)
+        {
+            int keywordStart = previous - keyword.Length + 1;
             return bodyStart <= keywordStart
-                && StartsWithIdentifier(text, keywordStart, Keyword)
+                && StartsWithIdentifier(text, keywordStart, keyword)
                 && (
                     keywordStart == bodyStart
                     || (text[keywordStart - 1] != '@' && !IsIdentifierPart(text[keywordStart - 1]))
                 );
+        }
+
+        private static bool FollowsSwitchPattern(string text, int bodyStart, int beforeWhen)
+        {
+            int index = PreviousNonWhitespace(text, beforeWhen);
+            // An ordinary call to a method named when can occur inside a switch.
+            if (index < bodyStart || "({[,;:=!?.&|^~+-*/%".IndexOf(text[index]) >= 0)
+            {
+                return false;
+            }
+
+            bool passedArmSeparator = false;
+            for (; bodyStart <= index; index--)
+            {
+                switch (text[index])
+                {
+                    case ')' or ']' or '}':
+                        index = FindPatternGroupStart(text, bodyStart, index);
+                        break;
+                    case ',':
+                        passedArmSeparator = true;
+                        break;
+                    case '(' or '[' or ';':
+                    case ':' when !passedArmSeparator:
+                    case '>'
+                        when !passedArmSeparator && bodyStart < index && text[index - 1] == '=':
+                    case 'n'
+                        when !passedArmSeparator && FollowsKeyword(text, bodyStart, index, "when"):
+                        return false;
+                    case '{':
+                        int beforeBrace = PreviousNonWhitespace(text, index - 1);
+                        return FollowsKeyword(text, bodyStart, beforeBrace, "switch");
+                    case 'e'
+                        when !passedArmSeparator && FollowsKeyword(text, bodyStart, index, "case"):
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        private static int FindPatternGroupStart(string text, int bodyStart, int closing)
+        {
+            char close = text[closing];
+            char open = close switch
+            {
+                ')' => '(',
+                ']' => '[',
+                _ => '{',
+            };
+            return FindMatchingBackward(text, closing, open, close, bodyStart);
         }
 
         private static bool FollowsRangeOperator(string text, int bodyStart, int previous) =>

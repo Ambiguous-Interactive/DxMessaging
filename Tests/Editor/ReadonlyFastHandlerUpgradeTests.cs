@@ -855,6 +855,21 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "int[] buffer = new int[2]; int local;"
                     + " (buffer[ToInt(message) < 1 ? 0 : 1], local) = (1, 2); Observe(local);"
             ).SetName("A whole parameter in a tuple index comparison still migrates");
+            yield return new TestCaseData(
+                "Observe($$\"\"\"{{ F(\"\"\"hi\"\"\", message) }}\"\"\");"
+            ).SetName("A nested raw literal with a whole parameter still migrates");
+            yield return new TestCaseData(
+                "foreach (var item in Whole(message)) Observe(item);"
+            ).SetName("Foreach over an unrelated call with the whole parameter still migrates");
+            yield return new TestCaseData("Observe(when(message).Next);").SetName(
+                "A member of an unrelated when callable result still migrates"
+            );
+            yield return new TestCaseData(
+                "Observe(1 switch { 0 => 0, _ => when (message).Next });"
+            ).SetName("A member of an unrelated when call in an arm result still migrates");
+            yield return new TestCaseData(
+                "switch (0) { case 0 when when (message).Next > 0: Observe(1); break; }"
+            ).SetName("A member of an unrelated when call in a switch guard still migrates");
         }
 
         private static IEnumerable<TestCaseData> UnresolvedMemberReadCases()
@@ -989,6 +1004,29 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             );
             yield return new TestCaseData("throw (message).Error;").SetName(
                 "A throw expression reading a grouped parameter member requires manual review"
+            );
+            yield return new TestCaseData(
+                "Observe($$\"\"\"{{ F(\"\"\"hi\"\"\", message.Next) }}\"\"\");"
+            ).SetName("A getter after a nested raw literal requires manual review");
+            yield return new TestCaseData(
+                "Observe($$\"\"\"{{ F(message.Next, \"\"\"hi\"\"\") }}\"\"\");"
+            ).SetName("A getter before a nested raw literal requires manual review");
+            yield return new TestCaseData(
+                "foreach (var item in (message).Values) Observe(item);"
+            ).SetName("Foreach over a grouped parameter member requires manual review");
+            yield return new TestCaseData(
+                "foreach (var item in message.Values) Observe(item);"
+            ).SetName("Foreach over a parameter member requires manual review");
+            yield return new TestCaseData(
+                "switch (0) { case 0 when (message).Next > 0: Observe(1); break; }"
+            ).SetName("A switch guard reading a grouped parameter member requires manual review");
+            yield return new TestCaseData(
+                "switch (0) { case 0 when message.Next > 0: Observe(1); break; }"
+            ).SetName("A switch guard reading a parameter member requires manual review");
+            yield return new TestCaseData(
+                "Observe(1 switch { 0 => 0, 1 when(message).Next > 0 => 1, _ => 2 });"
+            ).SetName(
+                "A later switch arm guard reading a grouped parameter member requires manual review"
             );
         }
 
