@@ -1741,6 +1741,99 @@ sealed class Receiver : MessageAwareComponent
             );
         }
 
+        [TestCase(
+            "FastHandler<Pulse>",
+            "(ref Pulse message) => Read(message)",
+            1,
+            TestName = "A conditionally bound fast lambda requires review"
+        )]
+        [TestCase(
+            "FastHandler<Pulse>",
+            "delegate(ref Pulse message) { Read(message); }",
+            1,
+            TestName = "A conditionally bound anonymous fast delegate requires review"
+        )]
+        [TestCase(
+            "FastHandler<Pulse>",
+            "Forward",
+            1,
+            TestName = "A conditionally bound fast method group requires review"
+        )]
+        [TestCase(
+            "FastHandlerWithContext<Pulse>",
+            "(ref int context, ref Pulse message) => Read(message)",
+            1,
+            TestName = "A conditionally bound fast lambda with context requires review"
+        )]
+        [TestCase(
+            "FastHandler<Pulse>",
+            "null",
+            0,
+            TestName = "A conditionally bound fast delegate with no callback needs no review"
+        )]
+        public void AnalyzeReportsConditionallyBoundFastDelegateInitializers(
+            string delegateType,
+            string initializer,
+            int expectedReviews
+        )
+        {
+            const string Imports =
+                "#if USE_DX\nusing DxMessaging.Core;\n#else\nusing Writable;\n#endif\n";
+            string source =
+                Imports
+                + @"class Receiver
+{
+    void SetUp() { MessageHandler.TYPE handler = INITIALIZER; }
+    static void Forward(ref Pulse message) => Read(message);
+    static void Read(Pulse message) { }
+}".Replace("TYPE", delegateType).Replace("INITIALIZER", initializer);
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(expectedReviews));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("MessageHandler type cannot be proven")
+            );
+        }
+
+        [TestCase("\n", TestName = "Two callbacks on one line report distinct LF columns")]
+        [TestCase("\r\n", TestName = "Two callbacks on one line report distinct CRLF columns")]
+        [TestCase(
+            "\u2029",
+            TestName = "Two callbacks on one line report distinct paragraph separator columns"
+        )]
+        public void AnalyzeReportsDistinctPositionsForIdenticalCallbacksOnOneLine(string newline)
+        {
+            const string Callback = "(ref Pulse message) => { message = default; };";
+            const string Handler = "DxMessaging.Core.MessageHandler.FastHandler<Pulse>";
+            string line =
+                Handler + " first = " + Callback + " " + Handler + " second = " + Callback;
+            string source = "// Heading" + newline + line;
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            int firstColumn = line.IndexOf(Callback, StringComparison.Ordinal) + 1;
+            int secondColumn = line.LastIndexOf(Callback, StringComparison.Ordinal) + 1;
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(2));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.Some.Contains($"callback on line 2, column {firstColumn} writes")
+            );
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.Some.Contains($"callback on line 2, column {secondColumn} writes")
+            );
+        }
+
         private static IEnumerable<TestCaseData> SourceLineTerminatorCases()
         {
             yield return new TestCaseData("\u0085").SetName(
@@ -1779,7 +1872,7 @@ sealed class Receiver : MessageAwareComponent
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
             Assert.That(
                 result.ManualReviewMethods[0],
-                Does.Contain("callback on line 2 writes to parameter 'message'")
+                Does.Contain("callback on line 2, column 33 writes to parameter 'message'")
             );
         }
 
@@ -2587,6 +2680,60 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
             Assert.That(result.ManualReviewMethods, Is.Empty);
             Assert.That(result.UpgradedSource, Does.Contain(expectedCall));
+        }
+
+        [TestCase(
+            "base.HandleStringComponentMessage(ref outer);",
+            3,
+            TestName = "A directly forwarded contextual argument migrates across base handlers"
+        )]
+        [TestCase(
+            "PAYLOAD copy = outer; base.HandleStringComponentMessage(ref copy);",
+            0,
+            TestName = "A local copy sent to another base handler defers the connected edits"
+        )]
+        [TestCase(
+            "PAYLOAD copy = outer; Observe($\"{Run(() => base.@HandleStringComponentMessage(ref copy))}\");",
+            0,
+            TestName = "An escaped cross-handler call in interpolation defers the connected edits"
+        )]
+        [TestCase(
+            "GlobalStringMessage copy = default; base.HandleGlobalStringMessage(ref copy);",
+            0,
+            TestName = "A different payload sent to another base handler defers the connected edits"
+        )]
+        public void AnalyzeKeepsCrossHandlerBaseForwardingEditsTogether(
+            string body,
+            int expectedReplacements
+        )
+        {
+            string source = CreateRenamedForwardingSource(
+                "HandleStringGameObjectMessage",
+                "StringMessage",
+                "base.HANDLER(ref outer); " + body
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(expectedReplacements));
+            if (expectedReplacements == 0)
+            {
+                Assert.That(result.UpgradedSource, Is.EqualTo(source));
+                Assert.That(result.StringHandlerOptInCount, Is.Zero);
+                Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+                Assert.That(
+                    result.ManualReviewMethods,
+                    Has.All.Contains("depends on a base forwarding argument")
+                );
+                return;
+            }
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("base.HandleStringComponentMessage(in outer);")
+            );
         }
 
         [Test]

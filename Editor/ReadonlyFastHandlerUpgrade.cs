@@ -616,7 +616,14 @@ namespace DxMessaging.Editor
                 }
                 searchStart = fastHandler + "FastHandler".Length;
 
-                if (!IsMessageHandlerQualified(masked, fastHandler, hasConditionalDirectives))
+                if (
+                    !TryClassifyFastDelegateType(
+                        masked,
+                        fastHandler,
+                        hasConditionalDirectives,
+                        out bool isProven
+                    )
+                )
                 {
                     continue;
                 }
@@ -638,8 +645,26 @@ namespace DxMessaging.Editor
                 }
 
                 Invocation expression = new("FastHandler", equals + 1, statementEnd);
-                AddDelegateExpressionReplacements(masked, expression, replacementStarts);
                 TextSpan rightHandSideSpan = new(equals + 1, statementEnd - equals - 1);
+                if (!isProven)
+                {
+                    bool needsReview = TryGetInlineDelegateParameters(
+                        masked,
+                        expression,
+                        out TextSpan parameters
+                    )
+                        ? RefRegex.IsMatch(masked.Substring(parameters.Start, parameters.Length))
+                        : MethodGroupMayNeedMigration(masked, rightHandSideSpan);
+                    if (needsReview)
+                    {
+                        manualReview.Add(
+                            $"{CallbackLocation(masked, fastHandler)} uses a delegate whose MessageHandler type cannot be proven; inspect its binding manually"
+                        );
+                    }
+                    continue;
+                }
+
+                AddDelegateExpressionReplacements(masked, expression, replacementStarts);
                 if (TryGetMethodGroup(masked, rightHandSideSpan, out string methodName, out _))
                 {
                     AddMethodDeclarationReplacements(
@@ -1315,23 +1340,26 @@ namespace DxMessaging.Editor
                 {
                     return true;
                 }
-                if (
-                    TryGetMethodGroup(masked, callback, out string methodName, out _)
-                    && FindMethodDeclarations(masked, methodName, requireOverride: false)
-                        .Exists(declaration =>
-                            RefRegex.IsMatch(
-                                masked.Substring(
-                                    declaration.ParametersStart,
-                                    declaration.ParametersEnd - declaration.ParametersStart
-                                )
-                            )
-                        )
-                )
+                if (MethodGroupMayNeedMigration(masked, callback))
                 {
                     return true;
                 }
             }
             return false;
+        }
+
+        private static bool MethodGroupMayNeedMigration(string masked, TextSpan callback)
+        {
+            return TryGetMethodGroup(masked, callback, out string methodName, out _)
+                && FindMethodDeclarations(masked, methodName, requireOverride: false)
+                    .Exists(declaration =>
+                        RefRegex.IsMatch(
+                            masked.Substring(
+                                declaration.ParametersStart,
+                                declaration.ParametersEnd - declaration.ParametersStart
+                            )
+                        )
+                    );
         }
 
         private static List<Invocation> FindInvocations(
@@ -1551,6 +1579,24 @@ namespace DxMessaging.Editor
             HashSet<int> replacementStarts
         )
         {
+            if (TryGetInlineDelegateParameters(masked, invocation, out TextSpan parameters))
+            {
+                AddRefReplacements(
+                    masked,
+                    parameters.Start,
+                    parameters.Start + parameters.Length,
+                    replacementStarts
+                );
+            }
+        }
+
+        private static bool TryGetInlineDelegateParameters(
+            string masked,
+            Invocation invocation,
+            out TextSpan parameters
+        )
+        {
+            parameters = default;
             int arrow = masked.IndexOf(
                 "=>",
                 invocation.Start,
@@ -1568,32 +1614,33 @@ namespace DxMessaging.Editor
                         && IsDirectDelegatePrefix(masked, invocation.Start, parameterStart)
                     )
                     {
-                        AddRefReplacements(
-                            masked,
+                        parameters = new TextSpan(
                             parameterStart + 1,
-                            parameterEnd,
-                            replacementStarts
+                            parameterEnd - parameterStart - 1
                         );
+                        return true;
                     }
-                    return;
+                    return false;
                 }
             }
 
             int start = NextNonWhitespace(masked, invocation.Start);
             if (!StartsWithIdentifier(masked, start, "delegate"))
             {
-                return;
+                return false;
             }
             int open = NextNonWhitespace(masked, start + "delegate".Length);
             if (open < 0 || invocation.End <= open || masked[open] != '(')
             {
-                return;
+                return false;
             }
             int close = FindMatching(masked, open, '(', ')');
             if (0 <= close && close < invocation.End)
             {
-                AddRefReplacements(masked, open + 1, close, replacementStarts);
+                parameters = new TextSpan(open + 1, close - open - 1);
+                return true;
             }
+            return false;
         }
 
         private static bool IsDirectDelegatePrefix(string text, int start, int parameterStart)
@@ -1659,13 +1706,20 @@ namespace DxMessaging.Editor
                 CollectLocalFunctionShadows(masked, body, metadata);
             int owner = declaration.ParametersStart - 1;
             foreach (
-                (int callStart, List<TextSpan> arguments) in FindBaseCallArguments(
+                (int callStart, string member, List<TextSpan> arguments) in FindBaseCallArguments(
                     masked,
-                    body,
-                    methodName
+                    body
                 )
             )
             {
+                // The two contextual handlers take the same StringMessage parameter.
+                bool samePayload =
+                    member == methodName
+                    || (methodName, member)
+                        is
+                            ("HandleStringGameObjectMessage", "HandleStringComponentMessage")
+                            or
+                            ("HandleStringComponentMessage", "HandleStringGameObjectMessage");
                 for (int argumentIndex = 0; argumentIndex < arguments.Count; argumentIndex++)
                 {
                     TextSpan argument = GetArgumentValueSpan(masked, arguments[argumentIndex]);
@@ -1681,7 +1735,8 @@ namespace DxMessaging.Editor
                         masked.Substring(argument.Start, argument.Length)
                     );
                     if (
-                        forwarded.Success
+                        samePayload
+                        && forwarded.Success
                         && argument.Start == arguments[argumentIndex].Start
                         && argumentIndex < overrideParameters.Count
                         && CanRewriteBaseArgument(
@@ -1722,9 +1777,7 @@ namespace DxMessaging.Editor
                     null
                 );
                 TextSpan scope = new(0, code.Length);
-                foreach (
-                    (_, List<TextSpan> arguments) in FindBaseCallArguments(code, scope, methodName)
-                )
+                foreach ((_, _, List<TextSpan> arguments) in FindBaseCallArguments(code, scope))
                 {
                     foreach (TextSpan argument in arguments)
                     {
@@ -1742,11 +1795,11 @@ namespace DxMessaging.Editor
             }
         }
 
-        private static IEnumerable<(int CallStart, List<TextSpan> Arguments)> FindBaseCallArguments(
-            string code,
-            TextSpan scope,
-            string methodName
-        )
+        private static IEnumerable<(
+            int CallStart,
+            string Member,
+            List<TextSpan> Arguments
+        )> FindBaseCallArguments(string code, TextSpan scope)
         {
             int scopeEnd = scope.Start + scope.Length;
             foreach (Match match in BaseCallRegex.Matches(code, scope.Start))
@@ -1755,7 +1808,8 @@ namespace DxMessaging.Editor
                 {
                     break;
                 }
-                if (IdentifierValue(match.Groups["member"].Value) != methodName)
+                string member = IdentifierValue(match.Groups["member"].Value);
+                if (!ChangedOverrideNames.Contains(member))
                 {
                     continue;
                 }
@@ -1763,7 +1817,7 @@ namespace DxMessaging.Editor
                 int close = FindMatching(code, open, '(', ')');
                 if (0 <= close && close < scopeEnd)
                 {
-                    yield return (match.Index, SplitArguments(code, open + 1, close));
+                    yield return (match.Index, member, SplitArguments(code, open + 1, close));
                 }
             }
         }
@@ -1978,7 +2032,7 @@ namespace DxMessaging.Editor
                     .Select(forwarding => forwarding.Key)
             );
             manualReview.Add(
-                $"callback on line {LineNumber(masked, entry.Key)} has boundaries that depend on conditional compilation; inspect it manually"
+                $"{CallbackLocation(masked, entry.Key)} has boundaries that depend on conditional compilation; inspect it manually"
             );
             return replacementStarts.Count < remainingSignatureEdits;
         }
@@ -2093,7 +2147,7 @@ namespace DxMessaging.Editor
             int remainingSignatureEdits = replacementStarts.Count;
             replacementStarts.ExceptWith(forwardingStarts);
             manualReview.Add(
-                $"callback on line {LineNumber(masked, entry.Key)} {reason}; inspect it manually"
+                $"{CallbackLocation(masked, entry.Key)} {reason}; inspect it manually"
             );
             return replacementStarts.Count < remainingSignatureEdits;
         }
@@ -3531,21 +3585,23 @@ namespace DxMessaging.Editor
                 || value == '}';
         }
 
-        private static int LineNumber(string text, int position)
+        private static string CallbackLocation(string text, int position)
         {
             int line = 1;
+            int lineStart = 0;
             for (int index = 0; index < position; index++)
             {
                 char current = text[index];
-                if (
-                    CSharpLineTerminators.Contains(current)
-                    && (current != '\n' || index == 0 || text[index - 1] != '\r')
-                )
+                if (CSharpLineTerminators.Contains(current))
                 {
-                    line++;
+                    if (current != '\n' || index == 0 || text[index - 1] != '\r')
+                    {
+                        line++;
+                    }
+                    lineStart = index + 1;
                 }
             }
-            return line;
+            return $"callback on line {line}, column {position - lineStart + 1}";
         }
 
         private static List<TextSpan> SplitArguments(
@@ -4309,12 +4365,14 @@ namespace DxMessaging.Editor
             return char.IsLetterOrDigit(value) || value == '_';
         }
 
-        private static bool IsMessageHandlerQualified(
+        private static bool TryClassifyFastDelegateType(
             string text,
             int fastHandlerStart,
-            bool hasConditionalDirectives
+            bool hasConditionalDirectives,
+            out bool isProven
         )
         {
+            isProven = false;
             int typeEnd = fastHandlerStart + "FastHandler".Length;
             if (StartsWithIdentifier(text, typeEnd, "WithContext"))
             {
@@ -4364,12 +4422,24 @@ namespace DxMessaging.Editor
                 return false;
             }
 
+            if (HasDxMessagingCoreQualifier(text, identifierStart))
+            {
+                isProven = true;
+                return true;
+            }
+
             int handlerQualifier = PreviousNonWhitespace(text, identifierStart - 1);
-            return HasDxMessagingCoreQualifier(text, identifierStart)
-                || (
-                    handlerQualifier < 0
-                    || text[handlerQualifier] != '.' && text[handlerQualifier] != ':'
-                ) && HasNamespaceImport(text, "DxMessaging.Core", hasConditionalDirectives);
+            if (
+                (0 <= handlerQualifier && text[handlerQualifier] is '.' or ':')
+                || !HasNamespaceImport(text, "DxMessaging.Core", hasConditionalDirectives: false)
+            )
+            {
+                return false;
+            }
+
+            // A possible import identifies a review candidate but does not prove its binding.
+            isProven = !hasConditionalDirectives;
+            return true;
         }
 
         private static bool HasDxMessagingCoreQualifier(string text, int messageHandlerStart)

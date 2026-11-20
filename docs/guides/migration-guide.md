@@ -173,13 +173,14 @@ UTF-32 encoding. It also keeps line endings unchanged and checks for edits immed
 replacement. It attempts to restore every earlier write if a later write fails. If a script changes
 again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
-ambiguous receivers unchanged. It also leaves a callback unchanged when its newly readonly
-parameter is passed as a `ref` or `out` argument, except for the matching `base` call in a changed
-`MessageAwareComponent` override, which it can update safely. When a local callback forwards to the
-base override, the preview keeps the related signature and argument edits together. It defers those
+ambiguous receivers or delegate types unchanged. It defers a callback that passes its newly
+readonly parameter as a `ref` or `out` argument. It can update proven `base` calls in a changed
+`MessageAwareComponent` override. When a local callback forwards to one of the changed base
+methods, the preview keeps the related signature and argument edits together. It defers those
 edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks
 passed directly to both a handler and an interceptor in the same script. It lists these cases in the
-Console for manual review. Partial `MessageAwareComponent` declarations also require manual review
+Console for manual review. Reports for deferred callback bodies include the source line and column.
+Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
 Review project-wide callback uses. The preview skips branches it can prove inactive from literal
 conditions. It defers callbacks whose boundaries depend on unresolved branches. Inspect the diff
@@ -224,8 +225,10 @@ also see the edited value. If those handlers need the original, create the edite
 original stage and pass it explicitly to the listeners that need it.
 
 When you migrate a deferred string-handler override by hand, change its parameter from `ref` to
-`in`. If the override calls the base implementation, change the matching argument too. For example,
-use `base.HandleGlobalStringMessage(in message)`. To keep inherited string delivery, add
+`in`. Search for calls to `base.HandleStringGameObjectMessage`, `base.HandleStringComponentMessage`,
+and `base.HandleGlobalStringMessage` throughout the class, including in helper methods. Check these
+calls even when the preview converted the override. Change any remaining `ref` arguments to `in`.
+For example, use `base.HandleGlobalStringMessage(in message)`. To keep inherited string delivery, add
 `protected override bool RegisterForStringMessages => true;` if the class has no such override.
 Keep an existing opt-in, opt-out, or computed override.
 
