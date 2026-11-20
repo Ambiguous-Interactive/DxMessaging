@@ -1492,6 +1492,135 @@ sealed class Receiver : MessageAwareComponent
             Assert.That(result.ManualReviewMethods[0], Does.Contain(expectedReason));
         }
 
+        [TestCase(
+            "handler = Handle;\nvoid Handle(ref Pulse message) {\n"
+                + "#if false\n}\n#endif\nmessage = default;\n}",
+            "writes to parameter 'message'",
+            TestName = "A disabled brace does not end a named callback early"
+        )]
+        [TestCase(
+            "handler = (ref Pulse message) => {\n"
+                + "#if false\n};\n#endif\nmessage = default;\n};",
+            "writes to parameter 'message'",
+            TestName = "A disabled statement end does not end a lambda early"
+        )]
+        [TestCase(
+            "handler = (ref Pulse message) => {\n"
+                + "#if false\n}\n#elif true\nmessage = default;\n#else\n}\n#endif\n};",
+            "writes to parameter 'message'",
+            TestName = "An active elif write remains visible between disabled braces"
+        )]
+        [TestCase(
+            "handler = (ref Pulse message) => {\n"
+                + "#if false\n#if UNKNOWN\n/*\n#endif\n}\n#endif\nmessage = default;\n};",
+            "writes to parameter 'message'",
+            TestName = "Inactive nested text cannot hide a write after its directives"
+        )]
+        [TestCase(
+            "handler = Handle;\nvoid Handle(ref Pulse message) {\n"
+                + "#if UNKNOWN\n}\n#endif\nmessage = default;\n}",
+            "has boundaries that depend on conditional compilation",
+            TestName = "An unresolved branch brace defers its named callback"
+        )]
+        [TestCase(
+            "handler = (ref Pulse message) => {\n"
+                + "#if UNKNOWN\nObserve(message);\n#else\nObserve(message);\n#endif\n};",
+            "has boundaries that depend on conditional compilation",
+            TestName = "An unresolved branch inside a callback requires manual review"
+        )]
+        [TestCase(
+            "handler = (ref Pulse message) => {\n"
+                + "#if false\nmessage = default;\n#endif\nObserve(message);\n};",
+            null,
+            TestName = "A disabled write does not prevent a safe callback migration"
+        )]
+        [TestCase(
+            "handler = (ref Pulse message) => {\n"
+                + "#if true\nObserve(message);\n#else\nmessage = default;\n#endif\n};",
+            null,
+            TestName = "A disabled else write does not prevent a safe callback migration"
+        )]
+        [TestCase(
+            "handler = (ref Pulse message) => { Observe(@\"\n#if UNKNOWN\n}\n#endif\n\");"
+                + " Observe(message); };",
+            null,
+            TestName = "Conditional directive text in a verbatim string still migrates"
+        )]
+        [TestCase(
+            "handler = (ref Pulse message) => { /*\n#if UNKNOWN\n}\n#endif\n*/"
+                + " Observe(message); };",
+            null,
+            TestName = "Conditional directive text in a block comment still migrates"
+        )]
+        public void AnalyzeKeepsConditionalBranchesOutOfCallableBoundaries(
+            string callback,
+            string expectedReason
+        )
+        {
+            string source = "DxMessaging.Core.MessageHandler.FastHandler<Pulse> " + callback;
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            if (expectedReason == null)
+            {
+                Assert.That(
+                    result.UpgradedSource,
+                    Is.EqualTo(source.Replace("ref Pulse message", "in Pulse message"))
+                );
+                Assert.That(result.ReplacementCount, Is.EqualTo(1));
+                Assert.That(result.ManualReviewMethods, Is.Empty);
+                return;
+            }
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain(expectedReason));
+        }
+
+        [Test]
+        public void AnalyzeStillMigratesAfterAnUnrelatedBalancedConditional()
+        {
+            const string Source =
+                "#if UNKNOWN\nObserve(83);\n#endif\n"
+                + "DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = "
+                + "(ref Pulse message) => Observe(message);";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(Source.Replace("ref Pulse message", "in Pulse message"))
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [Test]
+        public void AnalyzeDefersAfterAnUnresolvedConditionalOpeningBrace()
+        {
+            const string Source =
+                "#if UNKNOWN\n{\n#endif\n"
+                + "DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = "
+                + "(ref Pulse message) => Observe(message);\n"
+                + "#if UNKNOWN\n}\n#endif\n";
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("has boundaries that depend on conditional compilation")
+            );
+        }
+
         private static IEnumerable<TestCaseData> SourceLineTerminatorCases()
         {
             yield return new TestCaseData("\u0085").SetName(

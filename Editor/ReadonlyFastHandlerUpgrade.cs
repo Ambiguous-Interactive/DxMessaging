@@ -358,7 +358,8 @@ namespace DxMessaging.Editor
             }
 
             List<TextSpan> interpolatedExpressions = new();
-            string masked = MaskNonCode(source, interpolatedExpressions);
+            List<TextSpan> uncertainBranches = new();
+            string masked = MaskNonCode(source, interpolatedExpressions, uncertainBranches);
             interpolatedExpressions.Sort(static (left, right) => left.Start.CompareTo(right.Start));
             HashSet<int> replacementStarts = new();
             SortedSet<string> manualReview = new(StringComparer.Ordinal);
@@ -440,6 +441,7 @@ namespace DxMessaging.Editor
                 source,
                 masked,
                 interpolatedExpressions,
+                uncertainBranches,
                 replacementStarts,
                 baseForwardingOwners,
                 manualReview
@@ -1141,7 +1143,7 @@ namespace DxMessaging.Editor
             if (
                 Regex.IsMatch(
                     masked,
-                    @"^[ \t]*#(?:if|elif|else|endif)\b",
+                    @"^[ \t]*#[ \t]*(?:if|elif|else|endif)\b",
                     RegexOptions.CultureInvariant | RegexOptions.Multiline
                 )
             )
@@ -1841,6 +1843,7 @@ namespace DxMessaging.Editor
             string source,
             string masked,
             List<TextSpan> interpolatedExpressions,
+            List<TextSpan> uncertainBranches,
             HashSet<int> replacementStarts,
             Dictionary<int, int> baseForwardingOwners,
             SortedSet<string> manualReview
@@ -1883,17 +1886,71 @@ namespace DxMessaging.Editor
                     )
                 )
                 {
-                    removedBaseForwarding |= PruneCallback(
-                        source,
+                    removedBaseForwarding |= PruneConditionalCallback(
                         masked,
-                        interpolatedExpressions,
+                        uncertainBranches,
                         replacementStarts,
                         baseForwardingOwners,
                         manualReview,
                         entry
-                    );
+                    )
+                        ?? PruneCallback(
+                            source,
+                            masked,
+                            interpolatedExpressions,
+                            replacementStarts,
+                            baseForwardingOwners,
+                            manualReview,
+                            entry
+                        );
                 }
             } while (removedBaseForwarding);
+        }
+
+        private static bool? PruneConditionalCallback(
+            string masked,
+            List<TextSpan> uncertainBranches,
+            HashSet<int> replacementStarts,
+            Dictionary<int, int> baseForwardingOwners,
+            SortedSet<string> manualReview,
+            KeyValuePair<int, List<int>> entry
+        )
+        {
+            if (uncertainBranches.Count == 0)
+            {
+                return null;
+            }
+
+            int close = FindMatching(masked, entry.Key, '(', ')');
+            TextSpan body = default;
+            bool hasBody = 0 <= close && TryFindCallableBody(masked, close, out body);
+            int end = hasBody ? body.Start + body.Length : masked.Length;
+            if (
+                !uncertainBranches.Exists(branch =>
+                    entry.Key < branch.Start + branch.Length && branch.Start <= end
+                )
+            )
+            {
+                return null;
+            }
+
+            replacementStarts.ExceptWith(entry.Value);
+            int remainingSignatureEdits = replacementStarts.Count;
+            replacementStarts.ExceptWith(
+                baseForwardingOwners
+                    .Where(forwarding =>
+                        forwarding.Value == entry.Key
+                        || (
+                            body.Start <= forwarding.Key
+                            && forwarding.Key < body.Start + body.Length
+                        )
+                    )
+                    .Select(forwarding => forwarding.Key)
+            );
+            manualReview.Add(
+                $"callback on line {LineNumber(masked, entry.Key)} has boundaries that depend on conditional compilation; inspect it manually"
+            );
+            return replacementStarts.Count < remainingSignatureEdits;
         }
 
         private static bool PruneCallback(
@@ -3550,14 +3607,40 @@ namespace DxMessaging.Editor
             return -1;
         }
 
-        private static string MaskNonCode(string source, List<TextSpan> interpolatedExpressions)
+        private static string MaskNonCode(
+            string source,
+            List<TextSpan> interpolatedExpressions,
+            List<TextSpan> uncertainBranches = null
+        )
         {
             char[] masked = source.ToCharArray();
+            ConditionalMask conditional = uncertainBranches == null ? null : new(uncertainBranches);
             for (int index = 0; index < source.Length; )
             {
+                if (
+                    conditional != null
+                    && source[index] == '#'
+                    && IsDirectiveStart(source.AsSpan(), index)
+                )
+                {
+                    index = MaskDirective(source, masked, index, conditional);
+                    continue;
+                }
+
+                if (conditional?.State == BranchState.Inactive)
+                {
+                    Mask(masked, index, index + 1);
+                    index++;
+                    continue;
+                }
+
                 int end = FindNonCodeEnd(source, index, interpolatedExpressions);
                 if (index < end)
                 {
+                    if (conditional?.State == BranchState.Uncertain)
+                    {
+                        conditional.ObserveMaskedToken(source.AsSpan(index, end - index));
+                    }
                     Mask(masked, index, end);
                     index = end;
                 }
@@ -3566,7 +3649,231 @@ namespace DxMessaging.Editor
                     index++;
                 }
             }
+            conditional?.Complete(masked);
             return new string(masked);
+        }
+
+        private static int MaskDirective(
+            string source,
+            char[] masked,
+            int index,
+            ConditionalMask conditional
+        )
+        {
+            int lineEnd = FindDirectiveLineEnd(source.AsSpan(), index);
+            int keywordStart = NextNonWhitespace(source, index + 1);
+            if (keywordStart < 0 || lineEnd <= keywordStart)
+            {
+                Mask(masked, index, lineEnd);
+                return lineEnd;
+            }
+            int keywordEnd = keywordStart;
+            while (keywordEnd < lineEnd && IsIdentifierPart(source[keywordEnd]))
+            {
+                keywordEnd++;
+            }
+
+            string keyword = source.Substring(keywordStart, keywordEnd - keywordStart);
+            if (keyword is "if" or "elif" or "else" or "endif")
+            {
+                conditional.Visit(keyword, source.AsSpan(keywordEnd, lineEnd - keywordEnd), index);
+                // Keep directive names visible to the existing namespace and scope safeguards.
+                Mask(masked, keywordEnd, lineEnd);
+            }
+            else
+            {
+                Mask(masked, index, lineEnd);
+            }
+            return lineEnd;
+        }
+
+        private static bool IsDirectiveStart(ReadOnlySpan<char> source, int index)
+        {
+            for (int prior = index - 1; 0 <= prior; prior--)
+            {
+                if (CSharpLineTerminators.Contains(source[prior]))
+                {
+                    return true;
+                }
+                if (!char.IsWhiteSpace(source[prior]))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static int FindDirectiveLineEnd(ReadOnlySpan<char> source, int start)
+        {
+            int lineEnd = source.Slice(start).IndexOfAny(CSharpLineTerminators.AsSpan());
+            return lineEnd < 0 ? source.Length : start + lineEnd;
+        }
+
+        private enum BranchState
+        {
+            Active,
+            Inactive,
+            Uncertain,
+        }
+
+        private sealed class ConditionalMask
+        {
+            private readonly Stack<(int Start, BranchState Outer, BranchState Remaining)> _scopes =
+                new();
+            private readonly List<TextSpan> _uncertainBranches;
+            private int _uncertainTail = int.MaxValue;
+
+            public ConditionalMask(List<TextSpan> uncertainBranches)
+            {
+                _uncertainBranches = uncertainBranches;
+            }
+
+            public BranchState State { get; private set; } = BranchState.Active;
+
+            public void Visit(string keyword, ReadOnlySpan<char> condition, int start)
+            {
+                BranchState outer = State;
+                BranchState remaining = outer;
+                if (keyword != "if")
+                {
+                    if (_scopes.Count == 0)
+                    {
+                        _uncertainTail = Math.Min(_uncertainTail, start);
+                        return;
+                    }
+                    (int Start, BranchState Outer, BranchState Remaining) scope = _scopes.Pop();
+                    outer = scope.Outer;
+                    remaining = scope.Remaining;
+                    RecordBranch(scope.Start, start);
+                }
+
+                if (keyword == "endif")
+                {
+                    State = outer;
+                    return;
+                }
+
+                BranchState selected =
+                    keyword == "else" ? BranchState.Active : ReadCondition(condition);
+                BranchState unselected = selected switch
+                {
+                    BranchState.Active => BranchState.Inactive,
+                    BranchState.Inactive => BranchState.Active,
+                    _ => BranchState.Uncertain,
+                };
+                _scopes.Push((start, outer, Intersect(remaining, unselected)));
+                State = Intersect(remaining, selected);
+            }
+
+            public void ObserveMaskedToken(ReadOnlySpan<char> token)
+            {
+                if (
+                    0 <= token.IndexOf('#')
+                    && 0 <= token.IndexOfAny(CSharpLineTerminators.AsSpan())
+                )
+                {
+                    // In another branch this token may be disabled text containing live directives.
+                    _uncertainTail = Math.Min(_uncertainTail, _scopes.Peek().Start);
+                }
+            }
+
+            public void Complete(char[] masked)
+            {
+                while (0 < _scopes.Count)
+                {
+                    (int start, BranchState outer, _) = _scopes.Pop();
+                    RecordBranch(start, masked.Length);
+                    State = outer;
+                }
+                foreach (
+                    TextSpan branch in _uncertainBranches.Where(branch =>
+                        !IsContainedBranch(masked, branch)
+                    )
+                )
+                {
+                    _uncertainTail = Math.Min(_uncertainTail, branch.Start);
+                }
+                if (_uncertainTail < masked.Length)
+                {
+                    _uncertainBranches.Add(
+                        new TextSpan(_uncertainTail, masked.Length - _uncertainTail)
+                    );
+                }
+            }
+
+            private void RecordBranch(int start, int end)
+            {
+                if (State == BranchState.Uncertain)
+                {
+                    _uncertainBranches.Add(new TextSpan(start, end - start));
+                }
+            }
+
+            private static BranchState ReadCondition(ReadOnlySpan<char> condition)
+            {
+                int comment = condition.IndexOf("//".AsSpan(), StringComparison.Ordinal);
+                ReadOnlySpan<char> expression = (
+                    comment < 0 ? condition : condition.Slice(0, comment)
+                ).Trim();
+                if (expression.SequenceEqual("true".AsSpan()))
+                {
+                    return BranchState.Active;
+                }
+                return expression.SequenceEqual("false".AsSpan())
+                    ? BranchState.Inactive
+                    : BranchState.Uncertain;
+            }
+
+            private static BranchState Intersect(BranchState available, BranchState branch)
+            {
+                if (available == BranchState.Inactive || branch == BranchState.Inactive)
+                {
+                    return BranchState.Inactive;
+                }
+                return available == BranchState.Active ? branch : BranchState.Uncertain;
+            }
+
+            private static bool IsContainedBranch(ReadOnlySpan<char> masked, TextSpan branch)
+            {
+                int end = branch.Start + branch.Length;
+                Stack<char> delimiters = new();
+                char last = '\0';
+                for (int index = branch.Start; index < end; index++)
+                {
+                    char value = masked[index];
+                    if (value == '#' && IsDirectiveStart(masked, index))
+                    {
+                        index = FindDirectiveLineEnd(masked, index) - 1;
+                        continue;
+                    }
+                    if (char.IsWhiteSpace(value))
+                    {
+                        continue;
+                    }
+
+                    last = value;
+                    char expected = value switch
+                    {
+                        '(' => ')',
+                        '[' => ']',
+                        '{' => '}',
+                        _ => '\0',
+                    };
+                    if (expected != '\0')
+                    {
+                        delimiters.Push(expected);
+                    }
+                    if (
+                        value is ')' or ']' or '}'
+                        && (delimiters.Count == 0 || delimiters.Pop() != value)
+                    )
+                    {
+                        return false;
+                    }
+                }
+
+                return delimiters.Count == 0 && last is '\0' or ';' or '}';
+            }
         }
 
         private static int FindNonCodeEnd(
