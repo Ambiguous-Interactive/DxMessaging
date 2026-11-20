@@ -185,8 +185,9 @@ Console for manual review. Reports for deferred callback bodies include the sour
 Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
 Review project-wide callback uses. The preview skips branches it can prove inactive from literal
-conditions. It defers callbacks whose boundaries depend on unresolved branches. Inspect the diff
-and let Unity compile before committing the migration.
+conditions. It defers callbacks whose boundaries or method-group bindings depend on unresolved
+branches. Check those callbacks in each build configuration. Inspect the diff and let Unity
+compile before committing the migration.
 
 The preview defers assignments, compound assignments, and increment or decrement operations on a
 callback parameter, a direct indexer such as `message[0]`, or a member chain such as
@@ -212,7 +213,8 @@ The preview flags calls such as `message.Increment()` and `message.Child.Increme
 `in` parameter can cause a mutable struct method to run on a defensive copy. The preview also flags
 direct enumeration such as `foreach (var item in message)` and direct pinning such as
 `fixed (int* pointer = message)`. A mutable struct method can supply the enumerator or the
-reference to pin. The text scan checks calls, writes, and `ref` or `out` arguments in regular,
+reference to pin. A query that uses the message directly as a source can also call instance methods.
+The text scan checks calls, writes, and `ref` or `out` arguments in regular,
 verbatim, and C# 11 raw interpolations.
 The scan ignores literal text and format specifiers. It can flag read-only calls, class members,
 initializer members that share the parameter's name, calls through delegate fields, and readonly

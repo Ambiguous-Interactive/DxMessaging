@@ -1755,6 +1755,12 @@ sealed class Receiver : MessageAwareComponent
         )]
         [TestCase(
             "FastHandler<Pulse>",
+            "delegate(ref Pulse message) { Run((int item) => Read(item)); Read(message); }",
+            1,
+            TestName = "A conditionally bound anonymous fast delegate with a nested lambda requires review"
+        )]
+        [TestCase(
+            "FastHandler<Pulse>",
             "Forward",
             1,
             TestName = "A conditionally bound fast method group requires review"
@@ -1786,6 +1792,8 @@ sealed class Receiver : MessageAwareComponent
     void SetUp() { MessageHandler.TYPE handler = INITIALIZER; }
     static void Forward(ref Pulse message) => Read(message);
     static void Read(Pulse message) { }
+    static void Read(int item) { }
+    static void Run(System.Action<int> action) { }
 }".Replace("TYPE", delegateType).Replace("INITIALIZER", initializer);
 
             ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
@@ -1798,6 +1806,131 @@ sealed class Receiver : MessageAwareComponent
             Assert.That(
                 result.ManualReviewMethods,
                 Has.All.Contains("MessageHandler type cannot be proven")
+            );
+        }
+
+        [TestCase(
+            "USE_DX",
+            "handler",
+            TestName = "Conditional delegate use defers a shared method group"
+        )]
+        [TestCase(
+            "USE_DX",
+            "registration",
+            TestName = "Conditional registration defers a shared method group"
+        )]
+        [TestCase(
+            "USE_DX",
+            "both",
+            TestName = "An unconditional proposal does not override a conditional method group"
+        )]
+        [TestCase(
+            "true",
+            "handler",
+            TestName = "A literal branch still migrates a package-only method group"
+        )]
+        [TestCase(
+            "true",
+            "registration",
+            TestName = "A literal branch still migrates a package-only registration"
+        )]
+        public void AnalyzeChecksMethodGroupUseAcrossConfigurations(string condition, string use)
+        {
+            const string Handler = "global::DxMessaging.Core.MessageHandler.FastHandler<Pulse>";
+            string primary =
+                use == "registration"
+                    ? "token.RegisterUntargeted<Pulse>(Forward);"
+                    : Handler + " selected = Forward;";
+            string additional = use == "both" ? Handler + " shared = Forward;" : "";
+            string source = @"
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    void SetUp()
+    {
+#if CONDITION
+        PRIMARY
+#else
+        Vendor.Callback other = Forward;
+#endif
+        ADDITIONAL
+    }
+    static void Forward(ref Pulse message) => Read(message);
+    static void Read(Pulse message) { }
+}".Replace("CONDITION", condition).Replace("PRIMARY", primary).Replace("ADDITIONAL", additional);
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            if (condition == "true")
+            {
+                Assert.That(result.ReplacementCount, Is.EqualTo(1));
+                Assert.That(
+                    result.UpgradedSource,
+                    Is.EqualTo(source.Replace("ref Pulse", "in Pulse"))
+                );
+                Assert.That(result.ManualReviewMethods, Is.Empty);
+                return;
+            }
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("conditional callback binding")
+            );
+        }
+
+        // cspell:ignore oken
+        [TestCase("Vendor.CustomToken", "@token", "token", false)]
+        [TestCase("Vendor.CustomToken", @"\u0074oken", "token", false)]
+        [TestCase("Vendor.CustomToken", "token", "@token", false)]
+        [TestCase("Vendor.CustomToken", "token", @"\u0074oken", false)]
+        [TestCase("Vendor.CustomToken?", "@token", "token", false)]
+        [TestCase("global::DxMessaging.Core.MessageRegistrationToken", "@token", "token", true)]
+        [TestCase(
+            "global::DxMessaging.Core.MessageRegistrationToken",
+            @"\u0074oken",
+            @"\u0074oken",
+            true
+        )]
+        public void AnalyzeMatchesReceiverIdentifiersByValue(
+            string alternativeType,
+            string alternativeSpelling,
+            string receiver,
+            bool migrate
+        )
+        {
+            string source = @"
+class Receiver
+{
+#if USE_DX
+    global::DxMessaging.Core.MessageRegistrationToken token;
+#else
+    ALTERNATIVE_TYPE ALTERNATIVE_SPELLING;
+#endif
+    void SetUp()
+    {
+        RECEIVER.RegisterUntargeted<Pulse>((ref Pulse message) => Read(message));
+    }
+    static void Read(Pulse message) { }
+}".Replace("ALTERNATIVE_TYPE", alternativeType).Replace(
+                "ALTERNATIVE_SPELLING",
+                alternativeSpelling
+            ).Replace("RECEIVER", receiver);
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("receiver whose MessageRegistrationToken type cannot be proven")
             );
         }
 
@@ -3248,6 +3381,60 @@ token.RegisterUntargeted<Pulse>(
             Assert.That(result.UpgradedSource, Is.EqualTo(expected));
             Assert.That(result.ReplacementCount, Is.EqualTo(1));
             Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [TestCase("Observe(from item in message select item + 1)", true)]
+        [TestCase("Observe(from int item in (message) select item + 1)", true)]
+        [TestCase(
+            "Observe(from item in outer join int other in (message) on item equals other select item)",
+            true
+        )]
+        [TestCase(
+            "Observe(from item in outer join other in message on item equals other select item)",
+            false
+        )]
+        [TestCase("Pulse copy = message; Observe(from item in copy select item + 1)", false)]
+        [TestCase("Observe(from item in Items(message) select item + 1)", false)]
+        public void AnalyzeChecksQuerySourceReceiver(string statement, bool requiresReview)
+        {
+            string source =
+                "global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> callback = "
+                + "(ref Pulse message) => { "
+                + statement
+                + "; };";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(requiresReview ? 0 : 1));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(requiresReview ? source : source.Replace("ref Pulse", "in Pulse"))
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(requiresReview ? 1 : 0));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("invokes a method on parameter")
+            );
+        }
+
+        [TestCase("subject is Dictionary<int, string> && message.Next > 0", true)]
+        [TestCase("subject is global::Boxes.Dictionary<int, string> || message.Next > 0", true)]
+        [TestCase("subject is Dictionary<int, string> match && message.Next > 0", true)]
+        [TestCase("subject is not Dictionary<int, string> && message.Next > 0", true)]
+        [TestCase("subject is Dictionary<int, string> && Read(message)", false)]
+        public void AnalyzeKeepsGenericTypePatternInsideCallback(
+            string expression,
+            bool requiresReview
+        )
+        {
+            string source = @"
+global::DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterUntargeted<Pulse>(OnPulse);
+void OnPulse(ref Pulse message) => sink = EXPRESSION;".Replace("EXPRESSION", expression);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            AssertComparisonBoundary(result, source, "OnPulse(ref Pulse message)", requiresReview);
         }
 
         [Test]
