@@ -201,8 +201,10 @@ tuple deconstruction, including bodies of `if`, `else`, `while`, `for`, `foreach
 `do` without braces.
 
 The preview flags calls such as `message.Increment()` and `message.Child.Increment()` because an
-`in` parameter can cause a mutable struct method to run on a defensive copy. The text scan checks
-these calls, writes, and `ref` or `out` arguments in regular, verbatim, and C# 11 raw interpolations.
+`in` parameter can cause a mutable struct method to run on a defensive copy. The preview also flags
+direct enumeration such as `foreach (var item in message)`, where `GetEnumerator()` can mutate a
+struct receiver. The text scan checks calls, writes, and `ref` or `out` arguments in regular,
+verbatim, and C# 11 raw interpolations.
 The scan ignores literal text and format specifiers. It can flag read-only calls, class members,
 initializer members that share the parameter's name, calls through delegate fields, and readonly
 aliases to nested members. The preview scopes parameters of simple, explicitly typed local
