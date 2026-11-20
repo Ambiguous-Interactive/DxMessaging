@@ -181,8 +181,9 @@ edits if a direct call still needs the local callback's `ref` signature. The too
 passed directly to both a handler and an interceptor in the same script. It lists these cases in the
 Console for manual review. Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
-Review project-wide callback uses and conditional compilation. Inspect the diff and let Unity
-compile before committing the migration.
+Review project-wide callback uses. The preview skips branches it can prove inactive from literal
+conditions. It defers callbacks whose boundaries depend on unresolved branches. Inspect the diff
+and let Unity compile before committing the migration.
 
 The preview defers assignments, compound assignments, and increment or decrement operations on a
 callback parameter, a direct indexer such as `message[0]`, or a member chain such as
