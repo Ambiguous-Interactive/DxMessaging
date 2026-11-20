@@ -233,9 +233,12 @@ writable data. Then change the override parameter from `ref` to `in`.
 Search for calls to `base.HandleStringGameObjectMessage`, `base.HandleStringComponentMessage`,
 and `base.HandleGlobalStringMessage` throughout the class, including in helper methods. Check these
 calls even when the preview converted the override. Change any remaining `ref` arguments to `in`.
-For example, use `base.HandleGlobalStringMessage(in message)`. To keep inherited string delivery, add
-`protected override bool RegisterForStringMessages => true;` if the class has no such override.
-Keep an existing opt-in, opt-out, or computed override.
+For example, use `base.HandleGlobalStringMessage(in message)`.
+
+Check `RegisterForStringMessages` in each build configuration. Preserve explicit opt-ins, opt-outs,
+and computed overrides where they exist. Add `protected override bool RegisterForStringMessages => true;`
+only in configurations that previously relied on the inherited 3.x default. The preview flags
+conditional properties for manual review.
 
 If a local function serves as a `FastHandler` and also has direct calls, update its signature and
 those calls together. For example, change `Forward(ref copy)` to `Forward(in copy)` when the call

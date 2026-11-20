@@ -817,8 +817,22 @@ namespace DxMessaging.Editor
                     {
                         continue;
                     }
-                    if (TypeScopeDeclaresStringHandlerOptIn(masked, typeStart))
+                    if (
+                        TypeScopeDeclaresStringHandlerOptIn(
+                            masked,
+                            typeStart,
+                            metadata,
+                            out bool requiresConfigurationReview
+                        )
+                    )
                     {
+                        if (requiresConfigurationReview)
+                        {
+                            manualReview.Add(
+                                $"{CallbackLocation(masked, declaration.ParametersStart - 1)} has a conditional "
+                                    + "RegisterForStringMessages override; check the inherited setting in each build configuration"
+                            );
+                        }
                         continue;
                     }
                     if (TypeScopeIsPartial(masked, typeStart))
@@ -865,24 +879,52 @@ namespace DxMessaging.Editor
             return false;
         }
 
-        private static bool TypeScopeDeclaresStringHandlerOptIn(string masked, int typeStart)
+        private static bool TypeScopeDeclaresStringHandlerOptIn(
+            string masked,
+            int typeStart,
+            SourceMetadata metadata,
+            out bool requiresConfigurationReview
+        )
         {
+            requiresConfigurationReview = false;
             Regex memberRegex = new(
-                @"\boverride\s+(?:(?:global::)?System\s*\.\s*)?(?:Boolean|bool)\s+RegisterForStringMessages\b",
-                RegexOptions.CultureInvariant
+                @"\boverride\s+(?:(?:global::)?System\s*\.\s*)?(?:Boolean|bool)\s+(?<name>"
+                    + IdentifierSpellingPattern
+                    + ")",
+                RegexOptions.CultureInvariant,
+                TimeSpan.FromSeconds(1)
             );
-            foreach (Match match in memberRegex.Matches(masked, typeStart + 1))
+            int typeEnd = FindMatching(masked, typeStart, '{', '}');
+            if (typeEnd < 0)
             {
-                if (FindContainingTypeStart(masked, match.Index) == typeStart)
+                return false;
+            }
+            for (
+                Match match = memberRegex.Match(masked, typeStart + 1, typeEnd - typeStart - 1);
+                match.Success;
+                match = match.NextMatch()
+            )
+            {
+                if (
+                    IdentifierValue(match.Groups["name"].Value) != "RegisterForStringMessages"
+                    || FindContainingTypeStart(masked, match.Index) != typeStart
+                )
                 {
+                    continue;
+                }
+                if (
+                    !metadata.UncertainBranches.Exists(branch =>
+                        branch.Start < match.Index + match.Length
+                        && match.Index < branch.Start + branch.Length
+                    )
+                )
+                {
+                    requiresConfigurationReview = false;
                     return true;
                 }
-                if (FindMatching(masked, typeStart, '{', '}') < match.Index)
-                {
-                    break;
-                }
+                requiresConfigurationReview = true;
             }
-            return false;
+            return requiresConfigurationReview;
         }
 
         private static bool TypeScopeIsPartial(string masked, int typeStart)
@@ -1295,30 +1337,41 @@ namespace DxMessaging.Editor
             {
                 return false;
             }
+            bool hasDeclaration = false;
             foreach (Match match in declaration.Matches(masked))
             {
-                if (FindContainingTypeStart(masked, match.Index) == usageScope)
+                if (FindContainingTypeStart(masked, match.Index) != usageScope)
                 {
-                    if (match.Groups["qualified"].Success)
-                    {
-                        return IsRootTypeQualifier(masked, match.Groups["qualified"].Index)
-                            && (
-                                match.Groups["global"].Success
-                                || !metadata.HasDxMessagingAlias(masked)
-                            );
-                    }
+                    continue;
+                }
+                Group qualified = match.Groups["qualified"];
+                bool isProven;
+                if (qualified.Success)
+                {
+                    isProven =
+                        IsRootTypeQualifier(masked, qualified.Index)
+                        && (
+                            match.Groups["global"].Success || !metadata.HasDxMessagingAlias(masked)
+                        );
+                }
+                else
+                {
                     int typePrefix = PreviousNonWhitespace(masked, match.Index - 1);
-                    return (
-                            typePrefix < 0 || masked[typePrefix] != '.' && masked[typePrefix] != ':'
-                        )
+                    isProven =
+                        (typePrefix < 0 || masked[typePrefix] != '.' && masked[typePrefix] != ':')
                         && HasNamespaceImport(
                             masked,
                             "DxMessaging.Core",
                             metadata.HasConditionalDirectives
                         );
                 }
+                if (!isProven)
+                {
+                    return false;
+                }
+                hasDeclaration = true;
             }
-            return false;
+            return hasDeclaration;
         }
 
         private static bool InvocationMayNeedMigration(string masked, Invocation invocation)
@@ -1653,7 +1706,7 @@ namespace DxMessaging.Editor
             HashSet<int> replacementStarts
         )
         {
-            foreach (TextSpan parameter in SplitArguments(text, start, end))
+            foreach (TextSpan parameter in SplitParameters(text, start, end))
             {
                 int modifier = FindRefParameterModifier(text, parameter);
                 if (0 <= modifier)
@@ -1664,7 +1717,7 @@ namespace DxMessaging.Editor
         }
 
         private static bool HasRefParameter(string text, int start, int end) =>
-            SplitArguments(text, start, end)
+            SplitParameters(text, start, end)
                 .Exists(parameter => 0 <= FindRefParameterModifier(text, parameter));
 
         private static int FindRefParameterModifier(string text, TextSpan parameter)
@@ -1727,7 +1780,7 @@ namespace DxMessaging.Editor
                 return;
             }
 
-            List<TextSpan> overrideParameters = SplitArguments(
+            List<TextSpan> overrideParameters = SplitParameters(
                 masked,
                 declaration.ParametersStart,
                 declaration.ParametersEnd
@@ -1897,7 +1950,7 @@ namespace DxMessaging.Editor
             string expectedType = GetDeclaredRefType(masked, overrideParameter);
             HashSet<int> requiredReplacements = existingNameMatch ? null : replacementStarts;
             return expectedType != null
-                && SplitArguments(masked, local.Start + 1, close)
+                && SplitParameters(masked, local.Start + 1, close)
                     .Any(parameter =>
                         GetDeclaredRefType(masked, parameter, argumentName, requiredReplacements)
                         == expectedType
@@ -2333,7 +2386,10 @@ namespace DxMessaging.Editor
             )
             {
                 int before = PreviousNonWhitespace(masked, function.Index - 1);
-                if (body.Start <= before && "{;}:".IndexOf(masked[before]) < 0)
+                if (
+                    StartsWithIdentifier(masked, function.Index, "new")
+                    || (body.Start <= before && "{;}:".IndexOf(masked[before]) < 0)
+                )
                 {
                     continue;
                 }
@@ -2360,7 +2416,7 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
-                foreach (TextSpan parameter in SplitArguments(masked, open + 1, close))
+                foreach (TextSpan parameter in SplitParameters(masked, open + 1, close))
                 {
                     Match declared = LocalFunctionParameterRegex.Match(
                         masked,
@@ -3407,7 +3463,7 @@ namespace DxMessaging.Editor
         private static HashSet<string> GetRefParameterNames(string text, int start, int end)
         {
             HashSet<string> names = new(StringComparer.Ordinal);
-            foreach (TextSpan parameter in SplitArguments(text, start, end))
+            foreach (TextSpan parameter in SplitParameters(text, start, end))
             {
                 if (FindRefParameterModifier(text, parameter) < 0)
                 {
@@ -3430,7 +3486,7 @@ namespace DxMessaging.Editor
             int modifierStart
         )
         {
-            foreach (TextSpan parameter in SplitArguments(text, parametersStart, parametersEnd))
+            foreach (TextSpan parameter in SplitParameters(text, parametersStart, parametersEnd))
             {
                 if (
                     modifierStart < parameter.Start
@@ -3663,6 +3719,9 @@ namespace DxMessaging.Editor
             }
             return $"callback on line {line}, column {position - lineStart + 1}";
         }
+
+        private static List<TextSpan> SplitParameters(string text, int start, int end) =>
+            SplitArguments(text, start, end, ignoreNestedAngles: true);
 
         private static List<TextSpan> SplitArguments(
             string text,

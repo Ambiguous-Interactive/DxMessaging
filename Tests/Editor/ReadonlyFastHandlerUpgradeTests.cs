@@ -2048,6 +2048,216 @@ sealed class Receiver : MessageAwareComponent
             }
         }
 
+        [TestCase(
+            "#if ACTIVE",
+            "",
+            "RegisterForStringMessages",
+            0,
+            1,
+            TestName = "A conditional string opt-out needs configuration review"
+        )]
+        [TestCase(
+            "#if true",
+            "",
+            "RegisterForStringMessages",
+            0,
+            0,
+            TestName = "A known active string opt-out stays in place"
+        )]
+        [TestCase(
+            "#if false",
+            "",
+            "RegisterForStringMessages",
+            1,
+            0,
+            TestName = "A known inactive string opt-out still needs an opt-in"
+        )]
+        [TestCase(
+            "#if ACTIVE",
+            "#else\n    protected override bool RegisterForStringMessages => true;\n",
+            "RegisterForStringMessages",
+            0,
+            1,
+            TestName = "Conditional string properties stay intact for configuration review"
+        )]
+        [TestCase(
+            "",
+            "",
+            "RegisterForStringMessages",
+            0,
+            0,
+            TestName = "An unconditional string opt-out stays in place"
+        )]
+        [TestCase(
+            "",
+            "",
+            "@RegisterForStringMessages",
+            0,
+            0,
+            TestName = "An escaped string opt-out stays in place"
+        )]
+        [TestCase(
+            "#if ACTIVE",
+            "",
+            "\\u0052egisterForStringMessages",
+            0,
+            1,
+            TestName = "An escaped conditional string opt-out needs configuration review"
+        )]
+        public void AnalyzeReviewsConditionalStringHandlerProperties(
+            string directive,
+            string alternate,
+            string propertyName,
+            int expectedOptIns,
+            int expectedReviews
+        )
+        {
+            string optOut = $"    protected override bool {propertyName} => false;\n";
+            string property =
+                directive.Length == 0 ? optOut : directive + "\n" + optOut + alternate + "#endif\n";
+            string source =
+                "class Receiver : global::DxMessaging.Unity.MessageAwareComponent\n{\n"
+                + property
+                + "    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }\n"
+                + "}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(expectedOptIns));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(expectedReviews));
+            Assert.That(result.UpgradedSource, Does.Contain(property));
+            if (0 < expectedReviews)
+            {
+                Assert.That(
+                    result.ManualReviewMethods,
+                    Has.All.Contains("each build configuration")
+                );
+            }
+        }
+
+        [TestCase(
+            "DxMessaging.Core",
+            "Vendor",
+            true,
+            TestName = "A vendor receiver in the alternate branch requires review"
+        )]
+        [TestCase(
+            "Vendor",
+            "DxMessaging.Core",
+            true,
+            TestName = "A vendor receiver in the first branch requires review"
+        )]
+        [TestCase(
+            "DxMessaging.Core",
+            "DxMessaging.Core",
+            false,
+            TestName = "The same proven receiver type in both branches still migrates"
+        )]
+        [TestCase(
+            "DxMessaging.Core",
+            "",
+            false,
+            TestName = "An unconditional global receiver still migrates"
+        )]
+        public void AnalyzeChecksAllFeasibleReceiverDeclarations(
+            string primary,
+            string alternate,
+            bool requiresReview
+        )
+        {
+            string declaration = "    global::" + primary + ".MessageRegistrationToken token;\n";
+            string fields =
+                alternate.Length == 0
+                    ? declaration
+                    : "#if ACTIVE\n"
+                        + declaration
+                        + "#else\n    global::"
+                        + alternate
+                        + ".MessageRegistrationToken token;\n#endif\n";
+            string source =
+                "class Receiver\n{\n"
+                + fields
+                + "    void Register() => token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(message));\n}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(requiresReview ? 0 : 1));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(requiresReview ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(requiresReview ? source : source.Replace("ref Pulse", "in Pulse"))
+            );
+        }
+
+        [TestCase(
+            "[Mark(1 < 2)]",
+            TestName = "An attribute comparison leaves both callback parameters visible"
+        )]
+        [TestCase(
+            "[Mark(typeof(Dictionary<string, int>), 1 < 2)]",
+            TestName = "Generic attribute arguments leave both callback parameters visible"
+        )]
+        [TestCase("[Mark(true)]", TestName = "An ordinary parameter attribute still migrates")]
+        public void AnalyzeKeepsAttributeAnglesOutOfParameterSplitting(string attribute)
+        {
+            string source =
+                "DxMessaging.Core.MessageHandler.FastHandlerWithContext<Pulse> handler = Handle;\n"
+                + "void Handle("
+                + attribute
+                + " ref InstanceId source, ref Pulse message) { }";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(2));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+            Assert.That(result.UpgradedSource, Is.EqualTo(source.Replace("ref ", "in ")));
+        }
+
+        [TestCase(
+            "new Holder(ref message) { Value = 1 };",
+            true,
+            TestName = "An initializer can take a writable reference to a callback parameter"
+        )]
+        [TestCase(
+            "Pulse copy = message; new Holder(ref copy) { Value = 1 };",
+            false,
+            TestName = "An initializer can take a reference to an independent copy"
+        )]
+        [TestCase(
+            "void Forward(ref Pulse message) { message.Value++; } Observe(message);",
+            false,
+            TestName = "A real local function still shadows the outer parameter"
+        )]
+        public void AnalyzeDistinguishesWritableInitializersFromLocalFunctions(
+            string body,
+            bool requiresReview
+        )
+        {
+            const string Parameter = "(ref Pulse message) =>";
+            string source =
+                "DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = "
+                + Parameter
+                + " { "
+                + body
+                + " };";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(requiresReview ? 0 : 1));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(requiresReview ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(
+                    requiresReview ? source : source.Replace(Parameter, "(in Pulse message) =>")
+                )
+            );
+        }
+
         private static IEnumerable<TestCaseData> SourceLineTerminatorCases()
         {
             yield return new TestCaseData("\u0085").SetName(
@@ -2532,10 +2742,10 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             "HandleStringComponentMessage",
             "StringMessage",
             "PAYLOAD copy = outer;\n        if (true) {\n"
-                + "            void Forward(int source, ref PAYLOAD forwarded) => base.HANDLER(ref forwarded);\n"
-                + "            DxMessaging.Core.MessageHandler.FastHandlerWithContext<int, PAYLOAD> handler = Forward;\n"
+                + "            void Forward(ref InstanceId source, ref PAYLOAD forwarded) => base.HANDLER(ref forwarded);\n"
+                + "            DxMessaging.Core.MessageHandler.FastHandlerWithContext<PAYLOAD> handler = Forward;\n"
                 + "            Consume(handler, copy);\n        }",
-            3,
+            4,
             TestName = "A component override binds a renamed second local parameter for base forwarding"
         )]
         [TestCase(
@@ -2565,6 +2775,10 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             Assert.That(result.ManualReviewMethods, Is.Empty);
             Assert.That(result.UpgradedSource, Does.Contain($"{method}(in {payload} outer)"));
             Assert.That(result.UpgradedSource, Does.Not.Contain("ref "));
+            if (source.Contains("ref InstanceId source"))
+            {
+                Assert.That(result.UpgradedSource, Does.Contain("Forward(in InstanceId source,"));
+            }
         }
 
         [TestCase(
