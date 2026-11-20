@@ -3175,7 +3175,7 @@ namespace DxMessaging.Editor
                 return false;
             }
 
-            List<TextSpan> elements = SplitArguments(text, open + 1, close);
+            List<TextSpan> elements = SplitParameters(text, open + 1, close);
             return 1 < elements.Count
                 && elements.All(element =>
                     IsCastType(
@@ -3334,7 +3334,7 @@ namespace DxMessaging.Editor
             {
                 int before = PreviousNonWhitespace(text, opening - 1);
                 return (before < bodyStart || text[before] is '<' or ',' or '(')
-                    && 1 < SplitArguments(text, opening + 1, closing).Count;
+                    && 1 < SplitParameters(text, opening + 1, closing).Count;
             }
 
             for (int index = opening + 1; index < closing; index++)
@@ -3405,12 +3405,7 @@ namespace DxMessaging.Editor
                     return false;
                 }
 
-                List<TextSpan> elements = SplitArguments(
-                    text,
-                    tupleStart + 1,
-                    tupleEnd,
-                    ignoreNestedAngles: true
-                );
+                List<TextSpan> elements = SplitArguments(text, tupleStart + 1, tupleEnd);
                 if (elements.Count < 2)
                 {
                     return false;
@@ -3636,17 +3631,15 @@ namespace DxMessaging.Editor
                         }
                         braces--;
                         break;
-                    case '<':
-                        if (IsGenericOpenAngle(text, index))
-                        {
-                            angles++;
-                        }
+                    case '<'
+                        when parentheses == 0
+                            && brackets == 0
+                            && braces == 0
+                            && (0 < angles || IsGenericOpenAngle(text, index, text.Length)):
+                        angles++;
                         break;
-                    case '>':
-                        if (0 < angles)
-                        {
-                            angles--;
-                        }
+                    case '>' when parentheses == 0 && brackets == 0 && braces == 0 && 0 < angles:
+                        angles--;
                         break;
                     case ',':
                         if (parentheses == 0 && brackets == 0 && braces == 0 && angles == 0)
@@ -3665,13 +3658,13 @@ namespace DxMessaging.Editor
             return text.Length;
         }
 
-        private static bool IsGenericOpenAngle(string text, int openAngle)
+        private static bool IsGenericOpenAngle(string text, int openAngle, int end)
         {
             int parentheses = 0;
             int brackets = 0;
             int braces = 0;
             int angles = 1;
-            for (int index = openAngle + 1; index < text.Length; index++)
+            for (int index = openAngle + 1; index < end; index++)
             {
                 switch (text[index])
                 {
@@ -3701,19 +3694,33 @@ namespace DxMessaging.Editor
                         }
                         braces--;
                         break;
-                    case '<':
+                    case '<' when parentheses == 0 && brackets == 0 && braces == 0:
                         angles++;
                         break;
-                    case '>':
+                    case '>' when parentheses == 0 && brackets == 0 && braces == 0:
                         angles--;
                         if (angles == 0)
                         {
                             int next = NextNonWhitespace(text, index + 1);
-                            return next < 0
-                                || IsGenericAngleFollower(text[next])
-                                || IsGenericTypeTestOperand(text, openAngle);
+                            if (
+                                0 <= next
+                                && !IsGenericAngleFollower(text[next])
+                                && !IsGenericTypeTestOperand(text, openAngle)
+                            )
+                            {
+                                return false;
+                            }
+                            return SplitParameters(text, openAngle + 1, index)
+                                .TrueForAll(argument =>
+                                    IsCastType(
+                                        text,
+                                        argument.Start,
+                                        argument.Start + argument.Length
+                                    )
+                                );
                         }
                         break;
+                    case '=' when parentheses == 0 && brackets == 0 && braces == 0:
                     case ';':
                         if (parentheses == 0 && brackets == 0 && braces == 0)
                         {
@@ -3792,13 +3799,13 @@ namespace DxMessaging.Editor
         }
 
         private static List<TextSpan> SplitParameters(string text, int start, int end) =>
-            SplitArguments(text, start, end, ignoreNestedAngles: true);
+            SplitArguments(text, start, end, containsParameterTypes: true);
 
         private static List<TextSpan> SplitArguments(
             string text,
             int start,
             int end,
-            bool ignoreNestedAngles = false
+            bool containsParameterTypes = false
         )
         {
             List<TextSpan> arguments = new();
@@ -3829,12 +3836,20 @@ namespace DxMessaging.Editor
                     case '}':
                         braces--;
                         break;
-                    // Nested expressions already protect their commas, including in comparisons.
+                    // A comparison in a nested expression cannot affect the outer argument list.
                     case '<'
-                    or '>'
-                        when !ignoreNestedAngles
-                            || (parentheses == 0 && brackets == 0 && braces == 0):
-                        angles = text[index] == '<' ? angles + 1 : Math.Max(0, angles - 1);
+                        when parentheses == 0
+                            && brackets == 0
+                            && braces == 0
+                            && (
+                                0 < angles
+                                || containsParameterTypes
+                                || IsGenericOpenAngle(text, index, end)
+                            ):
+                        angles++;
+                        break;
+                    case '>' when parentheses == 0 && brackets == 0 && braces == 0 && 0 < angles:
+                        angles--;
                         break;
                     case ',':
                         if (parentheses == 0 && brackets == 0 && braces == 0 && angles == 0)

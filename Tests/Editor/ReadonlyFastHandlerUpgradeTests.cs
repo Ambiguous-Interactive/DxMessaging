@@ -3383,6 +3383,52 @@ token.RegisterUntargeted<Pulse>(
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
+        [TestCase("count < limit ? first : second", "0")]
+        [TestCase("count <= limit ? first : second", "0")]
+        [TestCase("Choose(count < limit, first, second)", "0")]
+        [TestCase("count < limit ? first : second", "count > limit ? 1 : 0")]
+        [TestCase("Choose<int, string>(first)", "0")]
+        [TestCase("Choose<(int left, string right), Box<int, string>>(first)", "0")]
+        [TestCase("count >= limit ? first : Choose<int[,], Box<int, string>>(second)", "0")]
+        [TestCase("count < limit ? Choose<int, string>(first) : second", "0")]
+        [TestCase("subject is Box<int, string> && ready ? first : second", "0")]
+        public void AnalyzeFindsTargetedCallbackAfterRelationalOperator(
+            string target,
+            string priority
+        )
+        {
+            string source = @"
+global::DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterTargeted<Pulse>(
+    TARGET,
+    (ref Pulse message) => Observe(message),
+    priority: PRIORITY
+);".Replace("TARGET", target).Replace("PRIORITY", priority);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source.Replace("ref Pulse", "in Pulse")));
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [Test]
+        public void AnalyzeFindsWritableMethodGroupAfterRelationalOperator()
+        {
+            const string Source =
+                @"
+global::DxMessaging.Core.MessageRegistrationToken token;
+token.RegisterTargeted<Pulse>(count < limit ? first : second, Forward);
+void Forward(ref Pulse message) => message = default;";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("writes to parameter"));
+        }
+
         [TestCase("Observe(from item in message select item + 1)", true)]
         [TestCase("Observe(from int item in (message) select item + 1)", true)]
         [TestCase(
