@@ -914,6 +914,13 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData(
                 "foreach (var item in Whole(in message)) Observe(item);"
             ).SetName("Foreach over a call taking a readonly reference still migrates");
+            yield return new TestCaseData("ObserveValue(choose ? (message) : fallback);").SetName(
+                "A grouped by-value conditional operand still migrates"
+            );
+            yield return new TestCaseData(
+                "ref Pulse alias = ref (Read(in (message)) > 0 ? ref fallback : ref fallback); "
+                    + "ObserveValue(alias);"
+            ).SetName("A grouped value used to choose a reference still migrates");
             yield return new TestCaseData("Observe(when(message).Next);").SetName(
                 "A member of an unrelated when callable result still migrates"
             );
@@ -1248,6 +1255,33 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                     + "=> Observe($\"{Assign(out((message).Value))}\"));",
                 "out"
             ).SetName("A grouped out argument without a space requires manual review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => { "
+                    + "ref Pulse alias = ref (choose ? ref (message) : ref fallback); "
+                    + "Observe(++alias.Value); });",
+                "ref"
+            ).SetName("The grouped first operand of a writable ref conditional requires review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => { "
+                    + "ref int alias = ref (choose ? ref (message).Value : ref fallback.Value); "
+                    + "Observe(++alias); });",
+                "ref"
+            ).SetName("A grouped member before a ref conditional colon requires review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => "
+                    + "Bump(ref (choose ? ref ((message /* use */)) : ref fallback)));",
+                "ref"
+            ).SetName("A nested grouped ref conditional argument requires review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => "
+                    + "Observe($\"{Bump(ref (choose ? ref (message) : ref fallback))}\"));",
+                "ref"
+            ).SetName("A grouped ref conditional in an interpolation requires review");
+            yield return new TestCaseData(
+                "token.RegisterUntargeted<Pulse>((ref Pulse message) => "
+                    + "Observe($$\"\"\"{{ Bump(ref (choose ? ref (message) : ref fallback)) }}\"\"\"));",
+                "ref"
+            ).SetName("A grouped ref conditional in a raw interpolation requires review");
         }
 
         [TestCaseSource(nameof(GroupedByReferenceUseCases))]

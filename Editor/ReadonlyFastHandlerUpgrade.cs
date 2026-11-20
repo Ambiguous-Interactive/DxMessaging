@@ -2072,7 +2072,7 @@ namespace DxMessaging.Editor
                 if (
                     operand.Success
                     && IdentifierValue(operand.Groups["name"].Value) == parameterValue
-                    && HasValidReferenceGrouping(source, scope, operand)
+                    && HasValidReferenceGrouping(source, scope, use, operand)
                     && !IsReadonlyRefLocalInitializer(source, scope, use, operand)
                 )
                 {
@@ -2116,25 +2116,48 @@ namespace DxMessaging.Editor
                 && source[following] == ';';
         }
 
-        private static bool HasValidReferenceGrouping(string source, TextSpan scope, Match use)
+        private static bool HasValidReferenceGrouping(
+            string source,
+            TextSpan scope,
+            Match modifier,
+            Match operand
+        )
         {
-            Group grouping = use.Groups["grouping"];
+            Group grouping = operand.Groups["grouping"];
             if (grouping.Length == 0)
             {
                 return true;
             }
 
             int scopeEnd = scope.Start + scope.Length;
-            TextSpan operand = new(grouping.Index, scopeEnd - grouping.Index);
-            Group name = use.Groups["name"];
+            TextSpan operandScope = new(grouping.Index, scopeEnd - grouping.Index);
+            Group name = operand.Groups["name"];
             int targetStart = name.Index;
             int following = NextAfterComments(source, name.Index + name.Length, scopeEnd);
-            return ReadDirectTarget(source, operand, ref targetStart, ref following, out _)
-                    == DirectTargetKind.Storage
-                && targetStart == operand.Start
-                && (
-                    following < 0 || scopeEnd <= following || ",);]".IndexOf(source[following]) >= 0
-                );
+            if (
+                ReadDirectTarget(source, operandScope, ref targetStart, ref following, out _)
+                    != DirectTargetKind.Storage
+                || targetStart != operandScope.Start
+            )
+            {
+                return false;
+            }
+
+            if (following < 0 || scopeEnd <= following || ",);]".IndexOf(source[following]) >= 0)
+            {
+                return true;
+            }
+
+            // A grouped first operand also ends at the colon of a ref conditional.
+            int beforeModifier = PreviousNonWhitespace(source, modifier.Index - 1);
+            int alternate = NextAfterComments(source, following + 1, scopeEnd);
+            return source[following] == ':'
+                && modifier.Groups["modifier"].Value == "ref"
+                && scope.Start <= beforeModifier
+                && source[beforeModifier] == '?'
+                && 0 <= alternate
+                && alternate + "ref".Length <= scopeEnd
+                && StartsWithIdentifier(source, alternate, "ref");
         }
 
         private static int NextAfterComments(string source, int start, int limit)

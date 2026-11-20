@@ -228,6 +228,11 @@ use `base.HandleGlobalStringMessage(in message)`. To keep inherited string deliv
 `protected override bool RegisterForStringMessages => true;` if the class has no such override.
 Keep an existing opt-in, opt-out, or computed override.
 
+If a local function serves as a `FastHandler` and also has direct calls, update its signature and
+those calls together. For example, change `Forward(ref copy)` to `Forward(in copy)` when the call
+only reads `copy`. If a direct call must change its argument, use a separate function with a
+`ref` parameter for that call. Keep the `FastHandler` callback readonly.
+
 Apply the same change to both parameters of callbacks that receive a target or source:
 
 ```csharp
