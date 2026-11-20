@@ -1652,6 +1652,98 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             );
         }
 
+        [TestCase(
+            "message = default;",
+            "",
+            "Forward(ref copy);",
+            false,
+            TestName = "An outer write defers a nested delegate and its base forwarding"
+        )]
+        [TestCase(
+            "",
+            "",
+            "Forward(ref copy);",
+            false,
+            TestName = "A direct local call defers its nested delegate and base forwarding"
+        )]
+        [TestCase(
+            "",
+            "",
+            "Observe($\"{Evaluate(() => Forward(ref copy))}\");",
+            false,
+            TestName = "An interpolated local call defers its nested delegate and base forwarding"
+        )]
+        [TestCase(
+            "",
+            "message = default;",
+            "Consume(handler, copy);",
+            false,
+            TestName = "A local write defers its connected override and base forwarding"
+        )]
+        [TestCase(
+            "",
+            "",
+            "Consume(handler, copy); Other.Forward(ref copy);",
+            true,
+            TestName = "A qualified call keeps the nested delegate and base forwarding eligible"
+        )]
+        public void AnalyzeKeepsNestedDelegateAndBaseForwardingEditsTogether(
+            string outerStatement,
+            string localStatement,
+            string invocation,
+            bool shouldMigrate
+        )
+        {
+            string source = @"
+class Receiver : DxMessaging.Unity.MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message)
+    {
+        void Forward(ref GlobalStringMessage message)
+        {
+            LOCAL_STATEMENT
+            base.HandleGlobalStringMessage(ref message);
+        }
+        DxMessaging.Core.MessageHandler.FastHandler<GlobalStringMessage> handler = Forward;
+        OUTER_STATEMENT
+        GlobalStringMessage copy = message;
+        INVOCATION
+    }
+}".Replace("LOCAL_STATEMENT", localStatement).Replace("OUTER_STATEMENT", outerStatement).Replace(
+                "INVOCATION",
+                invocation
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            if (shouldMigrate)
+            {
+                Assert.That(result.ReplacementCount, Is.EqualTo(3));
+                Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
+                Assert.That(result.ManualReviewMethods, Is.Empty);
+                Assert.That(
+                    result.UpgradedSource,
+                    Does.Contain("HandleGlobalStringMessage(in GlobalStringMessage message)")
+                );
+                Assert.That(
+                    result.UpgradedSource,
+                    Does.Contain("void Forward(in GlobalStringMessage message)")
+                );
+                Assert.That(
+                    result.UpgradedSource,
+                    Does.Contain("base.HandleGlobalStringMessage(in message);")
+                );
+                Assert.That(result.UpgradedSource, Does.Contain(invocation));
+                return;
+            }
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(2));
+        }
+
         [Test]
         public void AnalyzeLeavesExpressionBodyWithGenericRefForwardingForManualReview()
         {

@@ -395,12 +395,14 @@ namespace DxMessaging.Editor
                 manualReview
             );
 
+            Dictionary<int, int> baseForwardingOwners = new();
             foreach (string overrideName in ChangedOverrideNames)
             {
                 AddOverrideDeclarationReplacements(
                     masked,
                     overrideName,
                     replacementStarts,
+                    baseForwardingOwners,
                     manualReview
                 );
             }
@@ -410,6 +412,7 @@ namespace DxMessaging.Editor
                 masked,
                 interpolatedExpressions,
                 replacementStarts,
+                baseForwardingOwners,
                 manualReview
             );
 
@@ -670,6 +673,7 @@ namespace DxMessaging.Editor
             string masked,
             string methodName,
             HashSet<int> replacementStarts,
+            Dictionary<int, int> baseForwardingOwners,
             SortedSet<string> manualReview
         )
         {
@@ -703,7 +707,8 @@ namespace DxMessaging.Editor
                     masked,
                     declaration,
                     methodName,
-                    replacementStarts
+                    replacementStarts,
+                    baseForwardingOwners
                 );
             }
         }
@@ -1561,7 +1566,8 @@ namespace DxMessaging.Editor
             string masked,
             ParameterList declaration,
             string methodName,
-            HashSet<int> replacementStarts
+            HashSet<int> replacementStarts,
+            Dictionary<int, int> baseForwardingOwners
         )
         {
             if (!TryFindCallableBody(masked, declaration.ParametersEnd, out TextSpan body))
@@ -1609,6 +1615,7 @@ namespace DxMessaging.Editor
                         int refStart = argument.Start + forwarded.Index;
                         refStart = NextNonWhitespace(masked, refStart);
                         replacementStarts.Add(refStart);
+                        baseForwardingOwners[refStart] = declaration.ParametersStart - 1;
                     }
                 }
             }
@@ -1619,12 +1626,17 @@ namespace DxMessaging.Editor
             string masked,
             List<TextSpan> interpolatedExpressions,
             HashSet<int> replacementStarts,
+            Dictionary<int, int> baseForwardingOwners,
             SortedSet<string> manualReview
         )
         {
             Dictionary<int, List<int>> parameterReplacementsByOpen = new();
             foreach (int replacementStart in replacementStarts)
             {
+                if (baseForwardingOwners.ContainsKey(replacementStart))
+                {
+                    continue;
+                }
                 int open = FindEnclosingOpenParenthesis(masked, replacementStart);
                 if (open < 0)
                 {
@@ -1643,97 +1655,257 @@ namespace DxMessaging.Editor
                 replacements.Add(replacementStart);
             }
 
-            foreach (KeyValuePair<int, List<int>> entry in parameterReplacementsByOpen)
+            // A deferred callback can remove a base argument used by another proposed edit.
+            // Recheck the remaining callbacks each time a shared argument is removed.
+            bool removedBaseForwarding;
+            do
             {
-                int close = FindMatching(masked, entry.Key, '(', ')');
-                if (close < 0 || !TryFindCallableBody(masked, close, out TextSpan body))
+                removedBaseForwarding = false;
+                foreach (
+                    KeyValuePair<int, List<int>> entry in parameterReplacementsByOpen.Where(entry =>
+                        replacementStarts.Contains(entry.Value[0])
+                    )
+                )
                 {
-                    continue;
-                }
-
-                HashSet<string> parameterNames = new(StringComparer.Ordinal);
-                bool hasUnsupportedParameter = false;
-                foreach (int replacementStart in entry.Value)
-                {
-                    string parameterName = FindParameterName(
-                        masked,
-                        entry.Key + 1,
-                        close,
-                        replacementStart
-                    );
-                    if (0 < parameterName.Length)
-                    {
-                        parameterNames.Add(parameterName);
-                    }
-                    else
-                    {
-                        hasUnsupportedParameter = true;
-                    }
-                }
-
-                List<(string Parameter, TextSpan Declaration)> localShadows;
-                try
-                {
-                    localShadows = FindLocalFunctionShadows(masked, body).ToList();
-                }
-                catch (RegexMatchTimeoutException exception)
-                {
-                    DxMessagingEditorLog.LogWarning(
-                        "Local function scope detection timed out. Scanning all parameter uses.",
-                        exception
-                    );
-                    localShadows = new();
-                }
-                List<int> forwardingStarts = new();
-                string reason = null;
-                foreach (string parameterName in parameterNames)
-                {
-                    string parameterValue = IdentifierValue(parameterName);
-                    foreach (Match match in FindByReferenceUses(masked, body, parameterValue))
-                    {
-                        forwardingStarts.Add(match.Index);
-                        if (
-                            !replacementStarts.Contains(match.Index)
-                            && !IsLocalFunctionShadow(localShadows, parameterValue, match.Index)
-                        )
-                        {
-                            reason =
-                                $"passes parameter '{parameterName}' by {match.Groups["modifier"].Value}";
-                        }
-                    }
-                }
-
-                if (reason == null && hasUnsupportedParameter)
-                {
-                    reason = "has unsupported parameter syntax";
-                }
-                if (reason == null)
-                {
-                    reason = FindParameterUseIssue(
+                    removedBaseForwarding |= PruneCallback(
                         source,
                         masked,
-                        body,
                         interpolatedExpressions,
-                        parameterNames,
-                        localShadows
+                        replacementStarts,
+                        baseForwardingOwners,
+                        manualReview,
+                        entry
                     );
                 }
-                if (reason == null)
+            } while (removedBaseForwarding);
+        }
+
+        private static bool PruneCallback(
+            string source,
+            string masked,
+            List<TextSpan> interpolatedExpressions,
+            HashSet<int> replacementStarts,
+            Dictionary<int, int> baseForwardingOwners,
+            SortedSet<string> manualReview,
+            KeyValuePair<int, List<int>> entry
+        )
+        {
+            int close = FindMatching(masked, entry.Key, '(', ')');
+            if (close < 0 || !TryFindCallableBody(masked, close, out TextSpan body))
+            {
+                return false;
+            }
+
+            HashSet<string> parameterNames = new(StringComparer.Ordinal);
+            bool hasUnsupportedParameter = false;
+            foreach (int replacementStart in entry.Value)
+            {
+                string parameterName = FindParameterName(
+                    masked,
+                    entry.Key + 1,
+                    close,
+                    replacementStart
+                );
+                if (0 < parameterName.Length)
+                {
+                    parameterNames.Add(parameterName);
+                }
+                else
+                {
+                    hasUnsupportedParameter = true;
+                }
+            }
+
+            List<(string Parameter, TextSpan Declaration)> localShadows;
+            try
+            {
+                localShadows = FindLocalFunctionShadows(masked, body).ToList();
+            }
+            catch (RegexMatchTimeoutException exception)
+            {
+                DxMessagingEditorLog.LogWarning(
+                    "Local function scope detection timed out. Scanning all parameter uses.",
+                    exception
+                );
+                localShadows = new();
+            }
+
+            List<int> forwardingStarts = new();
+            int enclosingOverride = -1;
+            string reason = null;
+            int bodyEnd = body.Start + body.Length;
+            foreach (
+                KeyValuePair<int, int> forwarding in baseForwardingOwners.Where(forwarding =>
+                    body.Start <= forwarding.Key && forwarding.Key < bodyEnd
+                )
+            )
+            {
+                forwardingStarts.Add(forwarding.Key);
+                if (forwarding.Value < entry.Key)
+                {
+                    enclosingOverride = forwarding.Value;
+                }
+                if (!replacementStarts.Contains(forwarding.Key))
+                {
+                    reason = "depends on a base forwarding argument that requires manual review";
+                }
+            }
+
+            foreach (string parameterName in parameterNames)
+            {
+                string parameterValue = IdentifierValue(parameterName);
+                Match unpaired = FindByReferenceUses(masked, body, parameterValue)
+                    .LastOrDefault(match =>
+                        !replacementStarts.Contains(match.Index)
+                        && !baseForwardingOwners.ContainsKey(match.Index)
+                        && !IsLocalFunctionShadow(localShadows, parameterValue, match.Index)
+                    );
+                if (unpaired != null)
+                {
+                    reason =
+                        $"passes parameter '{parameterName}' by {unpaired.Groups["modifier"].Value}";
+                }
+            }
+
+            if (reason == null && hasUnsupportedParameter)
+            {
+                reason = "has unsupported parameter syntax";
+            }
+            if (
+                reason == null
+                && 0 <= enclosingOverride
+                && HasDirectLocalFunctionCall(
+                    source,
+                    masked,
+                    interpolatedExpressions,
+                    enclosingOverride,
+                    entry.Key
+                )
+            )
+            {
+                reason = "has a direct local function call that depends on its 'ref' parameter";
+            }
+            reason ??= FindParameterUseIssue(
+                source,
+                masked,
+                body,
+                interpolatedExpressions,
+                parameterNames,
+                localShadows
+            );
+            if (reason == null)
+            {
+                return false;
+            }
+            replacementStarts.ExceptWith(entry.Value);
+            int remainingSignatureEdits = replacementStarts.Count;
+            replacementStarts.ExceptWith(forwardingStarts);
+            manualReview.Add(
+                $"callback on line {LineNumber(masked, entry.Key)} {reason}; inspect it manually"
+            );
+            return replacementStarts.Count < remainingSignatureEdits;
+        }
+
+        private static bool HasDirectLocalFunctionCall(
+            string source,
+            string masked,
+            List<TextSpan> interpolatedExpressions,
+            int enclosingOverride,
+            int localFunctionParameters
+        )
+        {
+            int close = FindMatching(masked, enclosingOverride, '(', ')');
+            if (
+                close < 0
+                || !TryFindCallableBody(masked, close, out TextSpan scope)
+                || localFunctionParameters < scope.Start
+            )
+            {
+                return false;
+            }
+
+            int nameEnd = PreviousNonWhitespace(masked, localFunctionParameters - 1);
+            string localName = null;
+            for (
+                Match identifier = IdentifierUseRegex.Match(
+                    masked,
+                    scope.Start,
+                    localFunctionParameters - scope.Start
+                );
+                identifier.Success;
+                identifier = identifier.NextMatch()
+            )
+            {
+                if (identifier.Index + identifier.Length - 1 == nameEnd)
+                {
+                    localName = IdentifierValue(identifier.Value);
+                    break;
+                }
+            }
+            if (localName == null)
+            {
+                return false;
+            }
+
+            if (ContainsDirectCall(masked, scope, localName, localFunctionParameters))
+            {
+                return true;
+            }
+            int scopeEnd = scope.Start + scope.Length;
+            foreach (TextSpan expression in interpolatedExpressions)
+            {
+                if (
+                    scope.Start <= expression.Start
+                    && expression.Start + expression.Length <= scopeEnd
+                )
+                {
+                    string code = MaskNonCode(
+                        source.Substring(expression.Start, expression.Length),
+                        null
+                    );
+                    if (ContainsDirectCall(code, new TextSpan(0, code.Length), localName, -1))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static bool ContainsDirectCall(
+            string code,
+            TextSpan scope,
+            string localName,
+            int declarationParameterStart
+        )
+        {
+            int scopeEnd = scope.Start + scope.Length;
+            for (
+                Match identifier = IdentifierUseRegex.Match(code, scope.Start, scope.Length);
+                identifier.Success;
+                identifier = identifier.NextMatch()
+            )
+            {
+                if (IdentifierValue(identifier.Value) != localName)
                 {
                     continue;
                 }
-                foreach (int replacementStart in entry.Value)
+                int following = NextNonWhitespace(code, identifier.Index + identifier.Length);
+                if (
+                    0 <= following
+                    && following < scopeEnd
+                    && following != declarationParameterStart
+                    && code[following] == '('
+                )
                 {
-                    replacementStarts.Remove(replacementStart);
+                    int preceding = PreviousNonWhitespace(code, identifier.Index - 1);
+                    if (preceding < scope.Start || code[preceding] != '.')
+                    {
+                        return true;
+                    }
                 }
-                foreach (int forwardingStart in forwardingStarts)
-                {
-                    replacementStarts.Remove(forwardingStart);
-                }
-                manualReview.Add(
-                    $"callback on line {LineNumber(masked, entry.Key)} {reason}; inspect it manually"
-                );
             }
+            return false;
         }
 
         private static IEnumerable<(
