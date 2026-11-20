@@ -110,14 +110,26 @@ namespace DxMessaging.Editor
             + @")*(?:\s*[?*]|\s*\[[,\s]*\])*";
 
         private const string CastTypeNamePattern =
-            IdentifierSpellingPattern + @"(?:\s*<[\w\p{Nl}\p{Mc}\p{Cf}\s.,:<>?*\[\]@\\]+>)?";
+            IdentifierSpellingPattern + @"(?:\s*<[\w\p{Nl}\p{Mc}\p{Cf}\s.,:<>?*\[\]()@\\]+>)?";
+
+        private const string CastTypeSuffixPattern =
+            @"(?:\s*[?*]|\s*\[[,\s]*\])*(?:\s+(?<elementName>"
+            + IdentifierSpellingPattern
+            + @"))?\s*\z";
 
         private static readonly Regex GroupedCastTypeRegex = new(
             @"\G\s*"
                 + CastTypeNamePattern
                 + @"(?:\s*(?:\.|::)\s*"
                 + CastTypeNamePattern
-                + @")*(?:\s*[?*]|\s*\[[,\s]*\])*\s*\z",
+                + @")*"
+                + CastTypeSuffixPattern,
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1)
+        );
+
+        private static readonly Regex GroupedCastTupleSuffixRegex = new(
+            @"\G" + CastTypeSuffixPattern,
             RegexOptions.CultureInvariant,
             TimeSpan.FromSeconds(1)
         );
@@ -2721,12 +2733,7 @@ namespace DxMessaging.Editor
             while (bodyStart <= previous && text[previous] == ')')
             {
                 int opening = FindMatchingBackward(text, previous, '(', ')', bodyStart);
-                if (
-                    opening < bodyStart
-                    || !GroupedCastTypeRegex
-                        .Match(text, opening + 1, previous - opening - 1)
-                        .Success
-                )
+                if (opening < bodyStart || !IsCastType(text, opening + 1, previous))
                 {
                     return false;
                 }
@@ -2738,6 +2745,49 @@ namespace DxMessaging.Editor
                 }
             }
             return false;
+        }
+
+        private static bool IsCastType(
+            string text,
+            int start,
+            int end,
+            bool allowElementName = false
+        )
+        {
+            Match namedType = GroupedCastTypeRegex.Match(text, start, end - start);
+            if (namedType.Success)
+            {
+                return allowElementName || !namedType.Groups["elementName"].Success;
+            }
+
+            int open = NextNonWhitespace(text, start);
+            if (open < 0 || end <= open || text[open] != '(')
+            {
+                return false;
+            }
+
+            int close = FindMatching(text, open, '(', ')');
+            if (close < 0 || end <= close)
+            {
+                return false;
+            }
+
+            Match suffix = GroupedCastTupleSuffixRegex.Match(text, close + 1, end - close - 1);
+            if (!suffix.Success || (!allowElementName && suffix.Groups["elementName"].Success))
+            {
+                return false;
+            }
+
+            List<TextSpan> elements = SplitArguments(text, open + 1, close);
+            return 1 < elements.Count
+                && elements.All(element =>
+                    IsCastType(
+                        text,
+                        element.Start,
+                        element.Start + element.Length,
+                        allowElementName: true
+                    )
+                );
         }
 
         private static bool FollowsGroupingOperandKeyword(string text, int bodyStart, int previous)

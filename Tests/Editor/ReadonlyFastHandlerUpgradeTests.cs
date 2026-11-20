@@ -945,6 +945,12 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             yield return new TestCaseData("Observe((long)Wrap(message).Next);").SetName(
                 "Casting a member of a call result still migrates"
             );
+            yield return new TestCaseData("Observe(((int, int))(Wrap(message)).Next);").SetName(
+                "A tuple cast of a member on a call result still migrates"
+            );
+            yield return new TestCaseData("Observe(((GetWrap(0, 1)))(message).Next);").SetName(
+                "A grouped callable with a nested argument comma still migrates"
+            );
             yield return new TestCaseData(
                 "System.Func<Pulse, Pulse> wrap = Wrap; Observe(((wrap))(message).Next);"
             ).SetName("Reading a member of a grouped callable result still migrates");
@@ -985,6 +991,15 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
             ).SetName("Nested casts around a grouped parameter member require review");
             yield return new TestCaseData("Observe((Box<long>)(message).Next);").SetName(
                 "Casting to a generic type after a grouped parameter member requires review"
+            );
+            yield return new TestCaseData("Observe(((int, int))(message).Next);").SetName(
+                "A tuple cast of a grouped parameter member requires manual review"
+            );
+            yield return new TestCaseData(
+                "Observe(((int first, (int second, int third) rest))(message).Nested);"
+            ).SetName("A nested named tuple cast of a grouped parameter member requires review");
+            yield return new TestCaseData("Observe((Box<(int, int)>)(message).Next);").SetName(
+                "A generic tuple cast of a grouped parameter member requires review"
             );
             yield return new TestCaseData("Observe(checked(message).Next);").SetName(
                 "Reading a parameter member in a checked expression requires review"
