@@ -933,6 +933,12 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "int[] buffer = { 1 }; fixed (int* p = buffer) Wrap(message).Value++;"
             ).SetName("Writing to a call result in a fixed statement still migrates");
             yield return new TestCaseData(
+                "unsafe { fixed (int* pointer = Wrap(message)) Observe(*pointer); }"
+            ).SetName("Pinning a call result still migrates");
+            yield return new TestCaseData(
+                "unsafe { Pulse copy = message; fixed (int* pointer = copy) Observe(*pointer); }"
+            ).SetName("Pinning a local parameter copy still migrates");
+            yield return new TestCaseData(
                 "// note\tmessage = default;\nObserveValue(message);"
             ).SetName("A tab keeps a write inside its single-line comment");
             yield return new TestCaseData(
@@ -1424,6 +1430,22 @@ sealed class Receiver : MessageAwareComponent
         }
 
         [TestCaseSource(nameof(ReceiverInvocationCases))]
+        [TestCase(
+            "unsafe { fixed (int* pointer = message) Observe(*pointer); }",
+            TestName = "Pinning the whole callback parameter requires manual review"
+        )]
+        [TestCase(
+            "unsafe { fixed (int* pointer = ((message))!) Observe(*pointer); }",
+            TestName = "Pinning a grouped null-forgiven parameter requires manual review"
+        )]
+        [TestCase(
+            "unsafe { fixed (int* first = message, second = Wrap(message)) Observe(*first + *second); }",
+            TestName = "Pinning the parameter in the first pointer declaration requires manual review"
+        )]
+        [TestCase(
+            "unsafe { fixed (int* first = Wrap(message), second = message) Observe(*first + *second); }",
+            TestName = "Pinning the parameter in a later pointer declaration requires manual review"
+        )]
         public void AnalyzeLeavesReceiverInvocationsForManualReview(string body)
         {
             string source =

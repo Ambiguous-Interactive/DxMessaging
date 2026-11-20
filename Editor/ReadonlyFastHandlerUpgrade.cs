@@ -2249,7 +2249,10 @@ namespace DxMessaging.Editor
                     || (
                         target == DirectTargetKind.Storage
                         && !accessedMemberOrIndexer
-                        && IsDirectForeachSource(masked, body, targetStart, next)
+                        && (
+                            IsDirectForeachSource(masked, body, targetStart, next)
+                            || IsDirectFixedInitializer(masked, body, targetStart, next)
+                        )
                     )
                 )
                 {
@@ -2293,6 +2296,38 @@ namespace DxMessaging.Editor
             int opening = FindMatchingBackward(text, following, '(', ')', body.Start);
             int beforeOpening = PreviousNonWhitespace(text, opening - 1);
             return FollowsKeyword(text, body.Start, beforeOpening, "foreach");
+        }
+
+        private static bool IsDirectFixedInitializer(
+            string text,
+            TextSpan body,
+            int targetStart,
+            int following
+        )
+        {
+            if (
+                following < 0
+                || body.Start + body.Length <= following
+                || text[following] is not (')' or ',')
+            )
+            {
+                return false;
+            }
+
+            int equals = PreviousNonWhitespace(text, targetStart - 1);
+            if (equals < body.Start || text[equals] != '=')
+            {
+                return false;
+            }
+
+            int opening = FindEnclosingOpenParenthesis(text, targetStart);
+            return body.Start <= opening
+                && FollowsKeyword(
+                    text,
+                    body.Start,
+                    PreviousNonWhitespace(text, opening - 1),
+                    "fixed"
+                );
         }
 
         private static bool IsDirectParameterWrite(
