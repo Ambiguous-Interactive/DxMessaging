@@ -183,8 +183,9 @@ Refresh the Asset Database and rerun the preview when the imported assembly sett
 Resolve unreadable-script warnings before applying changes. If comments or strings can hide a directive in some
 build configurations, the preview leaves the script untouched and reports the directive location. The tool attempts to restore every earlier
 write if a later write fails. If a script changes
-again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
-leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
+again before rollback, the tool preserves the newer edit and its backup. It rechecks each upgraded
+file before removing its backup and reports files whose contents changed. It leaves unsupported
+encodings, overloads, qualified or cross-file callback declarations, and
 ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
 alias can hide the `DxMessaging` namespace. A `using` inside a namespace can also change which type
 the compiler selects. Confirm the intended type before qualifying its name. If a project script
@@ -192,8 +193,10 @@ declares a type with the package type's full name, verify which declaration the 
 before migrating it. The preview
 uses Unity's compilation inputs for the active build target to check that package types come from
 the installed DxMessaging runtime. It reports the callback or type location when it cannot verify
-that binding. A source outside the script index, competing metadata, missing runtime source
-checksums, or unverified compiler options can require manual review. Check the binding and related callers in your other build targets
+that binding. A source outside the script index, competing metadata, a modified or conditionally
+compiled registration API, missing runtime source checksums, or unverified compiler options can
+require manual review. An extension in another file or assembly can also defer a registration when
+the preview cannot establish which overload it selects. Check the binding and related callers in your other build targets
 before making a deferred edit. The preview also defers a callback that passes
 its newly readonly parameter as a `ref` or `out` argument, takes a typed reference with
 `__makeref`, or takes its address in a `fixed` initializer. It also preserves callbacks with
@@ -223,8 +226,11 @@ When a stored fast delegate changes to the readonly signature, update invocation
 too. This includes calls through fields and properties. For example, change `separate(ref pulse)`
 to `separate(in pulse)` and `separate?.Invoke(ref pulse)` to `separate?.Invoke(in pulse)`. Keep a
 separate writable callback for callers that need to modify the argument. When the preview cannot
-account for callers of a standalone `new MessageHandler.FastHandler<T>(...)` construction, review
-the construction and its calls together.
+account for callers of a standalone `new MessageHandler.FastHandler<T>(...)` construction or a
+property returning a fast delegate, review the delegate and its calls together. Check direct calls
+that omit an argument modifier. A call such as `this.Forward(default(Pulse))` can select a different
+overload after `Forward` changes from `ref` to `in`. If the call must keep using an extension, call
+it explicitly, for example `Extensions.Forward(this, default(Pulse))`.
 
 Review any deferred `RegisterGlobalAcceptAll` call as a group because its three callbacks must
 bind to the same overload. If the preview cannot trace an argument back to its delegate, it can
@@ -232,8 +238,8 @@ also defer separate fast delegate initializers in that script. Reports include t
 and column so you can find the callback or its use.
 Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
-Review project-wide callback uses. The preview skips branches it can prove inactive from literal
-conditions. It defers callbacks whose boundaries or method-group bindings depend on unresolved
+Review project-wide callback uses. The preview skips branches when it can prove a preprocessor
+condition is false. It defers callbacks whose boundaries or method-group bindings depend on unresolved
 branches. Check those callbacks in each build configuration. Use separate callback declarations
 when two delegate types require different parameter modifiers. Inspect the diff and let Unity
 compile before committing the migration.

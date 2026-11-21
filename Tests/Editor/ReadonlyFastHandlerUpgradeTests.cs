@@ -1361,6 +1361,90 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             Assert.That(result.ManualReviewMethods[0], Does.Contain("line 7").And.Contain(reason));
         }
 
+        [TestCase("(ref Pulse message) => Observe(message)", "expression-bodied property")]
+        [TestCase("(ref Pulse message) => message = default", "writes to parameter")]
+        [TestCase("Forward", "expression-bodied property")]
+        public void AnalyzeReportsLegacyHandlersReturnedByAProperty(
+            string expression,
+            string reason
+        )
+        {
+            string source = @"
+sealed class Receiver
+{
+    global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> Handler => VALUE;
+    private void Forward(ref Pulse message) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("VALUE", expression);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("line 4").And.Contain(reason));
+        }
+
+        [Test]
+        public void AnalyzeReportsTheLastPropertyWhenItsAccessorReturnsALegacyHandler()
+        {
+            const string Source =
+                @"
+sealed class Receiver
+{
+    global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> Handler
+    {
+        get => (ref Pulse message) => { };
+    }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("line 6").And.Contain("expression-bodied property")
+            );
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void AnalyzeRequiresProofOfTheInstalledRegistration(bool verified)
+        {
+            const string Source =
+                @"
+sealed class Receiver
+{
+    void Install(global::DxMessaging.Core.MessageRegistrationToken token) =>
+        token.RegisterUntargeted<Pulse>((ref Pulse message) => { });
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+";
+            var result = ReadonlyFastHandlerUpgrade.Analyze(Source, findPackageBindingIssue: name =>
+                verified || name != "MessageRegistrationToken.RegisterUntargeted"
+                    ? null
+                    : "the installed registration overload set differs"
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(verified ? Source.Replace("ref Pulse", "in Pulse") : Source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(verified ? 1 : 0));
+            if (!verified)
+            {
+                Assert.That(
+                    result.ManualReviewMethods,
+                    Has.Some.Contains("line 5")
+                        .And.Contains("installed registration overload set differs")
+                );
+            }
+        }
+
         [Test]
         public void AnalyzeReportsAStandaloneMethodGroupWithAWritableDelegateCall()
         {
@@ -4985,7 +5069,7 @@ class Receiver
         )]
         [TestCase(
             "FastHandlerWithContext<Pulse>",
-            "(ref int context, ref Pulse message) => Read(message)",
+            "(ref global::DxMessaging.Core.InstanceId context, ref Pulse message) => Read(message)",
             1,
             TestName = "A conditionally bound fast lambda with context requires review"
         )]
@@ -7020,7 +7104,29 @@ sealed class Receiver : global::DxMessaging.Unity.MessageAwareComponent
             Assert.That(result.ReplacementCount, Is.EqualTo(2));
             Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
             Assert.That(result.ManualReviewMethods, Is.Empty);
-            Assert.That(result.UpgradedSource, Does.Contain(expectedCall));
+            int opening = source.IndexOf('{');
+            string newline = source.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+            string expected = source
+                .Insert(
+                    opening + 1,
+                    newline
+                        + "    protected override bool RegisterForStringMessages => true;"
+                        + newline
+                )
+                .Replace(
+                    "HandleGlobalStringMessage(ref GlobalStringMessage outer)",
+                    "HandleGlobalStringMessage(in GlobalStringMessage outer)"
+                )
+                .Replace(
+                    "base.HandleGlobalStringMessage(ref outer);",
+                    "base.HandleGlobalStringMessage(in outer);"
+                )
+                .Replace(
+                    "base.@HandleGlobalStringMessage(ref outer);",
+                    "base.@HandleGlobalStringMessage(in outer);"
+                );
+            Assert.That(result.UpgradedSource, Is.EqualTo(expected));
+            Assert.That(expected, Does.Contain(expectedCall));
         }
 
         [TestCase(
@@ -7992,6 +8098,27 @@ void OnPulse(ref Pulse message) { }";
             );
         }
 
+        [TestCase("false", true)]
+        [TestCase("(false)", true)]
+        [TestCase("!true", true)]
+        [TestCase("false && LEGACY", true)]
+        [TestCase("false == true", true)]
+        [TestCase("true", false)]
+        [TestCase("true || LEGACY", false)]
+        [TestCase("LEGACY", false)]
+        public void IsGeneratedSourceSkipsOnlyProvablyInactiveHeaderCode(
+            string condition,
+            bool generated
+        )
+        {
+            string source =
+                $"#if {condition}\nclass Placeholder {{ }}\n#endif\n// <auto-generated />\nclass Receiver {{ }}";
+            Assert.That(
+                ReadonlyFastHandlerUpgrade.IsGeneratedSource("Assets/Receiver.cs", source),
+                Is.EqualTo(generated)
+            );
+        }
+
         [Test]
         public void IsGeneratedSourceAcceptsConsumerOwnedScript()
         {
@@ -8115,6 +8242,75 @@ void OnPulse(ref Pulse message) { }";
             Assert.That(store.Files["receiver.cs"], Is.EqualTo(new byte[] { 1 }));
             Assert.That(store.Files["caller.cs"], Is.EqualTo(new byte[] { 3 }));
             Assert.That(store.Backups, Is.Empty);
+        }
+
+        [Test]
+        public void ApplyAtomicallyKeepsTheBackupForAnEditDuringFinalVerification()
+        {
+            FakeAtomicFileStore store = new(
+                new Dictionary<string, byte[]>
+                {
+                    ["First.cs"] = new byte[] { 1 },
+                    ["Second.cs"] = new byte[] { 2 },
+                }
+            );
+            var upgrades = new[]
+            {
+                new ReadonlyFastHandlerUpgrade.PendingFileUpgrade(
+                    "First.cs",
+                    new byte[] { 1 },
+                    new byte[] { 11 }
+                ),
+                new ReadonlyFastHandlerUpgrade.PendingFileUpgrade(
+                    "Second.cs",
+                    new byte[] { 2 },
+                    new byte[] { 22 }
+                ),
+            };
+
+            Assert.That(
+                () =>
+                    ReadonlyFastHandlerUpgrade.ApplyAtomically(upgrades, store, () =>
+                        store.Files["Second.cs"] = new byte[] { 99 }
+                    ),
+                Throws.InstanceOf<AggregateException>()
+            );
+            Assert.That(store.Files["First.cs"], Is.EqualTo(new byte[] { 1 }));
+            Assert.That(store.Files["Second.cs"], Is.EqualTo(new byte[] { 99 }));
+            Assert.That(store.Backups["Second.cs.backup"], Is.EqualTo(new byte[] { 2 }));
+            Assert.That(store.Backups.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void ApplyAtomicallyRechecksEachFileDuringBackupCleanup()
+        {
+            FakeAtomicFileStore store = new(
+                new Dictionary<string, byte[]>
+                {
+                    ["First.cs"] = new byte[] { 1 },
+                    ["Second.cs"] = new byte[] { 2 },
+                }
+            );
+            var upgrades = new[]
+            {
+                new ReadonlyFastHandlerUpgrade.PendingFileUpgrade(
+                    "First.cs",
+                    new byte[] { 1 },
+                    new byte[] { 11 }
+                ),
+                new ReadonlyFastHandlerUpgrade.PendingFileUpgrade(
+                    "Second.cs",
+                    new byte[] { 2 },
+                    new byte[] { 22 }
+                ),
+            };
+            store.AfterDiscard = () => store.Files["Second.cs"] = new byte[] { 99 };
+
+            Assert.That(ReadonlyFastHandlerUpgrade.ApplyAtomically(upgrades, store), Is.False);
+            Assert.That(store.Files["First.cs"], Is.EqualTo(new byte[] { 11 }));
+            Assert.That(store.Files["Second.cs"], Is.EqualTo(new byte[] { 99 }));
+            Assert.That(store.Backups["Second.cs.backup"], Is.EqualTo(new byte[] { 2 }));
+            Assert.That(store.Backups.Count, Is.EqualTo(1));
         }
 
         [Test]
@@ -8273,6 +8469,8 @@ void OnPulse(ref Pulse message) { }";
 
             public Dictionary<string, byte[]> Backups { get; } = new();
 
+            public Action? AfterDiscard { get; set; }
+
             public string Replace(string fullPath, byte[] originalBytes, byte[] upgradedBytes)
             {
                 if (_replaceIndex++ == _failOnReplaceIndex)
@@ -8305,13 +8503,27 @@ void OnPulse(ref Pulse message) { }";
                 Backups.Remove(backupPath);
             }
 
-            public void DiscardBackup(string backupPath)
+            public bool MatchesDestination(string fullPath, byte[] expectedCurrentBytes) =>
+                Files.TryGetValue(fullPath, out byte[]? current)
+                && current.AsSpan().SequenceEqual(expectedCurrentBytes);
+
+            public bool TryDiscardBackup(
+                string fullPath,
+                string backupPath,
+                byte[] expectedCurrentBytes
+            )
             {
+                if (!MatchesDestination(fullPath, expectedCurrentBytes))
+                {
+                    return false;
+                }
                 if (_throwOnDiscard)
                 {
                     throw new InvalidOperationException("Injected cleanup failure.");
                 }
                 Backups.Remove(backupPath);
+                AfterDiscard?.Invoke();
+                return true;
             }
         }
     }
