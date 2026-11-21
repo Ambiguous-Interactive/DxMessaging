@@ -1879,8 +1879,21 @@ class Other
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
         }
 
-        [Test]
-        public void AnalyzeReportsReflectedFastDelegatePropertyUse()
+        [TestCase(
+            "typeof(Callbacks).GetProperty(\"Exposed\").GetValue(null)",
+            TestName = "A reflected property alias keeps the fast delegate writable"
+        )]
+        [TestCase(
+            "typeof(Callbacks).GetMethod(\"get_Exposed\").Invoke(null, null)",
+            TestName = "A reflected property getter keeps the fast delegate writable"
+        )]
+        [TestCase(
+            "System.Linq.Expressions.Expression.Lambda<System.Func<object>>("
+                + "System.Linq.Expressions.Expression.Convert(System.Linq.Expressions.Expression.Property"
+                + "(null, typeof(Callbacks), \"Exposed\"), typeof(object))).Compile()()",
+            TestName = "An expression built from the property keeps the fast delegate writable"
+        )]
+        public void AnalyzeReportsReflectedFastDelegatePropertyUse(string lookup)
         {
             const string Source =
                 @"
@@ -1892,23 +1905,22 @@ static class Callbacks
         (ref IUntargetedMessage value) => { };
     public static MessageHandler.FastHandler<IUntargetedMessage> Exposed => hidden;
 }";
-            const string External =
-                @"
+            string external = @"
 using DxMessaging.Core;
 using DxMessaging.Core.Messages;
 class Other
 {
     void Forward(IUntargetedMessage message)
     {
-        var callback = (MessageHandler.FastHandler<IUntargetedMessage>)typeof(Callbacks).GetProperty(""Exposed"").GetValue(null);
+        var callback = (MessageHandler.FastHandler<IUntargetedMessage>)LOOKUP;
         callback(ref message);
     }
-}";
+}".Replace("LOOKUP", lookup);
             const string ExternalPath = "Assets/Consumer.cs";
             const string Path = "Assets/Callbacks.cs";
             ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
             project.AddScript(Path, Source);
-            project.AddScript(ExternalPath, External);
+            project.AddScript(ExternalPath, external);
             ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
                 Source,
                 name => project.FindOtherUse(Path, name),

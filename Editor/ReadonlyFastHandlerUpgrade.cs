@@ -4917,7 +4917,7 @@ namespace DxMessaging.Editor
                 if (
                     offset == 0
                     && scope.IsMember
-                    && metadata.FindExternalCallbackUse != null
+                    && metadata.CanInspectProjectMemberUses
                     && TryFindFastDelegatePropertyAlias(
                         masked,
                         metadata,
@@ -4941,7 +4941,7 @@ namespace DxMessaging.Editor
                     {
                         return $"initializes fast delegate '{name}' with a use through property '{alias}' at {location} that cannot be proven safe for 'in'";
                     }
-                    string lookup = FindPotentialPropertyLookup(masked, metadata);
+                    string lookup = metadata.FindPossibleMemberLookup(masked);
                     if (lookup != null)
                     {
                         return $"initializes fast delegate '{name}' exposed as '{alias}' with an indirect property lookup at {lookup}; verify its binding manually";
@@ -5037,39 +5037,50 @@ namespace DxMessaging.Editor
             return true;
         }
 
-        private static string FindPotentialPropertyLookup(string masked, SourceMetadata metadata)
+        private static bool IsMemberLookupIdentifier(string name)
         {
-            foreach (
-                string name in new[]
-                {
-                    "GetProperty",
-                    "GetProperties",
-                    "GetMember",
-                    "GetMembers",
-                    "InvokeMember",
-                    "GetRuntimeProperty",
-                    "GetRuntimeProperties",
-                    "GetDeclaredProperty",
-                    "DeclaredProperties",
-                    "GetDeclaredMembers",
-                    "DeclaredMembers",
-                    "GetDefaultMembers",
-                    "PropertyOrField",
-                }
+            if (
+                name
+                is "Reflection"
+                    or "BindingFlags"
+                    or "MemberInfo"
+                    or "PropertyInfo"
+                    or "MethodInfo"
+                    or "MethodBase"
+                    or "TypeInfo"
+                    or "Assembly"
+                    or "AppDomain"
+                    or "AssemblyLoadContext"
+                    or "Expression"
+                    or "TypeDescriptor"
+                    or "TypeCache"
+                    or "DynamicObject"
+                    or "dynamic"
+                    or "InvokeMember"
+                    or "CreateDelegate"
+                    or "DynamicInvoke"
             )
             {
-                var local = metadata.IdentifierUses(masked, name).FirstOrDefault();
-                if (local.Name != null)
-                {
-                    return SourceLocation(masked, local.Name.Index + local.Offset);
-                }
-                string external = metadata.FindExternalCallbackUse(name);
-                if (external != null)
-                {
-                    return external;
-                }
+                return true;
             }
-            return null;
+
+            // Metadata can expose a property through either its name or its getter method.
+            return (
+                    name.StartsWith("Get", StringComparison.Ordinal)
+                    || name.StartsWith("Find", StringComparison.Ordinal)
+                    || name.StartsWith("Lookup", StringComparison.Ordinal)
+                    || name.StartsWith("Declared", StringComparison.Ordinal)
+                    || name.StartsWith("Exported", StringComparison.Ordinal)
+                    || name.StartsWith("Defined", StringComparison.Ordinal)
+                )
+                && (
+                    name.Contains("Propert", StringComparison.Ordinal)
+                    || name.Contains("Member", StringComparison.Ordinal)
+                    || name.Contains("Method", StringComparison.Ordinal)
+                    || name.Contains("Accessor", StringComparison.Ordinal)
+                    || name.Contains("Assembl", StringComparison.Ordinal)
+                    || name.Contains("Type", StringComparison.Ordinal)
+                );
         }
 
         private static bool IsDirectFastDelegateRegistrationUse(
@@ -7319,6 +7330,9 @@ namespace DxMessaging.Editor
 
             public bool HasConditionalDirectives => 0 < ConditionalDirectives.Count;
 
+            public bool CanInspectProjectMemberUses =>
+                _projectTypes != null && FindExternalCallbackUse != null;
+
             public bool HasAvailableDeclaration(List<int> declarations, int use)
             {
                 if (declarations.Any(declaration => IsAvailableAtUse(declaration, use, default)))
@@ -7777,12 +7791,31 @@ namespace DxMessaging.Editor
             public IEnumerable<(string Code, Match Name, int Offset)> IdentifierUses(
                 string masked,
                 string name
-            )
+            ) => GetIdentifierUseIndex(masked)[name];
+
+            public string FindPossibleMemberLookup(string masked)
             {
+                string projectLookup = _projectTypes?.FindPossibleMemberLookup();
+                if (projectLookup != null)
+                {
+                    return projectLookup;
+                }
+                foreach (var group in GetIdentifierUseIndex(masked))
+                {
+                    if (IsMemberLookupIdentifier(group.Key))
+                    {
+                        var use = group.First();
+                        return SourceLocation(masked, use.Name.Index + use.Offset);
+                    }
+                }
+                return null;
+            }
+
+            private ILookup<string, (string Code, Match Name, int Offset)> GetIdentifierUseIndex(
+                string masked
+            ) =>
                 _identifierUses ??= EnumerateIdentifierUses(masked)
                     .ToLookup(use => IdentifierValue(use.Name.Value), StringComparer.Ordinal);
-                return _identifierUses[name];
-            }
 
             public IEnumerable<(string Code, Match Name, int Offset)> EnumerateIdentifierUses(
                 string masked
@@ -8788,6 +8821,7 @@ namespace DxMessaging.Editor
                 )
             > _routeDeclarations = new();
             private readonly HashSet<string> _globalAliases = new(StringComparer.Ordinal);
+            private (string Path, string Source, int Position) _possibleMemberLookup;
             private string _unreadableScript;
 
             public bool MayDeclareType(string name, int arity) =>
@@ -8865,6 +8899,10 @@ namespace DxMessaging.Editor
                 foreach ((_, Match name, int offset) in metadata.EnumerateIdentifierUses(masked))
                 {
                     string identifier = IdentifierValue(name.Value);
+                    if (_possibleMemberLookup.Path == null && IsMemberLookupIdentifier(identifier))
+                    {
+                        _possibleMemberLookup = (path, source, name.Index + offset);
+                    }
                     _uses.TryGetValue(identifier, out var uses);
                     if (uses.First.Path == null)
                     {
@@ -8881,6 +8919,11 @@ namespace DxMessaging.Editor
                     _uses[identifier] = uses;
                 }
             }
+
+            public string FindPossibleMemberLookup() =>
+                _possibleMemberLookup.Path == null
+                    ? null
+                    : $"{_possibleMemberLookup.Path}, {SourceLocation(_possibleMemberLookup.Source, _possibleMemberLookup.Position)}";
 
             public void MarkUnreadable(string path) => _unreadableScript ??= path;
 
