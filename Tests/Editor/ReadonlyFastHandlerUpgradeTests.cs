@@ -11,7 +11,7 @@ namespace DxMessaging.Tests.Editor
 
     public sealed class ReadonlyFastHandlerUpgradeTests
     {
-        // cspell:ignore mports Cdecl
+        // cspell:ignore mports Cdecl ndler
         private const string UnresolvedMessageRead =
             "reads a member or indexer on parameter 'message' that cannot be verified safe for 'in'";
 
@@ -737,6 +737,207 @@ class Receiver
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(1));
             Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [TestCase(
+            "FastHandler",
+            "first = (ref Pulse left) => Observe(left), second = (ref Pulse right) => Observe(right)",
+            2,
+            TestName = "Both initialized fast delegates in one declaration migrate"
+        )]
+        [TestCase(
+            "FastHandler",
+            "first, second = (ref Pulse right) => Observe(right)",
+            1,
+            TestName = "An uninitialized fast delegate preserves the following initializer"
+        )]
+        [TestCase(
+            "@FastHandler",
+            "handler = (ref Pulse value) => Observe(value)",
+            1,
+            TestName = "A verbatim fast delegate identifier binds the package type"
+        )]
+        [TestCase(
+            @"FastH\u0061ndler",
+            "handler = (ref Pulse value) => Observe(value)",
+            1,
+            TestName = "A Unicode escaped fast delegate identifier binds the package type"
+        )]
+        public void AnalyzeFindsEachFastDelegateInitializer(
+            string handlerName,
+            string declaration,
+            int count
+        )
+        {
+            string source = @"
+class Receiver
+{
+    void Configure()
+    {
+        global::DxMessaging.Core.MessageHandler.HANDLER<Pulse> DECLARATION;
+    }
+    static void Observe(Pulse value) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("HANDLER", handlerName).Replace("DECLARATION", declaration);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source.Replace("ref Pulse", "in Pulse")));
+            Assert.That(result.ReplacementCount, Is.EqualTo(count));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [TestCase(
+            "public class MessageHandler { }",
+            false,
+            TestName = "A project script can shadow the fully qualified package delegate"
+        )]
+        [TestCase(
+            "public class Outer { public class MessageHandler { } }",
+            true,
+            TestName = "A nested namesake leaves the package delegate eligible"
+        )]
+        [TestCase(
+            "#if LEGACY\npublic class Outer {\n#endif\npublic class MessageHandler { }\n#if LEGACY\n}\n#endif\n",
+            false,
+            TestName = "A conditionally nested delegate name can shadow the package in another build"
+        )]
+        [TestCase(
+            "#if true\npublic class Outer {\n#endif\npublic class MessageHandler { }\n#if true\n}\n#endif\n",
+            true,
+            TestName = "A proven nested delegate name leaves the package eligible"
+        )]
+        public void AnalyzeChecksOtherScriptsForTheDelegateType(string otherType, bool migrate)
+        {
+            const string Source =
+                @"
+class Receiver
+{
+    void Configure()
+    {
+        global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler =
+            (ref Pulse message) => Observe(message);
+    }
+    static void Observe(Pulse value) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }";
+            const string Path = "Assets/Receiver.cs";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
+            project.AddScript(Path, Source);
+            project.AddScript(
+                "Assets/Other.cs",
+                "namespace DxMessaging.Core {\n" + otherType + "\n}"
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source,
+                name => project.FindOtherUse(Path, name),
+                project
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? Source.Replace("ref Pulse", "in Pulse") : Source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase(
+            "",
+            "namespace Consumer { class MessageHandler { } }",
+            false,
+            TestName = "A type in the consumer namespace can shadow the imported delegate"
+        )]
+        [TestCase(
+            "DxMessaging.Core.",
+            "namespace Consumer.DxMessaging.Core { class MessageHandler { } }",
+            false,
+            TestName = "A related project namespace can shadow a relative delegate qualifier"
+        )]
+        [TestCase(
+            "global::DxMessaging.Core.",
+            "namespace Consumer.DxMessaging.Core { class MessageHandler { } }",
+            true,
+            TestName = "A global qualifier avoids the related namespace shadow"
+        )]
+        [TestCase(
+            "",
+            "global using MessageHandler = Vendor.Handler;",
+            false,
+            TestName = "A global alias in another source can shadow an imported delegate"
+        )]
+        public void AnalyzeChecksProjectNamespaceBeforeSelectingAnImportedDelegate(
+            string qualifier,
+            string otherSource,
+            bool migrate
+        )
+        {
+            string source = @"
+using DxMessaging.Core;
+namespace Consumer
+{
+    class Receiver
+    {
+        void Configure()
+        {
+            QUALIFIERMessageHandler.FastHandler<Pulse> handler = (ref Pulse message) => Observe(message);
+        }
+        static void Observe(Pulse value) { }
+    }
+    readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+}".Replace("QUALIFIER", qualifier);
+            const string Path = "Assets/Receiver.cs";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
+            project.AddScript(Path, source);
+            project.AddScript("Assets/Other.cs", otherSource);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source,
+                name => project.FindOtherUse(Path, name),
+                project
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase(
+            true,
+            TestName = "A writable registration in an interpolation hole is reported in place"
+        )]
+        [TestCase(
+            false,
+            TestName = "Literal registration text in an interpolation stays out of the preview"
+        )]
+        public void AnalyzeReportsWritablePackageRegistrationsInExecutableHoles(bool executable)
+        {
+            string contents = executable
+                ? "{token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(message))}"
+                : "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(message))";
+            string source = @"
+using DxMessaging.Core;
+class Receiver
+{
+    void Configure(MessageRegistrationToken token)
+    {
+        string text = EXPRESSION;
+    }
+    static void Observe(Pulse value) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }".Replace(
+                "EXPRESSION",
+                "$\"" + contents + "\""
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(executable ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains("line 7"));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains("interpolated registration"));
         }
 
         [Test]
@@ -5563,6 +5764,33 @@ token.RegisterTargeted<Pulse>(
                 result.ManualReviewMethods,
                 Has.All.Contains("overload whose package binding cannot be proven")
             );
+        }
+
+        [Test]
+        public void AnalyzeConvertsTargetedCallbackAfterGenericCondition()
+        {
+            const string Source =
+                @"
+using DxMessaging.Core;
+class Receiver
+{
+    static bool Choose<T, U>(InstanceId target) => true;
+    static void Observe(Pulse value) { }
+    void Register(MessageRegistrationToken token, InstanceId first, InstanceId second)
+    {
+        token.RegisterTargeted<Pulse>(
+            Choose<int, string>(first) ? first : second,
+            (ref Pulse message) => Observe(message),
+            priority: 0);
+    }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.ITargetedMessage { }";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source.Replace("ref Pulse", "in Pulse")));
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
         [Test]

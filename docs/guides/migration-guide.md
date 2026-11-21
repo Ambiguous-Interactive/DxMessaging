@@ -170,20 +170,24 @@ generated sources, interceptors, emission calls, comments, or strings.
 
 The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
-replacement. The tool checks that the scanned C# scripts are unchanged after you confirm the
-preview. It attempts to restore every earlier write if a later write fails. If a script changes
+replacement. After you confirm the preview, the tool checks the script inventory and compares
+the bytes of each script it could read. Resolve unreadable-script warnings and rerun the preview
+before applying changes. The tool attempts to restore every earlier write if a later write fails. If a script changes
 again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
 ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
-alias can hide the `DxMessaging` namespace. The preview defers a callback that passes
+alias can hide the `DxMessaging` namespace. If a project script declares a type with the package
+type's full name, verify which declaration the compiler selects before migrating it. The preview
+defers a callback that passes
 its newly readonly parameter as a `ref` or `out` argument, takes a typed reference with
 `__makeref`, or takes its address in a `fixed` initializer.
 It can update proven `base` calls in a changed
 `MessageAwareComponent` override. When a local callback forwards to one of the changed base
 methods, the preview keeps the related signature and argument edits together. It defers those
 edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks
-passed directly to both a handler and an interceptor in the same script. It lists these cases in the
-Console for manual review. It checks calls and delegate bindings to named callbacks in the same
+passed directly to both a handler and an interceptor in the same script. It records deferred
+callbacks in the Console before attempting to refresh the Asset Database. It checks calls and
+delegate bindings to named callbacks in the same
 file, including calls in other types and in interpolated expressions. For members that other
 scripts can access, the preview also scans C# scripts under `Assets` for possible uses. This
 includes private callbacks in partial types. It defers a signature change when a call still
