@@ -4937,11 +4937,16 @@ namespace DxMessaging.Editor
                         sameFileUse.Name == null
                             ? metadata.FindExternalCallbackUse(alias)
                             : SourceLocation(masked, sameFileUse.Name.Index + sameFileUse.Offset);
-                    if (location == null)
+                    if (location != null)
                     {
-                        continue;
+                        return $"initializes fast delegate '{name}' with a use through property '{alias}' at {location} that cannot be proven safe for 'in'";
                     }
-                    return $"initializes fast delegate '{name}' with a use through property '{alias}' at {location} that cannot be proven safe for 'in'";
+                    string lookup = FindPotentialPropertyLookup(masked, metadata);
+                    if (lookup != null)
+                    {
+                        return $"initializes fast delegate '{name}' exposed as '{alias}' with an indirect property lookup at {lookup}; verify its binding manually";
+                    }
+                    continue;
                 }
 
                 return $"initializes fast delegate '{name}' with a use on {SourceLocation(masked, position)} that cannot be proven safe for 'in'";
@@ -5016,9 +5021,55 @@ namespace DxMessaging.Editor
                 return false;
             }
 
+            int declarationStart =
+                masked.LastIndexOfAny(new[] { '{', '}', ';' }, typeStart - 1) + 1;
+            if (
+                metadata.UncertainBranches.Exists(branch =>
+                    branch.Start <= next && declarationStart < branch.Start + branch.Length
+                )
+            )
+            {
+                return false;
+            }
+
             aliasPosition = name;
             alias = IdentifierValue(masked.Substring(name, aliasEnd - name + 1));
             return true;
+        }
+
+        private static string FindPotentialPropertyLookup(string masked, SourceMetadata metadata)
+        {
+            foreach (
+                string name in new[]
+                {
+                    "GetProperty",
+                    "GetProperties",
+                    "GetMember",
+                    "GetMembers",
+                    "InvokeMember",
+                    "GetRuntimeProperty",
+                    "GetRuntimeProperties",
+                    "GetDeclaredProperty",
+                    "DeclaredProperties",
+                    "GetDeclaredMembers",
+                    "DeclaredMembers",
+                    "GetDefaultMembers",
+                    "PropertyOrField",
+                }
+            )
+            {
+                var local = metadata.IdentifierUses(masked, name).FirstOrDefault();
+                if (local.Name != null)
+                {
+                    return SourceLocation(masked, local.Name.Index + local.Offset);
+                }
+                string external = metadata.FindExternalCallbackUse(name);
+                if (external != null)
+                {
+                    return external;
+                }
+            }
+            return null;
         }
 
         private static bool IsDirectFastDelegateRegistrationUse(

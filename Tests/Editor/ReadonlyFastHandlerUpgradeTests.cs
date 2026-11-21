@@ -1839,6 +1839,88 @@ class Other
         }
 
         [Test]
+        public void AnalyzeKeepsADelegateWhenConditionalPropertiesShareItsInitializerReference()
+        {
+            const string Source =
+                @"
+using DxMessaging.Core.Messages;
+static class Callbacks
+{
+    private static readonly global::DxMessaging.Core.MessageHandler.FastHandler<IUntargetedMessage> hidden =
+        (ref IUntargetedMessage value) => { };
+#if LEGACY
+    public static global::DxMessaging.Core.MessageHandler.FastHandler<IUntargetedMessage> LegacyAlias =>
+#else
+    public static global::DxMessaging.Core.MessageHandler.FastHandler<IUntargetedMessage> UnusedAlias =>
+#endif
+        hidden;
+}";
+            const string External =
+                @"
+#if LEGACY
+using DxMessaging.Core.Messages;
+class Other
+{
+    void Forward(IUntargetedMessage message) => Callbacks.LegacyAlias(ref message);
+}
+#endif
+";
+            const string Path = "Assets/Callbacks.cs";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
+            project.AddScript(Path, Source);
+            project.AddScript("Assets/Consumer.cs", External);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source,
+                name => project.FindOtherUse(Path, name),
+                project
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public void AnalyzeReportsReflectedFastDelegatePropertyUse()
+        {
+            const string Source =
+                @"
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+static class Callbacks
+{
+    private static readonly MessageHandler.FastHandler<IUntargetedMessage> hidden =
+        (ref IUntargetedMessage value) => { };
+    public static MessageHandler.FastHandler<IUntargetedMessage> Exposed => hidden;
+}";
+            const string External =
+                @"
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+class Other
+{
+    void Forward(IUntargetedMessage message)
+    {
+        var callback = (MessageHandler.FastHandler<IUntargetedMessage>)typeof(Callbacks).GetProperty(""Exposed"").GetValue(null);
+        callback(ref message);
+    }
+}";
+            const string ExternalPath = "Assets/Consumer.cs";
+            const string Path = "Assets/Callbacks.cs";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
+            project.AddScript(Path, Source);
+            project.AddScript(ExternalPath, External);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source,
+                name => project.FindOtherUse(Path, name),
+                project
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain(ExternalPath + ", line 8"));
+        }
+
+        [Test]
         public void AnalyzeChecksLocalShadowInLiteralConditionalBaseForwarding()
         {
             const string Source =
