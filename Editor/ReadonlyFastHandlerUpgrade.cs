@@ -340,7 +340,6 @@ namespace DxMessaging.Editor
                     Path.GetFullPath(Application.dataPath)
                         .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                     + Path.DirectorySeparatorChar;
-                ValidateProjectPath(assetsRoot, assetsRoot);
                 assetPaths = GetProjectFilePaths(assetsRoot, importedScripts);
             }
             catch (Exception exception)
@@ -449,7 +448,8 @@ namespace DxMessaging.Editor
                         source.Text,
                         name => projectUses.FindOtherUse(assetPath, name),
                         projectUses,
-                        assemblySettingsAreCurrent ? assemblyName : null
+                        assemblySettingsAreCurrent ? assemblyName : null,
+                        projectSourcesLimitedToAssets: true
                     );
                 }
                 catch (RegexMatchTimeoutException)
@@ -598,7 +598,10 @@ namespace DxMessaging.Editor
         private static IEnumerable<string> GetImportedPaths(string filter) =>
             AssetDatabase
                 .FindAssets(filter, new[] { "Assets" })
-                .Select(AssetDatabase.GUIDToAssetPath);
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .Where(path =>
+                    !string.IsNullOrEmpty(path) && !path.Split('/').Any(IsUnityIgnoredName)
+                );
 
         private static bool IsScriptPath(string path) =>
             path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
@@ -617,19 +620,7 @@ namespace DxMessaging.Editor
         )
         {
             // The imported inventory can lag additions, removals and changes to disk.
-            EnumerationOptions options = new()
-            {
-                AttributesToSkip = FileAttributes.ReparsePoint,
-                RecurseSubdirectories = true,
-                IgnoreInaccessible = false,
-            };
-            IEnumerable<string> diskPaths = Directory
-                .EnumerateFiles(assetsRoot, "*", options)
-                .Where(path =>
-                    IsScriptPath(path)
-                    || IsAssemblySettingsPath(path)
-                    || IsAssemblySettingsMetadata(path)
-                )
+            IEnumerable<string> diskPaths = EnumerateProjectFiles(assetsRoot)
                 .Select(path =>
                     "Assets/"
                     + Path.GetRelativePath(assetsRoot, path)
@@ -644,6 +635,50 @@ namespace DxMessaging.Editor
                 .OrderBy(path => path, StringComparer.Ordinal)
                 .ToArray();
         }
+
+        private static IEnumerable<string> EnumerateProjectFiles(string assetsRoot)
+        {
+            EnumerationOptions options = new()
+            {
+                AttributesToSkip = FileAttributes.ReparsePoint,
+                IgnoreInaccessible = false,
+            };
+            Stack<string> directories = new();
+            directories.Push(assetsRoot);
+            while (directories.TryPop(out string directory))
+            {
+                ValidateProjectPath(assetsRoot, directory);
+                foreach (string child in Directory.EnumerateDirectories(directory, "*", options))
+                {
+                    if (
+                        !IsUnityIgnoredName(Path.GetFileName(child))
+                        && (File.GetAttributes(child) & FileAttributes.Hidden) == 0
+                    )
+                    {
+                        directories.Push(child);
+                    }
+                }
+                foreach (string path in Directory.EnumerateFiles(directory, "*", options))
+                {
+                    if (
+                        !IsUnityIgnoredName(Path.GetFileName(path))
+                        && (
+                            IsScriptPath(path)
+                            || IsAssemblySettingsPath(path)
+                            || IsAssemblySettingsMetadata(path)
+                        )
+                    )
+                    {
+                        yield return path;
+                    }
+                }
+            }
+        }
+
+        private static bool IsUnityIgnoredName(string name) =>
+            name.StartsWith(".", StringComparison.Ordinal)
+            || name.EndsWith("~", StringComparison.Ordinal)
+            || name == "cvs";
 
         private static string GetProjectFileFullPath(string assetsRoot, string assetPath)
         {
@@ -844,7 +879,8 @@ namespace DxMessaging.Editor
             string source,
             Func<string, string> findExternalCallbackUse = null,
             ProjectCallbackUses projectTypes = null,
-            string assemblyName = null
+            string assemblyName = null,
+            bool projectSourcesLimitedToAssets = false
         )
         {
             if (source == null)
@@ -856,7 +892,8 @@ namespace DxMessaging.Editor
                 source,
                 findExternalCallbackUse,
                 projectTypes,
-                assemblyName
+                assemblyName,
+                projectSourcesLimitedToAssets
             );
             string masked = MaskNonCode(source, metadata.InterpolatedExpressions, metadata);
             if (metadata.UncertainDirectivePosition is int directive)
@@ -2034,7 +2071,7 @@ namespace DxMessaging.Editor
                 )
             )
             {
-                string external = metadata.FindExternalCallbackUse(methodName);
+                string external = metadata.FindPossibleExternalMemberUse(methodName);
                 if (external != null)
                 {
                     return $"has a possible callback use in {external} that cannot be proven safe for 'in'";
@@ -5427,6 +5464,21 @@ namespace DxMessaging.Editor
                     {
                         return $"initializes fast delegate '{name}' with a use through property '{alias}' at {location} that cannot be proven safe for 'in'";
                     }
+                    if (
+                        MemberMayHaveExternalUses(
+                            masked,
+                            FindContainingTypeStart(masked, aliasPosition),
+                            aliasPosition,
+                            metadata
+                        )
+                    )
+                    {
+                        string possibleUse = metadata.FindPossibleExternalMemberUse(alias);
+                        if (possibleUse != null)
+                        {
+                            return $"initializes fast delegate '{name}' with a possible use through property '{alias}' in {possibleUse} that cannot be proven safe for 'in'";
+                        }
+                    }
                     string lookup = metadata.FindPossibleMemberLookup(masked)
                         ?? FindPossibleAliasOwnerUse(masked, metadata, position);
                     if (lookup != null)
@@ -5668,7 +5720,7 @@ namespace DxMessaging.Editor
         {
             if (mayHaveExternalUses)
             {
-                string external = metadata.FindExternalCallbackUse(name);
+                string external = metadata.FindPossibleExternalMemberUse(name);
                 if (external != null)
                 {
                     return $"initializes fast delegate '{name}' with a possible use in {external} that cannot be proven safe for 'in'";
@@ -7815,14 +7867,22 @@ namespace DxMessaging.Editor
                 string source,
                 Func<string, string> findExternalCallbackUse = null,
                 ProjectCallbackUses projectTypes = null,
-                string assemblyName = null
+                string assemblyName = null,
+                bool projectSourcesLimitedToAssets = false
             )
             {
                 Source = source;
                 FindExternalCallbackUse = findExternalCallbackUse;
                 _projectTypes = projectTypes;
                 _assemblyName = assemblyName;
+                _projectSourcesLimitedToAssets = projectSourcesLimitedToAssets;
             }
+
+            private readonly bool _projectSourcesLimitedToAssets;
+
+            public string FindPossibleExternalMemberUse(string name) =>
+                FindExternalCallbackUse?.Invoke(name)
+                ?? (_projectSourcesLimitedToAssets ? "scripts outside Assets" : null);
 
             public string Source { get; }
 

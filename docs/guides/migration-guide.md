@@ -196,8 +196,9 @@ callbacks in the Console before attempting to refresh the Asset Database. It che
 delegate bindings to named callbacks in the same
 file, including calls in other types and in interpolated expressions. For members that other
 scripts can access, the preview also scans C# scripts under `Assets` for possible uses. This
-includes private callbacks in partial types. It defers a signature change when a call still
-needs `ref` or a binding cannot be established. For a registration call, the
+includes private callbacks in partial types. It defers exposed callbacks when their callers could
+be outside `Assets`. Verify those callers and any other parts of the type before changing a signature
+that still needs `ref` or has an unproved binding. For a registration call, the
 preview checks the message routing type and the other arguments before changing an inferred
 callback. A route declaration in another script can establish that type when Unity assigns
 both scripts to the same assembly and the declaration is unique. An explicit package
@@ -206,6 +207,12 @@ When a message gets its routing interface from source generation, such as a part
 with `[DxUntargetedMessage]`, the preview leaves its registration for manual review if it cannot
 prove the route from the available source. Verify the generated interface in your build, then update
 the callback as shown above.
+
+When a stored fast delegate changes to the readonly signature, update invocations of that delegate
+too. This includes calls through fields and properties. For example, change `separate(ref pulse)`
+to `separate(in pulse)` and `separate?.Invoke(ref pulse)` to `separate?.Invoke(in pulse)`. Keep a
+separate writable callback for callers that need to modify the argument.
+
 Review any deferred `RegisterGlobalAcceptAll` call as a group because its three callbacks must
 bind to the same overload. If the preview cannot trace an argument back to its delegate, it can
 also defer separate fast delegate initializers in that script. Reports include the source line

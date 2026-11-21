@@ -1036,6 +1036,43 @@ public readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMess
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
         }
 
+        [TestCase("internal", false)]
+        [TestCase("public", false)]
+        [TestCase("private", true)]
+        public void AnalyzeDefersExposedCallbacksWhenTheProjectInventoryIsLimited(
+            string access,
+            bool migrate
+        )
+        {
+            string source = @"
+class Receiver
+{
+    void Install()
+    {
+        global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = Forward;
+    }
+    ACCESS void Forward(ref Pulse message) { }
+}
+
+public readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage
+{
+    public System.Type MessageType => typeof(Pulse);
+}
+".Replace("ACCESS", access);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source,
+                _ => null,
+                projectSourcesLimitedToAssets: true
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains("scripts outside Assets"));
+        }
+
         [TestCase(
             "separate(ref pulse);",
             false,
