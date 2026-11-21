@@ -1209,6 +1209,14 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
+        [TestCase("using Vendor;", "", "MessageHandler", false)]
+        [TestCase("using Vendor;", "", "global::DxMessaging.Core.MessageHandler", true)]
+        [TestCase(
+            "using Vendor; namespace Consumer { using global::DxMessaging.Core;",
+            "}",
+            "MessageHandler",
+            true
+        )]
         [TestCase("namespace Consumer { using Vendor;", "}", "MessageHandler", false)]
         [TestCase("namespace Consumer; using Vendor;", "", "MessageHandler", false)]
         [TestCase(
@@ -1270,6 +1278,45 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
                 result.UpgradedSource,
                 Is.EqualTo(migrate ? source.Replace("ref ", "in ") : source)
             );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase("Game.dll", "MessageHandler", false)]
+        [TestCase("Game.dll", "global::DxMessaging.Core.MessageHandler", true)]
+        [TestCase("Unrelated.dll", "MessageHandler", true)]
+        public void AnalyzeChecksGlobalNamespaceImportsFromOtherScripts(
+            string importsAssembly,
+            string handler,
+            bool migrate
+        )
+        {
+            string source = @"
+using DxMessaging.Core;
+sealed class Receiver
+{
+    HANDLER.FastHandler<Pulse> Callback = (ref Pulse message) => { };
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("HANDLER", handler);
+            const string Assembly = "Game.dll";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
+            project.AddScript("Assets/Receiver.cs", source, Assembly);
+            project.AddScript("Assets/Imports.cs", "global using Vendor;", importsAssembly);
+            project.AddScript(
+                "Assets/Vendor.cs",
+                "namespace Vendor { class MessageHandler { public delegate void FastHandler<T>(ref T message); } }",
+                Assembly
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source,
+                projectTypes: project,
+                assemblyName: Assembly
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
         }
 

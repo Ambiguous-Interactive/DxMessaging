@@ -4290,6 +4290,34 @@ namespace DxMessaging.Editor
             return false;
         }
 
+        private static IEnumerable<(Match Directive, string Path)> CompilationUnitNamespaceImports(
+            string masked,
+            MatchCollection directives
+        )
+        {
+            Match firstNamespace = NamespaceDeclarationRegex.Match(masked);
+            int limit = firstNamespace.Success ? firstNamespace.Index : masked.Length;
+            foreach (Match directive in directives)
+            {
+                if (limit <= directive.Index)
+                {
+                    yield break;
+                }
+                if (0 <= FindEnclosingBrace(masked, directive.Index))
+                {
+                    continue;
+                }
+                Match target = NamespaceImportPathRegex.Match(
+                    masked,
+                    directive.Index + directive.Length
+                );
+                if (target.Success)
+                {
+                    yield return (directive, NormalizeNamespacePath(target.Groups["path"].Value));
+                }
+            }
+        }
+
         private static bool HasNamespaceImport(
             string masked,
             string namespaceName,
@@ -10205,10 +10233,47 @@ namespace DxMessaging.Editor
                 int dot = spelling.IndexOf('.');
                 string name = dot < 0 ? spelling : spelling.Substring(0, dot);
                 int lookupArity = dot < 0 ? arity : 0;
+                int nearestPackageImport = 0;
+                if (dot < 0)
+                {
+                    string packageNamespace = qualifiedName.Substring(
+                        0,
+                        qualifiedName.LastIndexOf('.')
+                    );
+                    foreach (var import in _namespaceImports)
+                    {
+                        if (
+                            import.Rooted
+                            && import.Path == packageNamespace
+                            && ContainsPosition(import.Scope, use)
+                        )
+                        {
+                            nearestPackageImport = Math.Max(
+                                nearestPackageImport,
+                                import.Scope.Start
+                            );
+                        }
+                    }
+                }
+                if (
+                    nearestPackageImport == 0
+                    && _projectTypes?.HasCompetingGlobalNamespaceImport(
+                        name,
+                        qualifiedName,
+                        lookupArity,
+                        _assemblyName
+                    ) == true
+                )
+                {
+                    return true;
+                }
 
                 foreach (var import in _namespaceImports)
                 {
-                    if (!ContainsPosition(import.Scope, use))
+                    if (
+                        import.Scope.Start < nearestPackageImport
+                        || !ContainsPosition(import.Scope, use)
+                    )
                     {
                         continue;
                     }
@@ -10279,6 +10344,11 @@ namespace DxMessaging.Editor
                 if (directives.Count == 0)
                 {
                     return imports;
+                }
+
+                foreach ((_, string path) in CompilationUnitNamespaceImports(masked, directives))
+                {
+                    imports.Add((new TextSpan(0, masked.Length), string.Empty, path, true, null));
                 }
 
                 foreach (Match declaration in NamespaceDeclarationRegex.Matches(masked))
@@ -11850,6 +11920,8 @@ namespace DxMessaging.Editor
                 )
             > _routeDeclarations = new();
             private readonly HashSet<string> _globalAliases = new(StringComparer.Ordinal);
+            private readonly HashSet<(string Assembly, string Path)> _globalNamespaceImports =
+                new();
             private (string Path, string Source, int Position) _possibleMemberLookup;
             private string _unavailableScript;
 
@@ -11882,6 +11954,18 @@ namespace DxMessaging.Editor
 
             public bool CanImportGlobalType(string name) =>
                 _hasGlobalStaticImport || _globalAliases.Contains(name);
+
+            public bool HasCompetingGlobalNamespaceImport(
+                string name,
+                string qualifiedName,
+                int arity,
+                string assemblyName
+            ) =>
+                _globalNamespaceImports.Any(import =>
+                    import.Assembly == assemblyName
+                    && import.Path + "." + name != qualifiedName
+                    && MayDeclareType(import.Path + "." + name, arity)
+                );
 
             public void AddScript(string path, string source, string assemblyName = null)
             {
@@ -11930,6 +12014,28 @@ namespace DxMessaging.Editor
                     if (FollowsKeyword(masked, 0, prefix, "global"))
                     {
                         _globalAliases.Add(IdentifierValue(alias.Groups["alias"].Value));
+                    }
+                }
+                foreach (
+                    (
+                        Match importDirective,
+                        string importedNamespace
+                    ) in CompilationUnitNamespaceImports(
+                        masked,
+                        NamespaceUsingRegex.Matches(masked)
+                    )
+                )
+                {
+                    if (
+                        FollowsKeyword(
+                            masked,
+                            0,
+                            PreviousNonWhitespace(masked, importDirective.Index - 1),
+                            "global"
+                        )
+                    )
+                    {
+                        _globalNamespaceImports.Add((assemblyName, importedNamespace));
                     }
                 }
                 foreach ((_, Match name, int offset) in metadata.EnumerateIdentifierUses(masked))
