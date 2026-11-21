@@ -5,13 +5,14 @@ namespace DxMessaging.Tests.Editor
     using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Linq;
     using System.Text;
     using DxMessaging.Editor;
     using NUnit.Framework;
 
     public sealed class ReadonlyFastHandlerUpgradeTests
     {
-        // cspell:ignore mports Cdecl ndler
+        // cspell:ignore mports Cdecl ndler ulse
         private const string UnresolvedMessageRead =
             "reads a member or indexer on parameter 'message' that cannot be verified safe for 'in'";
 
@@ -1062,7 +1063,8 @@ public readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMess
             ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
                 source,
                 _ => null,
-                projectSourcesLimitedToAssets: true
+                projectSourcesLimitedToAssets: true,
+                findPackageBindingIssue: _ => null
             );
             Assert.That(
                 result.UpgradedSource,
@@ -1071,6 +1073,159 @@ public readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMess
             Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
             Assert.That(result.ManualReviewMethods, Has.All.Contains("scripts outside Assets"));
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void AnalyzeRequiresPackageBindingForAnOverrideAndItsInheritedReceiver(bool proven)
+        {
+            const string Source =
+                @"
+sealed class Receiver : global::DxMessaging.Unity.MessageAwareComponent
+{
+    protected override bool RegisterForStringMessages => true;
+
+    protected override void HandleGlobalStringMessage(ref global::DxMessaging.Core.Messages.GlobalStringMessage message)
+    {
+        base.HandleGlobalStringMessage(ref message);
+    }
+
+    void Install() => Token.RegisterUntargeted<Pulse>(OnPulse);
+    private void OnPulse(ref Pulse pulse) { }
+}
+
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source,
+                _ => null,
+                projectSourcesLimitedToAssets: true,
+                findPackageBindingIssue: type =>
+                    proven || type != "MessageAwareComponent"
+                        ? null
+                        : "the compiler reference could not be verified"
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(proven ? 3 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(proven ? Source.Replace("ref ", "in ") : Source)
+            );
+            Assert.That(
+                result.ManualReviewMethods.Any(issue =>
+                    issue.Contains("line")
+                    && issue.Contains("compiler reference could not be verified")
+                ),
+                Is.EqualTo(!proven)
+            );
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void AnalyzeRequiresPackageBindingForAQualifiedRegistrationToken(bool proven)
+        {
+            const string Source =
+                @"
+sealed class Receiver
+{
+    void Install(global::DxMessaging.Core.MessageRegistrationToken token) =>
+        token.RegisterUntargeted<Pulse>(OnPulse);
+
+    private void OnPulse(ref Pulse pulse) { }
+}
+
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source,
+                _ => null,
+                projectSourcesLimitedToAssets: true,
+                findPackageBindingIssue: type =>
+                    proven || type != "MessageRegistrationToken"
+                        ? null
+                        : "the compiler reference could not be verified"
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(proven ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(proven ? Source.Replace("ref ", "in ") : Source)
+            );
+            Assert.That(
+                result.ManualReviewMethods.Any(issue =>
+                    issue.Contains("line")
+                    && issue.Contains("compiler reference could not be verified")
+                ),
+                Is.EqualTo(!proven)
+            );
+        }
+
+        [TestCase("=> token.RegisterUntargeted<Pulse>((ref Pulse message) => { });")]
+        [TestCase("{ token.RegisterUntargeted<Pulse>((ref Pulse message) => { }); }")]
+        public void AnalyzeKeepsAReceiverWhoseTypeIsShadowedByACallableParameter(string body)
+        {
+            string source = @"
+using DxMessaging.Core;
+class Receiver
+{
+    void Install<@MessageRegistrationToken>(MessageRegistrationToken token)
+        CALL_BODY
+}
+
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("CALL_BODY", body);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+        }
+
+        [TestCase("Receiver<@Pulse>", "", "", false)]
+        [TestCase(@"Receiver<\u0050ulse>", "", "", false)]
+        [TestCase("Receiver<[Probe(typeof(List<int>))] Pulse>", "", "", false)]
+        [TestCase("Receiver", "", "<@Pulse>", false)]
+        [TestCase(
+            "Receiver<Pulse>",
+            "where Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage",
+            "<@Pulse>",
+            false
+        )]
+        [TestCase(
+            "Receiver<Pulse>",
+            "where Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage",
+            "",
+            true
+        )]
+        [TestCase("Receiver<Other>", "", "", true)]
+        public void AnalyzeChecksTheNearestGenericParameterBeforeProvingARoute(
+            string receiver,
+            string constraint,
+            string parameters,
+            bool migrate
+        )
+        {
+            string source = @"
+class RECEIVER CONSTRAINT
+{
+    void InstallPARAMETERS(global::DxMessaging.Core.MessageRegistrationToken token) =>
+        token.RegisterUntargeted<Pulse>((ref Pulse message) => { });
+}
+
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("RECEIVER", receiver).Replace("CONSTRAINT", constraint).Replace("PARAMETERS", parameters);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref ", "in ") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
         }
 
         [TestCase(
@@ -5518,6 +5673,55 @@ class Receiver
                 result.UpgradedSource,
                 Is.EqualTo(requiresReview ? source : source.Replace("ref Pulse", "in Pulse"))
             );
+        }
+
+        [TestCase(
+            "",
+            "[global::System.Runtime.InteropServices.In, global::System.Runtime.InteropServices.Out]",
+            false
+        )]
+        [TestCase(
+            "",
+            @"[global::System.Runtime.InteropServices.In, global::System.Runtime.InteropServices.\u004futAttribute]",
+            false
+        )]
+        [TestCase(
+            "using Marker = System.Runtime.InteropServices.OutAttribute;",
+            "[global::System.Runtime.InteropServices.In, Marker]",
+            false
+        )]
+        [TestCase("", "[global::System.Runtime.InteropServices.In]", true)]
+        [TestCase("", "[Marker]", true)]
+        public void AnalyzePreservesParameterAttributesThatCanRequireWritableRef(
+            string import,
+            string attribute,
+            bool migrate
+        )
+        {
+            string source =
+                import
+                + @"
+sealed class Receiver
+{
+    void Install(global::DxMessaging.Core.MessageRegistrationToken token) =>
+        token.RegisterUntargeted<Pulse>(OnPulse);
+
+    private void OnPulse(ATTRIBUTE ref Pulse pulse) { }
+}
+
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+sealed class MarkerAttribute : System.Attribute { }
+".Replace("ATTRIBUTE", attribute);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref ", "in ") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
         }
 
         [TestCase(

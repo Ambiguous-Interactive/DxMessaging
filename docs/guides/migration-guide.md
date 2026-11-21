@@ -184,9 +184,14 @@ leaves unsupported encodings, overloads, qualified or cross-file callback declar
 ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
 alias can hide the `DxMessaging` namespace. If a project script declares a type with the package
 type's full name, verify which declaration the compiler selects before migrating it. The preview
-defers a callback that passes
+uses Unity's compilation inputs for the active build target to check that package types come from
+the installed DxMessaging runtime. It reports the callback or type location when it cannot verify
+that binding. A source outside the script index, competing metadata, missing runtime source
+checksums, or unverified compiler options can require manual review. Check the binding and related callers in your other build targets
+before making a deferred edit. The preview also defers a callback that passes
 its newly readonly parameter as a `ref` or `out` argument, takes a typed reference with
-`__makeref`, or takes its address in a `fixed` initializer.
+`__makeref`, or takes its address in a `fixed` initializer. It also preserves callbacks with
+parameter attributes that may require writable references, such as `OutAttribute`.
 It can update proven `base` calls in a changed
 `MessageAwareComponent` override. When a local callback forwards to one of the changed base
 methods, the preview keeps the related signature and argument edits together. It defers those
@@ -266,7 +271,9 @@ original stage and pass it explicitly to the listeners that need it.
 
 When you migrate a deferred string-handler override by hand, resolve its writable uses first.
 Use a local copy for scratch writes. Preserve caller-visible writes at the stage that owns the
-writable data. Then change the override parameter from `ref` to `in`.
+writable data. Check which virtual method the declaration overrides. Change the parameter from
+`ref` to `in` only if that virtual method now takes `in`. Keep `ref` when a custom base method
+still requires it.
 
 Search for calls to `base.HandleStringGameObjectMessage`, `base.HandleStringComponentMessage`,
 and `base.HandleGlobalStringMessage` throughout the class, including in helper methods. Check these
@@ -277,7 +284,7 @@ Keep `ref` on calls to custom overloads that still require it.
 Check `RegisterForStringMessages` in each build configuration and preserve its prior behavior,
 including deliberate opt-outs such as `=> false`. A computed override that reads
 `base.RegisterForStringMessages` needs review because 4.0 changes the package default to `false`.
-For a component that directly inherits `MessageAwareComponent`, change
+For a component that directly inherits DxMessaging's `MessageAwareComponent`, change
 `=> enabled && base.RegisterForStringMessages` to `=> enabled` to preserve the result from 3.x.
 If a custom base provides the setting, check that base's behavior first.
 

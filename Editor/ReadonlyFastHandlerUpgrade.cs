@@ -6,6 +6,7 @@ namespace DxMessaging.Editor
     using System.Globalization;
     using System.IO;
     using System.Linq;
+    using System.Security.Cryptography;
     using System.Text;
     using System.Text.RegularExpressions;
     using UnityEditor;
@@ -364,7 +365,9 @@ namespace DxMessaging.Editor
                 CompilationPipeline.GetAssemblyNameFromScriptPath,
                 StringComparer.Ordinal
             );
-            Dictionary<string, EncodedSource> readableScripts = new(StringComparer.Ordinal);
+            Dictionary<string, (string FullPath, EncodedSource Source)> readableScripts = new(
+                StringComparer.Ordinal
+            );
             ProjectCallbackUses projectUses = new();
 
             foreach (string assetPath in assetPaths)
@@ -372,9 +375,8 @@ namespace DxMessaging.Editor
                 bool isScript = IsScriptPath(assetPath);
                 try
                 {
-                    byte[] originalBytes = File.ReadAllBytes(
-                        GetProjectFileFullPath(assetsRoot, assetPath)
-                    );
+                    string fullPath = GetProjectFileFullPath(assetsRoot, assetPath);
+                    byte[] originalBytes = File.ReadAllBytes(fullPath);
                     originalFiles.Add(assetPath, originalBytes);
                     if (!isScript)
                     {
@@ -386,7 +388,7 @@ namespace DxMessaging.Editor
                     projectUses.AddScript(assetPath, source.Text, assemblyName);
                     if (!IsGeneratedPath(assetPath) && !IsGeneratedSource(assetPath, source.Text))
                     {
-                        readableScripts.Add(assetPath, source);
+                        readableScripts.Add(assetPath, (fullPath, source));
                     }
                 }
                 catch (Exception exception)
@@ -436,10 +438,13 @@ namespace DxMessaging.Editor
                 }
             }
 
-            foreach (KeyValuePair<string, EncodedSource> script in readableScripts)
+            ProjectPackageBindings packageBindings = new(
+                assetsRoot,
+                scriptAssemblies,
+                originalFiles
+            );
+            foreach ((string assetPath, (string fullPath, EncodedSource source)) in readableScripts)
             {
-                string assetPath = script.Key;
-                EncodedSource source = script.Value;
                 bool isImported = scriptAssemblies.TryGetValue(assetPath, out string assemblyName);
                 UpgradeResult result;
                 try
@@ -449,7 +454,11 @@ namespace DxMessaging.Editor
                         name => projectUses.FindOtherUse(assetPath, name),
                         projectUses,
                         assemblySettingsAreCurrent ? assemblyName : null,
-                        projectSourcesLimitedToAssets: true
+                        projectSourcesLimitedToAssets: true,
+                        findPackageBindingIssue: type =>
+                            assemblySettingsAreCurrent
+                                ? packageBindings.FindIssue(assetPath, type)
+                                : "Unity's imported assembly settings do not match disk"
                     );
                 }
                 catch (RegexMatchTimeoutException)
@@ -484,7 +493,7 @@ namespace DxMessaging.Editor
 
                 upgrades.Add(
                     new FileUpgrade(
-                        GetProjectFileFullPath(assetsRoot, assetPath),
+                        fullPath,
                         originalFiles[assetPath],
                         source.Encode(result.UpgradedSource),
                         result.ReplacementCount,
@@ -542,20 +551,23 @@ namespace DxMessaging.Editor
                     scriptAssemblies,
                     assemblySettingsAreCurrent
                 );
+                packageBindings.Verify();
                 Dictionary<string, byte[]> expectedWrites = upgrades.ToDictionary(
                     upgrade => upgrade.FullPath,
                     upgrade => upgrade.UpgradedBytes,
                     StringComparer.Ordinal
                 );
                 ApplyAtomically(upgrades, assetsRoot, () =>
+                {
                     VerifyProjectFileSnapshot(
                         assetsRoot,
                         originalFiles,
                         scriptAssemblies,
                         assemblySettingsAreCurrent,
                         expectedWrites
-                    )
-                );
+                    );
+                    packageBindings.Verify();
+                });
             }
             catch (Exception exception)
             {
@@ -595,9 +607,12 @@ namespace DxMessaging.Editor
         private static HashSet<string> GetImportedScriptPaths() =>
             GetImportedPaths("t:MonoScript").Where(IsScriptPath).ToHashSet(StringComparer.Ordinal);
 
-        private static IEnumerable<string> GetImportedPaths(string filter) =>
+        private static IEnumerable<string> GetImportedPaths(
+            string filter,
+            string root = "Assets"
+        ) =>
             AssetDatabase
-                .FindAssets(filter, new[] { "Assets" })
+                .FindAssets(filter, root == null ? null : new[] { root })
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .Where(path =>
                     !string.IsNullOrEmpty(path) && !path.Split('/').Any(IsUnityIgnoredName)
@@ -875,12 +890,812 @@ namespace DxMessaging.Editor
             }
         }
 
+        private sealed class ProjectPackageBindings
+        {
+            private static readonly string[] PackageTypeNames =
+            {
+                "MessageAwareComponent",
+                "MessageRegistrationToken",
+                "MessageHandler",
+                "InstanceId",
+                "StringMessage",
+                "GlobalStringMessage",
+                "IUntargetedMessage",
+                "ITargetedMessage",
+                "IBroadcastMessage",
+            };
+            private static readonly byte[][] PackageTypeBytes = PackageTypeNames
+                .Select(Encoding.UTF8.GetBytes)
+                .ToArray();
+            private static readonly Regex NonBindingCompilerOption = new(
+                @"\A[-/](?:(?:d|define|langversion|nullable|nowarn|warn|warnaserror):[\w.,;_+-]+|(?:unsafe|checked|optimize|warnaserror)[+-]?|additionalfile:(?:""[^""\r\n]+""|[^\s""]+))\z",
+                RegexOptions.CultureInvariant | RegexOptions.IgnoreCase
+            );
+
+            private static readonly Regex AssemblyReferenceSetting = new(
+                @"\A\s*\{\s*""reference""\s*:\s*""(?<target>[^""\\]+)""\s*\}\s*\z",
+                RegexOptions.CultureInvariant
+            );
+
+            private readonly string _projectRoot;
+            private readonly Dictionary<string, string> _scriptAssemblies;
+            private readonly Dictionary<string, byte[]> _originalFiles;
+            private readonly HashSet<(string Path, string Type)> _provedBindings = new();
+            private readonly Dictionary<(string Assembly, string Type), string> _assemblyIssues =
+                new();
+            private readonly Dictionary<string, HashSet<string>> _sourceNames = new(
+                StringComparer.Ordinal
+            );
+            private readonly Dictionary<string, HashSet<string>> _metadataNames = new(
+                StringComparer.Ordinal
+            );
+            private Assembly[] _editorAssemblies;
+            private Assembly[] _playerAssemblies;
+            private string _runtimePath;
+            private string _runtimeRoot;
+            private string _providerIssue;
+            private Dictionary<string, (Guid Algorithm, byte[] Checksum)> _runtimeDocuments;
+
+            private static readonly Guid Sha256DocumentChecksum = new(
+                "8829d00f-11b8-4213-878b-770e8597ac16"
+            );
+            private static readonly Guid Sha1DocumentChecksum = new(
+                "ff1816ec-aa5e-4d10-87f7-6f4963833460"
+            );
+            private readonly Dictionary<Assembly, string> _providerInputsIssues = new();
+            private Dictionary<string, string> _outsideAssemblyReferences;
+
+            public ProjectPackageBindings(
+                string assetsRoot,
+                Dictionary<string, string> scriptAssemblies,
+                Dictionary<string, byte[]> originalFiles
+            )
+            {
+                _projectRoot = Path.GetDirectoryName(
+                    assetsRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                );
+                _scriptAssemblies = scriptAssemblies;
+                _originalFiles = originalFiles;
+            }
+
+            public string FindIssue(string assetPath, string type)
+            {
+                if (Array.IndexOf(PackageTypeNames, type) < 0)
+                {
+                    return "the preview has no compilation proof for this package type";
+                }
+                if (
+                    !_scriptAssemblies.TryGetValue(assetPath, out string assemblyName)
+                    || string.IsNullOrEmpty(assemblyName)
+                )
+                {
+                    return "Unity has not established this script's compilation assembly";
+                }
+                if (assemblyName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                {
+                    assemblyName = assemblyName.Substring(0, assemblyName.Length - 4);
+                }
+                try
+                {
+                    _editorAssemblies ??= CompilationPipeline.GetAssemblies(AssembliesType.Editor);
+                    _playerAssemblies ??= CompilationPipeline.GetAssemblies(AssembliesType.Player);
+                    Assembly editor = _editorAssemblies.FirstOrDefault(assembly =>
+                        assembly.name == assemblyName
+                    );
+                    if (editor == null || !ContainsScript(editor, assetPath))
+                    {
+                        return "Unity's Editor compilation does not list this script in its assigned assembly";
+                    }
+                    Assembly player = _playerAssemblies.FirstOrDefault(assembly =>
+                        assembly.name == assemblyName
+                    );
+                    if (player != null && !ContainsScript(player, assetPath))
+                    {
+                        return "Unity's Player compilation assigns this script differently";
+                    }
+                    var key = (assemblyName, type);
+                    if (!_assemblyIssues.TryGetValue(key, out string issue))
+                    {
+                        issue = FindAssemblyIssue(editor, type);
+                        if (issue == null && player != null)
+                        {
+                            issue = FindAssemblyIssue(player, type);
+                        }
+                        if (
+                            issue == null
+                            && player == null
+                            && (editor.flags & AssemblyFlags.EditorAssembly) == 0
+                        )
+                        {
+                            issue =
+                                "Unity has not established the Player compilation for this assembly";
+                        }
+                        _assemblyIssues.Add(key, issue);
+                    }
+                    if (issue == null)
+                    {
+                        _provedBindings.Add((assetPath, type));
+                    }
+                    return issue;
+                }
+                catch (Exception exception)
+                    when (exception
+                            is IOException
+                                or UnauthorizedAccessException
+                                or ArgumentException
+                                or InvalidOperationException
+                                or NotSupportedException
+                    )
+                {
+                    return $"the compilation inputs could not be verified ({exception.Message})";
+                }
+            }
+
+            public void Verify()
+            {
+                if (_provedBindings.Count == 0)
+                {
+                    return;
+                }
+
+                ProjectPackageBindings current = new(
+                    Path.Combine(_projectRoot, "Assets"),
+                    _scriptAssemblies,
+                    _originalFiles
+                );
+                foreach ((string path, string type) in _provedBindings)
+                {
+                    string issue = current.FindIssue(path, type);
+                    if (issue != null)
+                    {
+                        throw new IOException(
+                            $"Could not recheck the package {type} binding for '{path}': {issue}."
+                        );
+                    }
+                }
+            }
+
+            private bool ContainsScript(Assembly assembly, string assetPath)
+            {
+                string fullPath = PhysicalPath(assetPath);
+                return assembly.sourceFiles.Any(path => PhysicalPath(path) == fullPath);
+            }
+
+            private string FindAssemblyIssue(Assembly assembly, string type)
+            {
+                foreach (string input in assembly.sourceFiles)
+                {
+                    string path = PhysicalPath(input);
+                    string relative = Path.GetRelativePath(_projectRoot, path)
+                        .Replace(Path.DirectorySeparatorChar, '/');
+                    if (
+                        !_scriptAssemblies.ContainsKey(relative)
+                        || !_originalFiles.TryGetValue(relative, out byte[] bytes)
+                        || bytes == null
+                    )
+                    {
+                        return $"the compilation includes a source outside the script index ('{input}')";
+                    }
+                }
+
+                string definition =
+                    CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName(
+                        assembly.name
+                    );
+                if (!string.IsNullOrEmpty(definition))
+                {
+                    _outsideAssemblyReferences ??= ReadOutsideAssemblyReferences();
+                    if (
+                        _outsideAssemblyReferences.TryGetValue(
+                            PhysicalPath(definition),
+                            out string referencePath
+                        )
+                    )
+                    {
+                        return $"an assembly reference outside Assets ('{referencePath}') can add source outside the script index";
+                    }
+                }
+
+                string issue = FindProviderIssue(assembly, out Assembly provider);
+                if (issue != null)
+                {
+                    return issue;
+                }
+                issue = FindCompilerOptionsIssue(assembly);
+                if (issue != null)
+                {
+                    return issue;
+                }
+
+                foreach (string reference in assembly.compiledAssemblyReferences)
+                {
+                    string path = PhysicalPath(reference);
+                    if (
+                        path != _runtimePath
+                        && !IsEditorInstallationFile(path)
+                        && ReadMetadataNames(path).Contains(type)
+                    )
+                    {
+                        return $"metadata from '{reference}' can affect the package type binding";
+                    }
+                }
+
+                foreach (Assembly reference in assembly.assemblyReferences)
+                {
+                    if (reference == provider)
+                    {
+                        continue;
+                    }
+                    issue = FindCompilerOptionsIssue(reference);
+                    if (issue != null)
+                    {
+                        return issue;
+                    }
+                    foreach (string input in reference.sourceFiles)
+                    {
+                        if (ReadSourceNames(PhysicalPath(input)).Contains(type))
+                        {
+                            return $"source in '{input}' can affect the package type binding";
+                        }
+                    }
+                    string path = PhysicalPath(reference.outputPath);
+                    if (File.Exists(path) && ReadMetadataNames(path).Contains(type))
+                    {
+                        return $"metadata from '{reference.outputPath}' can affect the package type binding";
+                    }
+                }
+                return null;
+            }
+
+            private Dictionary<string, string> ReadOutsideAssemblyReferences()
+            {
+                Dictionary<string, string> targets = new(StringComparer.Ordinal);
+                foreach (
+                    string path in GetImportedPaths("t:AssemblyDefinitionReferenceAsset", null)
+                )
+                {
+                    if (!path.StartsWith("Packages/", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    byte[] bytes = File.ReadAllBytes(PhysicalPath(path));
+                    TextAsset imported = AssetDatabase.LoadAssetAtPath<TextAsset>(path);
+                    Match settings = AssemblyReferenceSetting.Match(
+                        EncodedSource.FromBytes(bytes).Text
+                    );
+                    if (
+                        imported == null
+                        || !bytes.AsSpan().SequenceEqual(imported.bytes)
+                        || !settings.Success
+                    )
+                    {
+                        throw new IOException(
+                            $"Unity's imported assembly reference '{path}' could not be verified"
+                        );
+                    }
+
+                    string definition =
+                        CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyReference(
+                            settings.Groups["target"].Value
+                        );
+                    if (string.IsNullOrEmpty(definition))
+                    {
+                        throw new IOException(
+                            $"Unity did not resolve the target of assembly reference '{path}'"
+                        );
+                    }
+                    targets.TryAdd(PhysicalPath(definition), path);
+                }
+                return targets;
+            }
+
+            private static bool IsEditorInstallationFile(string path) =>
+                IsWithinDirectory(
+                    Path.GetFullPath(EditorApplication.applicationContentsPath),
+                    path
+                );
+
+            private string FindProviderIssue(Assembly consumer, out Assembly provider)
+            {
+                Type component = typeof(global::DxMessaging.Unity.MessageAwareComponent);
+                _runtimePath ??= PhysicalPath(component.Assembly.Location);
+                provider = consumer.assemblyReferences.FirstOrDefault(reference =>
+                    PhysicalPath(reference.outputPath) == _runtimePath
+                );
+                if (provider == null)
+                {
+                    return "the compiler does not directly reference the installed DxMessaging runtime assembly";
+                }
+
+                if (_runtimeRoot == null)
+                {
+                    string definition =
+                        CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName(
+                            component.Assembly.GetName().Name
+                        );
+                    if (string.IsNullOrEmpty(definition))
+                    {
+                        return "Unity did not identify the installed DxMessaging runtime assembly definition";
+                    }
+                    string runtimeRoot = Path.GetDirectoryName(
+                        Path.GetDirectoryName(PhysicalPath(definition))
+                    );
+                    _providerIssue = FindRuntimeApiIssue(component, runtimeRoot);
+                    _runtimeRoot = runtimeRoot;
+                }
+
+                string baseSource = Path.Combine(_runtimeRoot, "Unity", "MessageAwareComponent.cs");
+                if (!provider.sourceFiles.Any(path => PhysicalPath(path) == baseSource))
+                {
+                    return "the referenced runtime output does not list the installed DxMessaging runtime source";
+                }
+
+                if (!_providerInputsIssues.TryGetValue(provider, out string issue))
+                {
+                    issue = _providerIssue
+                        ?? FindCompilerOptionsIssue(provider)
+                        ?? FindRuntimeSourceIssue(provider);
+                    _providerInputsIssues.Add(provider, issue);
+                }
+                return issue;
+            }
+
+            private string FindRuntimeSourceIssue(Assembly provider)
+            {
+                using SHA256 sha256 = SHA256.Create();
+                // Older Unity compilers can use SHA-1 for Portable PDB document checksums.
+                using SHA1 sha1 = SHA1.Create();
+                HashSet<string> inputs = new(StringComparer.Ordinal);
+                foreach (string input in provider.sourceFiles)
+                {
+                    string path = PhysicalPath(input);
+                    if (!IsWithinDirectory(_runtimeRoot, path))
+                    {
+                        return $"runtime source '{input}' is outside the installed package";
+                    }
+                    if (!_runtimeDocuments.TryGetValue(path, out var document))
+                    {
+                        return $"runtime source '{input}' is missing from the compiled package symbols";
+                    }
+                    HashAlgorithm hash =
+                        document.Algorithm == Sha256DocumentChecksum ? sha256
+                        : document.Algorithm == Sha1DocumentChecksum ? sha1
+                        : null;
+                    if (
+                        hash == null
+                        || !hash.ComputeHash(File.ReadAllBytes(path))
+                            .AsSpan()
+                            .SequenceEqual(document.Checksum)
+                    )
+                    {
+                        return $"runtime source '{input}' differs from the compiled package snapshot";
+                    }
+                    inputs.Add(path);
+                }
+                foreach (string path in _runtimeDocuments.Keys)
+                {
+                    if (IsWithinDirectory(_runtimeRoot, path) && !inputs.Contains(path))
+                    {
+                        return $"the compiled runtime includes '{path}' outside Unity's current source list";
+                    }
+                }
+                return null;
+            }
+
+            private static bool IsWithinDirectory(string directory, string path)
+            {
+                string relative = Path.GetRelativePath(directory, path)
+                    .Replace(Path.DirectorySeparatorChar, '/');
+                return !Path.IsPathRooted(relative)
+                    && relative != ".."
+                    && !relative.StartsWith("../", StringComparison.Ordinal);
+            }
+
+            private string FindRuntimeApiIssue(Type component, string runtimeRoot)
+            {
+                byte[] moduleId = component.Module.ModuleVersionId.ToByteArray();
+                byte[] runtime = File.ReadAllBytes(_runtimePath);
+                if (runtime.AsSpan().IndexOf(moduleId) < 0)
+                {
+                    return "the runtime reference on disk does not match the loaded DxMessaging module";
+                }
+
+                string symbolsPath = Path.ChangeExtension(_runtimePath, ".pdb");
+                if (!File.Exists(symbolsPath))
+                {
+                    return "the installed package runtime has no compiled source checksum evidence";
+                }
+
+                Dictionary<string, (Guid Algorithm, byte[] Checksum)> documents =
+                    ReadPortableDocuments(File.ReadAllBytes(symbolsPath), runtime);
+                if (documents == null)
+                {
+                    return "the installed package runtime and its source checksum records do not match";
+                }
+
+                const System.Reflection.BindingFlags flags =
+                    System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic;
+                System.Reflection.MethodInfo[] methods = component.GetMethods(flags);
+                string source = File.ReadAllText(
+                    Path.Combine(runtimeRoot, "Unity", "MessageAwareComponent.cs")
+                );
+                SourceMetadata metadata = new(source);
+                string masked = MaskNonCode(source, null, metadata);
+                if (
+                    metadata.UncertainDirectivePosition != null
+                    || ContainsNamespaceAlias(masked, "StringMessage")
+                    || ContainsNamespaceAlias(masked, "GlobalStringMessage")
+                    || ContainsNamespaceAlias(masked, "Core")
+                    || ContainsNamespaceAlias(masked, "DxMessaging")
+                )
+                {
+                    return "the runtime base source has unverified payload bindings";
+                }
+                foreach (string name in ChangedOverrideNames)
+                {
+                    string payload =
+                        name == "HandleGlobalStringMessage"
+                            ? "GlobalStringMessage"
+                            : "StringMessage";
+                    System.Reflection.MethodInfo[] candidates = methods
+                        .Where(method => method.Name == name)
+                        .ToArray();
+                    List<ParameterList> declarations = FindMethodDeclarations(masked, name, false);
+                    if (candidates.Length != 1 || declarations.Count != 1)
+                    {
+                        return $"the runtime base has an unverified {name} overload";
+                    }
+
+                    System.Reflection.ParameterInfo[] parameters = candidates[0].GetParameters();
+                    ParameterList declaration = declarations[0];
+                    string sourceParameter = masked.Substring(
+                        declaration.ParametersStart,
+                        declaration.ParametersEnd - declaration.ParametersStart
+                    );
+                    if (
+                        candidates[0].DeclaringType != component
+                        || !candidates[0].IsVirtual
+                        || parameters.Length != 1
+                        || !parameters[0].IsIn
+                        || parameters[0].ParameterType.GetElementType()?.FullName
+                            != "DxMessaging.Core.Messages." + payload
+                        || !Regex.IsMatch(
+                            sourceParameter,
+                            @"\A\s*in\s+" + payload + @"\s+" + IdentifierSpellingPattern + @"\s*\z",
+                            RegexOptions.CultureInvariant
+                        )
+                        || metadata.UncertainBranches.Exists(branch =>
+                            branch.Start <= declaration.DeclarationStart
+                            && declaration.DeclarationStart < branch.Start + branch.Length
+                            && FindContainingTypeStart(masked, declaration.DeclarationStart)
+                                < branch.Start
+                        )
+                    )
+                    {
+                        return $"the installed {name} signature could not be verified";
+                    }
+                }
+                _runtimeDocuments = new(StringComparer.Ordinal);
+                foreach (var (name, document) in documents)
+                {
+                    string path = name.Replace('\\', '/');
+                    if (path.StartsWith("./", StringComparison.Ordinal))
+                    {
+                        path = path.Substring(2);
+                    }
+                    if (
+                        Path.IsPathRooted(path)
+                        || path.StartsWith("Assets/", StringComparison.Ordinal)
+                        || path.StartsWith("Packages/", StringComparison.Ordinal)
+                    )
+                    {
+                        _runtimeDocuments.Add(PhysicalPath(path), document);
+                    }
+                }
+                return null;
+            }
+
+            private static Dictionary<
+                string,
+                (Guid Algorithm, byte[] Checksum)
+            > ReadPortableDocuments(byte[] symbols, byte[] runtime)
+            {
+                /*
+                 * A portable PDB stores its content identifier in #Pdb, document rows in
+                 * #~, and their names and checksums in #Blob. Link that identifier to the
+                 * runtime PE's CodeView record before trusting the document rows.
+                 */
+                using BinaryReader reader = new(new MemoryStream(symbols, writable: false));
+                if (reader.ReadUInt32() != 0x424A5342)
+                {
+                    return null;
+                }
+                reader.BaseStream.Position = 12;
+                uint versionLength = reader.ReadUInt32();
+                reader.BaseStream.Position += versionLength;
+                reader.ReadUInt16();
+                int streamCount = reader.ReadUInt16();
+                Dictionary<string, TextSpan> streams = new(StringComparer.Ordinal);
+                byte[] name = new byte[32];
+                for (int index = 0; index < streamCount; index++)
+                {
+                    uint offset = reader.ReadUInt32();
+                    uint size = reader.ReadUInt32();
+                    int length = 0;
+                    while (length < name.Length && (name[length] = reader.ReadByte()) != 0)
+                    {
+                        length++;
+                    }
+                    if (length == name.Length || symbols.LongLength < (long)offset + size)
+                    {
+                        return null;
+                    }
+                    reader.BaseStream.Position = (reader.BaseStream.Position + 3) & ~3L;
+                    streams.Add(
+                        Encoding.ASCII.GetString(name, 0, length),
+                        new TextSpan((int)offset, (int)size)
+                    );
+                }
+                if (
+                    !streams.TryGetValue("#Pdb", out TextSpan pdb)
+                    || pdb.Length < 20
+                    || !streams.TryGetValue("#~", out TextSpan tables)
+                    || tables.Length < 24
+                    || !streams.TryGetValue("#Blob", out TextSpan blobs)
+                    || !streams.TryGetValue("#GUID", out TextSpan guids)
+                )
+                {
+                    return null;
+                }
+                byte[] codeView = new byte[20];
+                // cspell:ignore RSDS
+                Encoding.ASCII.GetBytes("RSDS", 0, 4, codeView, 0);
+                Buffer.BlockCopy(symbols, pdb.Start, codeView, 4, 16);
+                if (runtime.AsSpan().IndexOf(codeView) < 0)
+                {
+                    return null;
+                }
+
+                reader.BaseStream.Position = tables.Start + 6;
+                byte heaps = reader.ReadByte();
+                reader.ReadByte();
+                ulong valid = reader.ReadUInt64();
+                reader.ReadUInt64();
+                const ulong DocumentTable = 1UL << 48;
+                if ((valid & DocumentTable) == 0 || (valid & (DocumentTable - 1)) != 0)
+                {
+                    return null;
+                }
+                int count = reader.ReadInt32();
+                for (ulong other = valid >> 49; other != 0; other >>= 1)
+                {
+                    if ((other & 1) != 0)
+                    {
+                        reader.ReadUInt32();
+                    }
+                }
+                bool wideGuid = (heaps & 2) != 0;
+                bool wideBlob = (heaps & 4) != 0;
+                int rowSize = (wideGuid ? 8 : 4) + (wideBlob ? 8 : 4);
+                if (
+                    count < 0
+                    || tables.Start + tables.Length
+                        < reader.BaseStream.Position + (long)count * rowSize
+                )
+                {
+                    return null;
+                }
+
+                Dictionary<string, (Guid Algorithm, byte[] Checksum)> documents = new(
+                    StringComparer.Ordinal
+                );
+                ReadOnlySpan<byte> blobHeap = symbols.AsSpan(blobs.Start, blobs.Length);
+                ReadOnlySpan<byte> guidHeap = symbols.AsSpan(guids.Start, guids.Length);
+                for (int index = 0; index < count; index++)
+                {
+                    int documentName = ReadSymbolHeapIndex(reader, wideBlob);
+                    int algorithm = ReadSymbolHeapIndex(reader, wideGuid);
+                    int documentHash = ReadSymbolHeapIndex(reader, wideBlob);
+                    ReadSymbolHeapIndex(reader, wideGuid);
+                    if (algorithm == 0 && documentHash == 0)
+                    {
+                        continue;
+                    }
+                    if (
+                        algorithm <= 0
+                        || guidHeap.Length / 16 < algorithm
+                        || documentName <= 0
+                        || documentHash <= 0
+                    )
+                    {
+                        return null;
+                    }
+                    string path = DecodeDocumentName(blobHeap, documentName);
+                    Guid algorithmId = new(guidHeap.Slice((algorithm - 1) * 16, 16));
+                    if (
+                        !documents.TryAdd(
+                            path,
+                            (algorithmId, ReadSymbolBlob(blobHeap, documentHash).ToArray())
+                        )
+                    )
+                    {
+                        return null;
+                    }
+                }
+                return documents;
+            }
+
+            private static int ReadSymbolHeapIndex(BinaryReader reader, bool wide) =>
+                wide ? reader.ReadInt32() : reader.ReadUInt16();
+
+            private static int ReadCompressedSymbolIndex(ReadOnlySpan<byte> data, ref int offset)
+            {
+                int first = data.Slice(offset++, 1)[0];
+                if ((first & 0x80) == 0)
+                {
+                    return first;
+                }
+                int second = data.Slice(offset++, 1)[0];
+                if ((first & 0xC0) == 0x80)
+                {
+                    return ((first & 0x3F) << 8) | second;
+                }
+                if ((first & 0xE0) == 0xC0)
+                {
+                    ReadOnlySpan<byte> tail = data.Slice(offset, 2);
+                    offset += 2;
+                    return ((first & 0x1F) << 24) | (second << 16) | (tail[0] << 8) | tail[1];
+                }
+                throw new IOException("Invalid compressed index in the runtime symbols.");
+            }
+
+            private static ReadOnlySpan<byte> ReadSymbolBlob(ReadOnlySpan<byte> heap, int index)
+            {
+                int length = ReadCompressedSymbolIndex(heap, ref index);
+                return heap.Slice(index, length);
+            }
+
+            private static string DecodeDocumentName(ReadOnlySpan<byte> blobHeap, int index)
+            {
+                ReadOnlySpan<byte> name = ReadSymbolBlob(blobHeap, index);
+                string separator = name.Slice(0, 1)[0] == 0 ? "" : ((char)name[0]).ToString();
+                List<string> parts = new();
+                int offset = 1;
+                while (offset < name.Length)
+                {
+                    int part = ReadCompressedSymbolIndex(name, ref offset);
+                    parts.Add(Encoding.UTF8.GetString(ReadSymbolBlob(blobHeap, part)));
+                }
+                return string.Join(separator, parts);
+            }
+
+            private string FindCompilerOptionsIssue(Assembly assembly)
+            {
+                ScriptCompilerOptions options = assembly.compilerOptions;
+                if (
+                    options == null
+                    || (options.AdditionalCompilerArguments ?? Array.Empty<string>()).Any(
+                        argument => !NonBindingCompilerOption.IsMatch(argument.Trim())
+                    )
+                )
+                {
+                    return $"compiler options for '{assembly.name}' can affect the package type binding";
+                }
+
+                foreach (string file in options.ResponseFiles ?? Array.Empty<string>())
+                {
+                    if (
+                        File.ReadLines(PhysicalPath(file))
+                            .Any(line =>
+                            {
+                                string option = line.Trim();
+                                return option.Length != 0
+                                    && !option.StartsWith("#", StringComparison.Ordinal)
+                                    && !NonBindingCompilerOption.IsMatch(option);
+                            })
+                    )
+                    {
+                        return $"compiler response file '{file}' can affect the package type binding";
+                    }
+                }
+
+                foreach (string analyzer in options.RoslynAnalyzerDllPaths ?? Array.Empty<string>())
+                {
+                    string path = PhysicalPath(analyzer);
+                    string analyzers = Path.Combine(_runtimeRoot, "Analyzers");
+                    if (IsEditorInstallationFile(path))
+                    {
+                        continue;
+                    }
+                    if (
+                        path != Path.Combine(analyzers, "WallstopStudios.DxMessaging.Analyzer.dll")
+                        && path
+                            != Path.Combine(
+                                analyzers,
+                                "WallstopStudios.DxMessaging.SourceGenerators.dll"
+                            )
+                    )
+                    {
+                        return $"compiler analyzer '{analyzer}' could supply a competing type";
+                    }
+                }
+                return null;
+            }
+
+            private HashSet<string> ReadSourceNames(string path)
+            {
+                if (!_sourceNames.TryGetValue(path, out HashSet<string> names))
+                {
+                    string source = EncodedSource.FromBytes(File.ReadAllBytes(path)).Text;
+                    SourceMetadata metadata = new(source);
+                    string masked = MaskNonCode(source, null, metadata);
+                    if (metadata.UncertainDirectivePosition == null)
+                    {
+                        source = masked;
+                    }
+                    names = PackageTypeNames
+                        .Where(name => source.Contains(name, StringComparison.Ordinal))
+                        .ToHashSet(StringComparer.Ordinal);
+                    if (
+                        source.Contains('\\')
+                        || source.Any(character =>
+                            CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format
+                        )
+                    )
+                    {
+                        foreach (Match token in IdentifierUseRegex.Matches(source))
+                        {
+                            string name = IdentifierValue(token.Value);
+                            if (Array.IndexOf(PackageTypeNames, name) >= 0)
+                            {
+                                names.Add(name);
+                            }
+                        }
+                    }
+                    _sourceNames.Add(path, names);
+                }
+                return names;
+            }
+
+            private HashSet<string> ReadMetadataNames(string path)
+            {
+                if (!_metadataNames.TryGetValue(path, out HashSet<string> names))
+                {
+                    /*
+                     * CLI metadata stores type names as UTF-8 strings. Absence rules out
+                     * declarations and forwarded names. Presence is inconclusive.
+                     */
+                    byte[] bytes = File.ReadAllBytes(path);
+                    names = new HashSet<string>(StringComparer.Ordinal);
+                    for (int index = 0; index < PackageTypeNames.Length; index++)
+                    {
+                        if (0 <= bytes.AsSpan().IndexOf(PackageTypeBytes[index]))
+                        {
+                            names.Add(PackageTypeNames[index]);
+                        }
+                    }
+                    _metadataNames.Add(path, names);
+                }
+                return names;
+            }
+
+            private string PhysicalPath(string path) =>
+                Path.GetFullPath(
+                    Path.IsPathRooted(path) ? path : FileUtil.GetPhysicalPath(path),
+                    _projectRoot
+                );
+        }
+
         internal static UpgradeResult Analyze(
             string source,
             Func<string, string> findExternalCallbackUse = null,
             ProjectCallbackUses projectTypes = null,
             string assemblyName = null,
-            bool projectSourcesLimitedToAssets = false
+            bool projectSourcesLimitedToAssets = false,
+            Func<string, string> findPackageBindingIssue = null
         )
         {
             if (source == null)
@@ -893,7 +1708,8 @@ namespace DxMessaging.Editor
                 findExternalCallbackUse,
                 projectTypes,
                 assemblyName,
-                projectSourcesLimitedToAssets
+                projectSourcesLimitedToAssets,
+                findPackageBindingIssue
             );
             string masked = MaskNonCode(source, metadata.InterpolatedExpressions, metadata);
             if (metadata.UncertainDirectivePosition is int directive)
@@ -1012,6 +1828,7 @@ namespace DxMessaging.Editor
 
             SortedDictionary<int, string> insertions = new();
             AddStringHandlerOptIns(masked, metadata, replacementStarts, insertions, manualReview);
+            manualReview.UnionWith(metadata.PackageBindingReviews);
 
             List<int> orderedStarts = new(replacementStarts);
             orderedStarts.Sort();
@@ -1416,8 +2233,18 @@ namespace DxMessaging.Editor
                 int typeStart = FindContainingTypeStart(masked, declaration.DeclarationStart);
                 if (!TypeScopeDerivesFromMessageAwareComponent(masked, typeStart, metadata))
                 {
+                    replacementStarts.RemoveWhere(start =>
+                        declaration.ParametersStart <= start && start < declaration.ParametersEnd
+                    );
+                    string issue = metadata.PackageBindingIssue(
+                        "DxMessaging.Unity.MessageAwareComponent"
+                    );
+                    string reason =
+                        issue == null
+                            ? "is not in a directly declared MessageAwareComponent; inspect it manually"
+                            : $"needs manual review because {issue}";
                     manualReview.Add(
-                        $"{CallbackLocation(masked, declaration.DeclarationStart)} {methodName} override is not in a directly declared MessageAwareComponent; inspect it manually"
+                        $"{CallbackLocation(masked, declaration.DeclarationStart)} {methodName} override {reason}"
                     );
                     continue;
                 }
@@ -3721,7 +4548,9 @@ namespace DxMessaging.Editor
                 name = name.Substring("global::".Length);
             }
             else if (
-                name.Contains('.') || (0 <= typeScope && TypeScopeIsPartial(masked, typeScope))
+                name.Contains('.')
+                || 0 <= FindTypeParameterDeclaration(masked, name, use)
+                || (0 <= typeScope && TypeScopeIsPartial(masked, typeScope))
             )
             {
                 return false;
@@ -3755,7 +4584,9 @@ namespace DxMessaging.Editor
                                 knownQualifiedType: qualified
                             )
                         )
-                    ) && metadata.HasProjectRoute(qualified, typeArity, marker);
+                    )
+                    && metadata.PackageBindingIssue(marker, use) == null
+                    && metadata.HasProjectRoute(qualified, typeArity, marker);
             }
             if (declarations.Length != 1)
             {
@@ -3779,7 +4610,6 @@ namespace DxMessaging.Editor
             else if (
                 declarationNamespace != useNamespace
                 || (declarationScope != -1 && declarationScope != typeScope)
-                || HasPotentialTypeParameter(masked, name, use)
                 || HasUnprovenTypeScope(masked, metadata, typeScope, declarationScope)
             )
             {
@@ -3905,31 +4735,94 @@ namespace DxMessaging.Editor
             return close < 0 ? -1 : SplitParameters(text, open + 1, close).Count;
         }
 
-        private static bool HasPotentialTypeParameter(string masked, string name, int use)
+        private static int FindTypeParameterDeclaration(string masked, string name, int use)
         {
+            string identifier = IdentifierValue(name);
             for (
-                int body = FindEnclosingBrace(masked, use);
-                0 <= body;
-                body = FindEnclosingBrace(masked, body)
+                int open = 0 < use ? masked.LastIndexOf('<', use - 1) : -1;
+                0 <= open;
+                open = 0 < open ? masked.LastIndexOf('<', open - 1) : -1
             )
             {
-                int start = masked.LastIndexOfAny(new[] { '{', '}', ';' }, body - 1) + 1;
-                string header = masked.Substring(start, body - start);
+                int nameEnd = PreviousNonWhitespace(masked, open - 1);
                 if (
-                    Regex
-                        .Matches(
-                            header,
-                            "<(?<name>[^<>]+)>",
-                            RegexOptions.CultureInvariant,
-                            TimeSpan.FromSeconds(1)
-                        )
-                        .Cast<Match>()
-                        .Any(list =>
-                            list.Groups["name"].Value.Split(',').Any(token => token.Trim() == name)
-                        )
+                    nameEnd < 0
+                    || FindIdentifierStart(masked, nameEnd) < 0
+                    || !HasTypeParameter(masked, open, identifier, out int close)
                 )
                 {
-                    return true;
+                    continue;
+                }
+
+                int next = NextNonWhitespace(masked, close + 1);
+                if (next < 0 || use <= next)
+                {
+                    continue;
+                }
+                if (masked[next] == '(')
+                {
+                    int parametersEnd = FindMatching(masked, next, '(', ')');
+                    if (
+                        0 <= parametersEnd
+                        && TryFindCallableBody(masked, parametersEnd, out TextSpan body)
+                        && next <= use
+                        && use < body.Start + body.Length
+                    )
+                    {
+                        return open;
+                    }
+                }
+
+                foreach (Match declaration in TypeDeclarationRegex.Matches(masked))
+                {
+                    Group type = declaration.Groups["name"];
+                    if (type.Index + type.Length != nameEnd + 1)
+                    {
+                        continue;
+                    }
+                    int body = masked.IndexOf('{', close + 1);
+                    if (0 <= body && body < use && use < FindMatching(masked, body, '{', '}'))
+                    {
+                        return open;
+                    }
+                    break;
+                }
+            }
+            return -1;
+        }
+
+        private static bool HasTypeParameter(string masked, int open, string name, out int close)
+        {
+            bool found = false;
+            close = -1;
+            int cursor = open;
+            while (0 <= cursor)
+            {
+                cursor = SkipDeclarationAttributes(masked, NextNonWhitespace(masked, cursor + 1));
+                Match parameter =
+                    cursor < 0 ? Match.Empty : DirectMemberIdentifierRegex.Match(masked, cursor);
+                if (parameter.Success && parameter.Value is "in" or "out")
+                {
+                    cursor = NextNonWhitespace(masked, cursor + parameter.Length);
+                    parameter =
+                        cursor < 0
+                            ? Match.Empty
+                            : DirectMemberIdentifierRegex.Match(masked, cursor);
+                }
+                if (!parameter.Success)
+                {
+                    return false;
+                }
+                found |= IdentifierValue(parameter.Value) == name;
+                cursor = NextNonWhitespace(masked, cursor + parameter.Length);
+                if (0 <= cursor && masked[cursor] == '>')
+                {
+                    close = cursor;
+                    return found;
+                }
+                if (cursor < 0 || masked[cursor] != ',')
+                {
+                    return false;
                 }
             }
             return false;
@@ -3958,6 +4851,11 @@ namespace DxMessaging.Editor
                     branch.Start < body && headerStart < branch.Start + branch.Length
                 )
             )
+            {
+                return false;
+            }
+            int declaration = FindTypeParameterDeclaration(masked, name, use);
+            if (declaration < headerStart || body <= declaration)
             {
                 return false;
             }
@@ -4070,27 +4968,41 @@ namespace DxMessaging.Editor
             {
                 return false;
             }
-            if (spelling == "global::" + qualifiedName)
+            if (spelling != "global::" + qualifiedName)
             {
-                return true;
-            }
-            if (spelling == qualifiedName)
-            {
-                return !metadata.HasNamespaceShadow(
+                int dot = qualifiedName.LastIndexOf('.');
+                string name = qualifiedName.Substring(dot + 1);
+                if (spelling == qualifiedName)
+                {
+                    if (
+                        metadata.HasNamespaceShadow(
+                            masked,
+                            qualifiedName.Substring(0, qualifiedName.IndexOf('.'))
+                        )
+                    )
+                    {
+                        return false;
+                    }
+                }
+                else if (
+                    spelling != name
+                    || !HasNamespaceImport(
                         masked,
-                        qualifiedName.Substring(0, qualifiedName.IndexOf('.'))
-                    ) && !metadata.HasCompetingTypeAtUse(masked, spelling, arity, use);
-            }
-            int dot = qualifiedName.LastIndexOf('.');
-            string name = qualifiedName.Substring(dot + 1);
-            return spelling == name
-                && HasNamespaceImport(
-                    masked,
-                    qualifiedName.Substring(0, dot),
-                    metadata.HasConditionalDirectives
+                        qualifiedName.Substring(0, dot),
+                        metadata.HasConditionalDirectives
+                    )
+                    || HasTypeOrAliasDeclaration(masked, name)
+                    || 0 <= FindTypeParameterDeclaration(masked, name, use)
                 )
-                && !HasTypeOrAliasDeclaration(masked, name)
-                && !metadata.HasCompetingTypeAtUse(masked, spelling, arity, use);
+                {
+                    return false;
+                }
+                if (metadata.HasCompetingTypeAtUse(masked, spelling, arity, use))
+                {
+                    return false;
+                }
+            }
+            return metadata.PackageBindingIssue(qualifiedName, use) == null;
         }
 
         private static bool HasProvenRegistrationValue(
@@ -4975,6 +5887,7 @@ namespace DxMessaging.Editor
                     if (
                         scopesAreKnown
                         && samePayload
+                        && arguments.Count == 1
                         && forwarded.Success
                         && argument.Start == arguments[argumentIndex].Start
                         && argumentIndex < overrideParameters.Count
@@ -5963,6 +6876,13 @@ namespace DxMessaging.Editor
                 }
             }
 
+            reason ??= FindParameterAttributeIssue(
+                masked,
+                metadata,
+                entry.Key + 1,
+                close,
+                entry.Value
+            );
             if (reason == null && hasUnsupportedParameter)
             {
                 reason = "has unsupported parameter syntax";
@@ -6004,6 +6924,39 @@ namespace DxMessaging.Editor
                 $"{CallbackLocation(masked, entry.Key)} {reason}; inspect it manually"
             );
             return replacementStarts.Count < remainingSignatureEdits;
+        }
+
+        private static string FindParameterAttributeIssue(
+            string masked,
+            SourceMetadata metadata,
+            int parametersStart,
+            int parametersEnd,
+            List<int> replacements
+        )
+        {
+            foreach (TextSpan parameter in SplitParameters(masked, parametersStart, parametersEnd))
+            {
+                int modifier = FindRefParameterModifier(masked, parameter);
+                if (!replacements.Contains(modifier))
+                {
+                    continue;
+                }
+
+                string prefix = masked.Substring(parameter.Start, modifier - parameter.Start);
+                foreach (Match token in IdentifierUseRegex.Matches(prefix))
+                {
+                    string name = IdentifierValue(token.Value);
+                    if (
+                        name is "Out" or "OutAttribute"
+                        || metadata.MayAliasType(masked, name)
+                        || metadata.MayAliasType(masked, name + "Attribute")
+                    )
+                    {
+                        return $"has an attribute at {SourceLocation(masked, parameter.Start + token.Index)} that may require writable 'ref'";
+                    }
+                }
+            }
+            return null;
         }
 
         private static bool HasDirectLocalFunctionCall(
@@ -7868,7 +8821,8 @@ namespace DxMessaging.Editor
                 Func<string, string> findExternalCallbackUse = null,
                 ProjectCallbackUses projectTypes = null,
                 string assemblyName = null,
-                bool projectSourcesLimitedToAssets = false
+                bool projectSourcesLimitedToAssets = false,
+                Func<string, string> findPackageBindingIssue = null
             )
             {
                 Source = source;
@@ -7876,9 +8830,41 @@ namespace DxMessaging.Editor
                 _projectTypes = projectTypes;
                 _assemblyName = assemblyName;
                 _projectSourcesLimitedToAssets = projectSourcesLimitedToAssets;
+                _findPackageBindingIssue = findPackageBindingIssue;
             }
 
             private readonly bool _projectSourcesLimitedToAssets;
+            private readonly Func<string, string> _findPackageBindingIssue;
+            private readonly Dictionary<string, string> _packageBindingIssues = new(
+                StringComparer.Ordinal
+            );
+
+            public readonly SortedSet<string> PackageBindingReviews = new(StringComparer.Ordinal);
+
+            public string PackageBindingIssue(string type, int use = -1)
+            {
+                if (!type.StartsWith("DxMessaging.", StringComparison.Ordinal))
+                {
+                    return null;
+                }
+                if (!_packageBindingIssues.TryGetValue(type, out string issue))
+                {
+                    issue =
+                        _findPackageBindingIssue != null
+                            ? _findPackageBindingIssue(SimpleTypeName(type))
+                        : _projectSourcesLimitedToAssets
+                            ? "the installed package binding is unavailable for this compilation"
+                        : null;
+                    _packageBindingIssues.Add(type, issue);
+                }
+                if (issue != null && 0 <= use)
+                {
+                    PackageBindingReviews.Add(
+                        $"{CallbackLocation(Source, use)} {type} needs manual review because {issue}"
+                    );
+                }
+                return issue;
+            }
 
             public string FindPossibleExternalMemberUse(string name) =>
                 FindExternalCallbackUse?.Invoke(name)
@@ -8109,7 +9095,10 @@ namespace DxMessaging.Editor
                 if (
                     _projectTypes?.CanImportGlobalType(root) == true
                     || StaticImportRegex.IsMatch(masked)
-                    || (!spelling.Contains('.') && HasPotentialTypeParameter(masked, spelling, use))
+                    || (
+                        !spelling.Contains('.')
+                        && 0 <= FindTypeParameterDeclaration(masked, spelling, use)
+                    )
                 )
                 {
                     return true;
@@ -8158,6 +9147,10 @@ namespace DxMessaging.Editor
                     && !spelling.Contains('.')
                     && DeclaresQualifiedType(masked, spelling, arity);
             }
+
+            public bool MayAliasType(string masked, string name) =>
+                ContainsNamespaceAlias(masked, name)
+                || _projectTypes?.CanImportGlobalType(name) == true;
 
             public bool HasNamespaceShadow(string masked, string name)
             {
