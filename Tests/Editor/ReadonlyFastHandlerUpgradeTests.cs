@@ -1785,6 +1785,59 @@ class Receiver
             );
         }
 
+        [TestCase(
+            false,
+            TestName = "A proved property alias with no observed use preserves eligibility"
+        )]
+        [TestCase(
+            true,
+            TestName = "A writable use through a property alias preserves its initializer"
+        )]
+        public void AnalyzeChecksUsesOfAnExposedFastDelegateProperty(bool hasExternalInvocation)
+        {
+            const string Source =
+                @"
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+static class Callbacks
+{
+    private static readonly MessageHandler.FastHandler<IUntargetedMessage> hidden =
+        (ref IUntargetedMessage value) => { };
+    public static MessageHandler.FastHandler<IUntargetedMessage> Exposed => hidden;
+}";
+            const string ExternalPath = "Assets/Consumer.cs";
+            const string Path = "Assets/Callbacks.cs";
+            string external = hasExternalInvocation
+                ? @"
+using DxMessaging.Core.Messages;
+class Other
+{
+    void Forward(IUntargetedMessage message) => Callbacks.Exposed(ref message);
+}"
+                : "class Other { const string Name = \"Exposed\"; }";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
+            project.AddScript(Path, Source);
+            project.AddScript(ExternalPath, external);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source,
+                name => project.FindOtherUse(Path, name),
+                project
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(hasExternalInvocation ? Source : Source.Replace("ref ", "in "))
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(hasExternalInvocation ? 0 : 1));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.Count.EqualTo(hasExternalInvocation ? 1 : 0)
+            );
+            if (hasExternalInvocation)
+            {
+                Assert.That(result.ManualReviewMethods[0], Does.Contain(ExternalPath + ", line 5"));
+            }
+        }
+
         [Test]
         public void AnalyzeChecksLocalShadowInLiteralConditionalBaseForwarding()
         {

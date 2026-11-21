@@ -4914,9 +4914,111 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
+                if (
+                    offset == 0
+                    && scope.IsMember
+                    && metadata.FindExternalCallbackUse != null
+                    && TryFindFastDelegatePropertyAlias(
+                        masked,
+                        metadata,
+                        use,
+                        storedDelegate,
+                        out int aliasPosition,
+                        out string alias
+                    )
+                )
+                {
+                    var sameFileUse = metadata
+                        .IdentifierUses(masked, alias)
+                        .FirstOrDefault(candidate =>
+                            candidate.Name.Index + candidate.Offset != aliasPosition
+                        );
+                    string location =
+                        sameFileUse.Name == null
+                            ? metadata.FindExternalCallbackUse(alias)
+                            : SourceLocation(masked, sameFileUse.Name.Index + sameFileUse.Offset);
+                    if (location == null)
+                    {
+                        continue;
+                    }
+                    return $"initializes fast delegate '{name}' with a use through property '{alias}' at {location} that cannot be proven safe for 'in'";
+                }
+
                 return $"initializes fast delegate '{name}' with a use on {SourceLocation(masked, position)} that cannot be proven safe for 'in'";
             }
             return null;
+        }
+
+        private static bool TryFindFastDelegatePropertyAlias(
+            string masked,
+            SourceMetadata metadata,
+            Match use,
+            (string MessageType, bool HasContext) storedDelegate,
+            out int aliasPosition,
+            out string alias
+        )
+        {
+            aliasPosition = -1;
+            alias = null;
+            int arrowEnd = PreviousNonWhitespace(masked, use.Index - 1);
+            int next = NextNonWhitespace(masked, use.Index + use.Length);
+            int block = FindEnclosingBrace(masked, use.Index);
+            if (
+                arrowEnd < 1
+                || !IsArrow(masked, arrowEnd - 1)
+                || next < 0
+                || masked[next] != ';'
+                || block < 0
+                || FindContainingTypeStart(masked, use.Index) != block
+            )
+            {
+                return false;
+            }
+
+            int aliasEnd = PreviousNonWhitespace(masked, arrowEnd - 2);
+            int name = FindIdentifierStart(masked, aliasEnd);
+            if (name < 0)
+            {
+                return false;
+            }
+
+            int close = PreviousNonWhitespace(masked, name - 1);
+            if (0 <= close && masked[close] == '?')
+            {
+                close = PreviousNonWhitespace(masked, close - 1);
+            }
+            if (close < 0 || masked[close] != '>')
+            {
+                return false;
+            }
+            int open = FindMatchingBackward(masked, close, '<', '>');
+            if (
+                open < 0
+                || CompactType(masked.Substring(open + 1, close - open - 1))
+                    != storedDelegate.MessageType
+            )
+            {
+                return false;
+            }
+
+            int typeEnd = PreviousNonWhitespace(masked, open - 1);
+            int typeStart = FindIdentifierStart(masked, typeEnd);
+            if (
+                typeStart < 0
+                || !TryClassifyFastDelegateType(masked, typeStart, metadata, out bool proven, out _)
+                || !proven
+                || (
+                    IdentifierValue(masked.Substring(typeStart, typeEnd - typeStart + 1))
+                    == "FastHandlerWithContext"
+                ) != storedDelegate.HasContext
+            )
+            {
+                return false;
+            }
+
+            aliasPosition = name;
+            alias = IdentifierValue(masked.Substring(name, aliasEnd - name + 1));
+            return true;
         }
 
         private static bool IsDirectFastDelegateRegistrationUse(
