@@ -172,7 +172,9 @@ generated sources, interceptors, emission calls, comments, or strings.
 The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
 replacement. After confirmation, the tool rechecks C# scripts, assembly settings under `Assets`,
-and Unity's script assembly assignments. It compares the bytes of the files it could read.
+and Unity's script assembly assignments. It compares the bytes of the files it could read again
+before discarding backups. Keep project scripts and assembly settings in regular files and directories
+under `Assets` so the preview can verify them.
 Refresh the Asset Database and rerun the preview when the imported assembly settings or their asset GUIDs differ from disk.
 Resolve unreadable-script warnings before applying changes. If comments or strings can hide a directive in some
 build configurations, the preview leaves the script untouched and reports the directive location. The tool attempts to restore every earlier
@@ -199,7 +201,11 @@ needs `ref` or a binding cannot be established. For a registration call, the
 preview checks the message routing type and the other arguments before changing an inferred
 callback. A route declaration in another script can establish that type when Unity assigns
 both scripts to the same assembly and the declaration is unique. An explicit package
-`FastHandler` also establishes the required callback signature.
+`FastHandler` establishes the callback parameter shape. The registration still needs a proven route.
+When a message gets its routing interface from source generation, such as a partial message marked
+with `[DxUntargetedMessage]`, the preview leaves its registration for manual review if it cannot
+prove the route from the available source. Verify the generated interface in your build, then update
+the callback as shown above.
 Review any deferred `RegisterGlobalAcceptAll` call as a group because its three callbacks must
 bind to the same overload. If the preview cannot trace an argument back to its delegate, it can
 also defer separate fast delegate initializers in that script. Reports include the source line

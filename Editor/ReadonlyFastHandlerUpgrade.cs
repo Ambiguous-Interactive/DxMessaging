@@ -340,6 +340,7 @@ namespace DxMessaging.Editor
                     Path.GetFullPath(Application.dataPath)
                         .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                     + Path.DirectorySeparatorChar;
+                ValidateProjectPath(assetsRoot, assetsRoot);
                 assetPaths = GetProjectFilePaths(assetsRoot, importedScripts);
             }
             catch (Exception exception)
@@ -397,14 +398,14 @@ namespace DxMessaging.Editor
                     {
                         projectUses.MarkUnreadable(assetPath);
                         manualReview.Add(
-                            $"{assetPath}: this script could not be read; inspect its callbacks manually"
+                            $"{assetPath}: this script could not be read. {exception.Message}"
                         );
                     }
                     else
                     {
                         assemblySettingsAreCurrent = false;
                         manualReview.Add(
-                            $"{assetPath}: assembly settings could not be read. Check routes across scripts manually."
+                            $"{assetPath}: assembly settings could not be read. {exception.Message}"
                         );
                     }
                 }
@@ -464,15 +465,20 @@ namespace DxMessaging.Editor
                     manualReview.Add($"{assetPath}: {skippedMethod}");
                 }
 
-                if (result.ReplacementCount == 0 && result.StringHandlerOptInCount == 0)
-                {
-                    continue;
-                }
+                bool proposesEdits =
+                    0 < result.ReplacementCount || 0 < result.StringHandlerOptInCount;
                 if (!isImported)
                 {
-                    manualReview.Add(
-                        $"{assetPath}: Unity has not imported this script. Refresh the Asset Database and preview again to check its callbacks."
-                    );
+                    if (proposesEdits || 0 < result.ManualReviewMethods.Count)
+                    {
+                        manualReview.Add(
+                            $"{assetPath}: Unity has not imported this script. Refresh the Asset Database and preview again to check its callbacks."
+                        );
+                    }
+                    continue;
+                }
+                if (!proposesEdits)
+                {
                     continue;
                 }
 
@@ -536,7 +542,20 @@ namespace DxMessaging.Editor
                     scriptAssemblies,
                     assemblySettingsAreCurrent
                 );
-                ApplyAtomically(upgrades);
+                Dictionary<string, byte[]> expectedWrites = upgrades.ToDictionary(
+                    upgrade => upgrade.FullPath,
+                    upgrade => upgrade.UpgradedBytes,
+                    StringComparer.Ordinal
+                );
+                ApplyAtomically(upgrades, assetsRoot, () =>
+                    VerifyProjectFileSnapshot(
+                        assetsRoot,
+                        originalFiles,
+                        scriptAssemblies,
+                        assemblySettingsAreCurrent,
+                        expectedWrites
+                    )
+                );
             }
             catch (Exception exception)
             {
@@ -637,15 +656,48 @@ namespace DxMessaging.Editor
             string path = Path.GetFullPath(
                 Path.Combine(assetsRoot, assetPath.Substring(AssetPrefix.Length))
             );
+            ValidateProjectPath(assetsRoot, path);
+            return path;
+        }
+
+        private static void ValidateProjectPath(string assetsRoot, string fullPath)
+        {
             StringComparison comparison =
                 Path.DirectorySeparatorChar == '\\'
                     ? StringComparison.OrdinalIgnoreCase
                     : StringComparison.Ordinal;
-            if (!path.StartsWith(assetsRoot, comparison))
+            if (!fullPath.StartsWith(assetsRoot, comparison))
             {
-                throw new IOException($"The project file '{assetPath}' is outside Assets.");
+                throw new IOException($"The project file '{fullPath}' is outside Assets.");
             }
-            return path;
+
+            string current = assetsRoot.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar
+            );
+            CheckComponent(current);
+            foreach (
+                string component in fullPath
+                    .Substring(assetsRoot.Length)
+                    .Split(Path.DirectorySeparatorChar)
+            )
+            {
+                if (component.Length != 0)
+                {
+                    current = Path.Combine(current, component);
+                    CheckComponent(current);
+                }
+            }
+
+            static void CheckComponent(string path)
+            {
+                if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new IOException(
+                        $"The project path '{path}' uses a linked file or directory."
+                    );
+                }
+            }
         }
 
         private static string FindAssemblySettingsMismatch(
@@ -654,7 +706,8 @@ namespace DxMessaging.Editor
         )
         {
             byte[] settings = files[assetPath];
-            TextAsset imported = AssetDatabase.LoadAssetAtPath<TextAsset>(assetPath);
+            TextAsset imported =
+                settings == null ? null : AssetDatabase.LoadAssetAtPath<TextAsset>(assetPath);
             bool hasImportedSettings = imported != null;
             if (
                 settings == null
@@ -723,7 +776,8 @@ namespace DxMessaging.Editor
             string assetsRoot,
             Dictionary<string, byte[]> originalFiles,
             Dictionary<string, string> originalAssemblies,
-            bool assemblySettingsWereCurrent
+            bool assemblySettingsWereCurrent,
+            IReadOnlyDictionary<string, byte[]> expectedWrites = null
         )
         {
             HashSet<string> importedScripts = GetImportedScriptPaths();
@@ -756,8 +810,13 @@ namespace DxMessaging.Editor
                 byte[] original = originalFiles[path];
                 if (original != null)
                 {
-                    byte[] current = File.ReadAllBytes(GetProjectFileFullPath(assetsRoot, path));
-                    if (!current.AsSpan().SequenceEqual(original))
+                    string fullPath = GetProjectFileFullPath(assetsRoot, path);
+                    byte[] expected =
+                        expectedWrites != null
+                        && expectedWrites.TryGetValue(fullPath, out byte[] upgraded)
+                            ? upgraded
+                            : original;
+                    if (!File.ReadAllBytes(fullPath).AsSpan().SequenceEqual(expected))
                     {
                         throw new IOException(
                             $"The project file '{path}' changed after the preview."
@@ -2091,6 +2150,11 @@ namespace DxMessaging.Editor
             string receiver = IdentifierValue(
                 code.Substring(receiverStart, receiverEnd - receiverStart + 1)
             );
+            if (receiver == "value" && IsImplicitAccessorValue(masked, usePosition, useScope))
+            {
+                return false;
+            }
+
             var declarations = metadata
                 .ReceiverDeclarations(masked, receiver)
                 .Where(entry => FindContainingTypeStart(masked, entry.NameStart) == useScope)
@@ -9117,7 +9181,11 @@ namespace DxMessaging.Editor
                 || text[qualifierPrefix] is not ('.' or ':' or '@');
         }
 
-        private static void ApplyAtomically(List<FileUpgrade> upgrades)
+        private static void ApplyAtomically(
+            List<FileUpgrade> upgrades,
+            string assetsRoot,
+            Action verifyBeforeCommit
+        )
         {
             List<PendingFileUpgrade> pending = new(upgrades.Count);
             foreach (FileUpgrade upgrade in upgrades)
@@ -9131,12 +9199,13 @@ namespace DxMessaging.Editor
                 );
             }
 
-            ApplyAtomically(pending, new PhysicalAtomicFileStore());
+            ApplyAtomically(pending, new PhysicalAtomicFileStore(assetsRoot), verifyBeforeCommit);
         }
 
         internal static void ApplyAtomically(
             IReadOnlyList<PendingFileUpgrade> upgrades,
-            IAtomicFileStore store
+            IAtomicFileStore store,
+            Action verifyBeforeCommit = null
         )
         {
             if (upgrades == null)
@@ -9160,6 +9229,7 @@ namespace DxMessaging.Editor
                     );
                     applied.Add(new AppliedFile(upgrade.FullPath, backup, upgrade.UpgradedBytes));
                 }
+                verifyBeforeCommit?.Invoke();
             }
             catch (Exception writeFailure)
             {
@@ -9495,8 +9565,24 @@ namespace DxMessaging.Editor
 
         internal sealed class PhysicalAtomicFileStore : IAtomicFileStore
         {
+            private readonly string _assetsRoot;
+
+            public PhysicalAtomicFileStore(string assetsRoot = null)
+            {
+                _assetsRoot = assetsRoot;
+            }
+
+            private void ValidatePath(string fullPath)
+            {
+                if (_assetsRoot != null)
+                {
+                    ValidateProjectPath(_assetsRoot, fullPath);
+                }
+            }
+
             public string Replace(string fullPath, byte[] originalBytes, byte[] upgradedBytes)
             {
+                ValidatePath(fullPath);
                 byte[] currentBytes = File.ReadAllBytes(fullPath);
                 if (!currentBytes.AsSpan().SequenceEqual(originalBytes))
                 {
@@ -9599,6 +9685,8 @@ namespace DxMessaging.Editor
                         backupPath
                     );
                 }
+                ValidatePath(fullPath);
+                ValidatePath(backupPath);
                 byte[] currentBytes = File.ReadAllBytes(fullPath);
                 if (!currentBytes.AsSpan().SequenceEqual(expectedCurrentBytes))
                 {
@@ -9642,6 +9730,10 @@ namespace DxMessaging.Editor
 
             public void DiscardBackup(string backupPath)
             {
+                if (_assetsRoot != null && File.Exists(backupPath))
+                {
+                    ValidatePath(backupPath);
+                }
                 TryDelete(backupPath);
             }
 

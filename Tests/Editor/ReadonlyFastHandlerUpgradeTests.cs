@@ -991,6 +991,51 @@ namespace Vendor
             );
         }
 
+        [TestCase("Receiver Current { set { value.Forward(ref copy); } }", false)]
+        [TestCase("Receiver Current { init => value.Forward(ref copy); }", false)]
+        [TestCase("void Invoke() { value.Forward(ref copy); }", true)]
+        public void AnalyzeChecksImplicitAccessorReceiversBeforeChangingNamedCallbacks(
+            string use,
+            bool migrate
+        )
+        {
+            string source = @"
+using DxMessaging.Core;
+class Receiver
+{
+    OtherReceiver value;
+    Pulse copy;
+    RECEIVER_USE
+
+    void Install()
+    {
+        global::DxMessaging.Core.MessageHandler.FastHandler<global::Pulse> handler = Forward;
+    }
+    void Forward(ref Pulse message) { }
+}
+
+class OtherReceiver { public void Forward(ref Pulse message) { } }
+
+public readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage
+{
+    public System.Type MessageType => typeof(Pulse);
+}
+".Replace("RECEIVER_USE", use);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(
+                    migrate
+                        ? source.Replace("    void Forward(ref Pulse", "    void Forward(in Pulse")
+                        : source
+                )
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
         [TestCase(
             "separate(ref pulse);",
             false,
@@ -6678,12 +6723,30 @@ void OnPulse(ref Pulse message) => sink = EXPRESSION;".Replace("EXPRESSION", exp
         {
             const string Source =
                 @"
-DxMessaging.Core.MessageRegistrationToken token;
-token.RegisterUntargeted<Pulse>(OnPulse);
-void OnPulse(ref Pulse message) =>
-    message.Value < 10 ? Forward<First, Second>(ref message) : false;";
+using DxMessaging.Core;
+class Receiver
+{
+    private bool sink;
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
+    void Install(MessageRegistrationToken token)
+    {
+        token.RegisterUntargeted<Pulse>(OnPulse);
+    }
+
+    void OnPulse(ref Pulse message) =>
+        sink = message.Value < 10 ? Forward<First, Second>(ref message) : false;
+
+    static bool Forward<TFirst, TSecond>(ref Pulse message) => false;
+    class First { }
+    class Second { }
+}
+
+struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage
+{
+    public int Value;
+    public System.Type MessageType => typeof(Pulse);
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
                 Source
             );
 
@@ -7350,6 +7413,34 @@ void OnPulse(ref Pulse message) { }";
 
             Assert.That(store.Files["first.cs"], Is.EqualTo(new byte[] { 10 }));
             Assert.That(store.Files["second.cs"], Is.EqualTo(new byte[] { 20 }));
+            Assert.That(store.Backups, Is.Empty);
+        }
+
+        [Test]
+        public void ApplyAtomicallyRollsBackWhenADependencyChangesBeforeCommit()
+        {
+            FakeAtomicFileStore store = new(
+                new Dictionary<string, byte[]>
+                {
+                    ["receiver.cs"] = new byte[] { 1 },
+                    ["caller.cs"] = new byte[] { 2 },
+                }
+            );
+            ReadonlyFastHandlerUpgrade.PendingFileUpgrade[] upgrades =
+            {
+                new("receiver.cs", new byte[] { 1 }, new byte[] { 10 }),
+            };
+
+            Assert.That(() => ReadonlyFastHandlerUpgrade.ApplyAtomically(upgrades, store, () =>
+                    {
+                        Assert.That(store.Files["receiver.cs"], Is.EqualTo(new byte[] { 10 }));
+                        Assert.That(store.Backups, Has.Count.EqualTo(1));
+                        store.Files["caller.cs"] = new byte[] { 3 };
+                        throw new IOException("caller.cs changed after the preview");
+                    }), Throws.TypeOf<IOException>());
+
+            Assert.That(store.Files["receiver.cs"], Is.EqualTo(new byte[] { 1 }));
+            Assert.That(store.Files["caller.cs"], Is.EqualTo(new byte[] { 3 }));
             Assert.That(store.Backups, Is.Empty);
         }
 
