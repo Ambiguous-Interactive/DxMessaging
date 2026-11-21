@@ -170,9 +170,11 @@ generated sources, interceptors, emission calls, comments, or strings.
 
 The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
-replacement. After you confirm the preview, the tool checks the script inventory and Unity assembly
-assignments and compares the bytes of each script it could read. Resolve unreadable-script warnings and rerun the preview
-before applying changes. The tool attempts to restore every earlier write if a later write fails. If a script changes
+replacement. After confirmation, the tool rechecks C# scripts, assembly settings under `Assets`,
+and Unity's script assembly assignments. It compares the bytes of the files it could read.
+Refresh the Asset Database and rerun the preview when the imported assembly settings differ from disk.
+Resolve unreadable-script warnings before applying changes. The tool attempts to restore every earlier
+write if a later write fails. If a script changes
 again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
 ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an

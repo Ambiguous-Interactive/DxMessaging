@@ -166,6 +166,12 @@ namespace DxMessaging.Editor
             + ")*"
             + @"|\([^;={}]+\))(?:\s*[?*]|\s*\[[,\s]*\])*";
 
+        private static readonly Regex DeclaredCallbackTypeRegex = new(
+            @"\A" + MemberTypePattern + @"\z",
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1)
+        );
+
         private static readonly Regex DecimalIntLiteralRegex = new(
             @"\A[+-]?[0-9](?:[0-9_]*[0-9])?\z",
             RegexOptions.CultureInvariant,
@@ -326,27 +332,33 @@ namespace DxMessaging.Editor
             List<FileUpgrade> upgrades = new();
             SortedSet<string> manualReview = new(StringComparer.Ordinal);
             HashSet<string> importedScripts = GetImportedScriptPaths();
+            string assetsRoot;
             string[] assetPaths;
             try
             {
-                assetPaths = GetProjectScriptPaths(importedScripts);
+                assetsRoot =
+                    Path.GetFullPath(Application.dataPath)
+                        .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    + Path.DirectorySeparatorChar;
+                assetPaths = GetProjectFilePaths(assetsRoot, importedScripts);
             }
             catch (Exception exception)
                 when (exception is IOException or UnauthorizedAccessException)
             {
                 DxMessagingEditorLog.LogWarning(
-                    "Could not enumerate the C# scripts under Assets.",
+                    "Could not enumerate C# scripts and assembly settings under Assets.",
                     exception
                 );
                 EditorUtility.DisplayDialog(
                     "DxMessaging Fast Handler Upgrade",
-                    "The preview needs to read the C# script inventory under Assets. See the Console for details.",
+                    "The preview needs to read the C# scripts and assembly settings under Assets. See the Console for details.",
                     "OK"
                 );
                 return;
             }
 
-            Dictionary<string, byte[]> originalScripts = new(StringComparer.Ordinal);
+            Dictionary<string, byte[]> originalFiles = new(StringComparer.Ordinal);
+            bool assemblySettingsAreCurrent = true;
             Dictionary<string, string> scriptAssemblies = importedScripts.ToDictionary(
                 path => path,
                 CompilationPipeline.GetAssemblyNameFromScriptPath,
@@ -357,10 +369,35 @@ namespace DxMessaging.Editor
 
             foreach (string assetPath in assetPaths)
             {
+                bool isScript = IsScriptPath(assetPath);
                 try
                 {
-                    byte[] originalBytes = File.ReadAllBytes(GetProjectScriptFullPath(assetPath));
-                    originalScripts.Add(assetPath, originalBytes);
+                    byte[] originalBytes = File.ReadAllBytes(
+                        GetProjectFileFullPath(assetsRoot, assetPath)
+                    );
+                    originalFiles.Add(assetPath, originalBytes);
+                    if (!isScript)
+                    {
+                        if (IsAssemblySettingsPath(assetPath))
+                        {
+                            TextAsset imported = AssetDatabase.LoadAssetAtPath<TextAsset>(
+                                assetPath
+                            );
+                            bool hasImportedSettings = imported != null;
+                            if (
+                                !hasImportedSettings
+                                || !imported.bytes.AsSpan().SequenceEqual(originalBytes)
+                            )
+                            {
+                                assemblySettingsAreCurrent = false;
+                                manualReview.Add(
+                                    $"{assetPath}: Unity's imported assembly settings could not be matched to disk. Refresh and preview again to check routes across scripts."
+                                );
+                            }
+                        }
+                        continue;
+                    }
+
                     EncodedSource source = EncodedSource.FromBytes(originalBytes);
                     scriptAssemblies.TryGetValue(assetPath, out string assemblyName);
                     projectUses.AddScript(assetPath, source.Text, assemblyName);
@@ -376,11 +413,21 @@ namespace DxMessaging.Editor
                 catch (Exception exception)
                     when (exception is IOException or UnauthorizedAccessException)
                 {
-                    originalScripts.TryAdd(assetPath, null);
-                    projectUses.MarkUnreadable(assetPath);
-                    manualReview.Add(
-                        $"{assetPath}: this script could not be read; inspect its callbacks manually"
-                    );
+                    originalFiles.TryAdd(assetPath, null);
+                    if (isScript)
+                    {
+                        projectUses.MarkUnreadable(assetPath);
+                        manualReview.Add(
+                            $"{assetPath}: this script could not be read; inspect its callbacks manually"
+                        );
+                    }
+                    else
+                    {
+                        assemblySettingsAreCurrent = false;
+                        manualReview.Add(
+                            $"{assetPath}: assembly settings could not be read. Check routes across scripts manually."
+                        );
+                    }
                 }
                 catch (DecoderFallbackException)
                 {
@@ -409,7 +456,7 @@ namespace DxMessaging.Editor
                         source.Text,
                         name => projectUses.FindOtherUse(assetPath, name),
                         projectUses,
-                        scriptAssemblies[assetPath]
+                        assemblySettingsAreCurrent ? scriptAssemblies[assetPath] : null
                     );
                 }
                 catch (RegexMatchTimeoutException)
@@ -429,8 +476,8 @@ namespace DxMessaging.Editor
                 {
                     upgrades.Add(
                         new FileUpgrade(
-                            GetProjectScriptFullPath(assetPath),
-                            originalScripts[assetPath],
+                            GetProjectFileFullPath(assetsRoot, assetPath),
+                            originalFiles[assetPath],
                             source.Encode(result.UpgradedSource),
                             result.ReplacementCount,
                             result.StringHandlerOptInCount
@@ -482,7 +529,7 @@ namespace DxMessaging.Editor
 
             try
             {
-                VerifyProjectScriptSnapshot(originalScripts, scriptAssemblies);
+                VerifyProjectFileSnapshot(assetsRoot, originalFiles, scriptAssemblies);
                 ApplyAtomically(upgrades);
             }
             catch (Exception exception)
@@ -521,60 +568,95 @@ namespace DxMessaging.Editor
         }
 
         private static HashSet<string> GetImportedScriptPaths() =>
-            AssetDatabase
-                .FindAssets("t:MonoScript", new[] { "Assets" })
-                .Select(AssetDatabase.GUIDToAssetPath)
-                .Where(path => path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
-                .ToHashSet(StringComparer.Ordinal);
+            GetImportedPaths("t:MonoScript").Where(IsScriptPath).ToHashSet(StringComparer.Ordinal);
 
-        private static string[] GetProjectScriptPaths(HashSet<string> importedScripts)
+        private static IEnumerable<string> GetImportedPaths(string filter) =>
+            AssetDatabase
+                .FindAssets(filter, new[] { "Assets" })
+                .Select(AssetDatabase.GUIDToAssetPath);
+
+        private static bool IsScriptPath(string path) =>
+            path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsAssemblySettingsPath(string path) =>
+            path.EndsWith(".asmdef", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".asmref", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsAssemblySettingsMetadata(string path) =>
+            path.EndsWith(".asmdef.meta", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".asmref.meta", StringComparison.OrdinalIgnoreCase);
+
+        private static string[] GetProjectFilePaths(
+            string assetsRoot,
+            HashSet<string> importedScripts
+        )
         {
-            // A script can exist on disk before Unity imports it, including during confirmation.
+            // The imported inventory can lag additions, removals and changes to disk.
             EnumerationOptions options = new()
             {
                 AttributesToSkip = FileAttributes.ReparsePoint,
                 RecurseSubdirectories = true,
                 IgnoreInaccessible = false,
             };
-            IEnumerable<string> diskScripts = Directory
-                .EnumerateFiles("Assets", "*", options)
-                .Where(path => path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
-                .Select(path => path.Replace(Path.DirectorySeparatorChar, '/'));
+            IEnumerable<string> diskPaths = Directory
+                .EnumerateFiles(assetsRoot, "*", options)
+                .Where(path =>
+                    IsScriptPath(path)
+                    || IsAssemblySettingsPath(path)
+                    || IsAssemblySettingsMetadata(path)
+                )
+                .Select(path =>
+                    "Assets/"
+                    + Path.GetRelativePath(assetsRoot, path)
+                        .Replace(Path.DirectorySeparatorChar, '/')
+                );
+            IEnumerable<string> importedSettings = GetImportedPaths("t:AssemblyDefinitionAsset")
+                .Concat(GetImportedPaths("t:AssemblyDefinitionReferenceAsset"))
+                .Where(IsAssemblySettingsPath);
             return importedScripts
-                .Union(diskScripts)
+                .Union(importedSettings)
+                .Union(diskPaths)
                 .OrderBy(path => path, StringComparer.Ordinal)
                 .ToArray();
         }
 
-        private static string GetProjectScriptFullPath(string assetPath)
+        private static string GetProjectFileFullPath(string assetsRoot, string assetPath)
         {
-            string assets = Path.GetFullPath("Assets") + Path.DirectorySeparatorChar;
-            string path = Path.GetFullPath(assetPath);
+            const string AssetPrefix = "Assets/";
+            if (!assetPath.StartsWith(AssetPrefix, StringComparison.Ordinal))
+            {
+                throw new IOException($"The project file '{assetPath}' is outside Assets.");
+            }
+
+            string path = Path.GetFullPath(
+                Path.Combine(assetsRoot, assetPath.Substring(AssetPrefix.Length))
+            );
             StringComparison comparison =
                 Path.DirectorySeparatorChar == '\\'
                     ? StringComparison.OrdinalIgnoreCase
                     : StringComparison.Ordinal;
-            if (!path.StartsWith(assets, comparison))
+            if (!path.StartsWith(assetsRoot, comparison))
             {
-                throw new IOException($"The script '{assetPath}' is outside Assets.");
+                throw new IOException($"The project file '{assetPath}' is outside Assets.");
             }
             return path;
         }
 
-        private static void VerifyProjectScriptSnapshot(
-            Dictionary<string, byte[]> originalScripts,
+        private static void VerifyProjectFileSnapshot(
+            string assetsRoot,
+            Dictionary<string, byte[]> originalFiles,
             Dictionary<string, string> originalAssemblies
         )
         {
             HashSet<string> importedScripts = GetImportedScriptPaths();
-            string[] currentPaths = GetProjectScriptPaths(importedScripts);
+            string[] currentPaths = GetProjectFilePaths(assetsRoot, importedScripts);
             if (
-                currentPaths.Length != originalScripts.Count
-                || currentPaths.Any(path => !originalScripts.ContainsKey(path))
+                currentPaths.Length != originalFiles.Count
+                || currentPaths.Any(path => !originalFiles.ContainsKey(path))
             )
             {
                 throw new IOException(
-                    "The project's C# script inventory changed after the preview."
+                    "The project's C# script or assembly settings inventory changed after the preview."
                 );
             }
 
@@ -593,13 +675,15 @@ namespace DxMessaging.Editor
 
             foreach (string path in currentPaths)
             {
-                byte[] original = originalScripts[path];
+                byte[] original = originalFiles[path];
                 if (original != null)
                 {
-                    byte[] current = File.ReadAllBytes(GetProjectScriptFullPath(path));
+                    byte[] current = File.ReadAllBytes(GetProjectFileFullPath(assetsRoot, path));
                     if (!current.AsSpan().SequenceEqual(original))
                     {
-                        throw new IOException($"The script '{path}' changed after the preview.");
+                        throw new IOException(
+                            $"The project file '{path}' changed after the preview."
+                        );
                     }
                 }
             }
@@ -886,8 +970,9 @@ namespace DxMessaging.Editor
                     (
                         int variable,
                         TextSpan rightHandSideSpan,
-                        string messageType
-                    ) in FindFastDelegateInitializers(masked, handler)
+                        string messageType,
+                        bool declarationIsProven
+                    ) in FindFastDelegateInitializers(masked, handler, metadata)
                 )
                 {
                     Invocation expression = new(
@@ -895,10 +980,13 @@ namespace DxMessaging.Editor
                         rightHandSideSpan.Start,
                         rightHandSideSpan.Start + rightHandSideSpan.Length
                     );
-                    if (!isProven)
+                    if (!isProven || !declarationIsProven)
                     {
+                        string binding = declarationIsProven
+                            ? "MessageHandler type"
+                            : "auto-property declaration";
                         string reason =
-                            $"{CallbackLocation(masked, variable)} uses a delegate whose MessageHandler type cannot be proven; inspect its binding manually";
+                            $"{CallbackLocation(masked, variable)} uses a delegate whose {binding} cannot be proven; inspect its binding manually";
                         if (TryGetMethodGroup(masked, rightHandSideSpan, out string name, out _))
                         {
                             unprovenMethodGroups.TryAdd(
@@ -920,7 +1008,12 @@ namespace DxMessaging.Editor
                                 parameters.Start,
                                 parameters.Start + parameters.Length
                             )
-                            : MethodGroupMayNeedMigration(masked, rightHandSideSpan);
+                            : MethodGroupMayNeedMigration(
+                                masked,
+                                rightHandSideSpan,
+                                masked,
+                                metadata
+                            );
                         if (needsReview)
                         {
                             manualReview.Add(reason);
@@ -961,8 +1054,9 @@ namespace DxMessaging.Editor
         private static IEnumerable<(
             int Variable,
             TextSpan Initializer,
-            string MessageType
-        )> FindFastDelegateInitializers(string masked, Match handler)
+            string MessageType,
+            bool DeclarationIsProven
+        )> FindFastDelegateInitializers(string masked, Match handler, SourceMetadata metadata)
         {
             int open = NextNonWhitespace(masked, handler.Index + handler.Length);
             if (IsGenericTypeTestOperand(masked, open))
@@ -999,6 +1093,28 @@ namespace DxMessaging.Editor
                     yield break;
                 }
 
+                bool declarationIsProven = true;
+                if (masked[following] == '{')
+                {
+                    int accessors = following;
+                    int closeAccessors = FindMatching(masked, accessors, '{', '}');
+                    following =
+                        closeAccessors < 0 ? -1 : NextNonWhitespace(masked, closeAccessors + 1);
+                    if (following < 0 || statementEnd <= following || masked[following] != '=')
+                    {
+                        yield break;
+                    }
+
+                    int declarationStart =
+                        masked.LastIndexOfAny(new[] { '{', '}', ';' }, handler.Index - 1) + 1;
+                    declarationIsProven =
+                        IsAutoPropertyAccessorList(masked, accessors, closeAccessors)
+                        && !metadata.UncertainBranches.Exists(branch =>
+                            branch.Start <= following
+                            && declarationStart < branch.Start + branch.Length
+                        );
+                }
+
                 if (masked[following] == '=' && masked[following + 1] is not ('=' or '>'))
                 {
                     int initializer = following + 1;
@@ -1010,7 +1126,8 @@ namespace DxMessaging.Editor
                     yield return (
                         variable,
                         new TextSpan(initializer, following - initializer),
-                        messageType
+                        messageType,
+                        declarationIsProven
                     );
                 }
 
@@ -1024,6 +1141,59 @@ namespace DxMessaging.Editor
                     yield break;
                 }
             }
+        }
+
+        private static bool IsAutoPropertyAccessorList(string masked, int open, int close)
+        {
+            bool hasGetter = false;
+            bool hasSetter = false;
+            int cursor = NextNonWhitespace(masked, open + 1);
+            while (0 <= cursor && cursor < close)
+            {
+                cursor = SkipDeclarationAttributes(masked, cursor);
+                Match token =
+                    cursor < 0 ? Match.Empty : DirectMemberIdentifierRegex.Match(masked, cursor);
+                while (
+                    token.Success
+                    && token.Value
+                        is "public"
+                            or "internal"
+                            or "protected"
+                            or "private"
+                            or "readonly"
+                )
+                {
+                    cursor = NextNonWhitespace(masked, token.Index + token.Length);
+                    token =
+                        cursor < 0
+                            ? Match.Empty
+                            : DirectMemberIdentifierRegex.Match(masked, cursor);
+                }
+                if (!token.Success)
+                {
+                    return false;
+                }
+
+                switch (token.Value)
+                {
+                    case "get" when !hasGetter:
+                        hasGetter = true;
+                        break;
+                    case "set" or "init" when !hasSetter:
+                        hasSetter = true;
+                        break;
+                    default:
+                        return false;
+                }
+
+                int semicolon = NextNonWhitespace(masked, token.Index + token.Length);
+                if (semicolon < 0 || close <= semicolon || masked[semicolon] != ';')
+                {
+                    return false;
+                }
+                cursor = NextNonWhitespace(masked, semicolon + 1);
+            }
+            return hasGetter;
         }
 
         private static void AddOverrideDeclarationReplacements(
@@ -2211,7 +2381,7 @@ namespace DxMessaging.Editor
             if (
                 !ownMemberOnly
                 && receiver == "value"
-                && IsImplicitValueReceiver(masked, receiverStart, usageScope)
+                && IsImplicitAccessorValue(masked, receiverStart, usageScope)
             )
             {
                 return false;
@@ -2308,7 +2478,7 @@ namespace DxMessaging.Editor
                 && declarations.All(entry => provenNames.Contains(entry.NameStart));
         }
 
-        private static bool IsImplicitValueReceiver(string masked, int use, int typeScope)
+        private static bool IsImplicitAccessorValue(string masked, int use, int typeScope)
         {
             try
             {
@@ -2414,16 +2584,20 @@ namespace DxMessaging.Editor
             return name.Success && name.Length == end + 1 - start ? start : -1;
         }
 
-        private static bool InvocationMayNeedMigration(string masked, Invocation invocation)
+        private static bool InvocationMayNeedMigration(
+            string code,
+            Invocation invocation,
+            string masked,
+            SourceMetadata metadata
+        )
         {
-            foreach (TextSpan callback in GetCallbackArguments(masked, invocation))
+            foreach (TextSpan callback in GetCallbackArguments(code, invocation))
             {
-                string expression = masked.Substring(callback.Start, callback.Length);
-                if (RefRegex.IsMatch(expression))
-                {
-                    return true;
-                }
-                if (MethodGroupMayNeedMigration(masked, callback))
+                string expression = code.Substring(callback.Start, callback.Length);
+                if (
+                    RefRegex.IsMatch(expression)
+                    || MethodGroupMayNeedMigration(code, callback, masked, metadata)
+                )
                 {
                     return true;
                 }
@@ -2431,17 +2605,76 @@ namespace DxMessaging.Editor
             return false;
         }
 
-        private static bool MethodGroupMayNeedMigration(string masked, TextSpan callback)
+        private static bool MethodGroupMayNeedMigration(
+            string code,
+            TextSpan callback,
+            string masked,
+            SourceMetadata metadata
+        )
         {
-            return TryGetMethodGroup(masked, callback, out string methodName, out _)
-                && FindMethodDeclarations(masked, methodName, requireOverride: false)
-                    .Exists(declaration =>
-                        HasRefParameter(
-                            masked,
-                            declaration.ParametersStart,
-                            declaration.ParametersEnd
-                        )
-                    );
+            HashSet<string> inspectedNames = new(StringComparer.Ordinal);
+            for (
+                Match candidate = IdentifierUseRegex.Match(code, callback.Start, callback.Length);
+                candidate.Success;
+                candidate = candidate.NextMatch()
+            )
+            {
+                if (candidate.Value is "new" or "default" or "null" or "this" or "base")
+                {
+                    continue;
+                }
+                string name = IdentifierValue(candidate.Value);
+                if (
+                    inspectedNames.Add(name)
+                    && HasPossibleWritableCallbackDeclaration(masked, metadata, name)
+                )
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool HasPossibleWritableCallbackDeclaration(
+            string masked,
+            SourceMetadata metadata,
+            string name
+        )
+        {
+            foreach (Match candidate in metadata.MaskedIdentifierUses(masked, name))
+            {
+                int open = NextNonWhitespace(masked, candidate.Index + candidate.Length);
+                if (0 <= open && masked[open] == '<')
+                {
+                    int generic = FindMatching(masked, open, '<', '>');
+                    open = generic < 0 ? -1 : NextNonWhitespace(masked, generic + 1);
+                }
+                if (open < 0 || masked[open] != '(')
+                {
+                    continue;
+                }
+
+                int end = FindMatching(masked, open, '(', ')');
+                int following = end < 0 ? -1 : NextNonWhitespace(masked, end + 1);
+                if (
+                    0 <= following
+                    && (
+                        masked[following] is '{' or ';'
+                        || IsArrow(masked, following)
+                        || StartsWithIdentifier(masked, following, "where")
+                    )
+                    && SplitParameters(masked, open + 1, end)
+                        .Any(parameter =>
+                        {
+                            string type = ReadCallbackRefType(masked, parameter);
+                            return type != null && DeclaredCallbackTypeRegex.IsMatch(type);
+                        })
+                )
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static List<Invocation> FindInvocations(
@@ -2504,7 +2737,10 @@ namespace DxMessaging.Editor
                         {
                             unprovenMethodGroups?.TryAdd(group, reason);
                         }
-                        if (manualReview != null && InvocationMayNeedMigration(masked, invocation))
+                        if (
+                            manualReview != null
+                            && InvocationMayNeedMigration(masked, invocation, masked, metadata)
+                        )
                         {
                             manualReview.Add(reason);
                         }
@@ -2553,12 +2789,42 @@ namespace DxMessaging.Editor
             }
 
             int close = FindMatching(code, cursor, '(', ')');
-            if (close < 0)
+            if (close < 0 || IsRegistrationDeclaration(code, use, close))
             {
                 return false;
             }
             invocation = new Invocation(name, cursor + 1, close);
             return true;
+        }
+
+        private static bool IsRegistrationDeclaration(string code, Match name, int close)
+        {
+            int following = NextNonWhitespace(code, close + 1);
+            if (
+                following < 0
+                || (
+                    code[following] != '{'
+                    && !IsArrow(code, following)
+                    && !StartsWithIdentifier(code, following, "where")
+                )
+            )
+            {
+                return false;
+            }
+
+            int start = code.LastIndexOfAny(new[] { '{', '}', ';' }, name.Index - 1) + 1;
+            start = SkipDeclarationAttributes(code, NextNonWhitespace(code, start));
+            if (start < 0 || name.Index < start)
+            {
+                return false;
+            }
+
+            Match declaration = DirectMemberDeclarationRegex.Match(
+                code,
+                start,
+                name.Index + name.Length - start
+            );
+            return declaration.Success && declaration.Groups["name"].Index == name.Index;
         }
 
         private static void ReportInterpolatedRegistrations(
@@ -2596,7 +2862,12 @@ namespace DxMessaging.Editor
 
                     string reason =
                         $"{CallbackLocation(masked, offset + use.Index)} {name} has an interpolated registration whose binding cannot be proven; inspect it manually";
-                    bool needsReview = InvocationMayNeedMigration(code, invocation);
+                    bool needsReview = InvocationMayNeedMigration(
+                        code,
+                        invocation,
+                        masked,
+                        metadata
+                    );
                     foreach (TextSpan callback in GetCallbackArguments(code, invocation))
                     {
                         if (TryGetMethodGroup(code, callback, out string method, out int position))
@@ -2721,9 +2992,17 @@ namespace DxMessaging.Editor
             {
                 return false;
             }
-            if (storedDelegate == null && HasExplicitPackageDelegate(masked, metadata, callback))
+            if (
+                storedDelegate == null
+                && TryReadExplicitPackageDelegate(
+                    masked,
+                    metadata,
+                    callback,
+                    out var explicitDelegate
+                )
+            )
             {
-                return true;
+                storedDelegate = explicitDelegate;
             }
             string messageType;
             if (typeArguments.Count == 1)
@@ -3135,12 +3414,14 @@ namespace DxMessaging.Editor
             return -1;
         }
 
-        private static bool HasExplicitPackageDelegate(
+        private static bool TryReadExplicitPackageDelegate(
             string masked,
             SourceMetadata metadata,
-            TextSpan callback
+            TextSpan callback,
+            out (string MessageType, bool HasContext) signature
         )
         {
+            signature = default;
             Invocation expression = new(
                 "callback",
                 callback.Start,
@@ -3157,9 +3438,27 @@ namespace DxMessaging.Editor
             }
 
             int handler = FindFastDelegateName(masked, callback.Start, prefixEnd);
-            return 0 <= handler
-                && TryClassifyFastDelegateType(masked, handler, metadata, out bool proven, out _)
-                && proven;
+            if (
+                handler < 0
+                || !TryClassifyFastDelegateType(masked, handler, metadata, out bool proven, out _)
+                || !proven
+            )
+            {
+                return false;
+            }
+
+            Match typeName = DirectMemberIdentifierRegex.Match(masked, handler);
+            int open = NextNonWhitespace(masked, handler + typeName.Length);
+            int close = FindMatching(masked, open, '<', '>');
+            if (close < 0 || prefixEnd <= close)
+            {
+                return false;
+            }
+            signature = (
+                CompactType(masked.Substring(open + 1, close - open - 1)),
+                IdentifierValue(typeName.Value) == "FastHandlerWithContext"
+            );
+            return true;
         }
 
         private static bool HasProvenRouteMessage(
@@ -3599,6 +3898,7 @@ namespace DxMessaging.Editor
             string requiredType
         )
         {
+            int valueStart = NextNonWhitespace(masked, value.Start);
             string expression = masked.Substring(value.Start, value.Length).Trim();
             while (
                 expression.Length != 0
@@ -3607,6 +3907,7 @@ namespace DxMessaging.Editor
             )
             {
                 expression = expression.Substring(1, expression.Length - 2).Trim();
+                valueStart = NextNonWhitespace(masked, valueStart + 1);
             }
             if (expression == "default")
             {
@@ -3696,26 +3997,44 @@ namespace DxMessaging.Editor
                 }
             }
 
-            Match identifier = IdentifierUseRegex.Match(expression);
+            int dot = expression.IndexOf('.');
+            bool ownMemberOnly = 0 <= dot && expression.Substring(0, dot).Trim() == "this";
+            int nameStart = ownMemberOnly ? NextNonWhitespace(expression, dot + 1) : 0;
+            if (nameStart < 0)
+            {
+                return false;
+            }
+
+            Match identifier = DirectMemberIdentifierRegex.Match(expression, nameStart);
+            if (!identifier.Success || nameStart + identifier.Length != expression.Length)
+            {
+                return false;
+            }
+
+            string variable = IdentifierValue(identifier.Value);
+            valueStart += nameStart;
             if (
-                !identifier.Success
-                || identifier.Index != 0
-                || identifier.Length != expression.Length
+                !ownMemberOnly
+                && variable == "value"
+                && IsImplicitAccessorValue(masked, valueStart, typeScope)
             )
             {
                 return false;
             }
-            string variable = IdentifierValue(identifier.Value);
-            int valueStart = NextNonWhitespace(masked, value.Start);
             var declarations = metadata
                 .ReceiverDeclarations(masked, variable)
                 .Where(entry =>
                     entry.NameStart != valueStart
                     && FindContainingTypeStart(masked, entry.NameStart) == typeScope
+                    && (
+                        !ownMemberOnly
+                        || IsReceiverMember(masked, entry.Declaration, entry.NameStart, typeScope)
+                    )
                 )
                 .ToArray();
             if (
-                metadata.HasUnclassifiedReceiverUse(
+                !ownMemberOnly
+                && metadata.HasUnclassifiedReceiverUse(
                     masked,
                     variable,
                     typeScope,
@@ -4075,6 +4394,7 @@ namespace DxMessaging.Editor
             string trimmed = masked.Substring(callback.Start, callback.Length).Trim();
             if (
                 RefRegex.IsMatch(trimmed)
+                || MethodGroupMayNeedMigration(masked, callback, masked, metadata)
                 || (
                     IdentifierUseRegex.Match(trimmed) is { Success: true } identifier
                     && identifier.Length == trimmed.Length
@@ -5109,7 +5429,8 @@ namespace DxMessaging.Editor
                         || name.Contains("Member", StringComparison.Ordinal)
                         || name.Contains("Method", StringComparison.Ordinal)
                         || name.Contains("Accessor", StringComparison.Ordinal)
-                        || name.Contains("Assembl", StringComparison.Ordinal)
+                        || name.Contains("Assembly", StringComparison.Ordinal)
+                        || name.Contains("Assemblies", StringComparison.Ordinal)
                         || name.Contains("Type", StringComparison.Ordinal)
                     );
         }
@@ -7094,6 +7415,7 @@ namespace DxMessaging.Editor
             int brackets = 0;
             int braces = 0;
             int angles = 0;
+            bool readingParameterType = containsParameterTypes;
             for (int index = start; index < end; index++)
             {
                 switch (text[index])
@@ -7116,14 +7438,17 @@ namespace DxMessaging.Editor
                     case '}':
                         braces--;
                         break;
-                    // A comparison in a nested expression cannot affect the outer argument list.
+                    case '=' when parentheses == 0 && brackets == 0 && braces == 0 && angles == 0:
+                        readingParameterType = false;
+                        break;
+                    // A comparison in a nested or default expression is not evidence of a type argument.
                     case '<'
                         when parentheses == 0
                             && brackets == 0
                             && braces == 0
                             && (
                                 0 < angles
-                                || containsParameterTypes
+                                || readingParameterType
                                 || IsGenericOpenAngle(text, index, end)
                             ):
                         angles++;
@@ -7136,6 +7461,7 @@ namespace DxMessaging.Editor
                         {
                             arguments.Add(new TextSpan(argumentStart, index - argumentStart));
                             argumentStart = index + 1;
+                            readingParameterType = containsParameterTypes;
                         }
                         break;
                 }
@@ -7755,7 +8081,13 @@ namespace DxMessaging.Editor
 
                     int before = PreviousNonWhitespace(masked, use.Index - 1);
                     int after = NextNonWhitespace(masked, use.Index + use.Length);
-                    if (IsReceiverReference(masked, use, before, after))
+                    if (
+                        IsReceiverReference(masked, use, before, after)
+                        || (
+                            receiver == "value"
+                            && IsImplicitAccessorValue(masked, use.Index, typeStart)
+                        )
+                    )
                     {
                         continue;
                     }

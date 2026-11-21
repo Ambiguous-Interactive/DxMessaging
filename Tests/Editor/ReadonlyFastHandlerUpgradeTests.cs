@@ -537,6 +537,88 @@ class Receiver
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
         }
 
+        [TestCase(
+            "IUntargetedMessage",
+            "1 < 2",
+            false,
+            TestName = "A writable targeted extension survives an earlier less-than default"
+        )]
+        [TestCase(
+            "IUntargetedMessage",
+            "1 <= 2",
+            false,
+            TestName = "A writable targeted extension survives an earlier less-than-or-equal default"
+        )]
+        [TestCase(
+            "ITargetedMessage",
+            "1 < 2",
+            false,
+            TestName = "An optional comparison keeps the visible competing extension in scope"
+        )]
+        [TestCase(
+            "ITargetedMessage",
+            null,
+            true,
+            TestName = "An explicit fast delegate with the correct route still migrates"
+        )]
+        public void AnalyzeChecksRouteAndOptionalDefaultsForAnExplicitDelegate(
+            string marker,
+            string defaultValue,
+            bool migrate
+        )
+        {
+            const string Extension =
+                @"
+static class VendorExtensions
+{
+    public static void RegisterTargeted<T>(
+        this MessageRegistrationToken token,
+        bool flag = DEFAULT_VALUE,
+        InstanceId target = default,
+        MessageHandler.FastHandler<T> targetedHandler = null,
+        int priority = 0
+    ) where T : IMessage
+    {
+        T message = default;
+        targetedHandler(ref message);
+    }
+}";
+            string source =
+                @"
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+class Receiver
+{
+    void Configure(MessageRegistrationToken token)
+    {
+        token.RegisterTargeted<Pulse>(
+            target: default,
+            targetedHandler: new MessageHandler.FastHandler<Pulse>((ref Pulse value) => { }),
+            priority: 0
+        );
+    }
+}
+struct Pulse : global::DxMessaging.Core.Messages.MARKER
+{
+    public global::System.Type MessageType => typeof(Pulse);
+}
+".Replace("MARKER", marker)
+                + (
+                    defaultValue == null
+                        ? string.Empty
+                        : Extension.Replace("DEFAULT_VALUE", defaultValue)
+                );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
         [Test]
         public void AnalyzeDefersCoupledGlobalCallbacksAcrossRegistrations()
         {
@@ -902,7 +984,11 @@ namespace Vendor
                 Is.EqualTo(migrate ? source.Replace("ref Pulse pulse", "in Pulse pulse") : source)
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
-            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.Count.EqualTo(migrate ? 0 : 1),
+                string.Join("\n", result.ManualReviewMethods)
+            );
         }
 
         [TestCase(
@@ -1014,6 +1100,151 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             Assert.That(result.ReplacementCount, Is.Zero);
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
             Assert.That(result.ManualReviewMethods[0], Does.Contain("use on line 10"));
+        }
+
+        [TestCase("Callbacks.OnPulse")]
+        [TestCase("global::Callbacks.OnPulse")]
+        [TestCase("new MessageHandler.FastHandler<Pulse>(Callbacks.OnPulse)")]
+        [TestCase("(MessageHandler.FastHandler<Pulse>)Callbacks.OnPulse")]
+        [TestCase("Callbacks.Generic<Pulse>")]
+        [TestCase("Callbacks.@OnEscaped")]
+        [TestCase("Generic<Pulse>")]
+        [TestCase("@OnEscaped")]
+        [TestCase("(Callbacks.OnPulse)")]
+        [TestCase("enabled ? new MessageHandler.FastHandler<Pulse>(Callbacks.OnPulse) : default")]
+        public void AnalyzeReportsWritableCallbackReferencesOnAnUnprovedReceiver(string callback)
+        {
+            string source = @"
+using DxMessaging.Core;
+using static Callbacks;
+class Receiver
+{
+    void Configure(Other other, bool enabled)
+    {
+        other.Token.RegisterUntargeted<Pulse>(untargetedHandler: CALLBACK);
+    }
+}
+class Other { public MessageRegistrationToken Token; }
+static class Callbacks
+{
+    public static void OnPulse(ref Pulse pulse) { }
+    public static void Generic<T>(ref T pulse) { }
+    public static void On\u0045scaped(ref Pulse pulse) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("CALLBACK", callback);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("receiver whose MessageRegistrationToken type cannot be proven")
+            );
+        }
+
+        [TestCase(
+            "get;",
+            "{ }",
+            "",
+            true,
+            TestName = "A proved fast delegate auto-property initializer migrates"
+        )]
+        [TestCase(
+            "get; private set;",
+            "{ }",
+            "Handler?.Invoke(ref pulse);",
+            false,
+            TestName = "A writable property delegate invocation preserves its initializer"
+        )]
+        [TestCase(
+            "get; init;",
+            "{ message = default; }",
+            "",
+            false,
+            TestName = "A writable property callback is reported at its initializer"
+        )]
+        public void AnalyzeChecksFastDelegateAutoPropertyInitializers(
+            string accessors,
+            string lambdaBody,
+            string invocation,
+            bool migrate
+        )
+        {
+            string source = @"
+using DxMessaging.Core;
+class Receiver
+{
+    private MessageHandler.FastHandler<Pulse> Handler { ACCESSORS } =
+        (ref Pulse message) => LAMBDA_BODY;
+    void Configure(Pulse pulse)
+    {
+        INVOCATION
+    }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("ACCESSORS", accessors).Replace("LAMBDA_BODY", lambdaBody).Replace(
+                "INVOCATION",
+                invocation
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(
+                    migrate ? source.Replace("ref Pulse message", "in Pulse message") : source
+                )
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase("value", false)]
+        [TestCase("(value)", false)]
+        [TestCase("this.value", true)]
+        public void AnalyzeDistinguishesAccessorArgumentsFromTheField(
+            string priority,
+            bool migrateAccessor
+        )
+        {
+            string source = @"
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+class Receiver
+{
+    readonly MessageRegistrationToken token = MessageRegistrationToken.Create(new MessageHandler());
+    int value;
+    string Setting
+    {
+        set => token.RegisterUntargeted<GlobalStringMessage>(
+            (ref GlobalStringMessage accessorMessage) => { }, priority: PRIORITY);
+    }
+    void Configure()
+    {
+        token.RegisterUntargeted<GlobalStringMessage>(
+            (ref GlobalStringMessage fieldMessage) => { }, priority: (value));
+    }
+}".Replace("PRIORITY", priority);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            string expected = source.Replace(
+                "ref GlobalStringMessage fieldMessage",
+                "in GlobalStringMessage fieldMessage"
+            );
+            if (migrateAccessor)
+            {
+                expected = expected.Replace(
+                    "ref GlobalStringMessage accessorMessage",
+                    "in GlobalStringMessage accessorMessage"
+                );
+            }
+            Assert.That(result.UpgradedSource, Is.EqualTo(expected));
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrateAccessor ? 2 : 1));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrateAccessor ? 0 : 1));
         }
 
         [TestCase("value => { }")]
