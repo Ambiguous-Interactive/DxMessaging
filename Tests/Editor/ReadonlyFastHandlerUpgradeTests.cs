@@ -11,8 +11,565 @@ namespace DxMessaging.Tests.Editor
 
     public sealed class ReadonlyFastHandlerUpgradeTests
     {
+        // cspell:ignore mports Cdecl
         private const string UnresolvedMessageRead =
             "reads a member or indexer on parameter 'message' that cannot be verified safe for 'in'";
+
+        internal static ReadonlyFastHandlerUpgrade.UpgradeResult AnalyzeWithFixtureMessageTypes(
+            string source
+        )
+        {
+            // The lexical fixtures omit the surrounding application types unless they test a binding.
+            // Supply actual routing declarations so the preview can prove ordinary package overloads.
+            const string Contracts =
+                " : global::DxMessaging.Core.Messages.IUntargetedMessage,"
+                + " global::DxMessaging.Core.Messages.ITargetedMessage,"
+                + " global::DxMessaging.Core.Messages.IBroadcastMessage";
+            StringBuilder declarations = new();
+            foreach (
+                string name in new[]
+                {
+                    "Pulse",
+                    "OtherPulse",
+                    "Hit",
+                    "GamePaused",
+                    "CollisionOccurred",
+                    "PairMessage",
+                }
+            )
+            {
+                if (
+                    !source.Contains(name)
+                    || source.Contains("struct " + name)
+                    || source.Contains("class " + name)
+                    || source.Contains("record " + name)
+                )
+                {
+                    continue;
+                }
+                string type = name == "PairMessage" ? name + "<TFirst, TSecond>" : name;
+                declarations
+                    .Append("\nstruct ")
+                    .Append(type)
+                    .Append(Contracts)
+                    .Append(" { public global::System.Type MessageType => typeof(")
+                    .Append(type)
+                    .Append("); }");
+            }
+
+            string suffix = declarations.ToString();
+            if (suffix.Length != 0 && source.Contains("namespace Consumer"))
+            {
+                suffix = "\nnamespace Consumer {" + suffix + "\n}";
+            }
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source + suffix
+            );
+            Assert.That(result.UpgradedSource, Does.EndWith(suffix));
+            return new ReadonlyFastHandlerUpgrade.UpgradeResult(
+                result.UpgradedSource.Substring(0, result.UpgradedSource.Length - suffix.Length),
+                result.ReplacementCount,
+                result.StringHandlerOptInCount,
+                result.ManualReviewMethods
+            );
+        }
+
+        [TestCase(
+            "Observe(value)",
+            true,
+            TestName = "An invocation remains a void-compatible callback expression"
+        )]
+        [TestCase(
+            "{ return; }",
+            true,
+            TestName = "A bare return remains compatible with a void callback"
+        )]
+        [TestCase(
+            "{ return /* comment */; }",
+            true,
+            TestName = "A block comment can separate a bare return and its semicolon"
+        )]
+        [TestCase(
+            "{ return // comment\n; }",
+            true,
+            TestName = "A line comment can separate a bare return and its semicolon"
+        )]
+        [TestCase(
+            "++count",
+            true,
+            TestName = "An outer prefix increment remains a void-compatible statement"
+        )]
+        [TestCase(
+            "count = Observe(value)",
+            true,
+            TestName = "An outer assignment remains a void-compatible statement"
+        )]
+        [TestCase(
+            "Observe<System.Collections.Generic.List<int>>(value)",
+            true,
+            TestName = "A nested generic call remains a void-compatible statement"
+        )]
+        [TestCase(
+            "item => count = item",
+            false,
+            TestName = "An assignment in a returned lambda is not a void callback statement"
+        )]
+        [TestCase(
+            "from item in new[] { 1 } select count = item",
+            false,
+            TestName = "An assignment in a returned query is not a void callback statement"
+        )]
+        [TestCase(
+            "++count is int",
+            false,
+            TestName = "An increment in a returned type test is not a void callback statement"
+        )]
+        [TestCase(
+            "number < 1 > (3)",
+            false,
+            TestName = "A returned comparison does not establish a generic method invocation"
+        )]
+        [TestCase(
+            "1",
+            false,
+            TestName = "A value expression can bind a writable value-returning extension"
+        )]
+        [TestCase(
+            "1 + Observe(value)",
+            false,
+            TestName = "A binary expression is not a void callback invocation"
+        )]
+        [TestCase(
+            "checked(Observe(value))",
+            false,
+            TestName = "A checked expression does not prove a void callback"
+        )]
+        [TestCase(
+            "{ return 1; }",
+            false,
+            TestName = "A value-returning block can bind a writable extension"
+        )]
+        [TestCase(
+            @"{ return ""legacy""; }",
+            false,
+            TestName = "A masked string return still prevents a void callback proof"
+        )]
+        public void AnalyzeRequiresVoidCompatibilityForInlineCallbacks(string body, bool migrate)
+        {
+            string source = @"
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    static int count;
+    void Configure()
+    {
+        token.RegisterUntargeted<global::DxMessaging.Core.Messages.GlobalStringMessage>(
+            (ref global::DxMessaging.Core.Messages.GlobalStringMessage value) => BODY);
+    }
+    static int Observe(global::DxMessaging.Core.Messages.GlobalStringMessage value) => 1;
+    static int Observe<T>(global::DxMessaging.Core.Messages.GlobalStringMessage value) => 1;
+}".Replace("BODY", body);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref global", "in global") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [Test]
+        public void AnalyzeDefersANamedCallbackWithANonvoidReturnType()
+        {
+            const string Source =
+                @"
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    void Configure()
+    {
+        token.RegisterUntargeted<global::DxMessaging.Core.Messages.GlobalStringMessage>(Forward);
+    }
+    static int Forward(ref global::DxMessaging.Core.Messages.GlobalStringMessage value) => 1;
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+        }
+
+        [TestCase(
+            false,
+            TestName = "An optional package token can expose a writable receiver in another build"
+        )]
+        [TestCase(true, TestName = "A package token declared in each branch still migrates")]
+        public void AnalyzeRequiresAReceiverInEveryFeasibleConfiguration(bool complete)
+        {
+            const string Field =
+                "private new global::DxMessaging.Core.MessageRegistrationToken token;";
+            string source = @"
+class Receiver : VendorBase
+{
+#if LEGACY
+    FIELD
+OTHER
+#endif
+    void Configure()
+    {
+        token.RegisterUntargeted<global::DxMessaging.Core.Messages.GlobalStringMessage>(
+            (ref global::DxMessaging.Core.Messages.GlobalStringMessage value) => Observe(value));
+    }
+    static void Observe(global::DxMessaging.Core.Messages.GlobalStringMessage value) { }
+}".Replace("FIELD", Field).Replace("OTHER", complete ? "#else\n    " + Field : "");
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(complete ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(complete ? source.Replace("ref global", "in global") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(complete ? 0 : 1));
+        }
+
+        [TestCase(
+            false,
+            TestName = "An optional integer priority can expose a vendor overload in another build"
+        )]
+        [TestCase(true, TestName = "An integer priority declared in each branch permits migration")]
+        public void AnalyzeRequiresAnArgumentTypeInEveryFeasibleConfiguration(bool complete)
+        {
+            const string Field = "private new int priority;";
+            string source = @"
+class Receiver : VendorBase
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+#if LEGACY
+    FIELD
+OTHER
+#endif
+    void Configure()
+    {
+        token.RegisterUntargeted<global::DxMessaging.Core.Messages.GlobalStringMessage>(
+            (ref global::DxMessaging.Core.Messages.GlobalStringMessage value) => Observe(value),
+            priority: priority);
+    }
+    static void Observe(global::DxMessaging.Core.Messages.GlobalStringMessage value) { }
+}".Replace("FIELD", Field).Replace("OTHER", complete ? "#else\n    " + Field : "");
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(complete ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(complete ? source.Replace("ref global", "in global") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(complete ? 0 : 1));
+        }
+
+        [TestCase(
+            "this.Token",
+            false,
+            TestName = "A partial component cannot prove the receiver of this Token"
+        )]
+        [TestCase(
+            "Token",
+            false,
+            TestName = "A partial component cannot prove the receiver of bare Token"
+        )]
+        [TestCase(
+            "base.Token",
+            true,
+            TestName = "A partial component can prove an explicit package base Token"
+        )]
+        public void AnalyzeChecksInheritedTokenAcrossPartialFiles(string token, bool migrate)
+        {
+            string source = @"
+partial class Receiver : global::DxMessaging.Unity.MessageAwareComponent
+{
+    void Configure()
+    {
+        RECEIVER.RegisterUntargeted<global::DxMessaging.Core.Messages.GlobalStringMessage>(
+            (ref global::DxMessaging.Core.Messages.GlobalStringMessage value) => Observe(value));
+    }
+    static void Observe(global::DxMessaging.Core.Messages.GlobalStringMessage value) { }
+}".Replace("RECEIVER", token);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref global", "in global") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase(
+            false,
+            "namespace @Imports { using DxMessaging.Core; }",
+            TestName = "A verbatim sibling namespace cannot prove a package import"
+        )]
+        [TestCase(
+            false,
+            @"namespace \u0049mports { using DxMessaging.Core; }",
+            TestName = "A Unicode escaped sibling namespace cannot prove a package import"
+        )]
+        [TestCase(
+            true,
+            "using DxMessaging.Core;",
+            TestName = "A compilation-unit import still proves the package token"
+        )]
+        public void AnalyzeUsesOnlyAProvenCompilationUnitImport(bool migrate, string importLocation)
+        {
+            string source =
+                importLocation
+                + @"
+namespace Consumer
+{
+    class Receiver
+    {
+        MessageRegistrationToken token;
+        void Configure()
+        {
+            token.RegisterUntargeted<global::DxMessaging.Core.Messages.GlobalStringMessage>(
+                (ref global::DxMessaging.Core.Messages.GlobalStringMessage value) => Observe(value));
+        }
+        static void Observe(global::DxMessaging.Core.Messages.GlobalStringMessage value) { }
+    }
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref global", "in global") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase("1", true, TestName = "An integer argument proves the package priority")]
+        [TestCase(
+            "(int)(ReadPriority())",
+            true,
+            TestName = "A cast of the whole argument proves the package priority"
+        )]
+        [TestCase(
+            @"""legacy""",
+            false,
+            TestName = "A string priority can select a writable extension in another file"
+        )]
+        [TestCase(
+            @"(int)1 + ""legacy""",
+            false,
+            TestName = "A cast of an operand does not prove the whole priority argument"
+        )]
+        [TestCase(
+            "UnknownPriority()",
+            false,
+            TestName = "An unproved priority defers automatic migration"
+        )]
+        [TestCase(
+            "_123",
+            false,
+            TestName = "A numeric-looking identifier does not prove an integer priority"
+        )]
+        [TestCase(
+            "1_000",
+            true,
+            TestName = "A decimal integer with separators still proves priority"
+        )]
+        public void AnalyzeRequiresPriorityTypeProof(string priority, bool migrate)
+        {
+            string source = @"
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    const string _123 = ""legacy"";
+    void Configure()
+    {
+        token.RegisterUntargeted<global::DxMessaging.Core.Messages.GlobalStringMessage>(
+            (ref global::DxMessaging.Core.Messages.GlobalStringMessage value) => Observe(value),
+            priority: PRIORITY);
+    }
+    static int ReadPriority() => 1;
+    static void Observe(global::DxMessaging.Core.Messages.GlobalStringMessage value) { }
+}".Replace("PRIORITY", priority);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref global", "in global") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("overload whose package binding cannot be proven")
+            );
+        }
+
+        [TestCase(
+            "global::DxMessaging.Core.Messages.IUntargetedMessage",
+            true,
+            TestName = "A matching route constraint proves a generic registration"
+        )]
+        [TestCase(
+            "global::DxMessaging.Core.Messages.ITargetedMessage",
+            false,
+            TestName = "A different route constraint can select an extension"
+        )]
+        [TestCase("struct", false, TestName = "An unproved route constraint defers registration")]
+        public void AnalyzeRequiresTheRouteConstraintForGenericRegistration(
+            string constraint,
+            bool migrate
+        )
+        {
+            string source = @"
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    void Configure<T>() where T : CONSTRAINT
+    {
+        token.RegisterUntargeted<T>((ref T value) => Observe(value));
+    }
+    static void Observe<T>(T value) { }
+}".Replace("CONSTRAINT", constraint);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref T", "in T") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase(
+            "Pulse",
+            true,
+            TestName = "A callback for the explicit routed message still migrates"
+        )]
+        [TestCase(
+            "Other",
+            false,
+            TestName = "A different callback payload can bind a writable extension"
+        )]
+        public void AnalyzeRequiresTheCallbackToMatchTheProvenMessageType(
+            string callbackType,
+            bool migrate
+        )
+        {
+            string source = @"
+struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage
+{
+    public global::System.Type MessageType => typeof(Pulse);
+}
+struct Other { }
+
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    void Configure()
+    {
+        token.RegisterUntargeted<Pulse>(Forward);
+    }
+    static void Forward(ref CALLBACK value) { }
+}".Replace("CALLBACK", callbackType);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase(
+            "Pulse",
+            true,
+            TestName = "The package's one-argument message marker proves the route"
+        )]
+        [TestCase(
+            "int, bool",
+            false,
+            TestName = "A marker with a different generic arity cannot prove the route"
+        )]
+        public void AnalyzeUsesTheActualArityOfTheRoutingMarker(string typeArguments, bool migrate)
+        {
+            string source = @"
+namespace DxMessaging.Core.Messages
+{
+    public interface IUntargetedMessage<TFirst, TSecond> { }
+}
+
+struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage<ARGUMENTS>
+{
+    public global::System.Type MessageType => typeof(Pulse);
+}
+
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    void Configure()
+    {
+        token.RegisterUntargeted<Pulse>((ref Pulse value) => Observe(value));
+    }
+    static void Observe(Pulse value) { }
+}".Replace("ARGUMENTS", typeArguments);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [Test]
+        public void AnalyzeDefersCoupledGlobalCallbacksAcrossRegistrations()
+        {
+            const string Source =
+                @"
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    void Configure()
+    {
+        token.RegisterGlobalAcceptAll(Write, SharedTarget, FirstBroadcast);
+        token.RegisterGlobalAcceptAll(Read, SharedTarget, SecondBroadcast);
+        token.RegisterUntargeted<global::DxMessaging.Core.Messages.IUntargetedMessage>(Read);
+    }
+
+    static void Write(ref global::DxMessaging.Core.Messages.IUntargetedMessage value) { value = default; }
+    static void Read(ref global::DxMessaging.Core.Messages.IUntargetedMessage value) { }
+    static void SharedTarget(ref global::DxMessaging.Core.InstanceId id, ref global::DxMessaging.Core.Messages.ITargetedMessage value) { }
+    static void FirstBroadcast(ref global::DxMessaging.Core.InstanceId id, ref global::DxMessaging.Core.Messages.IBroadcastMessage value) { }
+    static void SecondBroadcast(ref global::DxMessaging.Core.InstanceId id, ref global::DxMessaging.Core.Messages.IBroadcastMessage value) { }
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(5));
+            Assert.That(result.ManualReviewMethods, Has.Some.Contains("writes to parameter"));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.Some.Contains("shares the RegisterGlobalAcceptAll call at line")
+            );
+        }
 
         [TestCase(
             "VendorHandler",
@@ -39,7 +596,7 @@ class Receiver
     }
     static void Forward(ref Pulse value) { }
 }".Replace("ALTERNATE", alternateDelegate);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
@@ -74,7 +631,7 @@ class Receiver
     void SetUp() { token.RegisterUntargeted<Pulse>((ref Pulse value) => Observe(value)); }
     static void Observe(Pulse value) { }
 }".Replace("TYPE", typeName);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(
@@ -106,7 +663,7 @@ class Receiver
     }
     static void Observe(Pulse value) { }
 }".Replace("TYPE", typeName);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(
@@ -140,7 +697,7 @@ class Receiver
     static void Use(System.Action<global::Vendor.CustomToken> action) { }
     static void Observe(Pulse value) { }
 }".Replace("RECEIVER", receiver);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(
@@ -160,9 +717,9 @@ class Receiver
 {
     global::DxMessaging.Core.MessageRegistrationToken token;
 
-    void Configure()
+    void Configure(global::DxMessaging.Core.MessageHandler handler)
     {
-        token = new global::DxMessaging.Core.MessageRegistrationToken();
+        token = global::DxMessaging.Core.MessageRegistrationToken.Create(handler);
         if (token == null) { return; }
         Observe(token);
         token.RegisterUntargeted<PairMessage<int, bool>>(Forward);
@@ -171,7 +728,7 @@ class Receiver
     static void Forward(ref PairMessage<int, bool> value) { }
     static void Observe<T>(T value) { }
 }";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
             Assert.That(
@@ -208,7 +765,7 @@ static class LegacyExtensions
         string priority
     ) { }
 }";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
             Assert.That(result.ReplacementCount, Is.Zero);
@@ -223,22 +780,42 @@ static class LegacyExtensions
         [Test]
         public void AnalyzeKeepsStringOptInEligibleWhenAnotherPropertyReadsIt()
         {
-            const string Source =
-                @"
+            AssertStringOptInWithExpression("RegisterForStringMessages");
+        }
+
+        [TestCase(
+            "!RegisterForStringMessages",
+            TestName = "A negated inherited setting read keeps the opt-in eligible"
+        )]
+        [TestCase(
+            "true && RegisterForStringMessages",
+            TestName = "A logical inherited setting read keeps the opt-in eligible"
+        )]
+        [TestCase(
+            "true ? RegisterForStringMessages : false",
+            TestName = "A conditional inherited setting read keeps the opt-in eligible"
+        )]
+        public void AnalyzeKeepsStringOptInEligibleWhenAnotherPropertyUsesItInAnExpression(
+            string expression
+        )
+        {
+            AssertStringOptInWithExpression(expression);
+        }
+
+        private static void AssertStringOptInWithExpression(string expression)
+        {
+            string source = @"
 class Receiver : global::DxMessaging.Unity.MessageAwareComponent
 {
-    bool Enabled => RegisterForStringMessages;
+    bool Enabled => EXPRESSION;
     protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }
-}";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
-                Source
+}".Replace("EXPRESSION", expression);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
+                source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(1));
             Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
-            Assert.That(
-                result.UpgradedSource,
-                Does.Contain("bool Enabled => RegisterForStringMessages;")
-            );
+            Assert.That(result.UpgradedSource, Does.Contain($"bool Enabled => {expression};"));
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
@@ -270,7 +847,7 @@ class Receiver : Parent
                 "OUTSIDE",
                 visible ? "" : "static void Forward(ref Pulse value) { }"
             );
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             string expected = visible
@@ -303,7 +880,7 @@ class Receiver
     }
     static void Forward(ref Pulse value) { }
 }";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
             Assert.That(result.ReplacementCount, Is.Zero);
@@ -343,7 +920,7 @@ class Caller
 }
 class IndependentReceiver { public void Forward(ref Pulse value) { } }
 ".Replace("RECEIVER", receiverType);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             string expected = migrate
@@ -388,7 +965,7 @@ class Receiver
 
     static void Observe(Pulse value) { }
 }".Replace("ALTERNATE", alternateType);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(
@@ -434,7 +1011,7 @@ class Receiver
         };
     }
 }".Replace("OPERAND", operand).Replace("TYPE", pointerType);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.UpgradedSource, Is.EqualTo(source));
@@ -479,7 +1056,7 @@ class Receiver
     void Forward(ref Pulse message) => Read(message);
     void Read(Pulse message) { }
 }".Replace("TYPE", type).Replace("CALL", call);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.UpgradedSource, Is.EqualTo(source));
@@ -534,7 +1111,7 @@ namespace Consumer
         static void Read(Pulse value) { }
     }
 }".Replace("ALIAS", alias).Replace("QUALIFICATION", qualification);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
@@ -577,6 +1154,14 @@ namespace Consumer
             "private new bool RegisterForStringMessages() => false;",
             TestName = "A same-name method prevents a duplicate string opt-in insertion"
         )]
+        [TestCase(
+            "private new unsafe delegate*<void> RegisterForStringMessages;",
+            TestName = "A function pointer field prevents a duplicate string opt-in insertion"
+        )]
+        [TestCase(
+            "private new unsafe delegate* unmanaged[Cdecl]<int, void> RegisterForStringMessages;",
+            TestName = "An unmanaged function pointer field prevents a duplicate string opt-in insertion"
+        )]
         public void AnalyzeReportsHiddenStringPropertyBeforeInsertingOptIn(string property)
         {
             string source =
@@ -584,7 +1169,7 @@ namespace Consumer
                 + "class Receiver : global::DxMessaging.Unity.MessageAwareComponent\n{\n    "
                 + property
                 + "\n    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }\n}";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(1));
@@ -605,13 +1190,13 @@ namespace Consumer
                 1
             ).SetName("Untargeted lambda");
             yield return new TestCaseData(
-                "token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit message) => Observe(source, message));",
-                "token.RegisterBroadcastWithoutSource<Hit>((in InstanceId source, in Hit message) => Observe(source, message));",
+                "token.RegisterBroadcastWithoutSource<Hit>((ref global::DxMessaging.Core.InstanceId source, ref Hit message) => Observe(source, message));",
+                "token.RegisterBroadcastWithoutSource<Hit>((in global::DxMessaging.Core.InstanceId source, in Hit message) => Observe(source, message));",
                 2
             ).SetName("Context lambda");
             yield return new TestCaseData(
-                "token.RegisterTargetedWithoutTargetingPostProcessor<Hit>((ref InstanceId target, ref Hit message) => Observe(target, message));",
-                "token.RegisterTargetedWithoutTargetingPostProcessor<Hit>((in InstanceId target, in Hit message) => Observe(target, message));",
+                "token.RegisterTargetedWithoutTargetingPostProcessor<Hit>((ref global::DxMessaging.Core.InstanceId target, ref Hit message) => Observe(target, message));",
+                "token.RegisterTargetedWithoutTargetingPostProcessor<Hit>((in global::DxMessaging.Core.InstanceId target, in Hit message) => Observe(target, message));",
                 2
             ).SetName("Post-processor lambda");
             yield return new TestCaseData(
@@ -700,7 +1285,7 @@ namespace Consumer
         {
             source = WithProvenContext(source);
             expected = WithProvenContext(expected);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -725,7 +1310,7 @@ namespace Consumer
         [TestCaseSource(nameof(UnchangedCases))]
         public void AnalyzeLeavesMutableAndUnrelatedRefCodeUnchanged(string source)
         {
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -751,10 +1336,10 @@ sealed class Receiver
     }
 
     private void OnPulse(ref Pulse message) { }
-    private void OnHit(ref InstanceId source, ref Hit message) { }
+    private void OnHit(ref global::DxMessaging.Core.InstanceId source, ref Hit message) { }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -766,7 +1351,7 @@ sealed class Receiver
             Assert.That(result.UpgradedSource, Does.Contain("OnPulse(in Pulse message)"));
             Assert.That(
                 result.UpgradedSource,
-                Does.Contain("OnHit(in InstanceId source, in Hit message)")
+                Does.Contain("OnHit(in global::DxMessaging.Core.InstanceId source, in Hit message)")
             );
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
@@ -821,7 +1406,7 @@ public sealed class BreakableObject : MessageAwareComponent
     private void OnCollisionOccurred(ref CollisionOccurred message) { }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -844,7 +1429,7 @@ using DxMessaging.Core;
 MessageHandler.FastHandler<Pulse> handler = new MessageHandler.FastHandler<Pulse>(OnPulse);
 private void OnPulse(ref Pulse message) { }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -868,7 +1453,7 @@ sealed class Receiver : MessageAwareComponent
     void Register() => Token.RegisterUntargeted<Pulse>(Callbacks.OnPulse);
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -900,7 +1485,7 @@ class PartialReceiver : MessageAwareComponent
     protected override void HandleStringGameObjectMessage(ref StringMessage message) { }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -939,7 +1524,7 @@ sealed class Receiver : MessageAwareComponent
     }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -973,7 +1558,7 @@ sealed class Receiver : MessageAwareComponent
     }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -1003,7 +1588,7 @@ sealed class Receiver : MessageAwareComponent
         [Test]
         public void AnalyzeConvertsOverrideForwardingWithEquivalentIdentifierSpelling()
         {
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 UnicodeOverrideForwardingSource
             );
 
@@ -1032,7 +1617,7 @@ void OnPulse(ref Pulse message)
     Forward(ref message);
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -1051,12 +1636,12 @@ void OnPulse(ref Pulse message)
             const string Source =
                 @"
 DxMessaging.Core.MessageRegistrationToken token;
-token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit message) =>
+token.RegisterBroadcastWithoutSource<Hit>((ref global::DxMessaging.Core.InstanceId source, ref Hit message) =>
 {
     Forward(ref message);
 });";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -1288,12 +1873,12 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
                 "message"
             ).SetName("Explicit identifier escaping preserves the parameter binding");
             yield return new TestCaseData(
-                "token.RegisterBroadcastWithoutSource<Pulse>((ref InstanceId source, ref Pulse message)"
+                "token.RegisterBroadcastWithoutSource<Pulse>((ref global::DxMessaging.Core.InstanceId source, ref Pulse message)"
                     + " => { source = default; Observe(message); });",
                 "source"
             ).SetName("Context assignment keeps both parameters unchanged");
             yield return new TestCaseData(
-                "token.RegisterBroadcastWithoutSource<Pulse>((ref InstanceId source, ref Pulse message)"
+                "token.RegisterBroadcastWithoutSource<Pulse>((ref global::DxMessaging.Core.InstanceId source, ref Pulse message)"
                     + " => (message, source) = (default(Pulse), default(InstanceId)));",
                 "source"
             ).SetName("Tuple assignment preserves both original parameters");
@@ -1785,7 +2370,7 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
         {
             string source = "DxMessaging.Core.MessageRegistrationToken token;\n" + registration;
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -1832,7 +2417,7 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
         {
             string source = "DxMessaging.Core.MessageRegistrationToken token;\n" + registration;
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -1973,7 +2558,7 @@ token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit messag
         {
             string source = "DxMessaging.Core.MessageRegistrationToken token;\n" + registration;
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -2003,7 +2588,7 @@ sealed class Receiver : MessageAwareComponent
         [Test]
         public void AnalyzeKeepsBaseForwardingWhenGroupedOutNeedsManualReview()
         {
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 GroupedOutWithBaseForwardingSource
             );
 
@@ -2031,7 +2616,7 @@ sealed class Receiver : MessageAwareComponent
         [Test]
         public void AnalyzeConvertsBaseForwardingWithAnAdjacentEscape()
         {
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 CompactBaseForwardingSource
             );
 
@@ -2065,7 +2650,7 @@ sealed class Receiver : MessageAwareComponent
                 + statement
                 + "\n#if false\n\"\n#endif\n};";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -2141,7 +2726,7 @@ sealed class Receiver : MessageAwareComponent
         )
         {
             string source = "DxMessaging.Core.MessageHandler.FastHandler<Pulse> " + callback;
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -2170,7 +2755,7 @@ sealed class Receiver : MessageAwareComponent
                 + "DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = "
                 + "(ref Pulse message) => Observe(message);";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -2204,7 +2789,7 @@ sealed class Receiver : MessageAwareComponent
                 + stringBody
                 + "\n\";\n#endif\n"
                 + "global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = (ref Pulse message) => Read(message);";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(defer ? 0 : 1));
@@ -2228,7 +2813,7 @@ sealed class Receiver : MessageAwareComponent
                 + "(ref Pulse message) => Observe(message);\n"
                 + "#if UNKNOWN\n}\n#endif\n";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -2293,7 +2878,7 @@ sealed class Receiver : MessageAwareComponent
                 + "\ntoken.RegisterUntargeted<Pulse>((ref Pulse message) => Read(message));"
             ).Replace("\n", newline);
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -2338,7 +2923,7 @@ sealed class Receiver : MessageAwareComponent
                 + "(ref Pulse message) => { "
                 + statement
                 + " };";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -2422,7 +3007,7 @@ sealed class Receiver : MessageAwareComponent
     static void Run(System.Action<int> action) { }
 }".Replace("TYPE", delegateType).Replace("INITIALIZER", initializer);
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -2485,7 +3070,7 @@ class Receiver
     static void Read(Pulse message) { }
 }".Replace("CONDITION", condition).Replace("PRIMARY", primary).Replace("ADDITIONAL", additional);
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             if (condition == "true")
@@ -2585,7 +3170,7 @@ namespace Consumer
         static void Read(Pulse message) { }
     }
 }".Replace("SETUP", setup);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(edits));
@@ -2629,7 +3214,7 @@ class Receiver
     void Read(Pulse message) { }
 }
 class OtherReceiver { public void Forward(ref Pulse value) { } }".Replace("USE", use);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(defer ? 0 : 1));
@@ -2697,7 +3282,7 @@ class Receiver
     void Read(Pulse message) { }
 }
 class OtherReceiver { public void Forward(ref Pulse value) { } }".Replace("EXPRESSION", expression);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(defer ? 0 : 1));
@@ -2764,7 +3349,7 @@ class Receiver
                 "DECLARATIONS",
                 declarations
             );
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
@@ -2808,7 +3393,7 @@ class Receiver
     }
     static void Read(Pulse message) { }
 }".Replace("TYPE", type).Replace("DECLARATORS", declarators);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.Zero);
@@ -2853,7 +3438,7 @@ class Receiver
     static void Read(Pulse message) { }
 }
 class Other { public global::Vendor.CustomToken token; }".Replace("RECEIVER", receiver);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -2890,7 +3475,7 @@ class Other { public global::Vendor.CustomToken token; }".Replace("RECEIVER", re
                 "global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> h = static delegate(ref Pulse message) { "
                 + body
                 + " };";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(writable ? 0 : 1));
@@ -2940,7 +3525,7 @@ class Receiver
                 alternativeSpelling
             ).Replace("RECEIVER", receiver);
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
@@ -2969,7 +3554,7 @@ class Receiver
                 Handler + " first = " + Callback + " " + Handler + " second = " + Callback;
             string source = "// Heading" + newline + line;
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -2994,7 +3579,7 @@ class Receiver
             const string Call = "RegisterUntargeted<Pulse>((ref Pulse message) => Read(message));";
             string line = "first." + Call + " second." + Call;
             string source = "CustomToken first, second;\n" + line;
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             int firstColumn = line.IndexOf("RegisterUntargeted", StringComparison.Ordinal) + 1;
@@ -3026,7 +3611,7 @@ class Receiver
         public void AnalyzeReplacesOnlyTheRefParameterModifier(string statement)
         {
             string source = "DxMessaging.Core.MessageHandler.FastHandler<Pulse> " + statement;
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3068,7 +3653,7 @@ class Receiver
                 + "(ref Pulse message) => { "
                 + body
                 + " };";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3150,7 +3735,7 @@ class Receiver
                 + "DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = "
                 + "(ref Pulse message) => Observe(message); } } }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3208,7 +3793,7 @@ class Receiver
                     + "token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(message)); } }";
             string source = OpenNamespace + consumer + " }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3297,7 +3882,7 @@ class Receiver
                 + property
                 + "    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }\n"
                 + "}";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3349,7 +3934,7 @@ class Receiver
                 + "class Receiver : global::DxMessaging.Unity.MessageAwareComponent\n{\n    "
                 + property
                 + "\n    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }\n}";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(1));
@@ -3401,7 +3986,7 @@ class Receiver
                 "class Receiver\n{\n"
                 + fields
                 + "    void Register() => token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(message));\n}";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3428,8 +4013,8 @@ class Receiver
                 "DxMessaging.Core.MessageHandler.FastHandlerWithContext<Pulse> handler = Handle;\n"
                 + "void Handle("
                 + attribute
-                + " ref InstanceId source, ref Pulse message) { }";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                + " ref global::DxMessaging.Core.InstanceId source, ref Pulse message) { }";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3465,7 +4050,7 @@ class Receiver
                 + " { "
                 + body
                 + " };";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3508,7 +4093,7 @@ class Receiver
                 + lineEnding
                 + "message = default;\n});";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3576,7 +4161,7 @@ class Receiver
         {
             string source = "DxMessaging.Core.MessageRegistrationToken token;\n" + registration;
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3639,7 +4224,7 @@ class Receiver
                 + body
                 + " });";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3661,7 +4246,7 @@ class Receiver
             string source = Before + body + " });";
             string expected = Before.Replace("(ref Pulse", "(in Pulse") + body + " });";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3679,7 +4264,7 @@ class Receiver
                 + body
                 + " });";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3719,7 +4304,7 @@ class Receiver
                 + body
                 + " });";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3736,12 +4321,12 @@ class Receiver
                 @"
 DxMessaging.Core.MessageRegistrationToken token;
 token.RegisterBroadcastWithoutSource<Hit>(
-    (ref InstanceId source, ref Hit message) => Observe(source, message.Next)
+    (ref global::DxMessaging.Core.InstanceId source, ref Hit message) => Observe(source, message.Next)
 );
 token.RegisterUntargeted<Pulse>((ref Pulse other) => Observe(other));";
             string expected = Source.Replace("ref Pulse other", "in Pulse other");
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -3757,13 +4342,13 @@ token.RegisterUntargeted<Pulse>((ref Pulse other) => Observe(other));";
             const string Source =
                 @"
 DxMessaging.Core.MessageRegistrationToken token;
-token.RegisterBroadcastWithoutSource<Hit>((ref InstanceId source, ref Hit message) =>
+token.RegisterBroadcastWithoutSource<Hit>((ref global::DxMessaging.Core.InstanceId source, ref Hit message) =>
 {
     Observe(source.Value);
     message.Value++;
 });";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -3790,7 +4375,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
     }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -3815,7 +4400,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
     }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -3845,7 +4430,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
     }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -3920,7 +4505,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
                 "INVOCATION",
                 invocation
             );
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3963,7 +4548,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             "HandleStringComponentMessage",
             "StringMessage",
             "PAYLOAD copy = outer;\n        if (true) {\n"
-                + "            void Forward(ref InstanceId source, ref PAYLOAD forwarded) => base.HANDLER(ref forwarded);\n"
+                + "            void Forward(ref global::DxMessaging.Core.InstanceId source, ref PAYLOAD forwarded) => base.HANDLER(ref forwarded);\n"
                 + "            DxMessaging.Core.MessageHandler.FastHandlerWithContext<PAYLOAD> handler = Forward;\n"
                 + "            Consume(handler, copy);\n        }",
             4,
@@ -3987,7 +4572,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
         )
         {
             string source = CreateRenamedForwardingSource(method, payload, body);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -3996,9 +4581,12 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             Assert.That(result.ManualReviewMethods, Is.Empty);
             Assert.That(result.UpgradedSource, Does.Contain($"{method}(in {payload} outer)"));
             Assert.That(result.UpgradedSource, Does.Not.Contain("ref "));
-            if (source.Contains("ref InstanceId source"))
+            if (source.Contains("ref global::DxMessaging.Core.InstanceId source"))
             {
-                Assert.That(result.UpgradedSource, Does.Contain("Forward(in InstanceId source,"));
+                Assert.That(
+                    result.UpgradedSource,
+                    Does.Contain("Forward(in global::DxMessaging.Core.InstanceId source,")
+                );
             }
         }
 
@@ -4057,7 +4645,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
                 "GlobalStringMessage",
                 body
             );
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -4075,7 +4663,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
                 "GlobalStringMessage",
                 "@base.HANDLER(ref outer);"
             );
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -4107,7 +4695,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
                 $"void Forward(ref PAYLOAD {parameter}) {{ @base.HANDLER(ref {parameter}); }}"
                     + " FAST_HANDLER handler = Forward; Consume(handler, outer);"
             );
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -4194,7 +4782,7 @@ OTHER_TYPE";
                 "GlobalStringMessage",
                 body
             );
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -4228,7 +4816,7 @@ OTHER_TYPE";
                 "GlobalStringMessage",
                 "base.HANDLER(ref outer); " + body
             );
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -4258,7 +4846,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
     void After(GlobalStringMessage copy) =>
         Observe($""{Run(() => base.HandleGlobalStringMessage(ref copy))}"");
 }";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4297,7 +4885,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
                 "GlobalStringMessage",
                 "base.HANDLER(ref outer); PAYLOAD copy = outer; " + forwarding
             );
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -4331,7 +4919,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
                 "GlobalStringMessage",
                 body
             );
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -4371,7 +4959,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
                 "StringMessage",
                 "base.HANDLER(ref outer); " + body
             );
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -4404,7 +4992,7 @@ DxMessaging.Core.MessageRegistrationToken token;
 token.RegisterUntargeted<Pulse>(OnPulse);
 void OnPulse(ref Pulse message) => Forward<First, Second>(ref message);";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4430,7 +5018,7 @@ token.RegisterUntargeted<Pulse>(OnPulse);
 void OnPulse(ref Pulse message) => Observe(COMPARISON);
 void Later(ref Pulse message) => Forward(ref message);".Replace("COMPARISON", comparison);
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -4452,7 +5040,7 @@ token.RegisterUntargeted<Pulse>(
     priority: ReadPriority(ref message) > 0 ? 1 : 0
 );".Replace("COMPARISON", comparison);
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
 
@@ -4497,17 +5085,27 @@ token.RegisterUntargeted<Pulse>(
         {
             string source = @"
 global::DxMessaging.Core.MessageRegistrationToken token;
+global::DxMessaging.Core.InstanceId first;
+global::DxMessaging.Core.InstanceId second;
 token.RegisterTargeted<Pulse>(
     TARGET,
     (ref Pulse message) => Observe(message),
     priority: PRIORITY
 );".Replace("TARGET", target).Replace("PRIORITY", priority);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
-            Assert.That(result.UpgradedSource, Is.EqualTo(source.Replace("ref Pulse", "in Pulse")));
-            Assert.That(result.ReplacementCount, Is.EqualTo(1));
-            Assert.That(result.ManualReviewMethods, Is.Empty);
+            bool supported = !target.Contains("Choose");
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(supported ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(supported ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(supported ? 0 : 1));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("overload whose package binding cannot be proven")
+            );
         }
 
         [Test]
@@ -4516,9 +5114,11 @@ token.RegisterTargeted<Pulse>(
             const string Source =
                 @"
 global::DxMessaging.Core.MessageRegistrationToken token;
+global::DxMessaging.Core.InstanceId first;
+global::DxMessaging.Core.InstanceId second;
 token.RegisterTargeted<Pulse>(count < limit ? first : second, Forward);
 void Forward(ref Pulse message) => message = default;";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
             Assert.That(result.UpgradedSource, Is.EqualTo(Source));
@@ -4561,7 +5161,7 @@ void Forward(ref Pulse message) => message = default;";
                 + "(ref Pulse message) => { "
                 + statement
                 + "; };";
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(requiresReview ? 0 : 1));
@@ -4590,7 +5190,7 @@ void Forward(ref Pulse message) => message = default;";
 global::DxMessaging.Core.MessageRegistrationToken token;
 token.RegisterUntargeted<Pulse>(OnPulse);
 void OnPulse(ref Pulse message) => sink = EXPRESSION;".Replace("EXPRESSION", expression);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
             AssertComparisonBoundary(result, source, "OnPulse(ref Pulse message)", requiresReview);
@@ -4606,7 +5206,7 @@ token.RegisterUntargeted<Pulse>(OnPulse);
 void OnPulse(ref Pulse message) =>
     message.Value < 10 ? Forward<First, Second>(ref message) : false;";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4631,7 +5231,7 @@ void OnPulse(ref Pulse message)
     Reset(out message);
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4659,7 +5259,7 @@ sealed class Receiver : MessageAwareComponent
     }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4681,7 +5281,7 @@ void OnPulse(ref Pulse message)
     Forward(ref local);
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4704,7 +5304,7 @@ void OnPulse(ref Pulse message)
     Log(""Forward(ref message);"");
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4723,7 +5323,7 @@ sealed class Receiver : CustomMessageAwareBase
     protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4743,7 +5343,7 @@ sealed class MessageHandler
 MessageHandler.FastHandler<Pulse> handler = (ref Pulse message) => Observe(message);
 MessageHandler.FastHandlerFactory<Pulse> factory = (ref Pulse message) => Observe(message);";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4766,7 +5366,7 @@ sealed class Unrelated
     void Register() => token.RegisterUntargeted<Pulse>((ref Pulse message) => Observe(message));
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4810,7 +5410,7 @@ sealed class AliasExternal : Vendor :: DxMessaging.Unity.MessageAwareComponent
     protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4846,7 +5446,7 @@ namespace Unrelated
     }
 }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4866,7 +5466,7 @@ MessageHandler.FastHandler<Pulse> Handler { get; }
 MessageHandler.FastHandler<Pulse> Create() => Handler;
 CustomDelegate other = (ref OtherMessage message) => Observe(message);";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4885,7 +5485,7 @@ token.RegisterUntargeted<Pulse>((ref Pulse message) =>
     token.RegisterUntargetedInterceptor<OtherPulse>((ref OtherPulse other) => true);
 });";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4905,12 +5505,12 @@ token.RegisterUntargeted<Pulse>((ref Pulse message) =>
                 @"
 DxMessaging.Core.MessageRegistrationToken token;
 token.RegisterTargeted<Hit>(
-    FindTarget((ref Probe probe) => probe.Id),
+    (global::DxMessaging.Core.InstanceId)(FindTarget((ref Probe probe) => probe.Id)),
     OnHit
 );
 private void OnHit(ref Hit message) { }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4933,11 +5533,11 @@ void Register()
 {
     token.RegisterGlobalAcceptAll(OnUntargeted, OnTargeted, OnBroadcast);
 }
-void OnUntargeted(ref IUntargetedMessage message) { }
-void OnTargeted(ref InstanceId target, ref ITargetedMessage message) { }
-void OnBroadcast(ref InstanceId source, ref IBroadcastMessage message) { }";
+void OnUntargeted(ref global::DxMessaging.Core.Messages.IUntargetedMessage message) { }
+void OnTargeted(ref global::DxMessaging.Core.InstanceId target, ref global::DxMessaging.Core.Messages.ITargetedMessage message) { }
+void OnBroadcast(ref global::DxMessaging.Core.InstanceId source, ref global::DxMessaging.Core.Messages.IBroadcastMessage message) { }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4958,7 +5558,7 @@ void OnBroadcast(ref InstanceId source, ref IBroadcastMessage message) { }";
 DxMessaging.Core.MessageHandler.FastHandler<Pulse> handler = OnPulse;
 private void OnPulse(ref Pulse message) { }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -4982,7 +5582,7 @@ token.RegisterUntargeted<Pulse>(
 );
 private void OnPulse(ref Pulse message) { }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -5005,7 +5605,7 @@ token.RegisterUntargeted<Pulse>(OnPulse);
 void OnPulse(ref Pulse message) { }
 void OnPulse(ref OtherPulse message) { }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -5022,7 +5622,7 @@ void OnPulse(ref OtherPulse message) { }";
                 "DxMessaging.Core.MessageRegistrationToken token;\n"
                 + "token.RegisterUntargeted<Pulse>(OnPulse);";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -5041,7 +5641,7 @@ DxMessaging.Core.MessageRegistrationToken token;
 token.RegisterUntargeted<Pulse>(OnPulse);
 void OnPulse(Pulse message) { }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -5060,7 +5660,7 @@ token.RegisterUntargeted<Pulse>(OnPulse);
 token.RegisterUntargetedInterceptor<Pulse>(OnPulse);
 void OnPulse(ref Pulse message) { }";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 Source
             );
 
@@ -5080,10 +5680,8 @@ void OnPulse(ref Pulse message) { }";
                 + "    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }\r\n"
                 + "}\r\n";
 
-            ReadonlyFastHandlerUpgrade.UpgradeResult first = ReadonlyFastHandlerUpgrade.Analyze(
-                Source
-            );
-            ReadonlyFastHandlerUpgrade.UpgradeResult second = ReadonlyFastHandlerUpgrade.Analyze(
+            ReadonlyFastHandlerUpgrade.UpgradeResult first = AnalyzeWithFixtureMessageTypes(Source);
+            ReadonlyFastHandlerUpgrade.UpgradeResult second = AnalyzeWithFixtureMessageTypes(
                 first.UpgradedSource
             );
 
@@ -5102,7 +5700,8 @@ void OnPulse(ref Pulse message) { }";
             const string Source =
                 "DxMessaging.Core.MessageRegistrationToken token;\r\n"
                 + "token.RegisterUntargeted<Pulse>(OnPulse);\r\n"
-                + "void OnPulse(ref Pulse message) { }\r\n";
+                + "void OnPulse(ref Pulse message) { }\r\n"
+                + "struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }\r\n";
             byte[] sourceBytes = WithPreamble(Encoding.UTF8, Source);
 
             byte[] upgradedBytes = ReadonlyFastHandlerUpgrade.UpgradeBytes(
@@ -5128,7 +5727,8 @@ void OnPulse(ref Pulse message) { }";
             const string Source =
                 "DxMessaging.Core.MessageRegistrationToken token;\n"
                 + "token.RegisterUntargeted<Pulse>(OnPulse);\n"
-                + "void OnPulse(ref Pulse message) { }\n";
+                + "void OnPulse(ref Pulse message) { }\n"
+                + "struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }\n";
             byte[] sourceBytes = WithPreamble(Encoding.Unicode, Source);
 
             byte[] upgradedBytes = ReadonlyFastHandlerUpgrade.UpgradeBytes(

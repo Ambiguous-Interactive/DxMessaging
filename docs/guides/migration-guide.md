@@ -184,8 +184,12 @@ edits if a direct call still needs the local callback's `ref` signature. The too
 passed directly to both a handler and an interceptor in the same script. It lists these cases in the
 Console for manual review. It checks calls and delegate bindings to named callbacks in the same
 file, including calls in other types and in interpolated expressions. It defers a signature change
-when a call still needs `ref` or a binding cannot be established. Reports include the source line
-and column so you can find the callback or its use.
+when a call still needs `ref` or a binding cannot be established. For a registration call, the
+preview checks the message routing type and the other arguments before changing an inferred
+callback. An explicit package `FastHandler` also establishes the required callback signature.
+Review any deferred `RegisterGlobalAcceptAll` call as a group because its three callbacks must
+bind to the same overload. Reports include the source line and column so you can find the callback
+or its use.
 Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
 Review project-wide callback uses. The preview skips branches it can prove inactive from literal
@@ -239,8 +243,9 @@ writable data. Then change the override parameter from `ref` to `in`.
 
 Search for calls to `base.HandleStringGameObjectMessage`, `base.HandleStringComponentMessage`,
 and `base.HandleGlobalStringMessage` throughout the class, including in helper methods. Check these
-calls even when the preview converted the override. Change any remaining `ref` arguments to `in`.
-For example, use `base.HandleGlobalStringMessage(in message)`.
+calls even when the preview converted the override. Check which base declaration each call selects.
+Change `ref` to `in` for the migrated signatures, such as `base.HandleGlobalStringMessage(in message)`.
+Keep `ref` on calls to custom overloads that still require it.
 
 Check `RegisterForStringMessages` in each build configuration. Preserve explicit opt-ins, opt-outs,
 and computed overrides where they exist. Add `protected override bool RegisterForStringMessages => true;`
