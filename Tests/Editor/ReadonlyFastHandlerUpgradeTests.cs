@@ -987,7 +987,7 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(1));
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
-            Assert.That(result.ManualReviewMethods[0], Does.Contain("use on line 11"));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("use on line 10"));
         }
 
         [Test]
@@ -998,7 +998,7 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
 using DxMessaging.Core;
 partial class Receiver
 {
-    private MessageHandler.FastHandler<Pulse> separate = Callback;
+    private global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> separate = Callback;
     private static void Callback(ref Pulse pulse) { }
 }
 partial class Receiver
@@ -1013,7 +1013,7 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             Assert.That(result.UpgradedSource, Is.EqualTo(Source));
             Assert.That(result.ReplacementCount, Is.Zero);
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
-            Assert.That(result.ManualReviewMethods[0], Does.Contain("use on line 11"));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("use on line 10"));
         }
 
         [TestCase("value => { }")]
