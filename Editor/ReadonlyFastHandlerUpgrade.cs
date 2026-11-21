@@ -305,41 +305,52 @@ namespace DxMessaging.Editor
         [MenuItem(MenuPath)]
         private static void UpgradeProject()
         {
-            string[] guids = AssetDatabase.FindAssets("t:MonoScript", new[] { "Assets" });
             List<FileUpgrade> upgrades = new();
             SortedSet<string> manualReview = new(StringComparer.Ordinal);
+            string[] assetPaths = GetProjectScriptPaths();
+            Dictionary<string, byte[]> originalScripts = new(StringComparer.Ordinal);
+            Dictionary<string, EncodedSource> readableScripts = new(StringComparer.Ordinal);
+            ProjectCallbackUses projectUses = new();
 
-            foreach (string guid in guids)
+            foreach (string assetPath in assetPaths)
             {
-                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
-                if (
-                    !assetPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
-                    || IsGeneratedPath(assetPath)
-                )
-                {
-                    continue;
-                }
-
-                string fullPath = Path.GetFullPath(assetPath);
-                byte[] originalBytes = File.ReadAllBytes(fullPath);
-                byte[] upgradedBytes;
-                UpgradeResult result;
+                byte[] originalBytes = File.ReadAllBytes(Path.GetFullPath(assetPath));
+                originalScripts.Add(assetPath, originalBytes);
                 try
                 {
                     EncodedSource source = EncodedSource.FromBytes(originalBytes);
-                    if (IsGeneratedSource(assetPath, source.Text))
+                    projectUses.AddScript(assetPath, source.Text);
+                    if (!IsGeneratedPath(assetPath) && !IsGeneratedSource(assetPath, source.Text))
                     {
-                        continue;
+                        readableScripts.Add(assetPath, source);
                     }
-                    result = Analyze(source.Text);
-                    upgradedBytes = source.Encode(result.UpgradedSource);
                 }
                 catch (DecoderFallbackException)
                 {
+                    projectUses.MarkUnreadable(assetPath);
                     manualReview.Add(
                         $"{assetPath}: encoding is not UTF-8, UTF-16, or UTF-32; file was not read"
                     );
-                    continue;
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    projectUses.MarkUnreadable(assetPath);
+                    manualReview.Add(
+                        $"{assetPath}: the preview could not finish scanning this file; inspect its callbacks manually"
+                    );
+                }
+            }
+
+            foreach (KeyValuePair<string, EncodedSource> script in readableScripts)
+            {
+                string assetPath = script.Key;
+                EncodedSource source = script.Value;
+                UpgradeResult result;
+                try
+                {
+                    result = Analyze(source.Text, name =>
+                        projectUses.FindOtherUse(assetPath, name)
+                    );
                 }
                 catch (RegexMatchTimeoutException)
                 {
@@ -348,6 +359,7 @@ namespace DxMessaging.Editor
                     );
                     continue;
                 }
+
                 foreach (string skippedMethod in result.ManualReviewMethods)
                 {
                     manualReview.Add($"{assetPath}: {skippedMethod}");
@@ -357,9 +369,9 @@ namespace DxMessaging.Editor
                 {
                     upgrades.Add(
                         new FileUpgrade(
-                            fullPath,
-                            originalBytes,
-                            upgradedBytes,
+                            Path.GetFullPath(assetPath),
+                            originalScripts[assetPath],
+                            source.Encode(result.UpgradedSource),
                             result.ReplacementCount,
                             result.StringHandlerOptInCount
                         )
@@ -410,6 +422,7 @@ namespace DxMessaging.Editor
 
             try
             {
+                VerifyProjectScriptSnapshot(originalScripts);
                 ApplyAtomically(upgrades);
             }
             catch (Exception exception)
@@ -447,14 +460,49 @@ namespace DxMessaging.Editor
             }
         }
 
-        internal static UpgradeResult Analyze(string source)
+        private static string[] GetProjectScriptPaths() =>
+            AssetDatabase
+                .FindAssets("t:MonoScript", new[] { "Assets" })
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .Where(path => path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+
+        private static void VerifyProjectScriptSnapshot(Dictionary<string, byte[]> originalScripts)
+        {
+            string[] currentPaths = GetProjectScriptPaths();
+            if (
+                currentPaths.Length != originalScripts.Count
+                || currentPaths.Any(path => !originalScripts.ContainsKey(path))
+            )
+            {
+                throw new IOException(
+                    "The project's C# script inventory changed after the preview."
+                );
+            }
+
+            foreach (string path in currentPaths)
+            {
+                byte[] current = File.ReadAllBytes(Path.GetFullPath(path));
+                if (!current.AsSpan().SequenceEqual(originalScripts[path]))
+                {
+                    throw new IOException($"The script '{path}' changed after the preview.");
+                }
+            }
+        }
+
+        internal static UpgradeResult Analyze(
+            string source,
+            Func<string, string> findExternalCallbackUse = null
+        )
         {
             if (source == null)
             {
                 throw new ArgumentNullException(nameof(source));
             }
 
-            SourceMetadata metadata = new(source);
+            SourceMetadata metadata = new(source, findExternalCallbackUse);
             string masked = MaskNonCode(source, metadata.InterpolatedExpressions, metadata);
             metadata.InterpolatedExpressions.Sort(
                 static (left, right) => left.Start.CompareTo(right.Start)
@@ -526,7 +574,6 @@ namespace DxMessaging.Editor
                     continue;
                 }
                 AddMethodDeclarationReplacements(
-                    source,
                     masked,
                     metadata,
                     name,
@@ -837,7 +884,6 @@ namespace DxMessaging.Editor
                 }
                 string useIssue = FindRelatedOverrideIssue(masked, typeStart, declarations)
                     ?? FindNamedCallbackUseIssue(
-                        source,
                         masked,
                         metadata,
                         methodName,
@@ -1274,7 +1320,6 @@ namespace DxMessaging.Editor
         }
 
         private static void AddMethodDeclarationReplacements(
-            string source,
             string masked,
             SourceMetadata metadata,
             string methodName,
@@ -1343,7 +1388,6 @@ namespace DxMessaging.Editor
                 return;
             }
             string useIssue = FindNamedCallbackUseIssue(
-                source,
                 masked,
                 metadata,
                 methodName,
@@ -1364,7 +1408,6 @@ namespace DxMessaging.Editor
         }
 
         private static string FindNamedCallbackUseIssue(
-            string source,
             string masked,
             SourceMetadata metadata,
             string methodName,
@@ -1396,11 +1439,7 @@ namespace DxMessaging.Editor
                 }
             }
             foreach (
-                (string code, Match use, int offset) in metadata.IdentifierUses(
-                    source,
-                    masked,
-                    methodName
-                )
+                (string code, Match use, int offset) in metadata.IdentifierUses(masked, methodName)
             )
             {
                 int sourceStart = use.Index + offset;
@@ -1483,7 +1522,108 @@ namespace DxMessaging.Editor
                 string binding = conditional ? "conditional callback binding" : "callback binding";
                 return $"has a {binding} at {SourceLocation(masked, sourceStart)} that cannot be proven safe for 'in'";
             }
+
+            if (
+                isTypeMember
+                && metadata.FindExternalCallbackUse != null
+                && MemberMayHaveExternalUses(
+                    masked,
+                    typeStart,
+                    declaration.DeclarationStart,
+                    metadata
+                )
+            )
+            {
+                string external = metadata.FindExternalCallbackUse(methodName);
+                if (external != null)
+                {
+                    return $"has a possible callback use in {external} that cannot be proven safe for 'in'";
+                }
+            }
             return null;
+        }
+
+        private static bool MemberMayHaveExternalUses(
+            string masked,
+            int typeStart,
+            int nameStart,
+            SourceMetadata metadata
+        )
+        {
+            for (int scope = typeStart; 0 <= scope; scope = FindContainingTypeStart(masked, scope))
+            {
+                if (TypeScopeIsPartial(masked, scope))
+                {
+                    return true;
+                }
+            }
+
+            int start = masked.LastIndexOfAny(new[] { ';', '{', '}' }, nameStart - 1) + 1;
+            bool protectedMember = false;
+            for (
+                Match modifier = IdentifierUseRegex.Match(masked, start, nameStart - start);
+                modifier.Success;
+                modifier = modifier.NextMatch()
+            )
+            {
+                if (modifier.Value is "public" or "internal")
+                {
+                    return true;
+                }
+                protectedMember |= modifier.Value == "protected";
+            }
+            return protectedMember && !TypeIsUnconditionallySealed(masked, typeStart, metadata);
+        }
+
+        private static bool TypeIsUnconditionallySealed(
+            string masked,
+            int typeStart,
+            SourceMetadata metadata
+        )
+        {
+            foreach (Match declaration in TypeDeclarationRegex.Matches(masked))
+            {
+                if (masked.IndexOf('{', declaration.Index + declaration.Length) != typeStart)
+                {
+                    continue;
+                }
+
+                int position = PreviousNonWhitespace(masked, declaration.Index - 1);
+                while (0 <= position)
+                {
+                    int modifierStart = FindIdentifierStart(masked, position);
+                    if (modifierStart < 0)
+                    {
+                        break;
+                    }
+                    string modifier = masked.Substring(modifierStart, position - modifierStart + 1);
+                    if (modifier == "sealed")
+                    {
+                        return !metadata.UncertainBranches.Exists(branch =>
+                            branch.Start <= modifierStart
+                            && modifierStart < branch.Start + branch.Length
+                        );
+                    }
+                    if (
+                        modifier
+                        is not (
+                            "public"
+                            or "internal"
+                            or "private"
+                            or "protected"
+                            or "new"
+                            or "partial"
+                            or "unsafe"
+                            or "file"
+                        )
+                    )
+                    {
+                        break;
+                    }
+                    position = PreviousNonWhitespace(masked, modifierStart - 1);
+                }
+            }
+            return false;
         }
 
         private static bool HasIndependentCallReceiver(
@@ -6048,12 +6188,18 @@ namespace DxMessaging.Editor
 
         private sealed class SourceMetadata
         {
-            public SourceMetadata(string source)
+            public SourceMetadata(
+                string source,
+                Func<string, string> findExternalCallbackUse = null
+            )
             {
                 Source = source;
+                FindExternalCallbackUse = findExternalCallbackUse;
             }
 
             public string Source { get; }
+
+            public Func<string, string> FindExternalCallbackUse { get; }
 
             public readonly List<TextSpan> InterpolatedExpressions = new();
             public readonly List<TextSpan> UncertainBranches = new();
@@ -6374,26 +6520,30 @@ namespace DxMessaging.Editor
             }
 
             public IEnumerable<(string Code, Match Name, int Offset)> IdentifierUses(
-                string source,
                 string masked,
                 string name
             )
             {
-                _identifierUses ??= FindIdentifierUses(masked, 0)
+                _identifierUses ??= EnumerateIdentifierUses(masked)
+                    .ToLookup(use => IdentifierValue(use.Name.Value), StringComparer.Ordinal);
+                return _identifierUses[name];
+            }
+
+            public IEnumerable<(string Code, Match Name, int Offset)> EnumerateIdentifierUses(
+                string masked
+            ) =>
+                FindIdentifierUses(masked, 0)
                     .Concat(
                         InterpolatedExpressions.SelectMany(expression =>
                             FindIdentifierUses(
                                 MaskNonCode(
-                                    source.Substring(expression.Start, expression.Length),
+                                    Source.Substring(expression.Start, expression.Length),
                                     null
                                 ),
                                 expression.Start
                             )
                         )
-                    )
-                    .ToLookup(use => IdentifierValue(use.Name.Value), StringComparer.Ordinal);
-                return _identifierUses[name];
-            }
+                    );
 
             private static IEnumerable<(string Code, Match Name, int Offset)> FindIdentifierUses(
                 string code,
@@ -7356,6 +7506,60 @@ namespace DxMessaging.Editor
             public int Start { get; }
 
             public int Length { get; }
+        }
+
+        internal sealed class ProjectCallbackUses
+        {
+            private readonly Dictionary<
+                string,
+                (
+                    (string Path, string Source, int Position) First,
+                    (string Path, string Source, int Position) Second
+                )
+            > _uses = new(StringComparer.Ordinal);
+
+            private string _unreadableScript;
+
+            public void AddScript(string path, string source)
+            {
+                SourceMetadata metadata = new(source);
+                string masked = MaskNonCode(source, metadata.InterpolatedExpressions, metadata);
+                foreach ((_, Match name, int offset) in metadata.EnumerateIdentifierUses(masked))
+                {
+                    string identifier = IdentifierValue(name.Value);
+                    _uses.TryGetValue(identifier, out var uses);
+                    if (uses.First.Path == null)
+                    {
+                        uses.First = (path, source, name.Index + offset);
+                    }
+                    else if (uses.First.Path != path && uses.Second.Path == null)
+                    {
+                        uses.Second = (path, source, name.Index + offset);
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                    _uses[identifier] = uses;
+                }
+            }
+
+            public void MarkUnreadable(string path) => _unreadableScript ??= path;
+
+            public string FindOtherUse(string ownPath, string name)
+            {
+                if (_uses.TryGetValue(name, out var uses))
+                {
+                    var other = uses.First.Path == ownPath ? uses.Second : uses.First;
+                    if (other.Path != null)
+                    {
+                        return $"{other.Path}, {SourceLocation(other.Source, other.Position)}";
+                    }
+                }
+                return _unreadableScript == null
+                    ? null
+                    : $"{_unreadableScript} (unreadable script)";
+            }
         }
 
         private readonly struct FileUpgrade

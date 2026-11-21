@@ -1003,6 +1003,113 @@ class IndependentReceiver { public void Forward(ref Pulse value) { } }
         }
 
         [TestCase(
+            "class",
+            "public",
+            false,
+            TestName = "A project use can keep a public callback writable"
+        )]
+        [TestCase(
+            "class",
+            "internal",
+            false,
+            TestName = "A project use can keep an internal callback writable"
+        )]
+        [TestCase(
+            "class",
+            "protected",
+            false,
+            TestName = "A project use can keep an inherited callback writable"
+        )]
+        [TestCase(
+            "partial class",
+            "private",
+            false,
+            TestName = "Another part can use a private callback in a partial type"
+        )]
+        [TestCase(
+            "class",
+            "private",
+            true,
+            TestName = "A private callback in a complete type remains eligible across scripts"
+        )]
+        [TestCase(
+            "sealed class",
+            "protected",
+            true,
+            TestName = "A protected callback in a sealed type remains eligible across scripts"
+        )]
+        public void AnalyzeUsesProjectBindingsForExposedCallbacks(
+            string classDeclaration,
+            string memberAccess,
+            bool migrate
+        )
+        {
+            string source = @"
+CLASS Receiver
+{
+    void Configure()
+    {
+        global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> callback = Forward;
+    }
+    ACCESS void Forward(ref Pulse value) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("CLASS", classDeclaration).Replace("ACCESS", memberAccess);
+
+            const string Path = "Assets/Receiver.cs";
+            const string OtherPath = "Assets/Other.cs";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses uses = new();
+            uses.AddScript(Path, source);
+            uses.AddScript(OtherPath, "class Caller { void Run() { Forward(ref value); } }");
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source,
+                name => uses.FindOtherUse(Path, name)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains($"{OtherPath}, line 1"));
+        }
+
+        [Test]
+        public void AnalyzeFindsExternalWritableBaseForwarding()
+        {
+            const string Source =
+                @"
+class Receiver : global::DxMessaging.Unity.MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref global::DxMessaging.Core.Messages.GlobalStringMessage message) { }
+}";
+            const string Caller =
+                @"
+class Child : Receiver
+{
+    void Send(ref global::DxMessaging.Core.Messages.GlobalStringMessage message)
+    {
+        base.HandleGlobalStringMessage(ref message);
+    }
+}";
+            const string Path = "Assets/Receiver.cs";
+            const string ChildPath = "Assets/Child.cs";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses uses = new();
+            uses.AddScript(ChildPath, Caller);
+            uses.AddScript(Path, Source);
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source,
+                name => uses.FindOtherUse(Path, name)
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain($"{ChildPath}, line 6"));
+        }
+
+        [TestCase(
             "global::Vendor.MessageRegistrationToken<int>",
             false,
             TestName = "A generic vendor token with the same name defers a shared registration"

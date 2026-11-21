@@ -170,7 +170,8 @@ generated sources, interceptors, emission calls, comments, or strings.
 
 The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
-replacement. It attempts to restore every earlier write if a later write fails. If a script changes
+replacement. The tool checks that the scanned C# scripts are unchanged after you confirm the
+preview. It attempts to restore every earlier write if a later write fails. If a script changes
 again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
 ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
@@ -183,8 +184,10 @@ methods, the preview keeps the related signature and argument edits together. It
 edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks
 passed directly to both a handler and an interceptor in the same script. It lists these cases in the
 Console for manual review. It checks calls and delegate bindings to named callbacks in the same
-file, including calls in other types and in interpolated expressions. It defers a signature change
-when a call still needs `ref` or a binding cannot be established. For a registration call, the
+file, including calls in other types and in interpolated expressions. For members that other
+scripts can access, the preview also scans C# scripts under `Assets` for possible uses. This
+includes private callbacks in partial types. It defers a signature change when a call still
+needs `ref` or a binding cannot be established. For a registration call, the
 preview checks the message routing type and the other arguments before changing an inferred
 callback. An explicit package `FastHandler` also establishes the required callback signature.
 Review any deferred `RegisterGlobalAcceptAll` call as a group because its three callbacks must
