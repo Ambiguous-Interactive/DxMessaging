@@ -175,16 +175,17 @@ again before rollback, the tool preserves the newer edit and its backup instead 
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
 ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
 alias can hide the `DxMessaging` namespace. The preview defers a callback that passes
-its newly readonly parameter as a `ref` or `out` argument or takes its address with `__makeref`.
+its newly readonly parameter as a `ref` or `out` argument, takes a typed reference with
+`__makeref`, or takes its address in a `fixed` initializer.
 It can update proven `base` calls in a changed
 `MessageAwareComponent` override. When a local callback forwards to one of the changed base
 methods, the preview keeps the related signature and argument edits together. It defers those
 edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks
 passed directly to both a handler and an interceptor in the same script. It lists these cases in the
-Console for manual review. It also checks `ref` calls to named callbacks in the same type,
-including calls in interpolated expressions. The preview defers the callback when it cannot rule
-out a matching writable call. Reports for deferred
-callback bodies and unproven registrations include the source line and column.
+Console for manual review. It checks calls and delegate bindings to named callbacks in the same
+file, including calls in other types and in interpolated expressions. It defers a signature change
+when a call still needs `ref` or a binding cannot be established. Reports include the source line
+and column so you can find the callback or its use.
 Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
 Review project-wide callback uses. The preview skips branches it can prove inactive from literal
@@ -244,7 +245,10 @@ For example, use `base.HandleGlobalStringMessage(in message)`.
 Check `RegisterForStringMessages` in each build configuration. Preserve explicit opt-ins, opt-outs,
 and computed overrides where they exist. Add `protected override bool RegisterForStringMessages => true;`
 only in configurations that previously relied on the inherited 3.x default. The preview flags
-conditional properties and properties that hide the inherited setting for manual review.
+conditional overrides and members that hide the inherited setting for manual review. Before
+adding an opt-in, rename or remove the hiding member and update its callers. If you replace
+the member with an override in place, choose the value that preserves the intended registration
+behavior in each build configuration.
 
 If a local function serves as a `FastHandler` and also has direct calls, update its signature and
 those calls together. For example, change `Forward(ref copy)` to `Forward(in copy)` when the call

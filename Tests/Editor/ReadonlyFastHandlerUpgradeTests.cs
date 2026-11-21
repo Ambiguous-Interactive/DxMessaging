@@ -15,6 +15,438 @@ namespace DxMessaging.Tests.Editor
             "reads a member or indexer on parameter 'message' that cannot be verified safe for 'in'";
 
         [TestCase(
+            "VendorHandler",
+            false,
+            TestName = "A conditional nonpackage binding defers an unconditional callback"
+        )]
+        [TestCase(
+            "global::DxMessaging.Core.MessageHandler.FastHandler<Pulse>",
+            true,
+            TestName = "A named callback with package bindings in both configurations migrates"
+        )]
+        public void AnalyzeChecksEveryMethodGroupBinding(string alternateDelegate, bool migrate)
+        {
+            string source = @"
+class Receiver
+{
+    delegate void VendorHandler(ref Pulse value);
+    void SetUp()
+    {
+        global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> known = Forward;
+#if LEGACY
+        ALTERNATE alternate = Forward;
+#endif
+    }
+    static void Forward(ref Pulse value) { }
+}".Replace("ALTERNATE", alternateDelegate);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("Forward(ref", "Forward(in") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("conditional callback binding at line")
+            );
+        }
+
+        [TestCase(
+            "global::Vendor.@MessageRegistrationToken",
+            false,
+            TestName = "A verbatim type in a vendor namespace does not prove a package token"
+        )]
+        [TestCase(
+            "global::DxMessaging.Core.@MessageRegistrationToken",
+            true,
+            TestName = "A verbatim type in the package namespace still proves the token"
+        )]
+        public void AnalyzeUsesTheWholeQualifiedTokenType(string typeName, bool migrate)
+        {
+            string source = @"
+using DxMessaging.Core;
+class Receiver
+{
+    TYPE token;
+    void SetUp() { token.RegisterUntargeted<Pulse>((ref Pulse value) => Observe(value)); }
+    static void Observe(Pulse value) { }
+}".Replace("TYPE", typeName);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase(
+            "global::Vendor.@DxMessaging.Core",
+            false,
+            TestName = "An escaped qualifier inside a vendor namespace does not prove the delegate"
+        )]
+        [TestCase(
+            "global::@DxMessaging.Core",
+            true,
+            TestName = "An escaped package namespace qualifier still proves the delegate"
+        )]
+        public void AnalyzeUsesTheWholeQualifiedDelegateType(string typeName, bool migrate)
+        {
+            string source = @"
+class Receiver
+{
+    void SetUp()
+    {
+        TYPE.MessageHandler.FastHandler<Pulse> callback = (ref Pulse value) => Observe(value);
+    }
+    static void Observe(Pulse value) { }
+}".Replace("TYPE", typeName);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+        }
+
+        [TestCase(
+            "token",
+            false,
+            TestName = "An inferred lambda parameter overrides a bare field receiver"
+        )]
+        [TestCase(
+            "this.token",
+            true,
+            TestName = "An explicitly qualified field ignores an inferred lambda parameter"
+        )]
+        public void AnalyzeChecksAnInferredTokenShadow(string receiver, bool migrate)
+        {
+            string source = @"
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    void Configure()
+    {
+        Use(token => RECEIVER.RegisterUntargeted<Pulse>((ref Pulse value) => Observe(value)));
+    }
+
+    static void Use(System.Action<global::Vendor.CustomToken> action) { }
+    static void Observe(Pulse value) { }
+}".Replace("RECEIVER", receiver);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [Test]
+        public void AnalyzeKeepsPackageBindingsWithOrdinaryTokenReferencesAndNestedTypeArguments()
+        {
+            const string Source =
+                @"
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+
+    void Configure()
+    {
+        token = new global::DxMessaging.Core.MessageRegistrationToken();
+        if (token == null) { return; }
+        Observe(token);
+        token.RegisterUntargeted<PairMessage<int, bool>>(Forward);
+    }
+
+    static void Forward(ref PairMessage<int, bool> value) { }
+    static void Observe<T>(T value) { }
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(Source.Replace("ref PairMessage", "in PairMessage"))
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [Test]
+        public void AnalyzeDefersRegistrationWithAnAttributedCompetingExtension()
+        {
+            const string Source =
+                @"
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    void Configure()
+    {
+        token.RegisterUntargeted<Pulse>((ref Pulse value) => Observe(value), priority: ""legacy"");
+    }
+    static void Observe(Pulse value) { }
+}
+
+class ProbeAttribute : System.Attribute { }
+
+static class LegacyExtensions
+{
+    public delegate void Handler<T>(ref T value);
+    public static void RegisterUntargeted<T>(
+        [Probe] this global::DxMessaging.Core.MessageRegistrationToken token,
+        Handler<T> untargetedHandler,
+        string priority
+    ) { }
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("overload whose package binding cannot be proven")
+            );
+        }
+
+        [Test]
+        public void AnalyzeKeepsStringOptInEligibleWhenAnotherPropertyReadsIt()
+        {
+            const string Source =
+                @"
+class Receiver : global::DxMessaging.Unity.MessageAwareComponent
+{
+    bool Enabled => RegisterForStringMessages;
+    protected override void HandleGlobalStringMessage(ref GlobalStringMessage message) { }
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("bool Enabled => RegisterForStringMessages;")
+            );
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [TestCase(
+            false,
+            TestName = "A local function outside the binding block cannot migrate an inherited method group"
+        )]
+        [TestCase(true, TestName = "A local function visible to a package delegate still migrates")]
+        public void AnalyzeChecksTheDeclaringBlockOfLocalCallback(bool visible)
+        {
+            string source = @"
+class Parent
+{
+    protected static void Forward(ref Pulse value) { }
+}
+class Receiver : Parent
+{
+    void Configure()
+    {
+        INSIDE
+        global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> callback = Forward;
+    }
+
+    void Elsewhere()
+    {
+        OUTSIDE
+    }
+}".Replace("INSIDE", visible ? "static void Forward(ref Pulse value) { }" : "").Replace(
+                "OUTSIDE",
+                visible ? "" : "static void Forward(ref Pulse value) { }"
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            string expected = visible
+                ? source.Replace(
+                    "        static void Forward(ref Pulse value)",
+                    "        static void Forward(in Pulse value)"
+                )
+                : source;
+            Assert.That(result.UpgradedSource, Is.EqualTo(expected));
+            Assert.That(result.ReplacementCount, Is.EqualTo(visible ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(visible ? 0 : 1));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("cannot select the local declaration")
+            );
+        }
+
+        [Test]
+        public void AnalyzeDefersNamedHandlerUsedAsTheArgumentToAnUnprovenNameof()
+        {
+            const string Source =
+                @"
+using static LegacyNames;
+class Receiver
+{
+    void Configure()
+    {
+        global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> callback = Forward;
+        string label = nameof(Forward);
+    }
+    static void Forward(ref Pulse value) { }
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("callback binding at line"));
+        }
+
+        [TestCase(
+            "Receiver",
+            false,
+            TestName = "A writable call from a different type defers the selected callback"
+        )]
+        [TestCase(
+            "IndependentReceiver",
+            true,
+            TestName = "A writable call to a proven independent type still permits migration"
+        )]
+        public void AnalyzeChecksWritableCallsInOtherTypes(string receiverType, bool migrate)
+        {
+            string source = @"
+class Receiver
+{
+    void SetUp()
+    {
+        global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> known = Forward;
+    }
+    public void Forward(ref Pulse value) { }
+}
+class Caller
+{
+    void Deliver(RECEIVER receiver)
+    {
+        Pulse copy = default;
+        receiver.Forward(ref copy);
+    }
+}
+class IndependentReceiver { public void Forward(ref Pulse value) { } }
+".Replace("RECEIVER", receiverType);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            string expected = migrate
+                ? source.Replace(
+                    "    public void Forward(ref Pulse value)",
+                    "    public void Forward(in Pulse value)"
+                )
+                : source;
+            Assert.That(result.UpgradedSource, Is.EqualTo(expected));
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains("direct call at line"));
+        }
+
+        [TestCase(
+            "global::Vendor.MessageRegistrationToken<int>",
+            false,
+            TestName = "A generic vendor token with the same name defers a shared registration"
+        )]
+        [TestCase(
+            "global::DxMessaging.Core.MessageRegistrationToken",
+            true,
+            TestName = "The same package token in both configurations permits a shared registration"
+        )]
+        public void AnalyzeChecksEachTokenTypeInConditionalDeclarations(
+            string alternateType,
+            bool migrate
+        )
+        {
+            string source = @"
+class Receiver
+{
+#if LEGACY
+    ALTERNATE token;
+#else
+    global::DxMessaging.Core.MessageRegistrationToken token;
+#endif
+    void SetUp()
+    {
+        token.RegisterUntargeted<Pulse>((ref Pulse value) => Observe(value));
+    }
+
+    static void Observe(Pulse value) { }
+}".Replace("ALTERNATE", alternateType);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("receiver whose MessageRegistrationToken type cannot be proven")
+            );
+        }
+
+        [TestCase(
+            "&message",
+            "Pulse",
+            TestName = "A fixed pointer to callback storage requires review"
+        )]
+        [TestCase(
+            "&(message)",
+            "Pulse",
+            TestName = "A grouped fixed pointer to callback storage requires review"
+        )]
+        [TestCase(
+            "&message.Value",
+            "int",
+            TestName = "A fixed pointer to a callback field requires review"
+        )]
+        public void AnalyzeReportsFixedPointerToCallbackStorage(string operand, string pointerType)
+        {
+            string source = @"
+class Receiver
+{
+    unsafe void SetUp()
+    {
+        global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> callback = (ref Pulse message) =>
+        {
+            fixed (TYPE* pointer = OPERAND)
+            {
+                *pointer = default;
+            }
+        };
+    }
+}".Replace("OPERAND", operand).Replace("TYPE", pointerType);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("takes the address of parameter 'message'")
+            );
+        }
+
+        [TestCase(
             "Receiver",
             "other.Forward(ref copy)",
             TestName = "A writable call on another instance of the declaring type requires review"
@@ -128,6 +560,22 @@ namespace Consumer
         [TestCase(
             "#if LEGACY\n    protected new bool RegisterForStringMessages => false;\n#endif",
             TestName = "A conditional hidden property requires opt-in collision review"
+        )]
+        [TestCase(
+            "private new bool RegisterForStringMessages = false;",
+            TestName = "A hidden field prevents a duplicate string opt-in insertion"
+        )]
+        [TestCase(
+            "private new System.Collections.Generic.List<int> RegisterForStringMessages;",
+            TestName = "A generic field prevents a duplicate string opt-in insertion"
+        )]
+        [TestCase(
+            "private new bool other = true, RegisterForStringMessages = false;",
+            TestName = "A following field declarator prevents a duplicate string opt-in insertion"
+        )]
+        [TestCase(
+            "private new bool RegisterForStringMessages() => false;",
+            TestName = "A same-name method prevents a duplicate string opt-in insertion"
         )]
         public void AnalyzeReportsHiddenStringPropertyBeforeInsertingOptIn(string property)
         {
@@ -3686,12 +4134,22 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
                 @"
 class Receiver : DxMessaging.Unity.MessageAwareComponent
 {
+    MEMBER
     protected override void HANDLER(ref PAYLOAD outer)
     {
         BODY
     }
-}";
+}
+OTHER_TYPE";
+            bool usesIndependentReceiver = body.Contains("@base");
             return Template
+                .Replace("MEMBER", usesIndependentReceiver ? "OtherReceiver @base;" : "")
+                .Replace(
+                    "OTHER_TYPE",
+                    usesIndependentReceiver
+                        ? "class OtherReceiver { public void HANDLER(ref PAYLOAD message) { } }"
+                        : ""
+                )
                 .Replace("BODY", body)
                 .Replace("FAST_HANDLER", "DxMessaging.Core.MessageHandler.FastHandler<PAYLOAD>")
                 .Replace("HANDLER", method)
@@ -4358,7 +4816,7 @@ sealed class AliasExternal : Vendor :: DxMessaging.Unity.MessageAwareComponent
 
             Assert.That(result.UpgradedSource, Is.EqualTo(Source));
             Assert.That(result.ReplacementCount, Is.Zero);
-            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(4));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(5));
             Assert.That(
                 string.Join("\n", result.ManualReviewMethods),
                 Does.Contain("receiver whose MessageRegistrationToken type cannot be proven")
