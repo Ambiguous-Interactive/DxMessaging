@@ -749,11 +749,12 @@ class Receiver
     global::DxMessaging.Core.MessageRegistrationToken token;
     void Configure()
     {
-        token.RegisterUntargeted<Pulse>((ref Pulse value) => Observe(value), priority: ""legacy"");
+        token.RegisterUntargeted<Pulse>((ref Pulse value) => Observe(value), priority: 0);
     }
     static void Observe(Pulse value) { }
-}
-
+}";
+            const string Extension =
+                @"
 class ProbeAttribute : System.Attribute { }
 
 static class LegacyExtensions
@@ -762,19 +763,30 @@ static class LegacyExtensions
     public static void RegisterUntargeted<T>(
         [Probe] this global::DxMessaging.Core.MessageRegistrationToken token,
         Handler<T> untargetedHandler,
-        string priority
+        int priority
     ) { }
 }";
+            string withExtension = Source + Extension;
             ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
-                Source
+                withExtension
             );
             Assert.That(result.ReplacementCount, Is.Zero);
-            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.UpgradedSource, Is.EqualTo(withExtension));
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
             Assert.That(
                 result.ManualReviewMethods[0],
                 Does.Contain("overload whose package binding cannot be proven")
             );
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult control = AnalyzeWithFixtureMessageTypes(
+                Source
+            );
+            Assert.That(control.ReplacementCount, Is.EqualTo(1));
+            Assert.That(
+                control.UpgradedSource,
+                Is.EqualTo(Source.Replace("ref Pulse", "in Pulse"))
+            );
+            Assert.That(control.ManualReviewMethods, Is.Empty);
         }
 
         [TestCase(
@@ -1000,6 +1012,277 @@ class IndependentReceiver { public void Forward(ref Pulse value) { } }
             Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
             Assert.That(result.ManualReviewMethods, Has.All.Contains("direct call at line"));
+        }
+
+        [TestCase(
+            true,
+            TestName = "An ordinary call can change from an extension to the migrated member"
+        )]
+        [TestCase(false, TestName = "A named callback used only as a delegate still migrates")]
+        public void AnalyzeChecksOrdinaryCallBindingBeforeChangingSignature(bool directCall)
+        {
+            const string Call = "        this.Forward(default(Pulse));";
+            string source = @"
+sealed class Receiver
+{
+    void Configure()
+    {
+        global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> callback = Forward;
+CALL
+    }
+    void Forward(ref Pulse value) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+static class Extensions
+{
+    public static void Forward(this Receiver receiver, Pulse value) { }
+}".Replace("CALL", directCall ? Call : "");
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(directCall ? 0 : 1));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(directCall ? source : source.Replace("ref Pulse", "in Pulse"))
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(directCall ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains("binding can change"));
+        }
+
+        [TestCase(
+            "untargeted",
+            false,
+            TestName = "A global registration also defers a separate delegate initializer"
+        )]
+        [TestCase(
+            "alias",
+            false,
+            TestName = "An unresolved global delegate alias preserves its possible initializer"
+        )]
+        [TestCase(
+            "untargeted",
+            true,
+            TestName = "A local delegate shadows a namesake method in a global callback group"
+        )]
+        [TestCase(
+            "alias",
+            true,
+            TestName = "A delegate alias shadows a namesake method in a global callback group"
+        )]
+        public void AnalyzeCouplesGlobalRegistrationsToDelegateInitializers(
+            string argument,
+            bool namesakeMethod
+        )
+        {
+            string source = @"
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+class Receiver
+{
+    MessageRegistrationToken token;
+    NAMESAKE
+    void Register()
+    {
+        MessageHandler.FastHandler<IUntargetedMessage> untargeted = (ref IUntargetedMessage value) => { };
+        var alias = untargeted;
+        token.RegisterGlobalAcceptAll(
+            ARGUMENT,
+            (ref global::DxMessaging.Core.InstanceId target, ref ITargetedMessage value) => { },
+            (ref global::DxMessaging.Core.InstanceId source, ref IBroadcastMessage value) => { });
+    }
+}".Replace("ARGUMENT", argument).Replace(
+                "NAMESAKE",
+                namesakeMethod ? $"void {argument}(ref IUntargetedMessage value) {{ }}" : ""
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.Some.Contains("shares the RegisterGlobalAcceptAll call")
+            );
+        }
+
+        [TestCase(
+            false,
+            TestName = "A deconstructed delegate alias preserves the incomplete global callback group"
+        )]
+        [TestCase(
+            true,
+            TestName = "An inferred delegate parameter preserves the incomplete global callback group"
+        )]
+        public void AnalyzePreservesInitializersWhenAnInferredGlobalBindingIsUnresolved(
+            bool useInferredParameter
+        )
+        {
+            string source = @"
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+class Receiver
+{
+    void Untargeted(ref IUntargetedMessage value) { }
+    void Register(MessageRegistrationToken token)
+    {
+        MessageHandler.FastHandler<IUntargetedMessage> hidden = (ref IUntargetedMessage value) => { };
+        BEFORE
+        token.RegisterGlobalAcceptAll(
+            Untargeted,
+            (ref InstanceId target, ref ITargetedMessage value) => { },
+            (ref InstanceId source, ref IBroadcastMessage value) => { });
+        AFTER
+    }
+    static void Apply(
+        MessageHandler.FastHandler<IUntargetedMessage> value,
+        System.Action<MessageHandler.FastHandler<IUntargetedMessage>> action) => action(value);
+}".Replace(
+                "BEFORE",
+                useInferredParameter
+                    ? "Apply(hidden, Untargeted => {"
+                    : "var (Untargeted, _) = (hidden, 0);"
+            ).Replace("AFTER", useInferredParameter ? "});" : "");
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.Some.Contains("shares the RegisterGlobalAcceptAll call")
+            );
+        }
+
+        [TestCase(
+            "@RegisterGlobalAcceptAll",
+            false,
+            TestName = "A verbatim global registration holds its separate delegate initializer"
+        )]
+        [TestCase(
+            @"RegisterGlobalAccept\u0041ll",
+            false,
+            TestName = "A Unicode escaped global registration holds its separate delegate initializer"
+        )]
+        [TestCase(
+            "RegisterGlobalAcceptAll",
+            true,
+            TestName = "An interpolated global registration holds its separate delegate initializer"
+        )]
+        public void AnalyzeRecognizesGlobalRegistrationAcrossSourceSpellings(
+            string method,
+            bool interpolated
+        )
+        {
+            string call =
+                $@"token.{method}(
+                    untargeted,
+                    (ref InstanceId target, ref ITargetedMessage value) => {{ }},
+                    (ref InstanceId source, ref IBroadcastMessage value) => {{ }})";
+            string statement = interpolated ? "var text = $\"{" + call + "}\";" : call + ";";
+            string source = @"
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+class Receiver
+{
+    void Register(MessageRegistrationToken token)
+    {
+        MessageHandler.FastHandler<IUntargetedMessage> untargeted = (ref IUntargetedMessage value) => { };
+        STATEMENT
+    }
+}".Replace("STATEMENT", statement);
+
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Is.Not.Empty);
+        }
+
+        [TestCase(
+            false,
+            TestName = "A directly exported delegate initializer defers with its external global group"
+        )]
+        [TestCase(
+            true,
+            TestName = "An exposed delegate alias defers its private initializer with the external global group"
+        )]
+        public void AnalyzePreservesDelegateInitializerUsedInAnotherScript(
+            bool exposeThroughProperty
+        )
+        {
+            string source = @"
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+static class Callbacks
+{
+    ACCESS static readonly MessageHandler.FastHandler<IUntargetedMessage> VALUE =
+        (ref IUntargetedMessage value) => { };
+    ALIAS
+}".Replace("ACCESS", exposeThroughProperty ? "private" : "public").Replace(
+                "VALUE",
+                exposeThroughProperty ? "hidden" : "Untargeted"
+            ).Replace(
+                "ALIAS",
+                exposeThroughProperty
+                    ? "public static MessageHandler.FastHandler<IUntargetedMessage> Untargeted => hidden;"
+                    : ""
+            );
+            const string Other =
+                @"
+class Receiver
+{
+    void Register(global::DxMessaging.Core.MessageRegistrationToken token)
+    {
+        var alias = Callbacks.Untargeted;
+        token.RegisterGlobalAcceptAll(alias, Targeted, Broadcast);
+    }
+}";
+            const string Path = "Assets/Callbacks.cs";
+            const string OtherPath = "Assets/Receiver.cs";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses uses = new();
+            uses.AddScript(Path, source);
+            uses.AddScript(OtherPath, Other);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source,
+                name => uses.FindOtherUse(Path, name)
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            int expectedLine = exposeThroughProperty ? 7 : 6;
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain($"{OtherPath}, line {expectedLine}")
+            );
+        }
+
+        [Test]
+        public void AnalyzeChecksLocalShadowInLiteralConditionalBaseForwarding()
+        {
+            const string Source =
+                @"
+sealed class Receiver : global::DxMessaging.Unity.MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref global::DxMessaging.Core.Messages.GlobalStringMessage value)
+    {
+#if true
+        void Relay(global::DxMessaging.Core.Messages.GlobalStringMessage value)
+        {
+            base.HandleGlobalStringMessage(ref value);
+        }
+        Relay(default);
+#endif
+    }
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("base forwarding argument"));
         }
 
         [TestCase(

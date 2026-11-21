@@ -191,8 +191,9 @@ needs `ref` or a binding cannot be established. For a registration call, the
 preview checks the message routing type and the other arguments before changing an inferred
 callback. An explicit package `FastHandler` also establishes the required callback signature.
 Review any deferred `RegisterGlobalAcceptAll` call as a group because its three callbacks must
-bind to the same overload. Reports include the source line and column so you can find the callback
-or its use.
+bind to the same overload. If the preview cannot trace an argument back to its delegate, it can
+also defer separate fast delegate initializers in that script. Reports include the source line
+and column so you can find the callback or its use.
 Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
 Review project-wide callback uses. The preview skips branches it can prove inactive from literal
