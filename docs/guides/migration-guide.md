@@ -159,10 +159,15 @@ void OnDamageV3(ref ApplyDamage message) { }
 void OnDamageV4(in ApplyDamage message) { }
 ```
 
+Unity disables package Editor code in Safe Mode. If the project opens in Safe Mode after the
+upgrade, fix the compilation errors using the manual steps in this guide. Run the preview after
+Unity exits Safe Mode.
+
 To update project scripts automatically, choose **Tools / Wallstop Studios / DxMessaging /
 Upgrade 3.x Fast Handlers to 4.0**. The command previews the number of changes before writing. It
-scans C# scripts under `Assets`, updates callbacks used by recognized DxMessaging registrations,
-explicit `FastHandler` delegates, and the changed `MessageAwareComponent` overrides. When it
+scans C# scripts under `Assets` for callbacks used by recognized DxMessaging registrations, explicit
+`FastHandler` delegates, and the changed `MessageAwareComponent` overrides. It edits scripts Unity
+has imported. Refresh the Asset Database and preview again when an unimported script needs review. When it
 updates an inherited string-handler override, it also adds
 `protected override bool RegisterForStringMessages => true;` to preserve the 3.x behavior. It
 keeps an existing opt-in, opt-out, or computed property unchanged. It does not change package or
@@ -170,17 +175,134 @@ generated sources, interceptors, emission calls, comments, or strings.
 
 The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
-replacement. It attempts to restore every earlier write if a later write fails. If a script changes
+replacement. After confirmation, the tool rechecks C# scripts, assembly settings under `Assets`,
+and Unity's script assembly assignments. It compares the bytes of the files it could read again
+before discarding backups. Keep project scripts and assembly settings in regular files and directories
+under `Assets` so the preview can verify them.
+Refresh the Asset Database and rerun the preview when the imported assembly settings or their asset GUIDs differ from disk.
+Resolve unreadable-script warnings before applying changes. If comments or strings can hide a directive in some
+build configurations, the preview leaves the script untouched and reports the directive location. The tool attempts to restore every earlier
+write if a later write fails. If a script changes
 again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
-ambiguous receivers unchanged. It also leaves a callback unchanged when its newly readonly
-parameter is passed as a `ref` or `out` argument, except for the matching `base` call in a changed
-`MessageAwareComponent` override, which it can update safely. The tool detects callbacks passed
-directly to both a handler and an interceptor in the same script. It lists these cases in the
-Console for manual review. Partial `MessageAwareComponent` declarations also require manual review
+ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
+alias can hide the `DxMessaging` namespace. If a project script declares a type with the package
+type's full name, verify which declaration the compiler selects before migrating it. The preview
+uses Unity's compilation inputs for the active build target to check that package types come from
+the installed DxMessaging runtime. It reports the callback or type location when it cannot verify
+that binding. A source outside the script index, competing metadata, missing runtime source
+checksums, or unverified compiler options can require manual review. Check the binding and related callers in your other build targets
+before making a deferred edit. The preview also defers a callback that passes
+its newly readonly parameter as a `ref` or `out` argument, takes a typed reference with
+`__makeref`, or takes its address in a `fixed` initializer. It also preserves callbacks with
+parameter attributes that may require writable references, such as `OutAttribute`.
+It can update proven `base` calls in a changed
+`MessageAwareComponent` override. When a local callback forwards to one of the changed base
+methods, the preview keeps the related signature and argument edits together. It defers those
+edits if a direct call still needs the local callback's `ref` signature. The tool detects callbacks
+passed directly to both a handler and an interceptor in the same script. It records deferred
+callbacks in the Console before attempting to refresh the Asset Database. It checks calls and
+delegate bindings to named callbacks in the same
+file, including calls in other types and in interpolated expressions. For members that other
+scripts can access, the preview also scans C# scripts under `Assets` for possible uses. This
+includes private callbacks in partial types. It defers exposed callbacks when their callers could
+be outside `Assets`. Verify those callers and any other parts of the type before changing a signature
+that still needs `ref` or has an unproved binding. For a registration call, the
+preview checks the message routing type and the other arguments before changing an inferred
+callback. A route declaration in another script can establish that type when Unity assigns
+both scripts to the same assembly and the declaration is unique. An explicit package
+`FastHandler` establishes the callback parameter shape. The registration still needs a proven route.
+When a message gets its routing interface from source generation, such as a partial message marked
+with `[DxUntargetedMessage]`, the preview leaves its registration for manual review if it cannot
+prove the route from the available source. Verify the generated interface in your build, then update
+the callback as shown above.
+
+When a stored fast delegate changes to the readonly signature, update invocations of that delegate
+too. This includes calls through fields and properties. For example, change `separate(ref pulse)`
+to `separate(in pulse)` and `separate?.Invoke(ref pulse)` to `separate?.Invoke(in pulse)`. Keep a
+separate writable callback for callers that need to modify the argument.
+
+Review any deferred `RegisterGlobalAcceptAll` call as a group because its three callbacks must
+bind to the same overload. If the preview cannot trace an argument back to its delegate, it can
+also defer separate fast delegate initializers in that script. Reports include the source line
+and column so you can find the callback or its use.
+Partial `MessageAwareComponent` declarations also require manual review
 before adding the string-handler opt-in because another part can already declare the property.
-Review project-wide callback uses, inspect the diff, and let Unity compile before committing the
-migration.
+Review project-wide callback uses. The preview skips branches it can prove inactive from literal
+conditions. It defers callbacks whose boundaries or method-group bindings depend on unresolved
+branches. Check those callbacks in each build configuration. Use separate callback declarations
+when two delegate types require different parameter modifiers. Inspect the diff and let Unity
+compile before committing the migration.
+
+The preview defers assignments, compound assignments, and increment or decrement operations on a
+callback parameter, a direct indexer such as `message[0]`, or a member chain such as
+`message.Child.Value` or `message.Child[0]`. It also defers writes through repeated indexers, such as
+`message[0][0] = 1`. A readonly receiver can copy a struct before calling its getter. The getter can
+then update that copy even when the array write reaches the original array. Review writes through
+these indexers even when they compile with `in`.
+
+The preview also defers direct reads such as `message.Value` or `message[0]` when it cannot verify
+the access. The same source can refer to a field or to a struct getter that changes the receiver.
+After conversion to `in`, a getter can still return the same value while writing to a copy. Inspect
+the member before converting the callback by hand. A callback that only passes the whole message
+by value, such as `Observe(message)`, can still migrate automatically.
+
+The scan recognizes simple parentheses around a receiver or target, such as `(message).Value`, and
+applies the same grouping rule to direct `ref` and `out` arguments. It also follows single-operand
+`checked` and `unchecked` wrappers and recognizes null-forgiving postfix writes and tuple targets.
+It checks direct targets in ordinary
+tuple deconstruction, including bodies of `if`, `else`, `while`, `for`, `foreach`, `using`, `lock`,
+`fixed`, and `do` without braces.
+
+The preview flags calls such as `message.Increment()` and `message.Child.Increment()` because an
+`in` parameter can cause a mutable struct method to run on a defensive copy. The preview also flags
+direct enumeration such as `foreach (var item in message)` and direct pinning such as
+`fixed (int* pointer = message)`. A mutable struct method can supply the enumerator or the
+reference to pin. A query that uses the message directly as a source can also call instance methods.
+The text scan checks calls, writes, and `ref` or `out` arguments in regular,
+verbatim, and C# 11 raw interpolations.
+The scan ignores literal text and format specifiers. It can flag read-only calls, class members,
+initializer members that share the parameter's name, calls through delegate fields, and readonly
+aliases to nested members. The preview scopes parameters of simple, explicitly typed local
+functions to their own declarations. Inspect more complex local function declarations, explicit
+method type arguments, conditional access, complex interpolation, casts, and indirect targets
+manually.
+
+Copy a struct message to a local when the callback needs writable scratch data. Interceptors run
+before handlers, so move a payload or context edit to an interceptor only when earlier handlers can
+also see the edited value. If those handlers need the original, create the edited value at the
+original stage and pass it explicitly to the listeners that need it.
+
+When you migrate a deferred string-handler override by hand, resolve its writable uses first.
+Use a local copy for scratch writes. Preserve caller-visible writes at the stage that owns the
+writable data. Check which virtual method the declaration overrides. Change the parameter from
+`ref` to `in` only if that virtual method now takes `in`. Keep `ref` when a custom base method
+still requires it.
+
+Search for calls to `base.HandleStringGameObjectMessage`, `base.HandleStringComponentMessage`,
+and `base.HandleGlobalStringMessage` throughout the class, including in helper methods. Check these
+calls even when the preview converted the override. Check which base declaration each call selects.
+Change `ref` to `in` for the migrated signatures, such as `base.HandleGlobalStringMessage(in message)`.
+Keep `ref` on calls to custom overloads that still require it.
+
+Check `RegisterForStringMessages` in each build configuration and preserve its prior behavior,
+including deliberate opt-outs such as `=> false`. A computed override that reads
+`base.RegisterForStringMessages` needs review because 4.0 changes the package default to `false`.
+For a component that directly inherits DxMessaging's `MessageAwareComponent`, change
+`=> enabled && base.RegisterForStringMessages` to `=> enabled` to preserve the result from 3.x.
+If a custom base provides the setting, check that base's behavior first.
+
+Add `protected override bool RegisterForStringMessages => true;` only in configurations
+that previously relied on the inherited 3.x default. The preview flags conditional overrides
+and members that hide the inherited setting for manual review. Before adding an opt-in,
+rename or remove the hiding member and update its callers. If you replace the member with
+an override in place, choose the value that preserves the intended registration behavior
+in each build configuration.
+
+If a local function serves as a `FastHandler` and also has direct calls, update its signature and
+those calls together. For example, change `Forward(ref copy)` to `Forward(in copy)` when the call
+only reads `copy`. If a direct call must change its argument, use a separate function with a
+`ref` parameter for that call. Keep the `FastHandler` callback readonly.
 
 Apply the same change to both parameters of callbacks that receive a target or source:
 
