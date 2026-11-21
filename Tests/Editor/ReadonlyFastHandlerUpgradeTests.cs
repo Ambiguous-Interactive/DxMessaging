@@ -741,27 +741,39 @@ class Receiver
 
         [TestCase(
             "FastHandler",
-            "first = (ref Pulse left) => Observe(left), second = (ref Pulse right) => Observe(right)",
+            " first = (ref Pulse left) => Observe(left), second = (ref Pulse right) => Observe(right)",
             2,
             TestName = "Both initialized fast delegates in one declaration migrate"
         )]
         [TestCase(
             "FastHandler",
-            "first, second = (ref Pulse right) => Observe(right)",
+            " first, second = (ref Pulse right) => Observe(right)",
             1,
             TestName = "An uninitialized fast delegate preserves the following initializer"
         )]
         [TestCase(
             "@FastHandler",
-            "handler = (ref Pulse value) => Observe(value)",
+            " handler = (ref Pulse value) => Observe(value)",
             1,
             TestName = "A verbatim fast delegate identifier binds the package type"
         )]
         [TestCase(
             @"FastH\u0061ndler",
-            "handler = (ref Pulse value) => Observe(value)",
+            " handler = (ref Pulse value) => Observe(value)",
             1,
             TestName = "A Unicode escaped fast delegate identifier binds the package type"
+        )]
+        [TestCase(
+            "FastHandler",
+            "first = (ref Pulse left) => Observe(left),second = (ref Pulse right) => Observe(right)",
+            2,
+            TestName = "Fast delegate declarators may follow the generic closer immediately"
+        )]
+        [TestCase(
+            "FastHandler",
+            "?handler = (ref Pulse value) => Observe(value)",
+            1,
+            TestName = "A nullable fast delegate can initialize an inline callback"
         )]
         public void AnalyzeFindsEachFastDelegateInitializer(
             string handlerName,
@@ -774,7 +786,7 @@ class Receiver
 {
     void Configure()
     {
-        global::DxMessaging.Core.MessageHandler.HANDLER<Pulse> DECLARATION;
+        global::DxMessaging.Core.MessageHandler.HANDLER<Pulse>DECLARATION;
     }
     static void Observe(Pulse value) { }
 }
@@ -786,6 +798,206 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             Assert.That(result.UpgradedSource, Is.EqualTo(source.Replace("ref Pulse", "in Pulse")));
             Assert.That(result.ReplacementCount, Is.EqualTo(count));
             Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [TestCase(
+            " handler",
+            TestName = "A spaced fast delegate type pattern leaves the writable argument alone"
+        )]
+        [TestCase(
+            "handler",
+            TestName = "A compact fast delegate type pattern leaves the writable argument alone"
+        )]
+        [TestCase(
+            "handler == true",
+            TestName = "A fast delegate type pattern comparison cannot prove a declarator"
+        )]
+        public void AnalyzeDistinguishesFastDelegatePatternsFromDeclarations(string pattern)
+        {
+            string source = @"
+using DxMessaging.Core;
+class Receiver
+{
+    delegate void Writable(ref Pulse message);
+    static void Callback(ref Pulse message) { }
+    static void Sink(bool flag, Writable writable) { }
+    static void Configure(object value, bool choose)
+    {
+        Writable fallback = null;
+        Sink(value is MessageHandler.FastHandler<Pulse>PATTERN, fallback = Callback);
+        for (; choose; ) { break; }
+    }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("PATTERN", pattern);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [TestCase("value", false, TestName = "A setter value shadows the package field")]
+        [TestCase("this.value", true, TestName = "A setter can qualify the actual package field")]
+        public void AnalyzeDistinguishesTheImplicitAccessorValue(string receiver, bool migrate)
+        {
+            string source = @"
+using DxMessaging.Core;
+class Receiver
+{
+    MessageRegistrationToken value;
+    Vendor.CustomToken Other
+    {
+        set => RECEIVER.RegisterUntargeted<Pulse>((ref Pulse pulse) => { });
+    }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+namespace Vendor
+{
+    class CustomToken
+    {
+        public delegate void Writable<T>(ref T message);
+        public void RegisterUntargeted<T>(Writable<T> callback) { }
+    }
+}
+".Replace("RECEIVER", receiver);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse pulse", "in Pulse pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase(
+            "separate(ref pulse);",
+            false,
+            TestName = "A writable delegate invocation preserves its initializer"
+        )]
+        [TestCase(
+            "separate?.Invoke(ref pulse);",
+            false,
+            TestName = "A conditional writable invocation preserves its initializer"
+        )]
+        [TestCase(
+            "var alias = separate; alias(ref pulse);",
+            false,
+            TestName = "An unproven delegate alias preserves its initializer"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted<Pulse>(priority: 0, untargetedHandler: separate);",
+            true,
+            TestName = "A proven named registration keeps the delegate initializer eligible"
+        )]
+        [TestCase(
+            "token.RegisterUntargeted(separate);",
+            true,
+            TestName = "A proven inferred registration keeps the delegate initializer eligible"
+        )]
+        public void AnalyzeChecksUsesOfAnInitializedFastDelegate(string use, bool migrate)
+        {
+            string source = @"
+using DxMessaging.Core;
+class Receiver
+{
+    void Configure(MessageRegistrationToken token, Pulse pulse)
+    {
+        MessageHandler.FastHandler<Pulse> separate = Callback;
+        USE_DELEGATE
+    }
+
+    static void Callback(ref Pulse pulse) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("USE_DELEGATE", use);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse pulse", "in Pulse pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            if (!migrate)
+            {
+                Assert.That(result.ManualReviewMethods[0], Does.Contain("use on line 8"));
+            }
+        }
+
+        [TestCase("value => { }")]
+        [TestCase("static value => { }")]
+        public void AnalyzeKeepsUnrelatedDelegateEligibleWithByValueGlobalCallbacks(string callback)
+        {
+            string source = @"
+using DxMessaging.Core;
+class Receiver
+{
+    void Configure(MessageRegistrationToken token)
+    {
+        MessageHandler.FastHandler<Pulse> separate = Callback;
+        token.RegisterGlobalAcceptAll(CALLBACK_ARGUMENT, (target, message) => { }, (source, message) => { });
+        token.RegisterUntargeted(separate);
+    }
+
+    static void Callback(ref Pulse pulse) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("CALLBACK_ARGUMENT", callback);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source.Replace("ref Pulse", "in Pulse")));
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
+        [TestCase(
+            "using DxMessaging.Core.Messages; namespace Game { public struct Pulse : IUntargetedMessage { } }",
+            true,
+            TestName = "An indexed message in another source proves the registration route"
+        )]
+        [TestCase(
+            "namespace Game { public struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { } }",
+            true,
+            TestName = "An indexed message can prove its fully qualified route marker"
+        )]
+        [TestCase(
+            "#if LEGACY\nnamespace Game { public struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { } }\n#endif",
+            false,
+            TestName = "A conditional project message declaration leaves the route uncertain"
+        )]
+        public void AnalyzeProvesAProjectMessageRoute(string messageSource, bool migrate)
+        {
+            const string Source =
+                @"
+using DxMessaging.Core;
+class Receiver
+{
+    void Configure(MessageRegistrationToken token)
+    {
+        token.RegisterUntargeted<global::Game.Pulse>((ref global::Game.Pulse pulse) => { });
+    }
+}";
+            const string Path = "Assets/Receiver.cs";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
+            project.AddScript(Path, Source);
+            project.AddScript("Assets/Pulse.cs", messageSource);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source,
+                name => project.FindOtherUse(Path, name),
+                project
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? Source.Replace("ref ", "in ") : Source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
         }
 
         [TestCase(
@@ -5133,7 +5345,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
         [TestCase(
             "",
             "",
-            "Consume(handler, copy); Other.Forward(ref copy);",
+            "Token.RegisterUntargeted<GlobalStringMessage>(handler); Other.Forward(ref copy);",
             true,
             TestName = "A qualified call keeps the nested delegate and base forwarding eligible"
         )]
@@ -5163,6 +5375,13 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
                 "INVOCATION",
                 invocation
             );
+            if (shouldMigrate)
+            {
+                source =
+                    "using DxMessaging.Core.Messages;\n"
+                    + source
+                    + "\nclass Other { public static void Forward(ref GlobalStringMessage value) { } }\n";
+            }
             ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );
@@ -5198,7 +5417,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             "HandleGlobalStringMessage",
             "GlobalStringMessage",
             "void Forward(ref PAYLOAD forwarded) => base.HANDLER(ref forwarded);\n"
-                + "        FAST_HANDLER first = Forward; Consume(first, outer);",
+                + "        FAST_HANDLER first = Forward; Token.RegisterUntargeted<PAYLOAD>(first);",
             3,
             TestName = "A global override binds a renamed local ref parameter for base forwarding"
         )]
@@ -5208,7 +5427,7 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             "PAYLOAD copy = outer;\n        if (true) {\n"
                 + "            void Forward(ref global::DxMessaging.Core.InstanceId source, ref PAYLOAD forwarded) => base.HANDLER(ref forwarded);\n"
                 + "            DxMessaging.Core.MessageHandler.FastHandlerWithContext<PAYLOAD> handler = Forward;\n"
-                + "            Consume(handler, copy);\n        }",
+                + "            Token.RegisterTargetedWithoutTargeting<PAYLOAD>(handler);\n        }",
             4,
             TestName = "A component override binds a renamed second local parameter for base forwarding"
         )]
@@ -5218,7 +5437,8 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             "void Forward(ref PAYLOAD first) => base.HANDLER(ref first);\n"
                 + "        void Relay(ref PAYLOAD second) { base.HANDLER(ref second); }\n"
                 + "        FAST_HANDLER firstHandler = Forward; FAST_HANDLER secondHandler = Relay;\n"
-                + "        Consume(firstHandler, outer); Consume(secondHandler, outer);",
+                + "        Token.RegisterTargeted<PAYLOAD>(default, firstHandler);\n"
+                + "        Token.RegisterTargeted<PAYLOAD>(default, secondHandler);",
             5,
             TestName = "A GameObject override migrates two renamed local base forwarding callbacks"
         )]
@@ -5229,7 +5449,9 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
             int expectedReplacements
         )
         {
-            string source = CreateRenamedForwardingSource(method, payload, body);
+            string source =
+                "using DxMessaging.Core.Messages;\n"
+                + CreateRenamedForwardingSource(method, payload, body);
             ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
                 source
             );

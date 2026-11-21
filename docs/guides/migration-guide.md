@@ -255,13 +255,19 @@ calls even when the preview converted the override. Check which base declaration
 Change `ref` to `in` for the migrated signatures, such as `base.HandleGlobalStringMessage(in message)`.
 Keep `ref` on calls to custom overloads that still require it.
 
-Check `RegisterForStringMessages` in each build configuration. Preserve explicit opt-ins, opt-outs,
-and computed overrides where they exist. Add `protected override bool RegisterForStringMessages => true;`
-only in configurations that previously relied on the inherited 3.x default. The preview flags
-conditional overrides and members that hide the inherited setting for manual review. Before
-adding an opt-in, rename or remove the hiding member and update its callers. If you replace
-the member with an override in place, choose the value that preserves the intended registration
-behavior in each build configuration.
+Check `RegisterForStringMessages` in each build configuration and preserve its prior behavior,
+including deliberate opt-outs such as `=> false`. A computed override that reads
+`base.RegisterForStringMessages` needs review because 4.0 changes the package default to `false`.
+For a component that directly inherits `MessageAwareComponent`, change
+`=> enabled && base.RegisterForStringMessages` to `=> enabled` to preserve the result from 3.x.
+If a custom base provides the setting, check that base's behavior first.
+
+Add `protected override bool RegisterForStringMessages => true;` only in configurations
+that previously relied on the inherited 3.x default. The preview flags conditional overrides
+and members that hide the inherited setting for manual review. Before adding an opt-in,
+rename or remove the hiding member and update its callers. If you replace the member with
+an override in place, choose the value that preserves the intended registration behavior
+in each build configuration.
 
 If a local function serves as a `FastHandler` and also has direct calls, update its signature and
 those calls together. For example, change `Forward(ref copy)` to `Forward(in copy)` when the call
