@@ -1581,6 +1581,47 @@ abstract class Receiver : global::DxMessaging.Unity.MessageAwareComponent
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
+        [TestCase("RegisterForStringMessages")]
+        [TestCase(@"RegisterForStringMessag\u0065s")]
+        public void AnalyzeDefersTheOptInWhenTheComponentHasTheSameName(string componentName)
+        {
+            string source = @"
+sealed class COMPONENT : global::DxMessaging.Unity.MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref global::DxMessaging.Core.Messages.GlobalStringMessage message) =>
+        base.HandleGlobalStringMessage(ref message);
+}
+".Replace("COMPONENT", componentName);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source.Replace("ref ", "in ")));
+            Assert.That(result.ReplacementCount, Is.EqualTo(2));
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("component has the same name"));
+        }
+
+        [Test]
+        public void AnalyzeRecognizesAnExplicitlyRootedCompilationUnitImport()
+        {
+            const string Source =
+                @"
+using global::DxMessaging.Core;
+sealed class Receiver
+{
+    MessageHandler.FastHandler<Pulse> Callback = (ref Pulse message) => { };
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source.Replace("ref Pulse", "in Pulse")));
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
         [TestCase(true)]
         [TestCase(false)]
         public void AnalyzeRequiresPackageBindingForAQualifiedRegistrationToken(bool proven)
@@ -7224,10 +7265,27 @@ sealed class Receiver : global::DxMessaging.Unity.MessageAwareComponent
             }
             Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
             Assert.That(result.ManualReviewMethods, Is.Empty);
-            Assert.That(
-                result.UpgradedSource,
-                Does.Contain("base.HandleStringComponentMessage(in outer);")
-            );
+            string newline = source.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+            string expected = source
+                .Insert(
+                    source.IndexOf('{') + 1,
+                    newline
+                        + "    protected override bool RegisterForStringMessages => true;"
+                        + newline
+                )
+                .Replace(
+                    "HandleStringGameObjectMessage(ref StringMessage outer)",
+                    "HandleStringGameObjectMessage(in StringMessage outer)"
+                )
+                .Replace(
+                    "base.HandleStringGameObjectMessage(ref outer)",
+                    "base.HandleStringGameObjectMessage(in outer)"
+                )
+                .Replace(
+                    "base.HandleStringComponentMessage(ref outer)",
+                    "base.HandleStringComponentMessage(in outer)"
+                );
+            Assert.That(result.UpgradedSource, Is.EqualTo(expected));
         }
 
         [Test]
@@ -8361,6 +8419,107 @@ void OnPulse(ref Pulse message) { }";
         }
 
         [Test]
+        public void ApplyAtomicallyPreservesTheBackupWhenTheCleanupWindowChanges()
+        {
+            FakeAtomicFileStore store = new(
+                new Dictionary<string, byte[]> { ["receiver.cs"] = new byte[] { 1 } }
+            );
+            ReadonlyFastHandlerUpgrade.PendingFileUpgrade[] upgrades =
+            {
+                new("receiver.cs", new byte[] { 1 }, new byte[] { 10 }),
+            };
+            store.BeforeDiscard = () => store.Files["receiver.cs"] = new byte[] { 99 };
+
+            Assert.That(ReadonlyFastHandlerUpgrade.ApplyAtomically(upgrades, store), Is.False);
+            Assert.That(store.Files["receiver.cs"], Is.EqualTo(new byte[] { 99 }));
+            Assert.That(store.Backups["receiver.cs.backup"], Is.EqualTo(new byte[] { 1 }));
+        }
+
+        [Test]
+        public void ApplyAtomicallyRechecksNonDestinationsAfterPackageVerification()
+        {
+            FakeAtomicFileStore store = new(
+                new Dictionary<string, byte[]>
+                {
+                    ["receiver.cs"] = new byte[] { 1 },
+                    ["Caller.cs"] = new byte[] { 2 },
+                }
+            );
+            ReadonlyFastHandlerUpgrade.PendingFileUpgrade[] upgrades =
+            {
+                new("receiver.cs", new byte[] { 1 }, new byte[] { 11 }),
+            };
+
+            Assert.That(
+                () =>
+                    ReadonlyFastHandlerUpgrade.ApplyAtomically(
+                        upgrades,
+                        store,
+                        verifyBeforeCommit: () => store.Files["Caller.cs"] = new byte[] { 99 },
+                        verifyBeforeCleanup: () =>
+                        {
+                            if (store.Files["Caller.cs"][0] != 2)
+                            {
+                                throw new IOException("Caller changed after package verification.");
+                            }
+                        }
+                    ),
+                Throws.TypeOf<IOException>()
+            );
+            Assert.That(store.Files["receiver.cs"], Is.EqualTo(new byte[] { 1 }));
+            Assert.That(store.Files["Caller.cs"], Is.EqualTo(new byte[] { 99 }));
+            Assert.That(store.Backups, Is.Empty);
+        }
+
+        [Test]
+        public void PhysicalCleanupPreservesABackupWhenRemovalCannotBeVerified()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string path = Path.Combine(directory, "Handler.cs");
+                byte[] before = { 1 };
+                byte[] after = { 2 };
+                File.WriteAllBytes(path, before);
+                ReadonlyFastHandlerUpgrade.PhysicalAtomicFileStore store = new();
+                string backup = store.Replace(path, before, after);
+                using (
+                    FileStream existing = new(
+                        backup,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.Read
+                    )
+                )
+                {
+                    if (Path.DirectorySeparatorChar == '\\')
+                    {
+                        Assert.That(
+                            () => store.TryDiscardBackup(path, backup, after),
+                            Throws.InstanceOf<IOException>()
+                        );
+                    }
+                    else
+                    {
+                        Assert.That(store.TryDiscardBackup(path, backup, after), Is.False);
+                    }
+                }
+                Assert.That(File.ReadAllBytes(backup), Is.EqualTo(before));
+                Assert.That(File.ReadAllBytes(path), Is.EqualTo(after));
+                if (Path.DirectorySeparatorChar == '\\')
+                {
+                    Assert.That(store.TryDiscardBackup(path, backup, after), Is.True);
+                    Assert.That(File.Exists(backup), Is.False);
+                }
+            }
+            finally
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+
+        [Test]
         public void ApplyAtomicallyKeepsCommittedWritesWhenBackupCleanupFails()
         {
             FakeAtomicFileStore store = new(
@@ -8517,6 +8676,7 @@ void OnPulse(ref Pulse message) { }";
             public Dictionary<string, byte[]> Backups { get; } = new();
 
             public Action? AfterDiscard { get; set; }
+            public Action? BeforeDiscard { get; set; }
 
             public string Replace(string fullPath, byte[] originalBytes, byte[] upgradedBytes)
             {
@@ -8567,6 +8727,11 @@ void OnPulse(ref Pulse message) { }";
                 if (_throwOnDiscard)
                 {
                     throw new InvalidOperationException("Injected cleanup failure.");
+                }
+                BeforeDiscard?.Invoke();
+                if (!MatchesDestination(fullPath, expectedCurrentBytes))
+                {
+                    return false;
                 }
                 Backups.Remove(backupPath);
                 AfterDiscard?.Invoke();

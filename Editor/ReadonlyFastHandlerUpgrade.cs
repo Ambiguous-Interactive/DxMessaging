@@ -589,8 +589,7 @@ namespace DxMessaging.Editor
                     upgrade => upgrade.UpgradedBytes,
                     StringComparer.Ordinal
                 );
-                cleanupVerified = ApplyAtomically(upgrades, assetsRoot, () =>
-                {
+                void VerifyWrittenProject() =>
                     VerifyProjectFileSnapshot(
                         assetsRoot,
                         originalFiles,
@@ -598,8 +597,17 @@ namespace DxMessaging.Editor
                         assemblySettingsAreCurrent,
                         expectedWrites
                     );
-                    packageBindings.Verify();
-                });
+                cleanupVerified = ApplyAtomically(
+                    upgrades,
+                    assetsRoot,
+                    () =>
+                    {
+                        VerifyWrittenProject();
+                        packageBindings.Verify();
+                    },
+                    VerifyWrittenProject,
+                    () => HoldReadableProjectFilesForCleanup(assetsRoot, originalFiles)
+                );
             }
             catch (Exception exception)
             {
@@ -622,7 +630,7 @@ namespace DxMessaging.Editor
                 {
                     EditorUtility.DisplayDialog(
                         "DxMessaging Fast Handler Upgrade Needs Review",
-                        "Some backups could not be safely removed. Review the affected files and backups listed in the Console.",
+                        "Some backups remain beside the upgraded scripts. The Console lists the files to review before removing their backups.",
                         "OK"
                     );
                     return;
@@ -931,6 +939,50 @@ namespace DxMessaging.Editor
             }
         }
 
+        private static IDisposable HoldReadableProjectFilesForCleanup(
+            string assetsRoot,
+            Dictionary<string, byte[]> files
+        )
+        {
+            if (Path.DirectorySeparatorChar != '\\')
+            {
+                return null;
+            }
+
+            // Windows enforces file sharing against writers and replacement by outside editors.
+            // Hold the whole readable snapshot until the last backup has been removed.
+            ReadableProjectFiles held = new();
+            try
+            {
+                foreach (var file in files.Where(file => file.Value != null))
+                {
+                    held.Open(GetProjectFileFullPath(assetsRoot, file.Key));
+                }
+                return held;
+            }
+            catch
+            {
+                held.Dispose();
+                throw;
+            }
+        }
+
+        private sealed class ReadableProjectFiles : IDisposable
+        {
+            private readonly List<FileStream> _files = new();
+
+            public void Open(string path) =>
+                _files.Add(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read));
+
+            public void Dispose()
+            {
+                foreach (FileStream file in _files)
+                {
+                    file.Dispose();
+                }
+            }
+        }
+
         private sealed class ProjectPackageBindings
         {
             private const BindingFlags RuntimeInstanceMembers =
@@ -951,12 +1003,6 @@ namespace DxMessaging.Editor
                 "GameObject",
                 "Int32",
             };
-            private static readonly string[] MetadataBindingNames = BindingTypeNames
-                .Concat(ReadonlyRegistrationNames)
-                .ToArray();
-            private static readonly byte[][] MetadataBindingBytes = MetadataBindingNames
-                .Select(Encoding.UTF8.GetBytes)
-                .ToArray();
             private static readonly Regex NonBindingCompilerOption = new(
                 @"\A[-/](?:(?:d|define|langversion|nullable|nowarn|warn|warnaserror):[\w.,;_+-]+|(?:unsafe|checked|optimize|warnaserror)[+-]?|additionalfile:(?:""[^""\r\n]+""|[^\s""]+))\z",
                 RegexOptions.CultureInvariant | RegexOptions.IgnoreCase
@@ -984,6 +1030,17 @@ namespace DxMessaging.Editor
             );
             private readonly Dictionary<string, HashSet<string>> _metadataNames = new(
                 StringComparer.Ordinal
+            );
+            private static readonly Regex LocalAliasBranch = new(
+                @"\A\s*(?:using\s+"
+                    + IdentifierSpellingPattern
+                    + @"\s*=\s*(?:global\s*::\s*)?"
+                    + IdentifierSpellingPattern
+                    + @"(?:\s*\.\s*"
+                    + IdentifierSpellingPattern
+                    + @")*\s*;\s*)*\z",
+                RegexOptions.CultureInvariant,
+                TimeSpan.FromSeconds(1)
             );
             private Assembly[] _editorAssemblies;
             private Assembly[] _playerAssemblies;
@@ -2019,36 +2076,11 @@ namespace DxMessaging.Editor
                  * runtime PE's CodeView record before trusting the document rows.
                  */
                 using BinaryReader reader = new(new MemoryStream(symbols, writable: false));
-                if (reader.ReadUInt32() != 0x424A5342)
-                {
-                    return null;
-                }
-                reader.BaseStream.Position = 12;
-                uint versionLength = reader.ReadUInt32();
-                reader.BaseStream.Position += versionLength;
-                reader.ReadUInt16();
-                int streamCount = reader.ReadUInt16();
-                Dictionary<string, TextSpan> streams = new(StringComparer.Ordinal);
-                byte[] name = new byte[32];
-                for (int index = 0; index < streamCount; index++)
-                {
-                    uint offset = reader.ReadUInt32();
-                    uint size = reader.ReadUInt32();
-                    int length = 0;
-                    while (length < name.Length && (name[length] = reader.ReadByte()) != 0)
-                    {
-                        length++;
-                    }
-                    if (length == name.Length || symbols.LongLength < (long)offset + size)
-                    {
-                        return null;
-                    }
-                    reader.BaseStream.Position = (reader.BaseStream.Position + 3) & ~3L;
-                    streams.Add(
-                        Encoding.ASCII.GetString(name, 0, length),
-                        new TextSpan((int)offset, (int)size)
-                    );
-                }
+                Dictionary<string, TextSpan> streams = ReadMetadataStreams(
+                    reader,
+                    0,
+                    symbols.Length
+                );
                 if (
                     !streams.TryGetValue("#Pdb", out TextSpan pdb)
                     || pdb.Length < 20
@@ -2162,6 +2194,67 @@ namespace DxMessaging.Editor
                 throw new IOException("Invalid compressed index in the runtime symbols.");
             }
 
+            private static Dictionary<string, TextSpan> ReadMetadataStreams(
+                BinaryReader reader,
+                int start,
+                int size
+            )
+            {
+                if (size < 20)
+                {
+                    return new();
+                }
+                reader.BaseStream.Position = start;
+                if (reader.ReadUInt32() != 0x424A5342)
+                {
+                    return new();
+                }
+                reader.BaseStream.Position = start + 12;
+                uint versionLength = reader.ReadUInt32();
+                reader.BaseStream.Position += versionLength;
+                if (start + size - 4 < reader.BaseStream.Position)
+                {
+                    return new();
+                }
+                reader.ReadUInt16();
+                int streamCount = reader.ReadUInt16();
+                Dictionary<string, TextSpan> streams = new(StringComparer.Ordinal);
+                byte[] name = new byte[32];
+                for (int index = 0; index < streamCount; index++)
+                {
+                    if (start + size - 8 < reader.BaseStream.Position)
+                    {
+                        return new();
+                    }
+                    uint offset = reader.ReadUInt32();
+                    uint streamSize = reader.ReadUInt32();
+                    int length = 0;
+                    while (length < name.Length)
+                    {
+                        if (start + size <= reader.BaseStream.Position)
+                        {
+                            return new();
+                        }
+                        name[length] = reader.ReadByte();
+                        if (name[length] == 0)
+                        {
+                            break;
+                        }
+                        length++;
+                    }
+                    if (length == name.Length || size < (long)offset + streamSize)
+                    {
+                        return new();
+                    }
+                    reader.BaseStream.Position = (reader.BaseStream.Position + 3) & ~3L;
+                    streams.Add(
+                        Encoding.ASCII.GetString(name, 0, length),
+                        new TextSpan(start + (int)offset, (int)streamSize)
+                    );
+                }
+                return streams;
+            }
+
             private static ReadOnlySpan<byte> ReadSymbolBlob(ReadOnlySpan<byte> heap, int index)
             {
                 int length = ReadCompressedSymbolIndex(heap, ref index);
@@ -2242,29 +2335,39 @@ namespace DxMessaging.Editor
                     string source = EncodedSource.FromBytes(File.ReadAllBytes(path)).Text;
                     SourceMetadata metadata = new(source);
                     string masked = MaskNonCode(source, null, metadata);
-                    if (metadata.UncertainDirectivePosition == null)
+                    if (metadata.UncertainDirectivePosition != null)
                     {
-                        source = masked;
+                        masked = source;
                     }
-                    names = BindingTypeNames
-                        .Where(name => source.Contains(name, StringComparison.Ordinal))
-                        .ToHashSet(StringComparer.Ordinal);
-                    if (
-                        source.Contains('\\')
-                        || source.Any(character =>
-                            CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format
+                    // A possibly conditional declaration or an assembly-level attribute can
+                    // introduce a type definition or a type forwarder before the file is rebuilt.
+                    bool opaque =
+                        metadata.UncertainDirectivePosition != null
+                        || metadata.UncertainBranches.Exists(branch =>
+                            !LocalAliasBranch.IsMatch(masked.Substring(branch.Start, branch.Length))
                         )
-                    )
-                    {
-                        foreach (Match token in IdentifierUseRegex.Matches(source))
-                        {
-                            string name = IdentifierValue(token.Value);
-                            if (Array.IndexOf(BindingTypeNames, name) >= 0)
-                            {
-                                names.Add(name);
-                            }
-                        }
-                    }
+                        || Regex.IsMatch(
+                            masked,
+                            @"\[\s*assembly\s*:",
+                            RegexOptions.CultureInvariant,
+                            TimeSpan.FromSeconds(1)
+                        );
+                    names = opaque
+                        ? IdentifierUseRegex
+                            .Matches(masked)
+                            .Cast<Match>()
+                            .Select(token => IdentifierValue(token.Value))
+                            .Where(name => Array.IndexOf(BindingTypeNames, name) >= 0)
+                            .ToHashSet(StringComparer.Ordinal)
+                        : TypeDeclarationRegex
+                            .Matches(masked)
+                            .Cast<Match>()
+                            .Concat(DelegateTypeDeclarationRegex.Matches(masked).Cast<Match>())
+                            .Select(declaration =>
+                                IdentifierValue(declaration.Groups["name"].Value)
+                            )
+                            .Where(name => Array.IndexOf(BindingTypeNames, name) >= 0)
+                            .ToHashSet(StringComparer.Ordinal);
                     _sourceNames.Add(path, names);
                 }
                 return names;
@@ -2274,22 +2377,301 @@ namespace DxMessaging.Editor
             {
                 if (!_metadataNames.TryGetValue(path, out HashSet<string> names))
                 {
-                    /*
-                     * CLI metadata stores type names as UTF-8 strings. Absence rules out
-                     * declarations and forwarded names. Presence is inconclusive.
-                     */
-                    byte[] bytes = File.ReadAllBytes(path);
-                    names = new HashSet<string>(StringComparer.Ordinal);
-                    for (int index = 0; index < MetadataBindingNames.Length; index++)
-                    {
-                        if (0 <= bytes.AsSpan().IndexOf(MetadataBindingBytes[index]))
-                        {
-                            names.Add(MetadataBindingNames[index]);
-                        }
-                    }
+                    names = ReadManagedDeclarations(File.ReadAllBytes(path));
                     _metadataNames.Add(path, names);
                 }
                 return names;
+            }
+
+            private static HashSet<string> ReadManagedDeclarations(byte[] image)
+            {
+                using BinaryReader reader = new(new MemoryStream(image, writable: false));
+                var (root, size) = ReadManagedMetadataLocation(reader);
+                Dictionary<string, TextSpan> streams = ReadMetadataStreams(reader, root, size);
+                if (
+                    !streams.TryGetValue("#~", out TextSpan tables)
+                    || tables.Length < 24
+                    || !streams.TryGetValue("#Strings", out TextSpan strings)
+                )
+                {
+                    throw new IOException(
+                        "The compiler reference has no supported managed metadata tables."
+                    );
+                }
+
+                reader.BaseStream.Position = tables.Start + 6;
+                byte heaps = reader.ReadByte();
+                if ((heaps & 0x40) != 0)
+                {
+                    throw new IOException(
+                        "The compiler reference uses an unsupported metadata layout."
+                    );
+                }
+                reader.ReadByte();
+                ulong valid = reader.ReadUInt64();
+                reader.ReadUInt64();
+                const int TypeDefinitions = 2;
+                const int MethodDefinitions = 6;
+                const int ExportedTypes = 39;
+                int[] rows = new int[64];
+                for (int index = 0; index < rows.Length; index++)
+                {
+                    if ((valid & (1UL << index)) != 0)
+                    {
+                        if (tables.Start + (long)tables.Length - 4 < reader.BaseStream.Position)
+                        {
+                            throw new IOException(
+                                "The compiler reference has truncated metadata row counts."
+                            );
+                        }
+                        rows[index] = reader.ReadInt32();
+                        if (rows[index] < 0)
+                        {
+                            throw new IOException(
+                                "The compiler reference has an invalid metadata row count."
+                            );
+                        }
+                    }
+                }
+                if (rows[0] != 1 || rows[TypeDefinitions] == 0)
+                {
+                    throw new IOException(
+                        "The compiler reference has no required module and type definition rows."
+                    );
+                }
+
+                HashSet<string> names = new(StringComparer.Ordinal);
+                ReadOnlySpan<byte> stringHeap = image.AsSpan(strings.Start, strings.Length);
+                long offset = reader.BaseStream.Position;
+                int last = rows[ExportedTypes] == 0 ? MethodDefinitions : ExportedTypes;
+                for (int table = 0; table <= last; table++)
+                {
+                    if (rows[table] == 0)
+                    {
+                        continue;
+                    }
+                    int rowSize = ManagedMetadataRowSize(table, heaps, rows);
+                    long end = offset + (long)rows[table] * rowSize;
+                    if (tables.Start + (long)tables.Length < end)
+                    {
+                        throw new IOException(
+                            "The compiler reference has truncated metadata tables."
+                        );
+                    }
+                    if (table is TypeDefinitions or MethodDefinitions or ExportedTypes)
+                    {
+                        int nameOffset = table == TypeDefinitions ? 4 : 8;
+                        for (int row = 0; row < rows[table]; row++)
+                        {
+                            reader.BaseStream.Position = offset + (long)row * rowSize + nameOffset;
+                            int index = ReadSymbolHeapIndex(reader, (heaps & 1) != 0);
+                            ReadOnlySpan<byte> nameBytes = stringHeap.Slice(index);
+                            int terminator = nameBytes.IndexOf((byte)0);
+                            if (terminator < 0)
+                            {
+                                throw new IOException(
+                                    "The compiler reference has an unterminated metadata identifier."
+                                );
+                            }
+                            string name = Encoding.UTF8.GetString(nameBytes.Slice(0, terminator));
+                            if (table == MethodDefinitions)
+                            {
+                                if (ReadonlyRegistrationNames.Contains(name))
+                                {
+                                    names.Add(name);
+                                }
+                                continue;
+                            }
+                            int arity = name.IndexOf('`');
+                            if (0 <= arity)
+                            {
+                                name = name.Substring(0, arity);
+                            }
+                            if (Array.IndexOf(BindingTypeNames, name) >= 0)
+                            {
+                                names.Add(name);
+                            }
+                        }
+                    }
+                    offset = end;
+                }
+                return names;
+            }
+
+            private static (int Offset, int Size) ReadManagedMetadataLocation(BinaryReader reader)
+            {
+                if (reader.ReadUInt16() != 0x5A4D)
+                {
+                    throw new IOException("The compiler reference is not a Portable Executable.");
+                }
+                reader.BaseStream.Position = 0x3C;
+                int pe = reader.ReadInt32();
+                reader.BaseStream.Position = pe;
+                if (reader.ReadUInt32() != 0x00004550)
+                {
+                    throw new IOException(
+                        "The compiler reference has an invalid Portable Executable header."
+                    );
+                }
+                reader.ReadUInt16();
+                int sectionCount = reader.ReadUInt16();
+                reader.BaseStream.Position = pe + 20L;
+                int optionalSize = reader.ReadUInt16();
+                long optional = pe + 24L;
+                reader.BaseStream.Position = optional;
+                int dataDirectories = reader.ReadUInt16() switch
+                {
+                    0x010B => 96,
+                    0x020B => 112,
+                    _ => 0,
+                };
+                const int CliDirectory = 14 * 8;
+                if (dataDirectories == 0 || optionalSize < dataDirectories + CliDirectory + 8)
+                {
+                    throw new IOException("The compiler reference has no CLI directory.");
+                }
+                reader.BaseStream.Position = optional + dataDirectories - 4;
+                if (reader.ReadUInt32() <= 14)
+                {
+                    throw new IOException("The compiler reference has no CLI directory.");
+                }
+                reader.BaseStream.Position = optional + dataDirectories + CliDirectory;
+                uint cliRva = reader.ReadUInt32();
+                if (cliRva == 0 || reader.ReadUInt32() < 16)
+                {
+                    throw new IOException("The compiler reference has no CLI header.");
+                }
+                long sections = optional + optionalSize;
+                long cli = MapManagedImageAddress(reader, sections, sectionCount, cliRva, 16);
+                reader.BaseStream.Position = cli + 8;
+                uint metadataRva = reader.ReadUInt32();
+                uint metadataSize = reader.ReadUInt32();
+                long metadata = MapManagedImageAddress(
+                    reader,
+                    sections,
+                    sectionCount,
+                    metadataRva,
+                    metadataSize
+                );
+                return (checked((int)metadata), checked((int)metadataSize));
+            }
+
+            private static long MapManagedImageAddress(
+                BinaryReader reader,
+                long sections,
+                int sectionCount,
+                uint address,
+                uint size
+            )
+            {
+                for (int index = 0; index < sectionCount; index++)
+                {
+                    reader.BaseStream.Position = sections + index * 40L + 12;
+                    uint sectionAddress = reader.ReadUInt32();
+                    uint sectionBytes = reader.ReadUInt32();
+                    uint sectionOffset = reader.ReadUInt32();
+                    long relative = (long)address - sectionAddress;
+                    long offset = sectionOffset + relative;
+                    if (
+                        0 <= relative
+                        && relative + size <= sectionBytes
+                        && offset + size <= reader.BaseStream.Length
+                    )
+                    {
+                        return offset;
+                    }
+                }
+                throw new IOException(
+                    "The compiler reference has a CLI directory outside its image."
+                );
+            }
+
+            private static int ManagedMetadataRowSize(int table, byte heaps, int[] rows)
+            {
+                int text = (heaps & 1) == 0 ? 2 : 4;
+                int guid = (heaps & 2) == 0 ? 2 : 4;
+                int blob = (heaps & 4) == 0 ? 2 : 4;
+                int Row(int index) => rows[index] < 65536 ? 2 : 4;
+                int Coded(int tagBits, params int[] targets)
+                {
+                    int maxSmallRows = 1 << (16 - tagBits);
+                    return targets.Any(target => maxSmallRows <= rows[target]) ? 4 : 2;
+                }
+
+                // ECMA-335 II.22–24. Offset calculation only needs tables through
+                // ExportedType. We read definitions and exports, rather than their references.
+                return table switch
+                {
+                    0 => 2 + text + 3 * guid, // Module
+                    1 => Coded(2, 0, 26, 35, 1) + 2 * text, // TypeRef
+                    2 => 4 + 2 * text + Coded(2, 2, 1, 27) + Row(4) + Row(6), // TypeDef
+                    3 => Row(4), // FieldPtr
+                    4 => 2 + text + blob, // Field
+                    5 => Row(6), // MethodPtr
+                    6 => 8 + text + blob + Row(8), // MethodDef
+                    7 => Row(8), // ParamPtr
+                    8 => 4 + text, // Param
+                    9 => Row(2) + Coded(2, 2, 1, 27), // InterfaceImpl
+                    10 => Coded(3, 2, 1, 26, 6, 27) + text + blob, // MemberRef
+                    11 => 2 + Coded(2, 4, 8, 23) + blob, // Constant
+                    12 => Coded(
+                        5,
+                        6,
+                        4,
+                        1,
+                        2,
+                        8,
+                        9,
+                        10,
+                        0,
+                        14,
+                        23,
+                        20,
+                        17,
+                        26,
+                        27,
+                        32,
+                        35,
+                        38,
+                        39,
+                        40,
+                        42,
+                        44,
+                        43
+                    )
+                        + Coded(3, 6, 10)
+                        + blob, // CustomAttribute
+                    13 => Coded(1, 4, 8) + blob, // FieldMarshal
+                    14 => 2 + Coded(2, 2, 6, 32) + blob, // DeclSecurity
+                    15 => 6 + Row(2), // ClassLayout
+                    16 => 4 + Row(4), // FieldLayout
+                    17 => blob, // StandAloneSig
+                    18 => Row(2) + Row(20), // EventMap
+                    19 => Row(20), // EventPtr
+                    20 => 2 + text + Coded(2, 2, 1, 27), // Event
+                    21 => Row(2) + Row(23), // PropertyMap
+                    22 => Row(23), // PropertyPtr
+                    23 => 2 + text + blob, // Property
+                    24 => 2 + Row(6) + Coded(1, 20, 23), // MethodSemantics
+                    25 => Row(2) + 2 * Coded(1, 6, 10), // MethodImpl
+                    26 => text, // ModuleRef
+                    27 => blob, // TypeSpec
+                    28 => 2 + Coded(1, 4, 6) + text + Row(26), // ImplMap
+                    29 => 4 + Row(4), // FieldRVA
+                    30 => 8, // EncLog
+                    31 => 4, // EncMap
+                    32 => 16 + blob + 2 * text, // Assembly
+                    33 => 4, // AssemblyProcessor
+                    34 => 12, // AssemblyOS
+                    35 => 12 + 2 * blob + 2 * text, // AssemblyRef
+                    36 => 4 + Row(35), // AssemblyRefProcessor
+                    37 => 12 + Row(35), // AssemblyRefOS
+                    38 => 4 + text + blob, // File
+                    39 => 8 + 2 * text + Coded(2, 38, 35, 39), // ExportedType
+                    _ => throw new IOException(
+                        "The compiler reference uses an unsupported metadata table."
+                    ),
+                };
             }
 
             private string PhysicalPath(string path) =>
@@ -3311,6 +3693,18 @@ namespace DxMessaging.Editor
                         }
                         continue;
                     }
+                    Match containingType = FindTypeDeclaration(masked, typeStart);
+                    if (
+                        containingType != null
+                        && IdentifierValue(containingType.Groups["name"].Value)
+                            == "RegisterForStringMessages"
+                    )
+                    {
+                        manualReview.Add(
+                            $"{CallbackLocation(masked, declaration.DeclarationStart)} cannot add RegisterForStringMessages because the component has the same name; review the opt-in manually"
+                        );
+                        continue;
+                    }
                     if (TypeScopeIsPartial(masked, typeStart))
                     {
                         manualReview.Add(
@@ -4224,16 +4618,24 @@ namespace DxMessaging.Editor
 
         private static string GetTypeHeader(string masked, int typeStart)
         {
-            foreach (Match match in TypeDeclarationRegex.Matches(masked))
+            Match match = FindTypeDeclaration(masked, typeStart);
+            if (match == null)
             {
-                int afterName = match.Index + match.Length;
-                if (masked.IndexOf('{', afterName) == typeStart && 0 <= typeStart)
-                {
-                    return masked.Substring(afterName, typeStart - afterName);
-                }
+                return string.Empty;
             }
-            return string.Empty;
+            int afterName = match.Index + match.Length;
+            return masked.Substring(afterName, typeStart - afterName);
         }
+
+        private static Match FindTypeDeclaration(string masked, int typeStart) =>
+            typeStart < 0
+                ? null
+                : TypeDeclarationRegex
+                    .Matches(masked)
+                    .Cast<Match>()
+                    .FirstOrDefault(match =>
+                        masked.IndexOf('{', match.Index + match.Length) == typeStart
+                    );
 
         private static bool TypeScopeDerivesFromMessageAwareComponent(
             string masked,
@@ -4328,18 +4730,8 @@ namespace DxMessaging.Editor
             {
                 return false;
             }
-            Match import = Regex.Match(
-                masked,
-                @"\busing\s+" + Regex.Escape(namespaceName) + @"\s*;",
-                RegexOptions.CultureInvariant
-            );
-            if (!import.Success)
-            {
-                return false;
-            }
-            Match namespaceDeclaration = NamespaceDeclarationRegex.Match(masked);
-            return FindEnclosingBrace(masked, import.Index) < 0
-                && (!namespaceDeclaration.Success || import.Index < namespaceDeclaration.Index);
+            return CompilationUnitNamespaceImports(masked, NamespaceUsingRegex.Matches(masked))
+                .Any(import => import.Path == namespaceName);
         }
 
         private static bool HasTypeOrAliasDeclaration(string masked, string typeName)
@@ -11702,7 +12094,9 @@ namespace DxMessaging.Editor
         private static bool ApplyAtomically(
             List<FileUpgrade> upgrades,
             string assetsRoot,
-            Action verifyBeforeCommit
+            Action verifyBeforeCommit,
+            Action verifyBeforeCleanup,
+            Func<IDisposable> holdCleanupInputs
         )
         {
             List<PendingFileUpgrade> pending = new(upgrades.Count);
@@ -11720,14 +12114,18 @@ namespace DxMessaging.Editor
             return ApplyAtomically(
                 pending,
                 new PhysicalAtomicFileStore(assetsRoot),
-                verifyBeforeCommit
+                verifyBeforeCommit,
+                verifyBeforeCleanup,
+                holdCleanupInputs
             );
         }
 
         internal static bool ApplyAtomically(
             IReadOnlyList<PendingFileUpgrade> upgrades,
             IAtomicFileStore store,
-            Action verifyBeforeCommit = null
+            Action verifyBeforeCommit = null,
+            Action verifyBeforeCleanup = null,
+            Func<IDisposable> holdCleanupInputs = null
         )
         {
             if (upgrades == null)
@@ -11740,6 +12138,7 @@ namespace DxMessaging.Editor
             }
 
             List<AppliedFile> applied = new(upgrades.Count);
+            IDisposable heldInputs = null;
             try
             {
                 foreach (PendingFileUpgrade upgrade in upgrades)
@@ -11752,6 +12151,8 @@ namespace DxMessaging.Editor
                     applied.Add(new AppliedFile(upgrade.FullPath, backup, upgrade.UpgradedBytes));
                 }
                 verifyBeforeCommit?.Invoke();
+                heldInputs = holdCleanupInputs?.Invoke();
+                verifyBeforeCleanup?.Invoke();
                 AppliedFile changed = applied.Find(file =>
                     !store.MatchesDestination(file.FullPath, file.UpgradedBytes)
                 );
@@ -11764,6 +12165,7 @@ namespace DxMessaging.Editor
             }
             catch (Exception writeFailure)
             {
+                heldInputs?.Dispose();
                 List<Exception> rollbackFailures = new();
                 for (int index = applied.Count - 1; 0 <= index; index--)
                 {
@@ -11790,6 +12192,17 @@ namespace DxMessaging.Editor
                 );
             }
 
+            using (heldInputs)
+            {
+                return DiscardVerifiedBackups(applied, store);
+            }
+        }
+
+        private static bool DiscardVerifiedBackups(
+            List<AppliedFile> applied,
+            IAtomicFileStore store
+        )
+        {
             bool cleanupVerified = true;
             foreach (AppliedFile file in applied)
             {
@@ -11799,7 +12212,7 @@ namespace DxMessaging.Editor
                     {
                         cleanupVerified = false;
                         Debug.LogWarning(
-                            $"{file.FullPath} changed during backup cleanup. Review the newer file and preserved backup {file.BackupPath}."
+                            $"Could not verify backup removal for {file.FullPath}. Review the script and preserved backup {file.BackupPath}."
                         );
                     }
                 }
@@ -12308,9 +12721,15 @@ namespace DxMessaging.Editor
 
             public bool MatchesDestination(string fullPath, byte[] expectedCurrentBytes)
             {
-                ValidatePath(fullPath);
-                return File.Exists(fullPath)
-                    && File.ReadAllBytes(fullPath).AsSpan().SequenceEqual(expectedCurrentBytes);
+                try
+                {
+                    ValidatePath(fullPath);
+                    return File.ReadAllBytes(fullPath).AsSpan().SequenceEqual(expectedCurrentBytes);
+                }
+                catch (FileNotFoundException)
+                {
+                    return false;
+                }
             }
 
             public bool TryDiscardBackup(
@@ -12319,15 +12738,31 @@ namespace DxMessaging.Editor
                 byte[] expectedCurrentBytes
             )
             {
-                if (_assetsRoot != null && File.Exists(backupPath))
+                if (Path.DirectorySeparatorChar != '\\')
                 {
-                    ValidatePath(backupPath);
+                    // Other platforms do not guarantee that file sharing blocks an external save.
+                    return false;
                 }
+                ValidatePath(fullPath);
+                using FileStream destination = new(
+                    fullPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read
+                );
                 if (!MatchesDestination(fullPath, expectedCurrentBytes))
                 {
                     return false;
                 }
-                TryDelete(backupPath);
+                try
+                {
+                    ValidatePath(backupPath);
+                    File.Delete(backupPath);
+                }
+                catch (FileNotFoundException)
+                {
+                    // Confirmed absence is harmless. Other path and deletion errors reach the caller.
+                }
                 return true;
             }
 

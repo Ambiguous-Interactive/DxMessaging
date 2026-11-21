@@ -177,7 +177,10 @@ The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
 replacement. After confirmation, the tool rechecks C# scripts, assembly settings under `Assets`,
 and Unity's script assembly assignments. It compares the bytes of the files it could read again
-before discarding backups. Keep project scripts and assembly settings in regular files and directories
+after checking the package and before backup cleanup. On Windows, the tool holds read handles during
+backup cleanup to keep those files stable. On other platforms, the original backups remain beside
+the upgraded scripts. Review the migration and compile the project before removing the backups listed
+in the Console. Keep project scripts and assembly settings in regular files and directories
 under `Assets` so the preview can verify them.
 Refresh the Asset Database and rerun the preview when the imported assembly settings or their asset GUIDs differ from disk.
 Resolve unreadable-script warnings before applying changes. If comments or strings can hide a directive in some
@@ -236,8 +239,9 @@ Review any deferred `RegisterGlobalAcceptAll` call as a group because its three 
 bind to the same overload. If the preview cannot trace an argument back to its delegate, it can
 also defer separate fast delegate initializers in that script. Reports include the source line
 and column so you can find the callback or its use.
-Partial `MessageAwareComponent` declarations also require manual review
-before adding the string-handler opt-in because another part can already declare the property.
+Partial `MessageAwareComponent` declarations require manual review before adding the string-handler
+opt-in because another part can already declare the property. A component named
+`RegisterForStringMessages` also needs review before adding the property.
 Review project-wide callback uses. The preview skips branches when it can prove a preprocessor
 condition is false. It defers callbacks whose boundaries or method-group bindings depend on unresolved
 branches. Check those callbacks in each build configuration. Use separate callback declarations
