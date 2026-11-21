@@ -170,8 +170,8 @@ generated sources, interceptors, emission calls, comments, or strings.
 
 The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
-replacement. After you confirm the preview, the tool checks the script inventory and compares
-the bytes of each script it could read. Resolve unreadable-script warnings and rerun the preview
+replacement. After you confirm the preview, the tool checks the script inventory and Unity assembly
+assignments and compares the bytes of each script it could read. Resolve unreadable-script warnings and rerun the preview
 before applying changes. The tool attempts to restore every earlier write if a later write fails. If a script changes
 again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
@@ -193,7 +193,9 @@ scripts can access, the preview also scans C# scripts under `Assets` for possibl
 includes private callbacks in partial types. It defers a signature change when a call still
 needs `ref` or a binding cannot be established. For a registration call, the
 preview checks the message routing type and the other arguments before changing an inferred
-callback. An explicit package `FastHandler` also establishes the required callback signature.
+callback. A route declaration in another script can establish that type when Unity assigns
+both scripts to the same assembly and the declaration is unique. An explicit package
+`FastHandler` also establishes the required callback signature.
 Review any deferred `RegisterGlobalAcceptAll` call as a group because its three callbacks must
 bind to the same overload. If the preview cannot trace an argument back to its delegate, it can
 also defer separate fast delegate initializers in that script. Reports include the source line

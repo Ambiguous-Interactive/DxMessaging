@@ -838,18 +838,50 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
-        [TestCase("value", false, TestName = "A setter value shadows the package field")]
-        [TestCase("this.value", true, TestName = "A setter can qualify the actual package field")]
-        public void AnalyzeDistinguishesTheImplicitAccessorValue(string receiver, bool migrate)
+        [TestCase(
+            "class",
+            "set",
+            "value",
+            false,
+            TestName = "A setter value shadows the package field"
+        )]
+        [TestCase(
+            "class",
+            "set",
+            "this.value",
+            true,
+            TestName = "A setter can qualify the actual package field"
+        )]
+        [TestCase(
+            "struct",
+            "readonly set",
+            "value",
+            false,
+            TestName = "A readonly struct setter still owns the implicit value"
+        )]
+        [TestCase(
+            "struct",
+            "readonly set",
+            "this.value",
+            true,
+            TestName = "A readonly struct setter can qualify its package field"
+        )]
+        public void AnalyzeDistinguishesTheImplicitAccessorValue(
+            string kind,
+            string accessor,
+            string receiver,
+            bool migrate
+        )
         {
             string source = @"
 using DxMessaging.Core;
-class Receiver
+TYPE Receiver
 {
     MessageRegistrationToken value;
     Vendor.CustomToken Other
     {
-        set => RECEIVER.RegisterUntargeted<Pulse>((ref Pulse pulse) => { });
+        get => null;
+        ACCESSOR => RECEIVER.RegisterUntargeted<Pulse>((ref Pulse pulse) => { });
     }
 }
 readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
@@ -861,7 +893,7 @@ namespace Vendor
         public void RegisterUntargeted<T>(Writable<T> callback) { }
     }
 }
-".Replace("RECEIVER", receiver);
+".Replace("TYPE", kind).Replace("ACCESSOR", accessor).Replace("RECEIVER", receiver);
             ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
                 source
             );
@@ -929,6 +961,61 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             }
         }
 
+        [Test]
+        public void AnalyzeChecksInheritedUsesOfASecondFastDelegateDeclarator()
+        {
+            const string Source =
+                @"
+using DxMessaging.Core;
+class Base
+{
+    protected MessageHandler.FastHandler<Pulse> independent = (ref Pulse unused) => { }, separate = Callback;
+    private static void Callback(ref Pulse pulse) { }
+}
+class Receiver : Base
+{
+    void Forward(Pulse pulse) => separate(ref pulse);
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(Source.Replace("ref Pulse unused", "in Pulse unused"))
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(1));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("use on line 11"));
+        }
+
+        [Test]
+        public void AnalyzeChecksStoredDelegateUsesInAnotherPartialDeclaration()
+        {
+            const string Source =
+                @"
+using DxMessaging.Core;
+partial class Receiver
+{
+    private MessageHandler.FastHandler<Pulse> separate = Callback;
+    private static void Callback(ref Pulse pulse) { }
+}
+partial class Receiver
+{
+    void Forward(Pulse pulse) => separate(ref pulse);
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("use on line 11"));
+        }
+
         [TestCase("value => { }")]
         [TestCase("static value => { }")]
         public void AnalyzeKeepsUnrelatedDelegateEligibleWithByValueGlobalCallbacks(string callback)
@@ -958,20 +1045,45 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
 
         [TestCase(
             "using DxMessaging.Core.Messages; namespace Game { public struct Pulse : IUntargetedMessage { } }",
+            "Assembly-CSharp",
             true,
             TestName = "An indexed message in another source proves the registration route"
         )]
         [TestCase(
             "namespace Game { public struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { } }",
+            "Assembly-CSharp",
             true,
             TestName = "An indexed message can prove its fully qualified route marker"
         )]
         [TestCase(
             "#if LEGACY\nnamespace Game { public struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { } }\n#endif",
+            "Assembly-CSharp",
             false,
             TestName = "A conditional project message declaration leaves the route uncertain"
         )]
-        public void AnalyzeProvesAProjectMessageRoute(string messageSource, bool migrate)
+        [TestCase(
+            "namespace Game { file readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { } }",
+            "Assembly-CSharp",
+            false,
+            TestName = "A file-local readonly type cannot prove another script's route"
+        )]
+        [TestCase(
+            "namespace Game { public struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { } }",
+            "Other-Assembly",
+            false,
+            TestName = "A separately compiled script cannot prove the consumer's message route"
+        )]
+        [TestCase(
+            "namespace Game { public struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { } }",
+            null,
+            false,
+            TestName = "A script without a known compilation assembly cannot prove the route"
+        )]
+        public void AnalyzeProvesAProjectMessageRoute(
+            string messageSource,
+            string messageAssembly,
+            bool migrate
+        )
         {
             const string Source =
                 @"
@@ -985,12 +1097,14 @@ class Receiver
 }";
             const string Path = "Assets/Receiver.cs";
             ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
-            project.AddScript(Path, Source);
-            project.AddScript("Assets/Pulse.cs", messageSource);
+            const string AssemblyName = "Assembly-CSharp";
+            project.AddScript(Path, Source, AssemblyName);
+            project.AddScript("Assets/Pulse.cs", messageSource, messageAssembly);
             ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
                 Source,
                 name => project.FindOtherUse(Path, name),
-                project
+                project,
+                AssemblyName
             );
             Assert.That(
                 result.UpgradedSource,

@@ -9,6 +9,7 @@ namespace DxMessaging.Editor
     using System.Text;
     using System.Text.RegularExpressions;
     using UnityEditor;
+    using UnityEditor.Compilation;
     using UnityEngine;
 
     /// <summary>
@@ -346,6 +347,11 @@ namespace DxMessaging.Editor
             }
 
             Dictionary<string, byte[]> originalScripts = new(StringComparer.Ordinal);
+            Dictionary<string, string> scriptAssemblies = importedScripts.ToDictionary(
+                path => path,
+                CompilationPipeline.GetAssemblyNameFromScriptPath,
+                StringComparer.Ordinal
+            );
             Dictionary<string, EncodedSource> readableScripts = new(StringComparer.Ordinal);
             ProjectCallbackUses projectUses = new();
 
@@ -356,7 +362,8 @@ namespace DxMessaging.Editor
                     byte[] originalBytes = File.ReadAllBytes(GetProjectScriptFullPath(assetPath));
                     originalScripts.Add(assetPath, originalBytes);
                     EncodedSource source = EncodedSource.FromBytes(originalBytes);
-                    projectUses.AddScript(assetPath, source.Text);
+                    scriptAssemblies.TryGetValue(assetPath, out string assemblyName);
+                    projectUses.AddScript(assetPath, source.Text, assemblyName);
                     if (
                         importedScripts.Contains(assetPath)
                         && !IsGeneratedPath(assetPath)
@@ -401,7 +408,8 @@ namespace DxMessaging.Editor
                     result = Analyze(
                         source.Text,
                         name => projectUses.FindOtherUse(assetPath, name),
-                        projectUses
+                        projectUses,
+                        scriptAssemblies[assetPath]
                     );
                 }
                 catch (RegexMatchTimeoutException)
@@ -474,7 +482,7 @@ namespace DxMessaging.Editor
 
             try
             {
-                VerifyProjectScriptSnapshot(originalScripts);
+                VerifyProjectScriptSnapshot(originalScripts, scriptAssemblies);
                 ApplyAtomically(upgrades);
             }
             catch (Exception exception)
@@ -553,9 +561,13 @@ namespace DxMessaging.Editor
             return path;
         }
 
-        private static void VerifyProjectScriptSnapshot(Dictionary<string, byte[]> originalScripts)
+        private static void VerifyProjectScriptSnapshot(
+            Dictionary<string, byte[]> originalScripts,
+            Dictionary<string, string> originalAssemblies
+        )
         {
-            string[] currentPaths = GetProjectScriptPaths(GetImportedScriptPaths());
+            HashSet<string> importedScripts = GetImportedScriptPaths();
+            string[] currentPaths = GetProjectScriptPaths(importedScripts);
             if (
                 currentPaths.Length != originalScripts.Count
                 || currentPaths.Any(path => !originalScripts.ContainsKey(path))
@@ -563,6 +575,19 @@ namespace DxMessaging.Editor
             {
                 throw new IOException(
                     "The project's C# script inventory changed after the preview."
+                );
+            }
+
+            if (
+                !importedScripts.SetEquals(originalAssemblies.Keys)
+                || importedScripts.Any(path =>
+                    originalAssemblies[path]
+                    != CompilationPipeline.GetAssemblyNameFromScriptPath(path)
+                )
+            )
+            {
+                throw new IOException(
+                    "The project's script assembly assignments changed after the preview."
                 );
             }
 
@@ -583,7 +608,8 @@ namespace DxMessaging.Editor
         internal static UpgradeResult Analyze(
             string source,
             Func<string, string> findExternalCallbackUse = null,
-            ProjectCallbackUses projectTypes = null
+            ProjectCallbackUses projectTypes = null,
+            string assemblyName = null
         )
         {
             if (source == null)
@@ -591,7 +617,12 @@ namespace DxMessaging.Editor
                 throw new ArgumentNullException(nameof(source));
             }
 
-            SourceMetadata metadata = new(source, findExternalCallbackUse, projectTypes);
+            SourceMetadata metadata = new(
+                source,
+                findExternalCallbackUse,
+                projectTypes,
+                assemblyName
+            );
             string masked = MaskNonCode(source, metadata.InterpolatedExpressions, metadata);
             metadata.InterpolatedExpressions.Sort(
                 static (left, right) => left.Start.CompareTo(right.Start)
@@ -899,6 +930,7 @@ namespace DxMessaging.Editor
 
                     metadata.FastDelegateInitializers.Add(
                         (
+                            fastHandler,
                             variable,
                             rightHandSideSpan,
                             messageType,
@@ -2298,6 +2330,7 @@ namespace DxMessaging.Editor
                             && !FollowsKeyword(masked, 0, previous, "protected")
                             && !FollowsKeyword(masked, 0, previous, "internal")
                             && !FollowsKeyword(masked, 0, previous, "public")
+                            && !FollowsKeyword(masked, 0, previous, "readonly")
                         )
                     )
                     {
@@ -3295,15 +3328,37 @@ namespace DxMessaging.Editor
         private static bool IsFileLocalDeclaration(string masked, Match declaration)
         {
             int prefix = PreviousNonWhitespace(masked, declaration.Index - 1);
-            while (
-                FollowsKeyword(masked, 0, prefix, "partial")
-                || FollowsKeyword(masked, 0, prefix, "unsafe")
-            )
+            while (0 <= prefix)
             {
-                int modifier = FindIdentifierStart(masked, prefix);
-                prefix = PreviousNonWhitespace(masked, modifier - 1);
+                int start = FindIdentifierStart(masked, prefix);
+                if (start < 0)
+                {
+                    return false;
+                }
+                string modifier = masked.Substring(start, prefix - start + 1);
+                if (modifier == "file")
+                {
+                    return true;
+                }
+                if (
+                    modifier
+                    is not (
+                        "partial"
+                        or "unsafe"
+                        or "readonly"
+                        or "ref"
+                        or "abstract"
+                        or "sealed"
+                        or "static"
+                        or "new"
+                    )
+                )
+                {
+                    return false;
+                }
+                prefix = PreviousNonWhitespace(masked, start - 1);
             }
-            return FollowsKeyword(masked, 0, prefix, "file");
+            return false;
         }
 
         private static bool HasUnprovenTypeScope(
@@ -4738,16 +4793,10 @@ namespace DxMessaging.Editor
                 "RegisterGlobalAcceptAll"
             );
             string interpolatedGlobalCall = FindInterpolatedGlobalRegistration(masked, metadata);
-            foreach (
-                (
-                    int variable,
-                    TextSpan callback,
-                    string messageType,
-                    bool hasContext
-                ) in metadata.FastDelegateInitializers
-            )
+            foreach (var initializer in metadata.FastDelegateInitializers)
             {
-                int open = FindCallbackParametersOpen(masked, metadata, callback);
+                int variable = initializer.Variable;
+                int open = FindCallbackParametersOpen(masked, metadata, initializer.Callback);
                 if (open < 0)
                 {
                     continue;
@@ -4765,6 +4814,12 @@ namespace DxMessaging.Editor
                 string name = IdentifierValue(
                     DirectMemberIdentifierRegex.Match(masked, variable).Value
                 );
+                int type = FindContainingTypeStart(masked, variable);
+                int block = FindEnclosingBrace(masked, variable);
+                bool member = 0 <= type && block == type;
+                bool mayHaveExternalUses =
+                    member
+                    && MemberMayHaveExternalUses(masked, type, initializer.TypeName, metadata);
                 string issue =
                     metadata.FindExternalCallbackUse == null
                         ? null
@@ -4773,14 +4828,16 @@ namespace DxMessaging.Editor
                             metadata,
                             variable,
                             name,
-                            externalGlobalCall
+                            externalGlobalCall,
+                            mayHaveExternalUses
                         );
                 issue ??= FindFastDelegateUseIssue(
                     masked,
                     metadata,
                     variable,
                     name,
-                    (messageType, hasContext)
+                    (initializer.MessageType, initializer.HasContext),
+                    (block, member, mayHaveExternalUses)
                 );
                 if (issue != null)
                 {
@@ -4820,29 +4877,26 @@ namespace DxMessaging.Editor
             SourceMetadata metadata,
             int declaration,
             string name,
-            (string MessageType, bool HasContext) storedDelegate
+            (string MessageType, bool HasContext) storedDelegate,
+            (int Block, bool IsMember, bool MayHaveExternalUses) scope
         )
         {
-            int type = FindContainingTypeStart(masked, declaration);
-            int block = FindEnclosingBrace(masked, declaration);
-            bool member = 0 <= type && block == type;
-            int blockEnd = block < 0 ? masked.Length : FindMatching(masked, block, '{', '}');
+            int blockEnd = scope.Block < 0 ? -1 : FindMatching(masked, scope.Block, '{', '}');
+            if (blockEnd < 0)
+            {
+                blockEnd = masked.Length;
+            }
             foreach ((string code, Match use, int offset) in metadata.IdentifierUses(masked, name))
             {
                 int position = use.Index + offset;
                 int prefix = PreviousNonWhitespace(code, use.Index - 1);
                 bool qualified = 0 <= prefix && code[prefix] == '.';
-                if (
-                    position == declaration
-                    || (
-                        member
-                            ? !qualified
-                                && (position < type || (0 <= blockEnd && blockEnd < position))
-                            : qualified
-                                || position < declaration
-                                || (0 <= blockEnd && blockEnd < position)
-                    )
-                )
+                bool mayBindToDelegate = scope.IsMember
+                    ? scope.MayHaveExternalUses
+                        || qualified
+                        || (scope.Block < position && position < blockEnd)
+                    : !qualified && declaration < position && position < blockEnd;
+                if (position == declaration || !mayBindToDelegate)
                 {
                     continue;
                 }
@@ -4926,15 +4980,11 @@ namespace DxMessaging.Editor
             SourceMetadata metadata,
             int declaration,
             string name,
-            string externalGlobalCall
+            string externalGlobalCall,
+            bool mayHaveExternalUses
         )
         {
-            int type = FindContainingTypeStart(masked, declaration);
-            if (
-                0 <= type
-                && FindEnclosingBrace(masked, declaration) == type
-                && MemberMayHaveExternalUses(masked, type, declaration, metadata)
-            )
+            if (mayHaveExternalUses)
             {
                 string external = metadata.FindExternalCallbackUse(name);
                 if (external != null)
@@ -7063,12 +7113,14 @@ namespace DxMessaging.Editor
             public SourceMetadata(
                 string source,
                 Func<string, string> findExternalCallbackUse = null,
-                ProjectCallbackUses projectTypes = null
+                ProjectCallbackUses projectTypes = null,
+                string assemblyName = null
             )
             {
                 Source = source;
                 FindExternalCallbackUse = findExternalCallbackUse;
                 _projectTypes = projectTypes;
+                _assemblyName = assemblyName;
             }
 
             public string Source { get; }
@@ -7081,6 +7133,7 @@ namespace DxMessaging.Editor
             public readonly List<ConditionalGroup> CompleteConditionalGroups = new();
             public readonly Dictionary<int, string> NamedCallbackUseIssues = new();
             public readonly List<(
+                int TypeName,
                 int Variable,
                 TextSpan Callback,
                 string MessageType,
@@ -7089,6 +7142,7 @@ namespace DxMessaging.Editor
             public readonly List<Invocation> UnprovenGlobalRegistrations = new();
 
             private readonly ProjectCallbackUses _projectTypes;
+            private readonly string _assemblyName;
             private HashSet<(string Name, int Arity)> _qualifiedTypeDeclarations;
             private readonly List<(int Start, int End, string Path)> _typeBodies = new();
             private readonly HashSet<(string Name, int Arity)> _uncertainTypeDeclarations = new();
@@ -7164,7 +7218,7 @@ namespace DxMessaging.Editor
                 || _uncertainTypeDeclarations.Contains((SimpleTypeName(name), arity));
 
             public bool HasProjectRoute(string name, int arity, string marker) =>
-                _projectTypes?.HasProvenRoute(name, arity, marker) == true;
+                _projectTypes?.HasProvenRoute(name, arity, marker, _assemblyName) == true;
 
             public HashSet<(string Name, int Arity)> QualifiedTypeDeclarations(string masked)
             {
@@ -8572,7 +8626,13 @@ namespace DxMessaging.Editor
             private readonly HashSet<(string Name, int Arity)> _duplicateTypes = new();
             private readonly Dictionary<
                 (string Name, int Arity),
-                (string Masked, SourceMetadata Metadata, Match Declaration, int Body)
+                (
+                    string Masked,
+                    SourceMetadata Metadata,
+                    Match Declaration,
+                    int Body,
+                    string AssemblyName
+                )
             > _routeDeclarations = new();
             private readonly HashSet<string> _globalAliases = new(StringComparer.Ordinal);
             private string _unreadableScript;
@@ -8582,11 +8642,18 @@ namespace DxMessaging.Editor
                 || _typeDeclarations.Contains((name, arity))
                 || _uncertainTypeDeclarations.Contains((SimpleTypeName(name), arity));
 
-            public bool HasProvenRoute(string name, int arity, string marker) =>
-                _unreadableScript == null
+            public bool HasProvenRoute(
+                string name,
+                int arity,
+                string marker,
+                string assemblyName
+            ) =>
+                !string.IsNullOrEmpty(assemblyName)
+                && _unreadableScript == null
                 && !_duplicateTypes.Contains((name, arity))
                 && !_uncertainTypeDeclarations.Contains((SimpleTypeName(name), arity))
                 && _routeDeclarations.TryGetValue((name, arity), out var route)
+                && route.AssemblyName == assemblyName
                 && HasDirectRouteMarker(
                     route.Masked,
                     route.Metadata,
@@ -8600,7 +8667,7 @@ namespace DxMessaging.Editor
             public bool CanImportGlobalType(string name) =>
                 _hasGlobalStaticImport || _globalAliases.Contains(name);
 
-            public void AddScript(string path, string source)
+            public void AddScript(string path, string source, string assemblyName = null)
             {
                 SourceMetadata metadata = new(source, projectTypes: this);
                 string masked = MaskNonCode(source, metadata.InterpolatedExpressions, metadata);
@@ -8613,12 +8680,15 @@ namespace DxMessaging.Editor
                 }
                 _duplicateTypes.UnionWith(metadata.DuplicateTypeDeclarations);
                 _uncertainTypeDeclarations.UnionWith(metadata.UncertainTypeDeclarations(masked));
-                foreach (var route in metadata.RouteDeclarations)
+                if (!string.IsNullOrEmpty(assemblyName))
                 {
-                    _routeDeclarations.TryAdd(
-                        (route.Name, route.Arity),
-                        (masked, metadata, route.Declaration, route.Body)
-                    );
+                    foreach (var route in metadata.RouteDeclarations)
+                    {
+                        _routeDeclarations.TryAdd(
+                            (route.Name, route.Arity),
+                            (masked, metadata, route.Declaration, route.Body, assemblyName)
+                        );
+                    }
                 }
                 _hasGlobalStaticImport |= StaticImportRegex
                     .Matches(masked)
