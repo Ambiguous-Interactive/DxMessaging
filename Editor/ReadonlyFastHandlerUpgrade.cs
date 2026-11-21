@@ -6201,24 +6201,60 @@ namespace DxMessaging.Editor
                     {
                         return true;
                     }
-                    List<TextSpan> parameters = SplitParameters(masked, open + 1, close);
-                    if (parameters.Count <= 1)
-                    {
-                        continue;
-                    }
-                    // Instance-style extension calls omit the first parameter.
-                    int last = NextNonWhitespace(masked, parameters[^1].Start);
                     if (
-                        argumentCount < parameters.Count
-                        || last < 0
-                        || masked[last] == '['
-                        || StartsWithIdentifier(masked, last, "params")
+                        UncertainBranches.Exists(branch =>
+                            branch.Start < close && open < branch.Start + branch.Length
+                        )
+                        || ExtensionCanAcceptArgumentCount(
+                            masked,
+                            SplitParameters(masked, open + 1, close),
+                            argumentCount
+                        )
                     )
                     {
                         return true;
                     }
                 }
                 return false;
+            }
+
+            private static bool ExtensionCanAcceptArgumentCount(
+                string masked,
+                List<TextSpan> parameters,
+                int argumentCount
+            )
+            {
+                int required = 0;
+                bool variadic = false;
+                // The first parameter is the extension receiver and is omitted at the call site.
+                for (int index = 1; index < parameters.Count; index++)
+                {
+                    TextSpan parameter = parameters[index];
+                    int end = parameter.Start + parameter.Length;
+                    int first = NextNonWhitespace(masked, parameter.Start);
+                    int modifier = SkipDeclarationAttributes(masked, first);
+                    if (modifier < 0 || end <= modifier)
+                    {
+                        return true;
+                    }
+                    if (
+                        index == parameters.Count - 1
+                        && (
+                            StartsWithIdentifier(masked, modifier, "params")
+                            || StartsWithIdentifier(masked, modifier, "__arglist")
+                        )
+                    )
+                    {
+                        variadic = true;
+                        continue;
+                    }
+                    // An attribute such as OptionalAttribute can make an argument optional.
+                    if (first == modifier && masked.IndexOf('=', modifier, end - modifier) < 0)
+                    {
+                        required++;
+                    }
+                }
+                return required <= argumentCount && (variadic || argumentCount < parameters.Count);
             }
 
             private IEnumerable<Match> MaskedIdentifierUses(string masked, string name)

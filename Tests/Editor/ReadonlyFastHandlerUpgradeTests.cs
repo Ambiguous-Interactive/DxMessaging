@@ -777,6 +777,73 @@ static class LegacyExtensions
             );
         }
 
+        [TestCase(
+            ", int extra",
+            true,
+            TestName = "An extension with a missing required argument cannot compete"
+        )]
+        [TestCase(
+            ", int extra, params int[] rest",
+            true,
+            TestName = "A variadic extension still needs its required arguments"
+        )]
+        [TestCase(
+            ", int extra = 0",
+            false,
+            TestName = "An extension can omit its defaulted argument"
+        )]
+        [TestCase(
+            ", params int[] rest",
+            false,
+            TestName = "An extension can omit its variadic argument"
+        )]
+        [TestCase(
+            ", [System.Runtime.InteropServices.Optional] int extra",
+            false,
+            TestName = "An extension parameter attribute can permit an omitted argument"
+        )]
+        [TestCase(
+            "#if LEGACY\n, int extra\n#endif",
+            false,
+            TestName = "A conditional extension can have different required arguments"
+        )]
+        public void AnalyzeRequiresEnoughArgumentsForCompetingExtensions(
+            string extraParameters,
+            bool migrate
+        )
+        {
+            string source = @"
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+    void Configure()
+    {
+        token.RegisterUntargeted<Pulse>((ref Pulse value) => Observe(value));
+    }
+    static void Observe(Pulse value) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+
+static class LegacyExtensions
+{
+    public delegate void Handler<T>(ref T value);
+    public static void RegisterUntargeted<T>(
+        this global::DxMessaging.Core.MessageRegistrationToken token,
+        Handler<T> untargetedHandler
+PARAMETERS
+    ) { }
+}".Replace("PARAMETERS", extraParameters);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
         [Test]
         public void AnalyzeKeepsStringOptInEligibleWhenAnotherPropertyReadsIt()
         {
