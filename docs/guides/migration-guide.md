@@ -172,7 +172,7 @@ The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
 replacement. After confirmation, the tool rechecks C# scripts, assembly settings under `Assets`,
 and Unity's script assembly assignments. It compares the bytes of the files it could read.
-Refresh the Asset Database and rerun the preview when the imported assembly settings differ from disk.
+Refresh the Asset Database and rerun the preview when the imported assembly settings or their asset GUIDs differ from disk.
 Resolve unreadable-script warnings before applying changes. The tool attempts to restore every earlier
 write if a later write fails. If a script changes
 again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It

@@ -378,23 +378,6 @@ namespace DxMessaging.Editor
                     originalFiles.Add(assetPath, originalBytes);
                     if (!isScript)
                     {
-                        if (IsAssemblySettingsPath(assetPath))
-                        {
-                            TextAsset imported = AssetDatabase.LoadAssetAtPath<TextAsset>(
-                                assetPath
-                            );
-                            bool hasImportedSettings = imported != null;
-                            if (
-                                !hasImportedSettings
-                                || !imported.bytes.AsSpan().SequenceEqual(originalBytes)
-                            )
-                            {
-                                assemblySettingsAreCurrent = false;
-                                manualReview.Add(
-                                    $"{assetPath}: Unity's imported assembly settings could not be matched to disk. Refresh and preview again to check routes across scripts."
-                                );
-                            }
-                        }
                         continue;
                     }
 
@@ -441,6 +424,18 @@ namespace DxMessaging.Editor
                     projectUses.MarkUnreadable(assetPath);
                     manualReview.Add(
                         $"{assetPath}: the preview could not finish scanning this file; inspect its callbacks manually"
+                    );
+                }
+            }
+
+            foreach (string assetPath in assetPaths.Where(IsAssemblySettingsPath))
+            {
+                string mismatch = FindAssemblySettingsMismatch(assetPath, originalFiles);
+                if (mismatch != null)
+                {
+                    assemblySettingsAreCurrent = false;
+                    manualReview.Add(
+                        $"{mismatch} Refresh and preview again to check routes across scripts."
                     );
                 }
             }
@@ -529,7 +524,12 @@ namespace DxMessaging.Editor
 
             try
             {
-                VerifyProjectFileSnapshot(assetsRoot, originalFiles, scriptAssemblies);
+                VerifyProjectFileSnapshot(
+                    assetsRoot,
+                    originalFiles,
+                    scriptAssemblies,
+                    assemblySettingsAreCurrent
+                );
                 ApplyAtomically(upgrades);
             }
             catch (Exception exception)
@@ -642,10 +642,82 @@ namespace DxMessaging.Editor
             return path;
         }
 
+        private static string FindAssemblySettingsMismatch(
+            string assetPath,
+            Dictionary<string, byte[]> files
+        )
+        {
+            byte[] settings = files[assetPath];
+            TextAsset imported = AssetDatabase.LoadAssetAtPath<TextAsset>(assetPath);
+            bool hasImportedSettings = imported != null;
+            if (
+                settings == null
+                || !hasImportedSettings
+                || !imported.bytes.AsSpan().SequenceEqual(settings)
+            )
+            {
+                return $"{assetPath}: Unity's imported assembly settings could not be matched to disk.";
+            }
+
+            // A GUID reference can change its target without changing the assembly settings text.
+            string metadataPath = assetPath + ".meta";
+            if (
+                !files.TryGetValue(metadataPath, out byte[] metadata)
+                || metadata == null
+                || !HasMatchingAssemblyGuid(metadata, AssetDatabase.AssetPathToGUID(assetPath))
+            )
+            {
+                return $"{metadataPath}: the on-disk GUID could not be matched to Unity's imported assembly asset.";
+            }
+            return null;
+        }
+
+        private static bool HasMatchingAssemblyGuid(byte[] metadata, string importedGuid)
+        {
+            if (!Guid.TryParseExact(importedGuid, "N", out Guid expected))
+            {
+                return false;
+            }
+
+            try
+            {
+                using StringReader reader = new(EncodedSource.FromBytes(metadata).Text);
+                bool matched = false;
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    const string GuidPrefix = "guid:";
+                    if (!line.StartsWith(GuidPrefix, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+                    if (
+                        matched
+                        || !Guid.TryParseExact(
+                            line.Substring(GuidPrefix.Length).Trim(),
+                            "N",
+                            out Guid actual
+                        )
+                        || actual != expected
+                    )
+                    {
+                        return false;
+                    }
+                    matched = true;
+                }
+                return matched;
+            }
+            catch (DecoderFallbackException)
+            {
+                return false;
+            }
+        }
+
         private static void VerifyProjectFileSnapshot(
             string assetsRoot,
             Dictionary<string, byte[]> originalFiles,
-            Dictionary<string, string> originalAssemblies
+            Dictionary<string, string> originalAssemblies,
+            bool assemblySettingsWereCurrent
         )
         {
             HashSet<string> importedScripts = GetImportedScriptPaths();
@@ -683,6 +755,20 @@ namespace DxMessaging.Editor
                     {
                         throw new IOException(
                             $"The project file '{path}' changed after the preview."
+                        );
+                    }
+                }
+            }
+
+            if (assemblySettingsWereCurrent)
+            {
+                foreach (string path in currentPaths.Where(IsAssemblySettingsPath))
+                {
+                    string mismatch = FindAssemblySettingsMismatch(path, originalFiles);
+                    if (mismatch != null)
+                    {
+                        throw new IOException(
+                            $"Unity's imported assembly settings changed after the preview. {mismatch}"
                         );
                     }
                 }
