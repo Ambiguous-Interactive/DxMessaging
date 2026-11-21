@@ -1861,6 +1861,13 @@ namespace DxMessaging.Editor
                 baseForwardingOwners,
                 manualReview
             );
+            ReportIndependentBaseCalls(
+                source,
+                masked,
+                metadata,
+                baseForwardingOwners,
+                manualReview
+            );
 
             SortedDictionary<int, string> insertions = new();
             AddStringHandlerOptIns(masked, metadata, replacementStarts, insertions, manualReview);
@@ -1933,6 +1940,14 @@ namespace DxMessaging.Editor
 
             for (int position = NextNonWhitespace(source, 0); 0 <= position; )
             {
+                if (source[position] == '#' && IsDirectiveStart(source.AsSpan(), position))
+                {
+                    position = NextNonWhitespace(
+                        source,
+                        FindDirectiveLineEnd(source.AsSpan(), position)
+                    );
+                    continue;
+                }
                 if (source.Length <= position + 1 || source[position] != '/')
                 {
                     break;
@@ -2081,7 +2096,125 @@ namespace DxMessaging.Editor
                         manualReview
                     );
                 }
+
+                if (
+                    isCandidate
+                    && TryFindDelegateConstructorArgument(masked, handler, out TextSpan argument)
+                )
+                {
+                    ReviewStandaloneDelegateConstruction(
+                        masked,
+                        metadata,
+                        argument,
+                        isProven,
+                        replacementStarts,
+                        methodGroups,
+                        unprovenMethodGroups,
+                        manualReview
+                    );
+                }
             }
+        }
+
+        private static bool TryFindDelegateConstructorArgument(
+            string masked,
+            Match handler,
+            out TextSpan argument
+        )
+        {
+            argument = default;
+            int typeStart = FindQualifiedTypeStart(masked, handler.Index);
+            int keywordEnd = PreviousNonWhitespace(masked, typeStart - 1);
+            int keyword = FindIdentifierStart(masked, keywordEnd);
+            if (keywordEnd - keyword != 2 || !StartsWithIdentifier(masked, keyword, "new"))
+            {
+                return false;
+            }
+
+            int typeOpen = NextNonWhitespace(masked, handler.Index + handler.Length);
+            int typeClose = FindMatching(masked, typeOpen, '<', '>');
+            int open = typeClose < 0 ? -1 : NextNonWhitespace(masked, typeClose + 1);
+            if (open < 0 || masked[open] != '(')
+            {
+                return false;
+            }
+            int close = FindMatching(masked, open, '(', ')');
+            if (close < 0)
+            {
+                return false;
+            }
+            List<TextSpan> arguments = SplitArguments(masked, open + 1, close);
+            if (arguments.Count != 1)
+            {
+                return false;
+            }
+            argument = GetArgumentValueSpan(masked, arguments[0]);
+            return true;
+        }
+
+        private static void ReviewStandaloneDelegateConstruction(
+            string masked,
+            SourceMetadata metadata,
+            TextSpan argument,
+            bool isProven,
+            HashSet<int> replacementStarts,
+            List<(string Name, TextSpan Use)> methodGroups,
+            Dictionary<string, string> unprovenMethodGroups,
+            SortedSet<string> manualReview
+        )
+        {
+            if (
+                metadata.ReportedRegistrationCallbacks.Exists(callback =>
+                    callback.Start <= argument.Start
+                    && argument.Start + argument.Length <= callback.Start + callback.Length
+                )
+            )
+            {
+                return;
+            }
+
+            string reason = isProven
+                ? "is used in a standalone delegate construction whose callers cannot be proven"
+                : "uses a delegate whose MessageHandler type cannot be proven";
+            Invocation expression = new(
+                "callback",
+                argument.Start,
+                argument.Start + argument.Length
+            );
+            if (TryGetInlineDelegateParameters(masked, expression, out TextSpan parameters))
+            {
+                int end = parameters.Start + parameters.Length;
+                if (
+                    !HasRefParameter(masked, parameters.Start, end)
+                    || HasReplacementInRange(replacementStarts, parameters.Start, end)
+                )
+                {
+                    return;
+                }
+                if (isProven)
+                {
+                    AddRefReplacements(masked, parameters.Start, end, replacementStarts);
+                    metadata.StandaloneDelegateConstructions.Add(parameters.Start - 1);
+                    return;
+                }
+            }
+            else if (
+                methodGroups.Exists(use =>
+                    argument.Start <= use.Use.Start
+                    && use.Use.Start < argument.Start + argument.Length
+                ) || !MethodGroupMayNeedMigration(masked, argument, masked, metadata)
+            )
+            {
+                return;
+            }
+
+            string review =
+                $"{CallbackLocation(masked, argument.Start)} {reason}; inspect it manually";
+            if (TryGetMethodGroup(masked, argument, out string name, out _))
+            {
+                unprovenMethodGroups.TryAdd(ScopedMethodKey(masked, name, argument.Start), review);
+            }
+            manualReview.Add(review);
         }
 
         private static IEnumerable<Match> FastDelegateNames(
@@ -2272,6 +2405,17 @@ namespace DxMessaging.Editor
                             : $"needs manual review because {issue}";
                     manualReview.Add(
                         $"{CallbackLocation(masked, declaration.DeclarationStart)} {methodName} override {reason}"
+                    );
+                    continue;
+                }
+                int afterParameters = NextNonWhitespace(masked, declaration.ParametersEnd + 1);
+                if (0 <= afterParameters && masked[afterParameters] == ';')
+                {
+                    replacementStarts.RemoveWhere(start =>
+                        declaration.ParametersStart <= start && start < declaration.ParametersEnd
+                    );
+                    manualReview.Add(
+                        $"{CallbackLocation(masked, declaration.DeclarationStart)} {methodName} is an abstract override; review its implementations before changing the signature"
                     );
                     continue;
                 }
@@ -3286,6 +3430,13 @@ namespace DxMessaging.Editor
             {
                 return true;
             }
+            if (masked[next] == ';' && requireOverride)
+            {
+                return declaration
+                    .Groups["modifier"]
+                    .Captures.Cast<Capture>()
+                    .Any(modifier => modifier.Value == "abstract");
+            }
             if (!StartsWithIdentifier(masked, next, "where"))
             {
                 return false;
@@ -3886,6 +4037,9 @@ namespace DxMessaging.Editor
                         )
                         {
                             manualReview.Add(reason);
+                            metadata.ReportedRegistrationCallbacks.AddRange(
+                                GetCallbackArguments(masked, invocation)
+                            );
                         }
                         continue;
                     }
@@ -5122,6 +5276,7 @@ namespace DxMessaging.Editor
                 {
                     return false;
                 }
+                return metadata.CompilationBindingIssue(qualifiedName, use) == null;
             }
             return metadata.PackageBindingIssue(qualifiedName, use) == null;
         }
@@ -5440,7 +5595,12 @@ namespace DxMessaging.Editor
 
         private static string ReadQualifiedType(string masked, Group terminal)
         {
-            int start = terminal.Index;
+            int start = FindQualifiedTypeStart(masked, terminal.Index);
+            return CompactType(masked.Substring(start, terminal.Index + terminal.Length - start));
+        }
+
+        private static int FindQualifiedTypeStart(string masked, int start)
+        {
             while (0 <= start)
             {
                 int separator = PreviousNonWhitespace(masked, start - 1);
@@ -5468,7 +5628,7 @@ namespace DxMessaging.Editor
                 }
                 start = qualifier;
             }
-            return CompactType(masked.Substring(start, terminal.Index + terminal.Length - start));
+            return start;
         }
 
         private static HashSet<string> CollectCallbackMethodGroups(
@@ -6103,6 +6263,54 @@ namespace DxMessaging.Editor
                 && StartsWithIdentifier(code, refStart, "ref")
                 ? refStart
                 : -1;
+        }
+
+        private static void ReportIndependentBaseCalls(
+            string source,
+            string masked,
+            SourceMetadata metadata,
+            Dictionary<int, int> baseForwardingOwners,
+            SortedSet<string> manualReview
+        )
+        {
+            void Report(string code, int offset)
+            {
+                foreach (var call in FindBaseCallArguments(code, new TextSpan(0, code.Length)))
+                {
+                    int writableArgument = call
+                        .Arguments.Select(argument =>
+                            FindBaseArgumentRefStart(code, GetArgumentValueSpan(code, argument))
+                        )
+                        .Where(start => 0 <= start)
+                        .DefaultIfEmpty(-1)
+                        .First();
+                    if (
+                        writableArgument < 0
+                        || baseForwardingOwners.ContainsKey(offset + writableArgument)
+                    )
+                    {
+                        continue;
+                    }
+
+                    int position = offset + call.CallStart;
+                    int type = FindContainingTypeStart(masked, position);
+                    if (TypeScopeDerivesFromMessageAwareComponent(masked, type, metadata))
+                    {
+                        manualReview.Add(
+                            $"{CallbackLocation(masked, position)} calls base.{call.Member} with 'ref'; check the selected overload before changing the argument"
+                        );
+                    }
+                }
+            }
+
+            Report(masked, 0);
+            foreach (TextSpan expression in metadata.InterpolatedExpressions)
+            {
+                Report(
+                    MaskNonCode(source.Substring(expression.Start, expression.Length), null),
+                    expression.Start
+                );
+            }
         }
 
         private static bool CanRewriteBaseArgument(
@@ -7034,6 +7242,11 @@ namespace DxMessaging.Editor
                 parameterNames,
                 localShadows
             );
+            if (reason == null && metadata.StandaloneDelegateConstructions.Contains(entry.Key))
+            {
+                reason =
+                    "is used in a standalone delegate construction whose callers cannot be proven";
+            }
             if (reason == null)
             {
                 return false;
@@ -8967,7 +9180,7 @@ namespace DxMessaging.Editor
                     ? CompilationBindingIssue(type, use)
                     : null;
 
-            private string CompilationBindingIssue(string type, int use)
+            public string CompilationBindingIssue(string type, int use)
             {
                 if (!_packageBindingIssues.TryGetValue(type, out string issue))
                 {
@@ -9004,6 +9217,8 @@ namespace DxMessaging.Editor
             public int? UncertainDirectivePosition { get; set; }
             public readonly List<ConditionalGroup> CompleteConditionalGroups = new();
             public readonly Dictionary<int, string> NamedCallbackUseIssues = new();
+            public readonly HashSet<int> StandaloneDelegateConstructions = new();
+            public readonly List<TextSpan> ReportedRegistrationCallbacks = new();
             public readonly List<(
                 int TypeName,
                 int Variable,
@@ -9265,16 +9480,7 @@ namespace DxMessaging.Editor
                         string candidate = prefix + "." + name;
                         if (
                             candidate != qualifiedName
-                            && (
-                                DeclaresQualifiedType(masked, candidate, lookupArity)
-                                || (
-                                    !qualifiedName.StartsWith(
-                                        "DxMessaging.",
-                                        StringComparison.Ordinal
-                                    )
-                                    && CompilationBindingIssue(qualifiedName, use) != null
-                                )
-                            )
+                            && DeclaresQualifiedType(masked, candidate, lookupArity)
                         )
                         {
                             return true;

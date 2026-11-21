@@ -222,7 +222,9 @@ the callback as shown above.
 When a stored fast delegate changes to the readonly signature, update invocations of that delegate
 too. This includes calls through fields and properties. For example, change `separate(ref pulse)`
 to `separate(in pulse)` and `separate?.Invoke(ref pulse)` to `separate?.Invoke(in pulse)`. Keep a
-separate writable callback for callers that need to modify the argument.
+separate writable callback for callers that need to modify the argument. When the preview cannot
+account for callers of a standalone `new MessageHandler.FastHandler<T>(...)` construction, review
+the construction and its calls together.
 
 Review any deferred `RegisterGlobalAcceptAll` call as a group because its three callbacks must
 bind to the same overload. If the preview cannot trace an argument back to its delegate, it can
@@ -283,7 +285,8 @@ still requires it.
 
 Search for calls to `base.HandleStringGameObjectMessage`, `base.HandleStringComponentMessage`,
 and `base.HandleGlobalStringMessage` throughout the class, including in helper methods. Check these
-calls even when the preview converted the override. Check which base declaration each call selects.
+calls even when the preview converted the override. Review a reported abstract override together
+with its implementations. Check which base declaration each call selects.
 Change `ref` to `in` for the migrated signatures, such as `base.HandleGlobalStringMessage(in message)`.
 Keep `ref` on calls to custom overloads that still require it.
 

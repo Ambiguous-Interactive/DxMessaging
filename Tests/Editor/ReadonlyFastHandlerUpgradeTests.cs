@@ -1280,14 +1280,15 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
         public void AnalyzeChecksNearerImportsBeforeRelyingOnARegistrationArgument(
             string priorityType,
             bool competingMetadata,
-            bool migrate
+            bool migrate,
+            string import = "using Vendor;"
         )
         {
             string source = @"
 using System;
 namespace Consumer
 {
-    using Vendor;
+    IMPORT
     class Receiver
     {
         void Install(global::DxMessaging.Core.MessageRegistrationToken token, PRIORITY priority)
@@ -1296,7 +1297,7 @@ namespace Consumer
         }
     }
     readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
-}".Replace("PRIORITY", priorityType);
+}".Replace("PRIORITY", priorityType).Replace("IMPORT", import);
             ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
                 source,
                 projectSourcesLimitedToAssets: true,
@@ -1318,6 +1319,99 @@ namespace Consumer
                     Has.Some.Contains("line").And.Contains("Vendor.dll")
                 );
             }
+        }
+
+        [TestCase("Int32", false)]
+        [TestCase("System.Int32", false)]
+        [TestCase("int", true)]
+        [TestCase("global::System.Int32", true)]
+        public void AnalyzeRequiresCompilationEvidenceForARelativePriorityType(
+            string priorityType,
+            bool migrate
+        ) =>
+            AnalyzeChecksNearerImportsBeforeRelyingOnARegistrationArgument(
+                priorityType,
+                true,
+                migrate,
+                string.Empty
+            );
+
+        [TestCase("m = default;", "writes to parameter")]
+        [TestCase("Observe(m);", "standalone delegate construction")]
+        public void AnalyzeReportsStandaloneFastDelegateConstruction(string body, string reason)
+        {
+            string source = @"
+class Receiver
+{
+    void Install()
+    {
+        var handler = new global::DxMessaging.Core.MessageHandler.FastHandler<Pulse>(
+            (ref Pulse m) => { BODY });
+    }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("BODY", body);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("line 7").And.Contain(reason));
+        }
+
+        [Test]
+        public void AnalyzeReportsAStandaloneMethodGroupWithAWritableDelegateCall()
+        {
+            const string Source =
+                @"
+class Receiver
+{
+    void Install(ref Pulse message)
+    {
+        var handler = new global::DxMessaging.Core.MessageHandler.FastHandler<Pulse>(Forward);
+        handler(ref message);
+    }
+    private void Forward(ref Pulse message) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("line 6").And.Contain("standalone delegate construction")
+            );
+        }
+
+        [Test]
+        public void AnalyzeReportsAnAbstractStringHandlerWithoutChangingItsContract()
+        {
+            const string Source =
+                @"
+abstract class Receiver : global::DxMessaging.Unity.MessageAwareComponent
+{
+    protected abstract override void HandleGlobalStringMessage(ref global::DxMessaging.Core.Messages.GlobalStringMessage message);
+}
+";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("line 4").And.Contain("abstract override")
+            );
         }
 
         [TestCase("\n")]
@@ -6803,7 +6897,7 @@ OTHER_TYPE";
         }
 
         [Test]
-        public void AnalyzeIgnoresInterpolatedBaseCallsOutsideTheOverrideScope()
+        public void AnalyzeReportsInterpolatedBaseCallsOutsideTheOverrideScope()
         {
             const string Source =
                 @"
@@ -6824,7 +6918,11 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
 
             Assert.That(result.ReplacementCount, Is.EqualTo(2));
             Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
-            Assert.That(result.ManualReviewMethods, Is.Empty);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(2));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("base.HandleGlobalStringMessage")
+            );
             Assert.That(
                 result.UpgradedSource,
                 Does.Contain("base.HandleGlobalStringMessage(in message);")
@@ -6835,6 +6933,30 @@ class Receiver : DxMessaging.Unity.MessageAwareComponent
                     StringSplitOptions.None
                 ),
                 Has.Length.EqualTo(3)
+            );
+        }
+
+        [Test]
+        public void AnalyzeReportsABaseCallInAComponentWithoutAnOverride()
+        {
+            const string Source =
+                @"
+sealed class Receiver : global::DxMessaging.Unity.MessageAwareComponent
+{
+    void Forward(global::DxMessaging.Core.Messages.GlobalStringMessage message) =>
+        base.HandleGlobalStringMessage(ref message);
+}
+";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("line 5").And.Contain("base.HandleGlobalStringMessage")
             );
         }
 
@@ -7836,6 +7958,37 @@ void OnPulse(ref Pulse message) { }";
             Assert.That(
                 ReadonlyFastHandlerUpgrade.IsGeneratedSource("Assets/Receiver.cs", source),
                 Is.True
+            );
+        }
+
+        [TestCase("\n")]
+        [TestCase("\r\n")]
+        [TestCase("\r")]
+        [TestCase("\u0085")]
+        [TestCase("\u2028")]
+        [TestCase("\u2029")]
+        public void IsGeneratedSourceScansCommentsAfterLeadingDirectives(string newline)
+        {
+            string source = string.Join(
+                newline,
+                "#nullable enable",
+                "// <auto-generated />",
+                "class Receiver { }"
+            );
+            string consumer = string.Join(
+                newline,
+                "#nullable enable",
+                "class Receiver { }",
+                "// <auto-generated />"
+            );
+
+            Assert.That(
+                ReadonlyFastHandlerUpgrade.IsGeneratedSource("Assets/Receiver.cs", source),
+                Is.True
+            );
+            Assert.That(
+                ReadonlyFastHandlerUpgrade.IsGeneratedSource("Assets/Receiver.cs", consumer),
+                Is.False
             );
         }
 
