@@ -4179,6 +4179,11 @@ sealed class Receiver : MessageAwareComponent
             true,
             TestName = "Possible directives after CRLF still require review"
         )]
+        [TestCase(
+            "    #region Documentation\n    #endregion",
+            false,
+            TestName = "A conditional string with region markers still permits a later callback"
+        )]
         public void AnalyzeLimitsUncertaintyToPossibleDirectiveLines(string stringBody, bool defer)
         {
             string source =
@@ -4198,6 +4203,44 @@ sealed class Receiver : MessageAwareComponent
             Assert.That(
                 result.ManualReviewMethods,
                 Has.All.Contains("depend on conditional compilation")
+            );
+        }
+
+        [TestCase("LEGACY")]
+        [TestCase("!LEGACY")]
+        public void AnalyzeDefersAnEarlierCallbackWhenConditionalCommentsCanHideItsUse(
+            string condition
+        )
+        {
+            string source = @"
+public readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken token;
+
+    void Install() { token.RegisterUntargeted<global::Pulse>(Forward); }
+
+    public static void Forward(ref global::Pulse pulse) { }
+
+#if CONDITION
+/*
+#endif
+#if true
+    void Invoke() { global::Pulse pulse = default; Forward(ref pulse); }
+/*
+*/
+#endif
+}
+".Replace("CONDITION", condition);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("depend on conditional compilation at line 13")
             );
         }
 

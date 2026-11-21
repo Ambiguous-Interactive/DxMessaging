@@ -384,11 +384,7 @@ namespace DxMessaging.Editor
                     EncodedSource source = EncodedSource.FromBytes(originalBytes);
                     scriptAssemblies.TryGetValue(assetPath, out string assemblyName);
                     projectUses.AddScript(assetPath, source.Text, assemblyName);
-                    if (
-                        importedScripts.Contains(assetPath)
-                        && !IsGeneratedPath(assetPath)
-                        && !IsGeneratedSource(assetPath, source.Text)
-                    )
+                    if (!IsGeneratedPath(assetPath) && !IsGeneratedSource(assetPath, source.Text))
                     {
                         readableScripts.Add(assetPath, source);
                     }
@@ -444,6 +440,7 @@ namespace DxMessaging.Editor
             {
                 string assetPath = script.Key;
                 EncodedSource source = script.Value;
+                bool isImported = scriptAssemblies.TryGetValue(assetPath, out string assemblyName);
                 UpgradeResult result;
                 try
                 {
@@ -451,7 +448,7 @@ namespace DxMessaging.Editor
                         source.Text,
                         name => projectUses.FindOtherUse(assetPath, name),
                         projectUses,
-                        assemblySettingsAreCurrent ? scriptAssemblies[assetPath] : null
+                        assemblySettingsAreCurrent ? assemblyName : null
                     );
                 }
                 catch (RegexMatchTimeoutException)
@@ -467,18 +464,27 @@ namespace DxMessaging.Editor
                     manualReview.Add($"{assetPath}: {skippedMethod}");
                 }
 
-                if (0 < result.ReplacementCount || 0 < result.StringHandlerOptInCount)
+                if (result.ReplacementCount == 0 && result.StringHandlerOptInCount == 0)
                 {
-                    upgrades.Add(
-                        new FileUpgrade(
-                            GetProjectFileFullPath(assetsRoot, assetPath),
-                            originalFiles[assetPath],
-                            source.Encode(result.UpgradedSource),
-                            result.ReplacementCount,
-                            result.StringHandlerOptInCount
-                        )
-                    );
+                    continue;
                 }
+                if (!isImported)
+                {
+                    manualReview.Add(
+                        $"{assetPath}: Unity has not imported this script. Refresh the Asset Database and preview again to check its callbacks."
+                    );
+                    continue;
+                }
+
+                upgrades.Add(
+                    new FileUpgrade(
+                        GetProjectFileFullPath(assetsRoot, assetPath),
+                        originalFiles[assetPath],
+                        source.Encode(result.UpgradedSource),
+                        result.ReplacementCount,
+                        result.StringHandlerOptInCount
+                    )
+                );
             }
 
             int replacementCount = 0;
@@ -510,7 +516,7 @@ namespace DxMessaging.Editor
                 "DxMessaging Fast Handler Upgrade",
                 $"Update {replacementCount} parameter(s) and add {stringHandlerOptInCount} "
                     + $"string-handler opt-in(s) in {upgrades.Count} script(s)?\n\n"
-                    + "Only scripts under Assets are changed. Interceptors and emission calls remain "
+                    + "Only Unity-imported scripts under Assets are changed. Interceptors and emission calls remain "
                     + "writable by ref. Earlier writes are restored if a later write fails; newer "
                     + "concurrent edits are preserved and reported."
                     + manualReviewSummary,
@@ -794,6 +800,16 @@ namespace DxMessaging.Editor
                 assemblyName
             );
             string masked = MaskNonCode(source, metadata.InterpolatedExpressions, metadata);
+            if (metadata.UncertainDirectivePosition is int directive)
+            {
+                return new UpgradeResult(
+                    source,
+                    0,
+                    0,
+                    new List<string> { ConditionalDirectiveIssue(source, directive) }
+                );
+            }
+
             metadata.InterpolatedExpressions.Sort(
                 static (left, right) => left.Start.CompareTo(right.Start)
             );
@@ -7466,6 +7482,9 @@ namespace DxMessaging.Editor
         private static string CallbackLocation(string text, int position) =>
             $"callback on {SourceLocation(text, position)}";
 
+        private static string ConditionalDirectiveIssue(string source, int position) =>
+            $"Script boundaries depend on conditional compilation at {SourceLocation(source, position)}. A directive can be hidden by a comment or string in some build configurations. Verify the callback bindings in each configuration.";
+
         private static string SourceLocation(string text, int position)
         {
             int line = 1;
@@ -7632,7 +7651,7 @@ namespace DxMessaging.Editor
                 {
                     if (conditional?.State == BranchState.Uncertain)
                     {
-                        conditional.ObserveMaskedToken(source.AsSpan(index, end - index));
+                        conditional.ObserveMaskedToken(source.AsSpan(index, end - index), index);
                     }
                     Mask(masked, index, end);
                     index = end;
@@ -7653,26 +7672,37 @@ namespace DxMessaging.Editor
             ConditionalMask conditional
         )
         {
-            int lineEnd = FindDirectiveLineEnd(source.AsSpan(), index);
-            int keywordStart = NextNonWhitespace(source, index + 1);
-            if (keywordStart < 0 || lineEnd <= keywordStart)
+            ReadOnlySpan<char> text = source.AsSpan();
+            int lineEnd = FindDirectiveLineEnd(text, index);
+            string keyword = ReadConditionalKeyword(text, index, lineEnd, out int keywordEnd);
+            if (keyword != null)
             {
-                Mask(masked, index, lineEnd);
-                return lineEnd;
+                conditional.Visit(keyword, text.Slice(keywordEnd, lineEnd - keywordEnd), index);
             }
-            int keywordEnd = keywordStart;
-            while (keywordEnd < lineEnd && IsIdentifierPart(source[keywordEnd]))
+            Mask(masked, index, lineEnd);
+            return lineEnd;
+        }
+
+        private static string ReadConditionalKeyword(
+            ReadOnlySpan<char> text,
+            int hash,
+            int lineEnd,
+            out int keywordEnd
+        )
+        {
+            int keywordStart = hash + 1;
+            while (keywordStart < lineEnd && char.IsWhiteSpace(text[keywordStart]))
+            {
+                keywordStart++;
+            }
+            keywordEnd = keywordStart;
+            while (keywordEnd < lineEnd && IsIdentifierPart(text[keywordEnd]))
             {
                 keywordEnd++;
             }
 
-            string keyword = source.Substring(keywordStart, keywordEnd - keywordStart);
-            if (keyword is "if" or "elif" or "else" or "endif")
-            {
-                conditional.Visit(keyword, source.AsSpan(keywordEnd, lineEnd - keywordEnd), index);
-            }
-            Mask(masked, index, lineEnd);
-            return lineEnd;
+            string keyword = text.Slice(keywordStart, keywordEnd - keywordStart).ToString();
+            return keyword is "if" or "elif" or "else" or "endif" ? keyword : null;
         }
 
         private static bool IsDirectiveStart(ReadOnlySpan<char> source, int index)
@@ -7737,6 +7767,7 @@ namespace DxMessaging.Editor
             public readonly List<TextSpan> InterpolatedExpressions = new();
             public readonly List<TextSpan> UncertainBranches = new();
             public readonly List<int> ConditionalDirectives = new();
+            public int? UncertainDirectivePosition { get; set; }
             public readonly List<ConditionalGroup> CompleteConditionalGroups = new();
             public readonly Dictionary<int, string> NamedCallbackUseIssues = new();
             public readonly List<(
@@ -8425,7 +8456,7 @@ namespace DxMessaging.Editor
                 State = Intersect(remaining, selected);
             }
 
-            public void ObserveMaskedToken(ReadOnlySpan<char> token)
+            public void ObserveMaskedToken(ReadOnlySpan<char> token, int tokenStart)
             {
                 int firstLineEnd = token.IndexOfAny(CSharpLineTerminators.AsSpan());
                 if (firstLineEnd < 0)
@@ -8440,10 +8471,19 @@ namespace DxMessaging.Editor
                         return;
                     }
                     int hash = next + offset;
-                    if (IsDirectiveStart(token, hash))
+                    if (
+                        IsDirectiveStart(token, hash)
+                        && ReadConditionalKeyword(
+                            token,
+                            hash,
+                            FindDirectiveLineEnd(token, hash),
+                            out _
+                        ) != null
+                    )
                     {
                         // A directive-position hash can become active when this token is disabled.
-                        _uncertainTail = Math.Min(_uncertainTail, _scopes.Peek().Start);
+                        // This can conceal a use of a callback declared earlier in the script.
+                        _metadata.UncertainDirectivePosition ??= tokenStart + hash;
                         return;
                     }
                     next = hash + 1;
@@ -9271,10 +9311,10 @@ namespace DxMessaging.Editor
             > _routeDeclarations = new();
             private readonly HashSet<string> _globalAliases = new(StringComparer.Ordinal);
             private (string Path, string Source, int Position) _possibleMemberLookup;
-            private string _unreadableScript;
+            private string _unavailableScript;
 
             public bool MayDeclareType(string name, int arity) =>
-                _unreadableScript != null
+                _unavailableScript != null
                 || _typeDeclarations.Contains((name, arity))
                 || _uncertainTypeDeclarations.Contains((SimpleTypeName(name), arity));
 
@@ -9285,7 +9325,7 @@ namespace DxMessaging.Editor
                 string assemblyName
             ) =>
                 !string.IsNullOrEmpty(assemblyName)
-                && _unreadableScript == null
+                && _unavailableScript == null
                 && !_duplicateTypes.Contains((name, arity))
                 && !_uncertainTypeDeclarations.Contains((SimpleTypeName(name), arity))
                 && _routeDeclarations.TryGetValue((name, arity), out var route)
@@ -9307,6 +9347,13 @@ namespace DxMessaging.Editor
             {
                 SourceMetadata metadata = new(source, projectTypes: this);
                 string masked = MaskNonCode(source, metadata.InterpolatedExpressions, metadata);
+                if (metadata.UncertainDirectivePosition is int directive)
+                {
+                    _unavailableScript ??=
+                        $"{path}, {SourceLocation(source, directive)} (conditional compilation changes this script's boundaries)";
+                    return;
+                }
+
                 foreach ((string name, int arity) in metadata.QualifiedTypeDeclarations(masked))
                 {
                     if (!_typeDeclarations.Add((name, arity)))
@@ -9374,7 +9421,8 @@ namespace DxMessaging.Editor
                     ? null
                     : $"{_possibleMemberLookup.Path}, {SourceLocation(_possibleMemberLookup.Source, _possibleMemberLookup.Position)}";
 
-            public void MarkUnreadable(string path) => _unreadableScript ??= path;
+            public void MarkUnreadable(string path) =>
+                _unavailableScript ??= $"{path} (unreadable script)";
 
             public string FindOtherUse(string ownPath, string name)
             {
@@ -9386,9 +9434,7 @@ namespace DxMessaging.Editor
                         return $"{other.Path}, {SourceLocation(other.Source, other.Position)}";
                     }
                 }
-                return _unreadableScript == null
-                    ? null
-                    : $"{_unreadableScript} (unreadable script)";
+                return _unavailableScript;
             }
         }
 

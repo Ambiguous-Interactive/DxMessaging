@@ -161,8 +161,9 @@ void OnDamageV4(in ApplyDamage message) { }
 
 To update project scripts automatically, choose **Tools / Wallstop Studios / DxMessaging /
 Upgrade 3.x Fast Handlers to 4.0**. The command previews the number of changes before writing. It
-scans C# scripts under `Assets`, updates callbacks used by recognized DxMessaging registrations,
-explicit `FastHandler` delegates, and the changed `MessageAwareComponent` overrides. When it
+scans C# scripts under `Assets` for callbacks used by recognized DxMessaging registrations, explicit
+`FastHandler` delegates, and the changed `MessageAwareComponent` overrides. It edits scripts Unity
+has imported. Refresh the Asset Database and preview again when an unimported script needs review. When it
 updates an inherited string-handler override, it also adds
 `protected override bool RegisterForStringMessages => true;` to preserve the 3.x behavior. It
 keeps an existing opt-in, opt-out, or computed property unchanged. It does not change package or
@@ -173,7 +174,8 @@ UTF-32 encoding. It also keeps line endings unchanged and checks for edits immed
 replacement. After confirmation, the tool rechecks C# scripts, assembly settings under `Assets`,
 and Unity's script assembly assignments. It compares the bytes of the files it could read.
 Refresh the Asset Database and rerun the preview when the imported assembly settings or their asset GUIDs differ from disk.
-Resolve unreadable-script warnings before applying changes. The tool attempts to restore every earlier
+Resolve unreadable-script warnings before applying changes. If comments or strings can hide a directive in some
+build configurations, the preview leaves the script untouched and reports the directive location. The tool attempts to restore every earlier
 write if a later write fails. If a script changes
 again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
