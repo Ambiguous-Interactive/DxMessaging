@@ -186,8 +186,10 @@ write if a later write fails. If a script changes
 again before rollback, the tool preserves the newer edit and its backup instead of overwriting it. It
 leaves unsupported encodings, overloads, qualified or cross-file callback declarations, and
 ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
-alias can hide the `DxMessaging` namespace. If a project script declares a type with the package
-type's full name, verify which declaration the compiler selects before migrating it. The preview
+alias can hide the `DxMessaging` namespace. A `using` inside a namespace can also change which type
+the compiler selects. Confirm the intended type before qualifying its name. If a project script
+declares a type with the package type's full name, verify which declaration the compiler selects
+before migrating it. The preview
 uses Unity's compilation inputs for the active build target to check that package types come from
 the installed DxMessaging runtime. It reports the callback or type location when it cannot verify
 that binding. A source outside the script index, competing metadata, missing runtime source

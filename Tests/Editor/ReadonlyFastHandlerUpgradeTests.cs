@@ -1209,6 +1209,153 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             Assert.That(result.ManualReviewMethods, Is.Empty);
         }
 
+        [TestCase("namespace Consumer { using Vendor;", "}", "MessageHandler", false)]
+        [TestCase("namespace Consumer; using Vendor;", "", "MessageHandler", false)]
+        [TestCase(
+            "namespace Consumer { using Vendor;",
+            "}",
+            "DxMessaging.Core.MessageHandler",
+            false
+        )]
+        [TestCase(
+            "namespace Consumer { using Vendor;",
+            "}",
+            "global::DxMessaging.Core.MessageHandler",
+            true
+        )]
+        [TestCase(
+            "namespace Other { using Vendor; } namespace Consumer {",
+            "}",
+            "MessageHandler",
+            true
+        )]
+        public void AnalyzeChecksNamespaceImportsInScopeBeforeChangingACompiledDelegate(
+            string header,
+            string footer,
+            string handler,
+            bool migrate
+        )
+        {
+            string source =
+                "using DxMessaging.Core;\n"
+                + header
+                + @"
+sealed class Receiver
+{
+    void Install()
+    {
+        HANDLER.FastHandler<Pulse> callback = (ref Pulse message) => { };
+    }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("HANDLER", handler)
+                + footer;
+            const string Assembly = "Game.dll";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
+            project.AddScript("Assets/Receiver.cs", source, Assembly);
+            project.AddScript(
+                "Assets/Vendor.cs",
+                "namespace Vendor { class MessageHandler { public delegate void FastHandler<T>(ref T message); }"
+                    + " class DxMessaging { public class Core { public class MessageHandler { public delegate void FastHandler<T>(ref T message); } } } }",
+                Assembly
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source,
+                projectTypes: project,
+                assemblyName: Assembly
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref ", "in ") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase("Int32", true, false)]
+        [TestCase("Int32", false, true)]
+        [TestCase("int", true, true)]
+        [TestCase("global::System.Int32", true, true)]
+        public void AnalyzeChecksNearerImportsBeforeRelyingOnARegistrationArgument(
+            string priorityType,
+            bool competingMetadata,
+            bool migrate
+        )
+        {
+            string source = @"
+using System;
+namespace Consumer
+{
+    using Vendor;
+    class Receiver
+    {
+        void Install(global::DxMessaging.Core.MessageRegistrationToken token, PRIORITY priority)
+        {
+            token.RegisterUntargeted<Pulse>((ref Pulse message) => { }, priority);
+        }
+    }
+    readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+}".Replace("PRIORITY", priorityType);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source,
+                projectSourcesLimitedToAssets: true,
+                findPackageBindingIssue: name =>
+                    competingMetadata && name == "Int32"
+                        ? "metadata from 'Vendor.dll' can affect the type binding"
+                        : null
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            if (!migrate)
+            {
+                Assert.That(
+                    result.ManualReviewMethods,
+                    Has.Some.Contains("line").And.Contains("Vendor.dll")
+                );
+            }
+        }
+
+        [TestCase("\n")]
+        [TestCase("\r\n")]
+        [TestCase("\r")]
+        [TestCase("\u0085")]
+        [TestCase("\u2028")]
+        [TestCase("\u2029")]
+        public void AnalyzeUsesTheMemberLineEndingForTheStringHandlerOptIn(string newline)
+        {
+            string source = string.Join(
+                newline,
+                "sealed class Receiver : global::DxMessaging.Unity.MessageAwareComponent",
+                "{",
+                "    protected override void HandleGlobalStringMessage(ref global::DxMessaging.Core.Messages.GlobalStringMessage message)",
+                "    {",
+                "        base.HandleGlobalStringMessage(ref message);",
+                "    }",
+                "}"
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+            string expected = source
+                .Insert(
+                    source.IndexOf('{') + 1,
+                    newline
+                        + "    protected override bool RegisterForStringMessages => true;"
+                        + newline
+                )
+                .Replace("ref ", "in ");
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(2));
+            Assert.That(result.StringHandlerOptInCount, Is.EqualTo(1));
+            Assert.That(result.UpgradedSource, Is.EqualTo(expected));
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
         [TestCase(true)]
         [TestCase(false)]
         public void AnalyzeRequiresPackageBindingForAQualifiedRegistrationToken(bool proven)
@@ -7661,6 +7808,28 @@ void OnPulse(ref Pulse message) { }";
                 newline,
                 "// Generator banner",
                 "// <auto-generated />",
+                "class Receiver { }"
+            );
+
+            Assert.That(
+                ReadonlyFastHandlerUpgrade.IsGeneratedSource("Assets/Receiver.cs", source),
+                Is.True
+            );
+        }
+
+        [TestCase("\n")]
+        [TestCase("\r\n")]
+        [TestCase("\r")]
+        [TestCase("\u0085")]
+        [TestCase("\u2028")]
+        [TestCase("\u2029")]
+        public void IsGeneratedSourceFindsTheMarkerInsideALeadingBlockComment(string newline)
+        {
+            string source = string.Join(
+                newline,
+                "/* Generator banner",
+                " * <auto-generated />",
+                " */",
                 "class Receiver { }"
             );
 
