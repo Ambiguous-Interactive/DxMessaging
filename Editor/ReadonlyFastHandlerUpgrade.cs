@@ -262,6 +262,12 @@ namespace DxMessaging.Editor
             RegexOptions.CultureInvariant
         );
 
+        private static readonly Regex CallableNameRegex = new(
+            @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])(?<name>" + IdentifierSpellingPattern + @")\s*\(",
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1)
+        );
+
         private static readonly Regex BaseCallRegex = new(
             @"(?<![\w@\p{Nl}\p{Mc}\p{Cf}])base\s*\.\s*(?<member>"
                 + IdentifierSpellingPattern
@@ -1258,10 +1264,15 @@ namespace DxMessaging.Editor
                     {
                         return $"runtime source '{input}' is missing from the compiled package symbols";
                     }
-                    HashAlgorithm hash =
-                        document.Algorithm == Sha256DocumentChecksum ? sha256
-                        : document.Algorithm == Sha1DocumentChecksum ? sha1
-                        : null;
+                    HashAlgorithm hash = null;
+                    if (document.Algorithm == Sha256DocumentChecksum)
+                    {
+                        hash = sha256;
+                    }
+                    else if (document.Algorithm == Sha1DocumentChecksum)
+                    {
+                        hash = sha1;
+                    }
                     if (
                         hash == null
                         || !hash.ComputeHash(File.ReadAllBytes(path))
@@ -1912,8 +1923,7 @@ namespace DxMessaging.Editor
                 string comment;
                 if (header[position] == '/' && header[position + 1] == '/')
                 {
-                    int lineEnd = header.IndexOf('\n', position + 2);
-                    lineEnd = lineEnd < 0 ? header.Length : lineEnd;
+                    int lineEnd = FindCommentEnd(header, position, header.Length);
                     comment = header.Substring(position + 2, lineEnd - position - 2);
                     position = lineEnd + 1;
                 }
@@ -2474,7 +2484,7 @@ namespace DxMessaging.Editor
                 Match declaration = DirectMemberDeclarationRegex.Match(masked, start);
                 if (!declaration.Success)
                 {
-                    if (MentionsStringSettingInMemberHeader(masked, start, typeEnd))
+                    if (MentionsMemberInHeader(masked, start, typeEnd, "RegisterForStringMessages"))
                     {
                         return StringHandlerProperty.Unproven;
                     }
@@ -2516,14 +2526,23 @@ namespace DxMessaging.Editor
             return setting;
         }
 
-        private static bool MentionsStringSettingInMemberHeader(string text, int start, int end)
+        private static bool MentionsMemberInHeader(string text, int start, int end, string name)
         {
             for (int position = start; position < end; position++)
             {
                 char token = text[position];
-                if (token is '=' or ';' or '{')
+                if (token is ';' or '{' || IsArrow(text, position))
                 {
                     break;
+                }
+                if (token == '=')
+                {
+                    position = FindExpressionEnd(text, position + 1);
+                    if (end <= position || text[position] != ',')
+                    {
+                        break;
+                    }
+                    continue;
                 }
                 if (token is '(' or '[')
                 {
@@ -2537,11 +2556,47 @@ namespace DxMessaging.Editor
                 Match identifier = DirectMemberIdentifierRegex.Match(text, position);
                 if (identifier.Success)
                 {
-                    if (IdentifierValue(identifier.Value) == "RegisterForStringMessages")
+                    if (IdentifierValue(identifier.Value) == name)
                     {
                         return true;
                     }
                     position += identifier.Length - 1;
+                }
+            }
+            return false;
+        }
+
+        private static bool HasDirectMemberNamed(string masked, int typeStart, string name)
+        {
+            int typeEnd = FindMatching(masked, typeStart, '{', '}');
+            if (typeEnd < 0)
+            {
+                return true;
+            }
+            for (
+                int position = NextNonWhitespace(masked, typeStart + 1);
+                0 <= position && position < typeEnd;
+                position = FindNextDirectMember(masked, position, typeEnd)
+            )
+            {
+                int start = SkipDeclarationAttributes(masked, position);
+                if (start < 0)
+                {
+                    return true;
+                }
+                Match declaration = DirectMemberDeclarationRegex.Match(masked, start);
+                if (
+                    declaration.Success
+                    && SourceMetadata
+                        .ReceiverDeclarators(masked, declaration)
+                        .Any(candidate => IdentifierValue(candidate.Value) == name)
+                )
+                {
+                    return true;
+                }
+                if (!declaration.Success && MentionsMemberInHeader(masked, start, typeEnd, name))
+                {
+                    return true;
                 }
             }
             return false;
@@ -3114,20 +3169,21 @@ namespace DxMessaging.Editor
         )
         {
             List<ParameterList> declarations = new();
-            Regex methodRegex = new(
-                @"\b" + Regex.Escape(methodName) + @"\s*\(",
-                RegexOptions.CultureInvariant
-            );
-            foreach (Match match in methodRegex.Matches(masked))
+            foreach (Match match in CallableNameRegex.Matches(masked))
             {
-                int nameStart = match.Index;
+                Group name = match.Groups["name"];
+                if (IdentifierValue(name.Value) != methodName)
+                {
+                    continue;
+                }
+                int nameStart = name.Index;
                 int previous = PreviousNonWhitespace(masked, nameStart - 1);
                 if (0 <= previous && masked[previous] == '.')
                 {
                     continue;
                 }
 
-                int open = masked.IndexOf('(', nameStart, match.Length);
+                int open = match.Index + match.Length - 1;
                 int close = FindMatching(masked, open, '(', ')');
                 if (
                     close < 0
@@ -3149,14 +3205,42 @@ namespace DxMessaging.Editor
             bool requireOverride
         )
         {
-            int lineStart = masked.LastIndexOf('\n', nameStart);
-            lineStart = lineStart < 0 ? 0 : lineStart + 1;
-            string prefix = masked.Substring(lineStart, nameStart - lineStart);
-            if (0 <= prefix.IndexOf('=') || 0 <= prefix.IndexOf("=>", StringComparison.Ordinal))
+            int boundary = nameStart - 1;
+            for (; 0 <= boundary; boundary--)
             {
-                return false;
+                char token = masked[boundary];
+                if (token is ';' or '{' or '}')
+                {
+                    break;
+                }
+                if (token is ')' or ']')
+                {
+                    boundary = FindMatchingBackward(
+                        masked,
+                        boundary,
+                        token == ')' ? '(' : '[',
+                        token
+                    );
+                    if (boundary < 0)
+                    {
+                        return false;
+                    }
+                }
             }
-            if (requireOverride && !Regex.IsMatch(prefix, @"\boverride\b"))
+            int start = SkipDeclarationAttributes(masked, NextNonWhitespace(masked, boundary + 1));
+            Match declaration =
+                start < 0 ? Match.Empty : DirectMemberDeclarationRegex.Match(masked, start);
+            if (
+                !declaration.Success
+                || declaration.Groups["name"].Index != nameStart
+                || (
+                    requireOverride
+                    && !declaration
+                        .Groups["modifier"]
+                        .Captures.Cast<Capture>()
+                        .Any(modifier => modifier.Value == "override")
+                )
+            )
             {
                 return false;
             }
@@ -3442,7 +3526,8 @@ namespace DxMessaging.Editor
             if (receiver == "Token" && declarations.Length == 0)
             {
                 return !TypeScopeIsPartial(masked, usageScope)
-                    && TypeScopeDerivesFromMessageAwareComponent(masked, usageScope, metadata);
+                    && TypeScopeDerivesFromMessageAwareComponent(masked, usageScope, metadata)
+                    && !HasDirectMemberNamed(masked, usageScope, receiver);
             }
 
             HashSet<int> provenNames = new();
@@ -8849,12 +8934,14 @@ namespace DxMessaging.Editor
                 }
                 if (!_packageBindingIssues.TryGetValue(type, out string issue))
                 {
-                    issue =
-                        _findPackageBindingIssue != null
-                            ? _findPackageBindingIssue(SimpleTypeName(type))
-                        : _projectSourcesLimitedToAssets
-                            ? "the installed package binding is unavailable for this compilation"
-                        : null;
+                    if (_findPackageBindingIssue != null)
+                    {
+                        issue = _findPackageBindingIssue(SimpleTypeName(type));
+                    }
+                    else if (_projectSourcesLimitedToAssets)
+                    {
+                        issue = "the installed package binding is unavailable for this compilation";
+                    }
                     _packageBindingIssues.Add(type, issue);
                 }
                 if (issue != null && 0 <= use)

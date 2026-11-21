@@ -159,6 +159,10 @@ void OnDamageV3(ref ApplyDamage message) { }
 void OnDamageV4(in ApplyDamage message) { }
 ```
 
+Unity disables package Editor code in Safe Mode. If the project opens in Safe Mode after the
+upgrade, fix the compilation errors using the manual steps in this guide. Run the preview after
+Unity exits Safe Mode.
+
 To update project scripts automatically, choose **Tools / Wallstop Studios / DxMessaging /
 Upgrade 3.x Fast Handlers to 4.0**. The command previews the number of changes before writing. It
 scans C# scripts under `Assets` for callbacks used by recognized DxMessaging registrations, explicit
