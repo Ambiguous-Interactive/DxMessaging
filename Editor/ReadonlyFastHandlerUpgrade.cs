@@ -4941,10 +4941,11 @@ namespace DxMessaging.Editor
                     {
                         return $"initializes fast delegate '{name}' with a use through property '{alias}' at {location} that cannot be proven safe for 'in'";
                     }
-                    string lookup = metadata.FindPossibleMemberLookup(masked);
+                    string lookup = metadata.FindPossibleMemberLookup(masked)
+                        ?? FindPossibleAliasOwnerUse(masked, metadata, position);
                     if (lookup != null)
                     {
-                        return $"initializes fast delegate '{name}' exposed as '{alias}' with an indirect property lookup at {lookup}; verify its binding manually";
+                        return $"initializes fast delegate '{name}' exposed as '{alias}' with a possible indirect use at {lookup}; verify its binding manually";
                     }
                     continue;
                 }
@@ -5037,6 +5038,32 @@ namespace DxMessaging.Editor
             return true;
         }
 
+        private static string FindPossibleAliasOwnerUse(
+            string masked,
+            SourceMetadata metadata,
+            int propertyUse
+        )
+        {
+            int owner = FindContainingTypeStart(masked, propertyUse);
+            foreach (Match declaration in TypeDeclarationRegex.Matches(masked))
+            {
+                if (masked.IndexOf('{', declaration.Index + declaration.Length) != owner)
+                {
+                    continue;
+                }
+
+                Group identifier = declaration.Groups["name"];
+                string name = IdentifierValue(identifier.Value);
+                var local = metadata
+                    .IdentifierUses(masked, name)
+                    .FirstOrDefault(use => use.Name.Index + use.Offset != identifier.Index);
+                return local.Name == null
+                    ? metadata.FindExternalCallbackUse(name)
+                    : SourceLocation(masked, local.Name.Index + local.Offset);
+            }
+            return SourceLocation(masked, propertyUse);
+        }
+
         private static bool IsMemberLookupIdentifier(string name)
         {
             if (
@@ -5049,6 +5076,7 @@ namespace DxMessaging.Editor
                     or "MethodBase"
                     or "TypeInfo"
                     or "Assembly"
+                    or "Module"
                     or "AppDomain"
                     or "AssemblyLoadContext"
                     or "Expression"
@@ -5065,22 +5093,25 @@ namespace DxMessaging.Editor
             }
 
             // Metadata can expose a property through either its name or its getter method.
-            return (
+            return name.EndsWith("ByName", StringComparison.Ordinal)
+                || (
                     name.StartsWith("Get", StringComparison.Ordinal)
                     || name.StartsWith("Find", StringComparison.Ordinal)
                     || name.StartsWith("Lookup", StringComparison.Ordinal)
+                    || name.StartsWith("Resolve", StringComparison.Ordinal)
+                    || name.StartsWith("Bind", StringComparison.Ordinal)
                     || name.StartsWith("Declared", StringComparison.Ordinal)
                     || name.StartsWith("Exported", StringComparison.Ordinal)
                     || name.StartsWith("Defined", StringComparison.Ordinal)
                 )
-                && (
-                    name.Contains("Propert", StringComparison.Ordinal)
-                    || name.Contains("Member", StringComparison.Ordinal)
-                    || name.Contains("Method", StringComparison.Ordinal)
-                    || name.Contains("Accessor", StringComparison.Ordinal)
-                    || name.Contains("Assembl", StringComparison.Ordinal)
-                    || name.Contains("Type", StringComparison.Ordinal)
-                );
+                    && (
+                        name.Contains("Propert", StringComparison.Ordinal)
+                        || name.Contains("Member", StringComparison.Ordinal)
+                        || name.Contains("Method", StringComparison.Ordinal)
+                        || name.Contains("Accessor", StringComparison.Ordinal)
+                        || name.Contains("Assembl", StringComparison.Ordinal)
+                        || name.Contains("Type", StringComparison.Ordinal)
+                    );
         }
 
         private static bool IsDirectFastDelegateRegistrationUse(

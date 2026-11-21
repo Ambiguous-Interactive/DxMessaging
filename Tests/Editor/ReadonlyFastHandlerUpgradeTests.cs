@@ -1933,6 +1933,41 @@ class Other
         }
 
         [Test]
+        public void AnalyzeDefersAnAliasWhenTheProjectObservesItsOwner()
+        {
+            const string Source =
+                @"
+using DxMessaging.Core;
+using DxMessaging.Core.Messages;
+class Callbacks
+{
+    private readonly MessageHandler.FastHandler<IUntargetedMessage> hidden =
+        (ref IUntargetedMessage value) => { };
+    public MessageHandler.FastHandler<IUntargetedMessage> Exposed => hidden;
+}";
+            const string External =
+                @"
+class Other
+{
+    object ReadOwner() => new Callbacks();
+}";
+            const string ExternalPath = "Assets/Consumer.cs";
+            const string Path = "Assets/Callbacks.cs";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
+            project.AddScript(Path, Source);
+            project.AddScript(ExternalPath, External);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source,
+                name => project.FindOtherUse(Path, name),
+                project
+            );
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain(ExternalPath + ", line 4"));
+        }
+
+        [Test]
         public void AnalyzeChecksLocalShadowInLiteralConditionalBaseForwarding()
         {
             const string Source =
