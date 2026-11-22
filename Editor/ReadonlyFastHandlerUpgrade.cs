@@ -3599,6 +3599,16 @@ namespace DxMessaging.Editor
             {
                 return false;
             }
+            return TryFindSingleArgumentValue(masked, open, out argument);
+        }
+
+        private static bool TryFindSingleArgumentValue(
+            string masked,
+            int open,
+            out TextSpan argument
+        )
+        {
+            argument = default;
             int close = FindMatching(masked, open, '(', ')');
             if (close < 0)
             {
@@ -3697,8 +3707,23 @@ namespace DxMessaging.Editor
             SortedSet<string> manualReview
         )
         {
+            bool reported = false;
+            foreach (int start in FindRefAnonymousFunctions(text, value, directReturnsOnly: true))
+            {
+                manualReview.Add($"{CallbackLocation(text, start)} {reason}; inspect it manually");
+                reported = true;
+            }
+            return reported;
+        }
+
+        private static IEnumerable<int> FindRefAnonymousFunctions(
+            string text,
+            TextSpan value,
+            bool directReturnsOnly
+        )
+        {
             int valueEnd = value.Start + value.Length;
-            HashSet<int> reported = new();
+            HashSet<int> found = new();
             for (
                 Match reference = RefRegex.Match(text, value.Start, value.Length);
                 reference.Success;
@@ -3706,7 +3731,7 @@ namespace DxMessaging.Editor
             )
             {
                 int open = FindEnclosingOpenParenthesis(text, reference.Index);
-                if (open < value.Start || reported.Contains(open))
+                if (open < value.Start || found.Contains(open))
                 {
                     continue;
                 }
@@ -3736,15 +3761,12 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
-                if (IsCompoundGetterCallbackStart(text, value.Start, start))
+                if (!directReturnsOnly || IsCompoundGetterCallbackStart(text, value.Start, start))
                 {
-                    reported.Add(open);
-                    manualReview.Add(
-                        $"{CallbackLocation(text, start)} {reason}; inspect it manually"
-                    );
+                    found.Add(open);
+                    yield return start;
                 }
             }
-            return reported.Count != 0;
         }
 
         private static bool IsCompoundGetterCallbackStart(string text, int valueStart, int start)
@@ -7705,7 +7727,16 @@ namespace DxMessaging.Editor
             );
             if (inline || named)
             {
-                if (!inline && CallbackNameMaySelectValue(masked, metadata, methodName, nameStart))
+                if (
+                    !inline
+                    && CallbackNameMaySelectValue(
+                        masked,
+                        metadata,
+                        methodName,
+                        nameStart,
+                        manualReview
+                    )
+                )
                 {
                     return;
                 }
@@ -8947,7 +8978,8 @@ namespace DxMessaging.Editor
             string masked,
             SourceMetadata metadata,
             string name,
-            int use
+            int use,
+            SortedSet<string> manualReview = null
         )
         {
             int type = FindContainingTypeStart(masked, use);
@@ -8973,10 +9005,102 @@ namespace DxMessaging.Editor
                 }
                 if (IsReceiverDeclarationVisible(masked, declaration, position, type, use))
                 {
+                    if (manualReview != null && masked[suffix] is '=' or '{')
+                    {
+                        Group declaredType = declaration.Groups["type"];
+                        bool handledByDelegateScan = TryClassifyFastDelegateType(
+                            masked,
+                            declaredType.Index,
+                            metadata,
+                            out _,
+                            out _
+                        );
+                        if (
+                            !handledByDelegateScan
+                            && CallbackInitializerMayRequireRef(
+                                masked,
+                                metadata,
+                                suffix,
+                                IdentifierValue(declaredType.Value)
+                            )
+                        )
+                        {
+                            manualReview.Add(
+                                $"{CallbackLocation(masked, use)} selects a delegate value '{name}' whose binding cannot be proven safe for 'in'; inspect its binding manually"
+                            );
+                        }
+                    }
                     return true;
                 }
             }
             return false;
+        }
+
+        private static bool CallbackInitializerMayRequireRef(
+            string masked,
+            SourceMetadata metadata,
+            int suffix,
+            string typeName
+        )
+        {
+            bool ValueRequiresReview(TextSpan value)
+            {
+                int first = NextNonWhitespace(masked, value.Start);
+                if (StartsWithIdentifier(masked, first, "new"))
+                {
+                    int target = NextNonWhitespace(masked, first + "new".Length);
+                    Match constructor =
+                        target < 0
+                            ? Match.Empty
+                            : DirectMemberIdentifierRegex.Match(masked, target);
+                    if (constructor.Success && IdentifierValue(constructor.Value) == typeName)
+                    {
+                        int open = NextNonWhitespace(masked, target + constructor.Length);
+                        if (
+                            0 <= open
+                            && masked[open] == '('
+                            && TryFindSingleArgumentValue(masked, open, out TextSpan argument)
+                        )
+                        {
+                            value = argument;
+                        }
+                    }
+                }
+                Invocation expression = new("callback", value.Start, value.Start + value.Length);
+                return TryGetInlineDelegateParameters(masked, expression, out TextSpan parameters)
+                    ? HasRefParameter(
+                        masked,
+                        parameters.Start,
+                        parameters.Start + parameters.Length
+                    )
+                    : MethodGroupMayNeedMigration(masked, value, masked, metadata)
+                        || FindRefAnonymousFunctions(masked, value, directReturnsOnly: false).Any();
+            }
+
+            if (masked[suffix] == '{')
+            {
+                int close = FindMatching(masked, suffix, '{', '}');
+                if (close < 0)
+                {
+                    return false;
+                }
+                if (
+                    FindAccessorGetterValues(masked, suffix, close)
+                        .Any(getter => ValueRequiresReview(getter.Value))
+                )
+                {
+                    return true;
+                }
+                suffix = NextNonWhitespace(masked, close + 1);
+                if (suffix < 0 || masked[suffix] != '=')
+                {
+                    return false;
+                }
+            }
+
+            int start = suffix + (IsArrow(masked, suffix) ? 2 : 1);
+            int end = FindExpressionEnd(masked, start);
+            return ValueRequiresReview(new TextSpan(start, end - start));
         }
 
         private static int FindCallbackParametersOpen(

@@ -2936,6 +2936,85 @@ static class Extensions
             Assert.That(result.ManualReviewMethods, Has.All.Contains("binding can change"));
         }
 
+        [TestCase("Alias", "ref", "LAMBDA", 0, 1)]
+        [TestCase("Alias", "in", "LAMBDA", 0, 0)]
+        [TestCase("Alias", "ref", "new Alias(LAMBDA)", 0, 1)]
+        [TestCase("Alias", "ref", "true ? LAMBDA : LAMBDA", 0, 1)]
+        [TestCase(
+            "global::DxMessaging.Core.MessageHandler.FastHandler<Pulse>",
+            "ref",
+            "LAMBDA",
+            1,
+            0
+        )]
+        public void AnalyzeReportsAnUnresolvedWritableCallbackValue(
+            string type,
+            string modifier,
+            string initializer,
+            int replacements,
+            int reviews
+        )
+        {
+            string source = @"
+using Alias = global::DxMessaging.Core.MessageHandler.FastHandler<Pulse>;
+sealed class Receiver
+{
+    void Install(global::DxMessaging.Core.MessageRegistrationToken token)
+    {
+        DELEGATE_TYPE Handle = INITIALIZER;
+        token.RegisterUntargeted<Pulse>(Handle);
+    }
+    private void Handle(ref Pulse message) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("DELEGATE_TYPE", type).Replace(
+                "INITIALIZER",
+                initializer.Replace("LAMBDA", $"({modifier} Pulse message) => {{ }}")
+            );
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(replacements));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(reviews));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("line 8").And.Contains("delegate value")
+            );
+            Assert.That(
+                result.UpgradedSource,
+                Does.Contain("private void Handle(ref Pulse message)")
+            );
+        }
+
+        [TestCase("=> (ref Pulse message) => { };")]
+        [TestCase("{ get { return (ref Pulse message) => { }; } }")]
+        [TestCase("{ get; } = new Alias((ref Pulse message) => { });")]
+        public void AnalyzeReportsAnUnresolvedWritableCallbackProperty(string property)
+        {
+            string source = @"
+using Alias = global::DxMessaging.Core.MessageHandler.FastHandler<Pulse>;
+sealed class Receiver
+{
+    private Alias Handler PROPERTY
+    void Install(global::DxMessaging.Core.MessageRegistrationToken token) =>
+        token.RegisterUntargeted<Pulse>(Handler);
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("PROPERTY", property);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("line 7").And.Contain("delegate value")
+            );
+        }
+
         [TestCase(
             "untargeted",
             false,
