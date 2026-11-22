@@ -195,8 +195,9 @@ some build configurations, the preview leaves the script untouched and reports t
 The tool stages a rollback copy before replacing each script. If a later write fails, it uses
 the staged copies to restore earlier scripts and keeps the original backups for review. If a save
 arrives during rollback, use the paths in the Console to compare the live script, original backup,
-and any displaced edits. If verification fails after a replacement, the Console also lists the
-retained copy from the preview.
+and any displaced edits. If a primary backup disappears, the tool can restore the previewed bytes
+from the staged copy. If verification fails after a replacement, the Console also reports the
+staged file path.
 
 The preview leaves unsupported encodings, overloads, qualified or cross-file callback declarations,
 and ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an

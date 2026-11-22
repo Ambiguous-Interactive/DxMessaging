@@ -9186,6 +9186,130 @@ void OnPulse(ref Pulse message) { }";
             }
         }
 
+        [TestCase(false, false)]
+        [TestCase(true, false)]
+        [TestCase(false, true)]
+        public void PhysicalUpgradeRecoversWhenAReplacementBackupDisappears(
+            bool saveBeforeRecovery,
+            bool saveDuringRecovery
+        )
+        {
+            string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string first = Path.Combine(directory, "First.cs");
+                string second = Path.Combine(directory, "Second.cs");
+                byte[] firstOriginal = { 1 };
+                byte[] secondOriginal = { 2 };
+                byte[] concurrentEdit = { 3 };
+                File.WriteAllBytes(first, firstOriginal);
+                File.WriteAllBytes(second, secondOriginal);
+                ReadonlyFastHandlerUpgrade.PhysicalAtomicFileStore store = new(
+                    replaceFile: (source, destination, displaced) =>
+                    {
+                        bool isSecondUpgrade =
+                            destination == second
+                            && source.Contains(".dxmsg-new-", StringComparison.Ordinal);
+                        if (
+                            destination == second
+                            && saveDuringRecovery
+                            && source.Contains(".dxmsg-abort-", StringComparison.Ordinal)
+                        )
+                        {
+                            File.WriteAllBytes(destination, concurrentEdit);
+                        }
+                        File.Replace(source, destination, displaced);
+                        if (isSecondUpgrade)
+                        {
+                            File.Delete(displaced);
+                            if (saveBeforeRecovery)
+                            {
+                                File.WriteAllBytes(destination, concurrentEdit);
+                            }
+                        }
+                    }
+                );
+                ReadonlyFastHandlerUpgrade.PendingFileUpgrade[] upgrades =
+                {
+                    new(first, firstOriginal, new byte[] { 11 }),
+                    new(second, secondOriginal, new byte[] { 22 }),
+                };
+
+                Assert.That(
+                    () => ReadonlyFastHandlerUpgrade.ApplyAtomically(upgrades, store),
+                    Throws.Exception
+                );
+                Assert.That(File.ReadAllBytes(first), Is.EqualTo(firstOriginal));
+                Assert.That(
+                    File.ReadAllBytes(second),
+                    Is.EqualTo(
+                        saveBeforeRecovery || saveDuringRecovery ? concurrentEdit : secondOriginal
+                    )
+                );
+                string retainedOriginal = Directory
+                    .GetFiles(directory, "Second.cs.dxmsg-rollback-original-*")
+                    .Single();
+                Assert.That(File.ReadAllBytes(retainedOriginal), Is.EqualTo(secondOriginal));
+            }
+            finally
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+
+        [Test]
+        public void PhysicalRollbackRestoresAnEarlierFileWhenItsPrimaryBackupDisappears()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string first = Path.Combine(directory, "First.cs");
+                string later = Path.Combine(directory, "Later.cs");
+                byte[] firstOriginal = { 1 };
+                byte[] laterOriginal = { 2 };
+                string firstBackup = string.Empty;
+                File.WriteAllBytes(first, firstOriginal);
+                File.WriteAllBytes(later, laterOriginal);
+                ReadonlyFastHandlerUpgrade.PhysicalAtomicFileStore store = new(
+                    replaceFile: (source, destination, displaced) =>
+                    {
+                        if (destination == later)
+                        {
+                            File.Delete(firstBackup);
+                            throw new IOException("Injected later write failure.");
+                        }
+                        File.Replace(source, destination, displaced);
+                        if (source.Contains(".dxmsg-new-", StringComparison.Ordinal))
+                        {
+                            firstBackup = displaced;
+                        }
+                    }
+                );
+                ReadonlyFastHandlerUpgrade.PendingFileUpgrade[] upgrades =
+                {
+                    new(first, firstOriginal, new byte[] { 11 }),
+                    new(later, laterOriginal, new byte[] { 22 }),
+                };
+
+                Assert.That(
+                    () => ReadonlyFastHandlerUpgrade.ApplyAtomically(upgrades, store),
+                    Throws.Exception
+                );
+                Assert.That(File.ReadAllBytes(first), Is.EqualTo(firstOriginal));
+                Assert.That(File.ReadAllBytes(later), Is.EqualTo(laterOriginal));
+                string retainedOriginal = Directory
+                    .GetFiles(directory, "First.cs.dxmsg-rollback-original-*")
+                    .Single();
+                Assert.That(File.ReadAllBytes(retainedOriginal), Is.EqualTo(firstOriginal));
+            }
+            finally
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+
         [Test]
         public void PhysicalRollbackPreservesTheOriginalAndBothConcurrentEdits()
         {
@@ -9216,7 +9340,7 @@ void OnPulse(ref Pulse message) { }";
                 string backup = store.Replace(path, before, after);
 
                 Assert.That(
-                    () => store.Restore(path, backup, after),
+                    () => store.Restore(path, backup, before, after),
                     Throws.TypeOf<IOException>().With.Message.Contains(backup)
                 );
                 string recovery = Directory
@@ -9299,7 +9423,7 @@ void OnPulse(ref Pulse message) { }";
                     .Single();
                 Assert.That(File.ReadAllBytes(rollbackCopy), Is.EqualTo(original));
 
-                store.Restore(path, backup, upgraded);
+                store.Restore(path, backup, original, upgraded);
                 Assert.That(File.Exists(rollbackCopy), Is.False);
                 Assert.That(File.ReadAllBytes(path), Is.EqualTo(original));
                 Assert.That(File.ReadAllBytes(backup), Is.EqualTo(original));
@@ -9419,7 +9543,12 @@ void OnPulse(ref Pulse message) { }";
                 return backupPath;
             }
 
-            public void Restore(string fullPath, string backupPath, byte[] expectedCurrentBytes)
+            public void Restore(
+                string fullPath,
+                string backupPath,
+                byte[] originalBytes,
+                byte[] expectedCurrentBytes
+            )
             {
                 if (!Files[fullPath].AsSpan().SequenceEqual(expectedCurrentBytes))
                 {

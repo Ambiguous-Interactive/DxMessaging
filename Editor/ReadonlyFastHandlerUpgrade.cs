@@ -13603,7 +13603,7 @@ namespace DxMessaging.Editor
                         upgrade.OriginalBytes,
                         upgrade.UpgradedBytes
                     );
-                    applied.Add(new AppliedFile(upgrade.FullPath, backup, upgrade.UpgradedBytes));
+                    applied.Add(new AppliedFile(upgrade, backup));
                 }
                 verifyBeforeCommit?.Invoke();
                 verifyBeforeCleanup?.Invoke();
@@ -13625,7 +13625,12 @@ namespace DxMessaging.Editor
                     AppliedFile file = applied[index];
                     try
                     {
-                        store.Restore(file.FullPath, file.BackupPath, file.UpgradedBytes);
+                        store.Restore(
+                            file.FullPath,
+                            file.BackupPath,
+                            file.OriginalBytes,
+                            file.UpgradedBytes
+                        );
                     }
                     catch (Exception rollbackFailure)
                     {
@@ -14021,7 +14026,12 @@ namespace DxMessaging.Editor
         {
             string Replace(string fullPath, byte[] originalBytes, byte[] upgradedBytes);
 
-            void Restore(string fullPath, string backupPath, byte[] expectedCurrentBytes);
+            void Restore(
+                string fullPath,
+                string backupPath,
+                byte[] originalBytes,
+                byte[] expectedCurrentBytes
+            );
 
             bool MatchesDestination(string fullPath, byte[] expectedCurrentBytes);
 
@@ -14075,12 +14085,18 @@ namespace DxMessaging.Editor
                     File.WriteAllBytes(temporaryPath, upgradedBytes);
                     _replaceFile(temporaryPath, fullPath, backupPath);
                     destinationWasReplaced = true;
-                    VerifyReplacement(fullPath, backupPath, originalBytes, upgradedBytes);
+                    VerifyReplacement(
+                        fullPath,
+                        backupPath,
+                        rollbackCopyPath,
+                        originalBytes,
+                        upgradedBytes
+                    );
                 }
                 catch (Exception exception) when (destinationWasReplaced)
                 {
                     DxMessagingEditorLog.LogWarning(
-                        $"The previewed original for {fullPath} remains at {rollbackCopyPath}.",
+                        $"Inspect the staged rollback copy for {fullPath} at {rollbackCopyPath}.",
                         exception
                     );
                     throw;
@@ -14096,9 +14112,10 @@ namespace DxMessaging.Editor
                 return backupPath;
             }
 
-            private static void VerifyReplacement(
+            private void VerifyReplacement(
                 string fullPath,
                 string backupPath,
+                string rollbackCopyPath,
                 byte[] originalBytes,
                 byte[] upgradedBytes
             )
@@ -14116,24 +14133,28 @@ namespace DxMessaging.Editor
                 }
                 catch (Exception verificationFailure)
                 {
-                    string recoveryPath =
-                        fullPath + ".dxmsg-unverified-" + Guid.NewGuid().ToString("N");
+                    string recovery;
                     try
                     {
-                        File.Replace(backupPath, fullPath, recoveryPath);
+                        recovery = RestoreUnverifiedReplacement(
+                            fullPath,
+                            backupPath,
+                            rollbackCopyPath,
+                            originalBytes,
+                            upgradedBytes
+                        );
                     }
                     catch (Exception recoveryFailure)
                     {
                         throw new AggregateException(
                             $"{fullPath} was replaced, but verification and recovery both failed. "
-                                + $"Inspect {backupPath} before continuing.",
+                                + $"Inspect the staged rollback copy at {rollbackCopyPath}.",
                             verificationFailure,
                             recoveryFailure
                         );
                     }
                     throw new IOException(
-                        $"{fullPath} could not be verified after replacement. Its pre-replacement "
-                            + $"content was restored, and the replaced content remains at {recoveryPath}.",
+                        $"{fullPath} could not be verified after replacement. {recovery}",
                         verificationFailure
                     );
                 }
@@ -14141,9 +14162,10 @@ namespace DxMessaging.Editor
                 {
                     string recoveryPath =
                         fullPath + ".dxmsg-recovery-" + Guid.NewGuid().ToString("N");
+                    bool restored;
                     try
                     {
-                        File.Replace(backupPath, fullPath, recoveryPath);
+                        restored = TryRestoreDisplacedBackup(fullPath, backupPath, recoveryPath);
                     }
                     catch (Exception recoveryFailure)
                     {
@@ -14151,6 +14173,19 @@ namespace DxMessaging.Editor
                             $"{fullPath} changed during replacement. The newer content remains at "
                                 + $"{backupPath}; the upgrade could not restore it automatically.",
                             recoveryFailure
+                        );
+                    }
+                    if (!restored)
+                    {
+                        RestoreStagedOriginal(
+                            fullPath,
+                            rollbackCopyPath,
+                            originalBytes,
+                            upgradedBytes
+                        );
+                        throw new IOException(
+                            $"{fullPath} changed during replacement and the displaced backup disappeared. "
+                                + $"The previewed original was restored from {rollbackCopyPath}."
                         );
                     }
 
@@ -14177,28 +14212,120 @@ namespace DxMessaging.Editor
                 }
             }
 
-            public void Restore(string fullPath, string backupPath, byte[] expectedCurrentBytes)
+            private string RestoreUnverifiedReplacement(
+                string fullPath,
+                string backupPath,
+                string rollbackCopyPath,
+                byte[] originalBytes,
+                byte[] upgradedBytes
+            )
             {
-                if (!File.Exists(backupPath))
+                string recoveryPath =
+                    fullPath + ".dxmsg-unverified-" + Guid.NewGuid().ToString("N");
+                if (TryRestoreDisplacedBackup(fullPath, backupPath, recoveryPath))
                 {
-                    throw new FileNotFoundException(
-                        "The fast-handler upgrade backup is missing.",
-                        backupPath
+                    return $"Its pre-replacement content was restored, and the replaced content remains at {recoveryPath}.";
+                }
+
+                RestoreStagedOriginal(fullPath, rollbackCopyPath, originalBytes, upgradedBytes);
+                return $"The primary backup is missing. The previewed original was restored from {rollbackCopyPath}.";
+            }
+
+            private static bool TryRestoreDisplacedBackup(
+                string fullPath,
+                string backupPath,
+                string recoveryPath
+            )
+            {
+                try
+                {
+                    File.Replace(backupPath, fullPath, recoveryPath);
+                    return true;
+                }
+                catch (IOException) when (!File.Exists(backupPath))
+                {
+                    return false;
+                }
+            }
+
+            public void Restore(
+                string fullPath,
+                string backupPath,
+                byte[] originalBytes,
+                byte[] expectedCurrentBytes
+            )
+            {
+                string rollbackCopyPath;
+                try
+                {
+                    rollbackCopyPath = VerifyRollbackCopy(fullPath, backupPath);
+                }
+                catch (IOException) when (!File.Exists(backupPath))
+                {
+                    RestoreStagedOriginal(
+                        fullPath,
+                        StagedOriginalPath(fullPath, backupPath),
+                        originalBytes,
+                        expectedCurrentBytes
+                    );
+                    return;
+                }
+                RestoreDestination(fullPath, rollbackCopyPath, expectedCurrentBytes, backupPath);
+            }
+
+            private void RestoreStagedOriginal(
+                string fullPath,
+                string rollbackCopyPath,
+                byte[] originalBytes,
+                byte[] expectedCurrentBytes
+            )
+            {
+                ValidatePath(rollbackCopyPath);
+                byte[] staged = File.ReadAllBytes(rollbackCopyPath);
+                if (!staged.AsSpan().SequenceEqual(originalBytes))
+                {
+                    throw new IOException(
+                        $"The staged original at {rollbackCopyPath} differs from the preview."
                     );
                 }
+
+                // Preserve the only original on disk while recovering the destination.
+                string replacementPath = fullPath + ".dxmsg-abort-" + Guid.NewGuid().ToString("N");
+                try
+                {
+                    File.WriteAllBytes(replacementPath, staged);
+                    RestoreDestination(
+                        fullPath,
+                        replacementPath,
+                        expectedCurrentBytes,
+                        rollbackCopyPath
+                    );
+                }
+                finally
+                {
+                    TryDelete(replacementPath);
+                }
+            }
+
+            private void RestoreDestination(
+                string fullPath,
+                string replacementPath,
+                byte[] expectedCurrentBytes,
+                string retainedOriginalPath
+            )
+            {
                 ValidatePath(fullPath);
                 byte[] currentBytes = File.ReadAllBytes(fullPath);
                 if (!currentBytes.AsSpan().SequenceEqual(expectedCurrentBytes))
                 {
                     throw new IOException(
                         $"{fullPath} changed while the upgrade was being rolled back. The newer "
-                            + $"content was preserved, and the original remains at {backupPath}."
+                            + $"content was preserved, and the original remains at {retainedOriginalPath}."
                     );
                 }
                 string rollbackSafetyPath =
                     fullPath + ".dxmsg-rollback-safety-" + Guid.NewGuid().ToString("N");
-                string rollbackCopyPath = VerifyRollbackCopy(fullPath, backupPath);
-                _replaceFile(rollbackCopyPath, fullPath, rollbackSafetyPath);
+                _replaceFile(replacementPath, fullPath, rollbackSafetyPath);
                 if (
                     File.ReadAllBytes(rollbackSafetyPath)
                         .AsSpan()
@@ -14219,14 +14346,14 @@ namespace DxMessaging.Editor
                 {
                     throw new IOException(
                         $"{fullPath} changed during rollback. The edit displaced from the script remains at "
-                            + $"{rollbackSafetyPath}, and the original remains at {backupPath}.",
+                            + $"{rollbackSafetyPath}, and the original remains at {retainedOriginalPath}.",
                         recoveryFailure
                     );
                 }
                 throw new IOException(
                     $"{fullPath} changed during rollback. The first displaced edit was put back at "
                         + $"{fullPath}. The content displaced by that recovery remains at {recoveryPath}. "
-                        + $"The pre-upgrade original remains at {backupPath}."
+                        + $"The pre-upgrade original remains at {retainedOriginalPath}."
                 );
             }
 
@@ -14254,12 +14381,14 @@ namespace DxMessaging.Editor
                 return false;
             }
 
+            private static string StagedOriginalPath(string fullPath, string backupPath) =>
+                fullPath
+                + RollbackCopyMarker
+                + backupPath.Substring(fullPath.Length + BackupMarker.Length);
+
             private string VerifyRollbackCopy(string fullPath, string backupPath)
             {
-                string rollbackCopyPath =
-                    fullPath
-                    + RollbackCopyMarker
-                    + backupPath.Substring(fullPath.Length + BackupMarker.Length);
+                string rollbackCopyPath = StagedOriginalPath(fullPath, backupPath);
                 ValidatePath(backupPath);
                 ValidatePath(rollbackCopyPath);
                 if (
@@ -14286,16 +14415,19 @@ namespace DxMessaging.Editor
 
         private readonly struct AppliedFile
         {
-            public AppliedFile(string fullPath, string backupPath, byte[] upgradedBytes)
+            public AppliedFile(PendingFileUpgrade upgrade, string backupPath)
             {
-                FullPath = fullPath;
+                FullPath = upgrade.FullPath;
                 BackupPath = backupPath;
-                UpgradedBytes = upgradedBytes;
+                OriginalBytes = upgrade.OriginalBytes;
+                UpgradedBytes = upgrade.UpgradedBytes;
             }
 
             public string FullPath { get; }
 
             public string BackupPath { get; }
+
+            public byte[] OriginalBytes { get; }
 
             public byte[] UpgradedBytes { get; }
         }
