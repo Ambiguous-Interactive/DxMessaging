@@ -641,7 +641,7 @@ namespace DxMessaging.Editor
                 {
                     EditorUtility.DisplayDialog(
                         "DxMessaging Fast Handler Upgrade Needs Review",
-                        "Original backups remain beside the upgraded scripts. See the Console for their paths. Review the changes and compile before removing them.",
+                        "See the Console for each script and its backup status. Review the changes and compile before removing verified recovery files.",
                         "OK"
                     );
                     return;
@@ -3768,14 +3768,14 @@ namespace DxMessaging.Editor
                 || ClassifyGeneratedHeader(source) == GeneratedHeader.Present;
         }
 
-        private enum GeneratedHeader
+        internal enum GeneratedHeader
         {
             Absent,
             Present,
             Unverified,
         }
 
-        private static GeneratedHeader ClassifyGeneratedHeader(string source)
+        internal static GeneratedHeader ClassifyGeneratedHeader(string source)
         {
             if (source.IndexOf("generated", StringComparison.OrdinalIgnoreCase) < 0)
             {
@@ -3971,6 +3971,34 @@ namespace DxMessaging.Editor
                 {
                     continue;
                 }
+                if (
+                    isCandidate
+                    && TryFindDelegateCastOperand(
+                        masked,
+                        FindQualifiedTypeStart(masked, fastHandler),
+                        genericClose + 1,
+                        out TextSpan operand,
+                        out int castStart
+                    )
+                )
+                {
+                    const string CastReason = "uses an explicit fast delegate cast";
+                    ReviewUnprovenDelegateValue(
+                        masked,
+                        metadata,
+                        operand,
+                        isProven: false,
+                        CastReason,
+                        replacementStarts,
+                        methodGroups,
+                        unprovenMethodGroups,
+                        manualReview,
+                        unprovenTypeReason: CastReason,
+                        castStart: castStart
+                    );
+                    continue;
+                }
+
                 string messageType = CompactType(
                     masked.Substring(genericOpen + 1, genericClose - genericOpen - 1)
                 );
@@ -4091,7 +4119,8 @@ namespace DxMessaging.Editor
                 handlers,
                 replacementStarts,
                 methodGroups,
-                unprovenMethodGroups
+                unprovenMethodGroups,
+                manualReview
             );
         }
 
@@ -4101,7 +4130,8 @@ namespace DxMessaging.Editor
             Match[] handlers,
             HashSet<int> replacementStarts,
             List<(string Name, TextSpan Use)> methodGroups,
-            Dictionary<string, string> unprovenMethodGroups
+            Dictionary<string, string> unprovenMethodGroups,
+            SortedSet<string> manualReview
         )
         {
             IEnumerable<(string Name, int Start, int End, int ScopeStart)> localAliases =
@@ -4155,6 +4185,32 @@ namespace DxMessaging.Editor
                     {
                         Report(initializer);
                     }
+                    if (
+                        TryFindDelegateCastOperand(
+                            masked,
+                            use.Index,
+                            afterAlias,
+                            out TextSpan operand,
+                            out int castStart
+                        )
+                    )
+                    {
+                        ReviewUnprovenDelegateValue(
+                            masked,
+                            metadata,
+                            operand,
+                            isProven: false,
+                            Reason,
+                            replacementStarts,
+                            methodGroups,
+                            unprovenMethodGroups,
+                            manualReview,
+                            unprovenTypeReason: "uses a fast delegate cast through a type alias",
+                            castStart: castStart
+                        );
+                        continue;
+                    }
+
                     int open = NextNonWhitespace(masked, afterAlias);
                     if (
                         0 <= open
@@ -4284,6 +4340,75 @@ namespace DxMessaging.Editor
             return new TextSpan(owner + 1, end - owner - 1);
         }
 
+        private static bool TryFindDelegateCastOperand(
+            string masked,
+            int typeStart,
+            int typeEnd,
+            out TextSpan operand,
+            out int open
+        )
+        {
+            operand = default;
+            open = PreviousNonWhitespace(masked, typeStart - 1);
+            int close = NextNonWhitespace(masked, typeEnd);
+            if (0 <= close && masked[close] == '?')
+            {
+                close = NextNonWhitespace(masked, close + 1);
+            }
+            if (open < 0 || masked[open] != '(' || close < 0 || masked[close] != ')')
+            {
+                return false;
+            }
+
+            int start = NextNonWhitespace(masked, close + 1);
+            if (start < 0)
+            {
+                return false;
+            }
+
+            int end;
+            if (masked[start] == '(')
+            {
+                int operandClose = FindMatching(masked, start, '(', ')');
+                if (operandClose < 0)
+                {
+                    return false;
+                }
+                int following = NextNonWhitespace(masked, operandClose + 1);
+                end =
+                    0 <= following && IsArrow(masked, following)
+                        ? FindExpressionEnd(masked, following + 2)
+                        : operandClose + 1;
+            }
+            else if (DirectMemberIdentifierRegex.IsMatch(masked, start))
+            {
+                end = FindExpressionEnd(masked, start);
+            }
+            else
+            {
+                return false;
+            }
+
+            end = PreviousNonWhitespace(masked, end - 1) + 1;
+            while (
+                0 <= start
+                && start < end
+                && masked[start] == '('
+                && FindMatching(masked, start, '(', ')') == end - 1
+            )
+            {
+                start = NextNonWhitespace(masked, start + 1);
+                end = PreviousNonWhitespace(masked, end - 2) + 1;
+            }
+
+            if (start < 0 || end <= start)
+            {
+                return false;
+            }
+            operand = new TextSpan(start, end - start);
+            return true;
+        }
+
         private static bool TryFindDelegateConstructorArgument(
             string masked,
             Match handler,
@@ -4341,7 +4466,8 @@ namespace DxMessaging.Editor
             Dictionary<string, string> unprovenMethodGroups,
             SortedSet<string> manualReview,
             bool reportCompoundReturnValue = false,
-            string unprovenTypeReason = null
+            string unprovenTypeReason = null,
+            int castStart = -1
         )
         {
             if (
@@ -4390,17 +4516,27 @@ namespace DxMessaging.Editor
                 return;
             }
             else if (
-                methodGroups.Exists(use =>
-                    argument.Start <= use.Use.Start
-                    && use.Use.Start < argument.Start + argument.Length
-                ) || !MethodGroupMayNeedMigration(masked, argument, masked, metadata)
+                !(
+                    0 <= castStart
+                    && FindRefAnonymousFunctions(masked, argument, directReturnsOnly: true).Any()
+                )
+                && (
+                    methodGroups.Exists(use =>
+                        argument.Start <= use.Use.Start
+                        && use.Use.Start < argument.Start + argument.Length
+                    ) || !MethodGroupMayNeedMigration(masked, argument, masked, metadata)
+                )
             )
             {
                 return;
             }
 
-            string review =
-                $"{CallbackLocation(masked, argument.Start)} {reason}; inspect it manually";
+            int location = 0 <= castStart ? castStart : argument.Start;
+            string review = $"{CallbackLocation(masked, location)} {reason}; inspect it manually";
+            if (0 <= castStart)
+            {
+                manualReview.Remove(UnprovenCallbackSyntaxReview(masked, castStart));
+            }
             if (TryGetMethodGroup(masked, argument, out string name, out _))
             {
                 unprovenMethodGroups.TryAdd(ScopedMethodKey(masked, name, argument.Start), review);
@@ -8507,11 +8643,12 @@ namespace DxMessaging.Editor
                 )
             )
             {
-                manualReview.Add(
-                    $"{CallbackLocation(masked, callback.Start)} uses callback syntax whose binding cannot be proven; inspect it manually"
-                );
+                manualReview.Add(UnprovenCallbackSyntaxReview(masked, callback.Start));
             }
         }
+
+        private static string UnprovenCallbackSyntaxReview(string masked, int position) =>
+            $"{CallbackLocation(masked, position)} uses callback syntax whose binding cannot be proven; inspect it manually";
 
         private static bool TryGetMethodGroup(
             string masked,
@@ -13931,32 +14068,33 @@ namespace DxMessaging.Editor
                 );
             }
 
-            return DiscardVerifiedBackups(applied, store);
+            return CompleteBackups(applied, store);
         }
 
-        private static bool DiscardVerifiedBackups(
-            List<AppliedFile> applied,
-            IAtomicFileStore store
-        )
+        private static bool CompleteBackups(List<AppliedFile> applied, IAtomicFileStore store)
         {
             bool cleanupVerified = true;
             foreach (AppliedFile file in applied)
             {
                 try
                 {
-                    if (!store.TryDiscardBackup(file.FullPath, file.BackupPath, file.UpgradedBytes))
+                    string warning = store.CompleteBackup(
+                        file.FullPath,
+                        file.BackupPath,
+                        file.OriginalBytes,
+                        file.UpgradedBytes
+                    );
+                    if (warning != null)
                     {
                         cleanupVerified = false;
-                        Debug.LogWarning(
-                            $"Backup retained for {file.FullPath}. Review the upgraded script and original backup {file.BackupPath}."
-                        );
+                        Debug.LogWarning(warning);
                     }
                 }
                 catch (Exception cleanupFailure)
                 {
                     cleanupVerified = false;
                     DxMessagingEditorLog.LogWarning(
-                        $"Could not safely remove backup {file.BackupPath} for {file.FullPath}.",
+                        $"Could not complete backup verification for {file.FullPath}.",
                         cleanupFailure
                     );
                 }
@@ -14336,7 +14474,12 @@ namespace DxMessaging.Editor
 
             bool MatchesDestination(string fullPath, byte[] expectedCurrentBytes);
 
-            bool TryDiscardBackup(string fullPath, string backupPath, byte[] expectedCurrentBytes);
+            string CompleteBackup(
+                string fullPath,
+                string backupPath,
+                byte[] originalBytes,
+                byte[] expectedCurrentBytes
+            );
         }
 
         internal sealed class PhysicalAtomicFileStore : IAtomicFileStore
@@ -14378,14 +14521,16 @@ namespace DxMessaging.Editor
                 string backupPath = fullPath + BackupMarker + transaction;
                 string rollbackCopyPath = fullPath + RollbackCopyMarker + transaction;
                 string temporaryPath = fullPath + ".dxmsg-new-" + transaction;
-                bool destinationWasReplaced = false;
+                bool replacementAttempted = false;
+                bool preserveRollbackCopy = false;
                 try
                 {
                     // Reserve the original bytes before any destination change can fail.
                     File.WriteAllBytes(rollbackCopyPath, originalBytes);
                     File.WriteAllBytes(temporaryPath, upgradedBytes);
+                    replacementAttempted = true;
                     _replaceFile(temporaryPath, fullPath, backupPath);
-                    destinationWasReplaced = true;
+                    preserveRollbackCopy = true;
                     VerifyReplacement(
                         fullPath,
                         backupPath,
@@ -14394,7 +14539,24 @@ namespace DxMessaging.Editor
                         upgradedBytes
                     );
                 }
-                catch (Exception exception) when (destinationWasReplaced)
+                catch (Exception replacementFailure)
+                    when (replacementAttempted && !preserveRollbackCopy)
+                {
+                    preserveRollbackCopy =
+                        File.Exists(backupPath)
+                        || !IsUnchangedAfterFailedReplacement(fullPath, originalBytes);
+                    if (!preserveRollbackCopy)
+                    {
+                        throw;
+                    }
+                    throw RecoverPartialReplacement(
+                        fullPath,
+                        backupPath,
+                        rollbackCopyPath,
+                        replacementFailure
+                    );
+                }
+                catch (Exception exception) when (preserveRollbackCopy)
                 {
                     DxMessagingEditorLog.LogWarning(
                         $"Inspect the staged rollback copy for {fullPath} at {rollbackCopyPath}.",
@@ -14405,12 +14567,70 @@ namespace DxMessaging.Editor
                 finally
                 {
                     TryDelete(temporaryPath);
-                    if (!destinationWasReplaced)
+                    if (!preserveRollbackCopy)
                     {
                         TryDelete(rollbackCopyPath);
                     }
                 }
                 return backupPath;
+            }
+
+            private bool IsUnchangedAfterFailedReplacement(string fullPath, byte[] originalBytes)
+            {
+                try
+                {
+                    return MatchesDestination(fullPath, originalBytes);
+                }
+                catch (Exception failure)
+                    when (failure is IOException or UnauthorizedAccessException)
+                {
+                    return false;
+                }
+            }
+
+            private static IOException RecoverPartialReplacement(
+                string fullPath,
+                string backupPath,
+                string retainedOriginalPath,
+                Exception replacementFailure
+            )
+            {
+                string original = $"The pre-upgrade original is at {retainedOriginalPath}.";
+                if (!File.Exists(backupPath))
+                {
+                    return new IOException(
+                        $"Replacement failed for {fullPath}, and the displacement backup at {backupPath} is missing. {original}",
+                        replacementFailure
+                    );
+                }
+
+                string retained = $"The displaced script is at {backupPath}. {original}";
+                if (File.Exists(fullPath))
+                {
+                    return new IOException(
+                        $"Replacement failed for {fullPath}. The current script was left in place. {retained}",
+                        replacementFailure
+                    );
+                }
+
+                try
+                {
+                    // Unity's Mono move can overwrite a path created after its Unix existence check.
+                    File.Copy(backupPath, fullPath, overwrite: false);
+                }
+                catch (Exception recoveryFailure)
+                    when (recoveryFailure is IOException or UnauthorizedAccessException)
+                {
+                    return new IOException(
+                        $"Replacement failed for {fullPath}, and the displaced script could not be restored automatically. {retained}",
+                        new AggregateException(replacementFailure, recoveryFailure)
+                    );
+                }
+
+                return new IOException(
+                    $"Replacement failed for {fullPath}. The displaced script was restored from {backupPath}. {original}",
+                    replacementFailure
+                );
             }
 
             private void VerifyReplacement(
@@ -14626,7 +14846,20 @@ namespace DxMessaging.Editor
                 }
                 string rollbackSafetyPath =
                     fullPath + ".dxmsg-rollback-safety-" + Guid.NewGuid().ToString("N");
-                _replaceFile(replacementPath, fullPath, rollbackSafetyPath);
+                try
+                {
+                    _replaceFile(replacementPath, fullPath, rollbackSafetyPath);
+                }
+                catch (Exception replacementFailure)
+                    when (File.Exists(rollbackSafetyPath) || !File.Exists(fullPath))
+                {
+                    throw RecoverPartialReplacement(
+                        fullPath,
+                        rollbackSafetyPath,
+                        retainedOriginalPath,
+                        replacementFailure
+                    );
+                }
                 if (
                     File.ReadAllBytes(rollbackSafetyPath)
                         .AsSpan()
@@ -14671,24 +14904,55 @@ namespace DxMessaging.Editor
                 }
             }
 
-            public bool TryDiscardBackup(
+            public string CompleteBackup(
                 string fullPath,
                 string backupPath,
+                byte[] originalBytes,
                 byte[] expectedCurrentBytes
             )
             {
-                string rollbackCopyPath = VerifyRollbackCopy(fullPath, backupPath);
-                if (!MatchesDestination(fullPath, expectedCurrentBytes))
-                {
-                    throw new IOException(
-                        $"{fullPath} changed during final upgrade verification. "
-                            + $"The file and its original backup at {backupPath} were preserved."
-                    );
-                }
+                string rollbackCopyPath = StagedOriginalPath(fullPath, backupPath);
+                const string BackupDiffers = "differs from the previewed original";
+                string primaryIssue = CheckContents(backupPath, originalBytes, BackupDiffers);
+                string stagingIssue = CheckContents(rollbackCopyPath, originalBytes, BackupDiffers);
+                string primary =
+                    primaryIssue == null
+                        ? $"Original backup verified at {backupPath}."
+                        : $"Primary backup {backupPath} {primaryIssue}.";
+                string staging =
+                    stagingIssue == null
+                        ? $"Staged original verified at {rollbackCopyPath}."
+                        : $"Staged original {rollbackCopyPath} {stagingIssue}.";
 
-                // Keep the original backup for review. The staging copy is redundant.
-                TryDelete(rollbackCopyPath);
-                return false;
+                // Keep both paths for manual review. Removing the stage could race deletion of the primary.
+                string scriptIssue = CheckContents(
+                    fullPath,
+                    expectedCurrentBytes,
+                    "changed during final upgrade verification"
+                );
+                return scriptIssue == null
+                    ? $"Review the upgraded script {fullPath}. {primary} {staging}"
+                    : $"{fullPath} {scriptIssue}. {primary} {staging}";
+            }
+
+            private string CheckContents(string path, byte[] expectedBytes, string difference)
+            {
+                try
+                {
+                    ValidatePath(path);
+                    return File.ReadAllBytes(path).AsSpan().SequenceEqual(expectedBytes)
+                        ? null
+                        : difference;
+                }
+                catch (FileNotFoundException)
+                {
+                    return "is missing";
+                }
+                catch (Exception failure)
+                    when (failure is IOException or UnauthorizedAccessException)
+                {
+                    return $"could not be verified ({failure.Message})";
+                }
             }
 
             private static string StagedOriginalPath(string fullPath, string backupPath) =>

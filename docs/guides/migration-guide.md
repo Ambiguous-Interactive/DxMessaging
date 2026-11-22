@@ -129,8 +129,9 @@ See [settings lifetime](../reference/runtime-settings.md#settings-lifetime).
 
 `MessageAwareComponent` no longer registers two targeted `StringMessage` handlers and one
 untargeted `GlobalStringMessage` handler by default. Add
-`protected override bool RegisterForStringMessages => true;` to a component that overrides these
-handlers and relied on their automatic registration in 3.x. Preserve intentional opt-outs and
+`protected override bool RegisterForStringMessages => true;` to a component you control when it
+relied on automatic registration in 3.x. This includes a derived component that inherits a working
+handler from a parent installed through a third-party package. Preserve intentional opt-outs and
 existing computed properties. Keep calling `base.RegisterMessageHandlers()` so registrations
 declared by parent components run.
 
@@ -194,13 +195,15 @@ Database and rerun the preview when the imported assembly settings or their asse
 from disk. When a script is eligible for migration but comments or strings can hide a directive in
 some build configurations, the preview leaves the script untouched and reports the directive location.
 
-The tool stages a rollback copy before replacing each script. If a later write fails, it uses
-the staged copies to restore earlier scripts and keeps the original backups for review. If a save
-arrives during rollback, use the paths in the Console to compare the live script, original backup,
-and any displaced edits. If a primary backup disappears, the tool can restore the previewed bytes
-from the staged copy. If verification fails after a replacement, the Console also reports the
-staged file path. The tool rechecks each script before cleaning up its staging copy. When the
-bytes differ from the planned upgrade, the Console identifies the script and the original backup.
+The tool stages a copy of each original script before replacement. After a successful upgrade,
+it keeps the primary and staged originals for review and checks the upgraded script against the
+planned bytes. The Console lists the recovery paths and reports a changed or missing backup.
+Keep the staged copy if the primary backup can no longer be verified.
+
+If a later write fails, the tool uses the recovery copies to restore earlier scripts. If a
+replacement error displaces the original, the tool restores it when the script path is still
+empty. If a save arrives during replacement or rollback, use the paths in the Console to compare
+the live script with the retained copies and any displaced edits.
 
 The preview leaves unsupported encodings, overloads, qualified or cross-file callback declarations,
 and ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
