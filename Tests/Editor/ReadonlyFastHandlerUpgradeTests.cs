@@ -12,7 +12,7 @@ namespace DxMessaging.Tests.Editor
 
     public sealed class ReadonlyFastHandlerUpgradeTests
     {
-        // cspell:ignore mports Cdecl ndler ulse
+        // cspell:ignore mports Cdecl ndler ulse FLAGX
         private const string UnresolvedMessageRead =
             "reads a member or indexer on parameter 'message' that cannot be verified safe for 'in'";
 
@@ -545,7 +545,7 @@ class Receiver
             TestName = "A writable targeted extension survives an earlier less-than default"
         )]
         [TestCase(
-            "IUntargetedMessage",
+            "ITargetedMessage",
             "1 <= 2",
             false,
             TestName = "A writable targeted extension survives an earlier less-than-or-equal default"
@@ -1962,6 +1962,35 @@ namespace Game { public readonly struct Pulse : global::DxMessaging.Core.Message
                 )
             );
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(keepWritable ? 1 : 0));
+        }
+
+        [TestCase(127, false)]
+        [TestCase(128, true)]
+        [TestCase(130, true)]
+        public void AnalyzeKeepsWritableBranchesWhenDirectiveSymbolsMayBeTruncated(
+            int prefixLength,
+            bool keepWritable
+        )
+        {
+            string prefix = new('A', prefixLength);
+            string symbol = prefix + "X";
+            AnalyzeResolvesFullConditionalSymbolsBeforePruningWrites(
+                $"#define {symbol}\n#undef {prefix}Y",
+                "!" + symbol,
+                keepWritable
+            );
+        }
+
+        [Test]
+        public void AnalyzeDefersBranchSelectionForAnOverlengthEscapedSymbol()
+        {
+            string representation = new string('A', 127) + @"\u0058";
+            string other = new string('A', 127) + "Y";
+            AnalyzeResolvesFullConditionalSymbolsBeforePruningWrites(
+                $"#define {representation}\n#undef {other}",
+                "!" + representation,
+                true
+            );
         }
 
         [TestCase("=> (ref Pulse message) => { };", "expression-bodied indexer")]
@@ -9237,6 +9266,18 @@ void OnPulse(ref Pulse message) { }";
             );
         }
 
+        [Test]
+        public void ClassifyGeneratedHeaderDefersWhenLongSymbolsCanAlias()
+        {
+            string prefix = new('A', 128);
+            string symbol = prefix + "X";
+            ClassifyGeneratedHeadersWithEscapedConditionalSymbols(
+                $"#define {symbol}\n#undef {prefix}Y",
+                "!" + symbol,
+                "Unverified"
+            );
+        }
+
         [TestCase("", "LEGACY && BUILD", "BUILD && LEGACY", false)]
         [TestCase("", "LEGACY || BUILD", "!LEGACY && !BUILD", true)]
         [TestCase("#define LEGACY\n", "LEGACY", "!LEGACY", false)]
@@ -9394,7 +9435,7 @@ void OnPulse(ref Pulse message) { }";
                 new("second.cs", new byte[] { 2 }, new byte[] { 20 }),
             };
 
-            ReadonlyFastHandlerUpgrade.ApplyAtomically(upgrades, store);
+            Assert.That(ReadonlyFastHandlerUpgrade.ApplyAtomically(upgrades, store), Is.True);
 
             Assert.That(store.Files["first.cs"], Is.EqualTo(new byte[] { 10 }));
             Assert.That(store.Files["second.cs"], Is.EqualTo(new byte[] { 20 }));
@@ -9721,6 +9762,68 @@ void OnPulse(ref Pulse message) { }";
                 if (moveOriginal && !deletePrimary)
                 {
                     Assert.That(File.ReadAllBytes(backup), Is.EqualTo(before));
+                }
+            }
+            finally
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void PhysicalUnverifiedReplacementPreservesASavedDestination(bool saveNewer)
+        {
+            string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string path = Path.Combine(directory, "Handler.cs");
+                byte[] original = { 1 };
+                byte[] upgraded = { 2 };
+                byte[] newer = { 3 };
+                File.WriteAllBytes(path, original);
+                string primary = string.Empty;
+                var store = new ReadonlyFastHandlerUpgrade.PhysicalAtomicFileStore(
+                    replaceFile: (source, destination, displaced) =>
+                    {
+                        File.Replace(source, destination, displaced);
+                        primary = displaced;
+                        if (saveNewer)
+                        {
+                            File.WriteAllBytes(destination, newer);
+                        }
+                    },
+                    readReplacementFile: source =>
+                        source == primary
+                            ? throw new IOException("Injected replacement verification failure.")
+                            : File.ReadAllBytes(source)
+                );
+
+                var failure = Assert.Throws<IOException>(() =>
+                    store.Replace(path, original, upgraded)
+                );
+
+                Assert.That(File.ReadAllBytes(path), Is.EqualTo(saveNewer ? newer : original));
+                string staged = Directory
+                    .GetFiles(directory, "*.dxmsg-rollback-original-*")
+                    .Single();
+                Assert.That(File.ReadAllBytes(staged), Is.EqualTo(original));
+                if (saveNewer)
+                {
+                    Assert.That(File.ReadAllBytes(primary), Is.EqualTo(original));
+                    Assert.That(
+                        failure?.Message,
+                        Does.Contain(path).And.Contain(primary).And.Contain(staged)
+                    );
+                    Assert.That(Directory.GetFiles(directory, "*.dxmsg-unverified-*"), Is.Empty);
+                }
+                else
+                {
+                    string displacedUpgrade = Directory
+                        .GetFiles(directory, "*.dxmsg-unverified-*")
+                        .Single();
+                    Assert.That(File.ReadAllBytes(displacedUpgrade), Is.EqualTo(upgraded));
                 }
             }
             finally

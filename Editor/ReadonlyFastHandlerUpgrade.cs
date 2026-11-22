@@ -13168,8 +13168,14 @@ namespace DxMessaging.Editor
                     return null;
                 }
 
+                const int MaximumDirectiveSymbolLength = 128;
                 Match token = DirectMemberIdentifierRegex.Match(input.ToString());
-                if (!token.Success || (token.Length < input.Length && input[token.Length] == '\\'))
+                // Supported Roslyn versions can truncate long spellings before the symbol lookup.
+                if (
+                    !token.Success
+                    || MaximumDirectiveSymbolLength < token.Length
+                    || (token.Length < input.Length && input[token.Length] == '\\')
+                )
                 {
                     return null;
                 }
@@ -14527,14 +14533,17 @@ namespace DxMessaging.Editor
 
             private readonly string _assetsRoot;
             private readonly Action<string, string, string> _replaceFile;
+            private readonly Func<string, byte[]> _readReplacementFile;
 
             public PhysicalAtomicFileStore(
                 string assetsRoot = null,
-                Action<string, string, string> replaceFile = null
+                Action<string, string, string> replaceFile = null,
+                Func<string, byte[]> readReplacementFile = null
             )
             {
                 _assetsRoot = assetsRoot;
                 _replaceFile = replaceFile ?? File.Replace;
+                _readReplacementFile = readReplacementFile ?? File.ReadAllBytes;
             }
 
             private void ValidatePath(string fullPath)
@@ -14683,10 +14692,10 @@ namespace DxMessaging.Editor
                 bool destinationMatchesUpgrade;
                 try
                 {
-                    backupMatchesOriginal = File.ReadAllBytes(backupPath)
+                    backupMatchesOriginal = _readReplacementFile(backupPath)
                         .AsSpan()
                         .SequenceEqual(originalBytes);
-                    destinationMatchesUpgrade = File.ReadAllBytes(fullPath)
+                    destinationMatchesUpgrade = _readReplacementFile(fullPath)
                         .AsSpan()
                         .SequenceEqual(upgradedBytes);
                 }
@@ -14779,6 +14788,17 @@ namespace DxMessaging.Editor
                 byte[] upgradedBytes
             )
             {
+                string scriptIssue = CheckContents(
+                    fullPath,
+                    upgradedBytes,
+                    "changed after replacement"
+                );
+                if (scriptIssue != null)
+                {
+                    return $"The script at {fullPath} {scriptIssue}. Its path was left untouched. "
+                        + $"Inspect the displacement backup at {backupPath} and the staged original at {rollbackCopyPath}.";
+                }
+
                 string recoveryPath =
                     fullPath + ".dxmsg-unverified-" + Guid.NewGuid().ToString("N");
                 if (TryRestoreDisplacedBackup(fullPath, backupPath, recoveryPath))
