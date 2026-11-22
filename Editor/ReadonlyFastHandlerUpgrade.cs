@@ -3866,7 +3866,10 @@ namespace DxMessaging.Editor
                             new SourceMetadata(source),
                             symbols: symbols
                         );
-                        conditionals.ObserveSymbolDefinition(operand, keyword == "define");
+                        if (!conditionals.ObserveSymbolDefinition(operand, keyword == "define"))
+                        {
+                            return GeneratedHeader.Unverified;
+                        }
                     }
                     position = NextNonWhitespace(source, lineEnd);
                     continue;
@@ -10493,26 +10496,32 @@ namespace DxMessaging.Editor
             return unverifiedRead;
         }
 
-        private static string IdentifierValue(string spelling)
+        private static string IdentifierValue(string spelling) =>
+            IdentifierFormattingRegex.Replace(
+                DecodeIdentifierEscapes(spelling.TrimStart('@')),
+                string.Empty
+            );
+
+        private static string DecodeIdentifierEscapes(string spelling)
         {
-            string value = spelling.TrimStart('@');
-            if (0 <= value.IndexOf('\\'))
+            if (!spelling.Contains('\\'))
             {
-                value = UnicodeEscapeRegex.Replace(value, match =>
-                    int.TryParse(
-                        match.Value.Substring(2),
-                        NumberStyles.AllowHexSpecifier,
-                        CultureInfo.InvariantCulture,
-                        out int scalar
-                    )
-                    && 0 <= scalar
-                    && scalar <= 0x10FFFF
-                    && (scalar < 0xD800 || 0xDFFF < scalar)
-                        ? char.ConvertFromUtf32(scalar)
-                        : match.Value
-                );
+                return spelling;
             }
-            return IdentifierFormattingRegex.Replace(value, string.Empty);
+
+            return UnicodeEscapeRegex.Replace(spelling, match =>
+                int.TryParse(
+                    match.Value.Substring(2),
+                    NumberStyles.AllowHexSpecifier,
+                    CultureInfo.InvariantCulture,
+                    out int scalar
+                )
+                && 0 <= scalar
+                && scalar <= 0x10FFFF
+                && (scalar < 0xD800 || 0xDFFF < scalar)
+                    ? char.ConvertFromUtf32(scalar)
+                    : match.Value
+            );
         }
 
         private static IEnumerable<Match> FindByReferenceUses(
@@ -13115,24 +13124,23 @@ namespace DxMessaging.Editor
                 State = Intersect(remaining, selected);
             }
 
-            public void ObserveSymbolDefinition(ReadOnlySpan<char> operand, bool defined)
+            public bool ObserveSymbolDefinition(ReadOnlySpan<char> operand, bool defined)
             {
                 if (State == BranchState.Inactive)
                 {
-                    return;
+                    return true;
                 }
 
-                operand = operand.TrimStart();
-                int end = 0;
-                while (end < operand.Length && IsIdentifierPart(operand[end]))
+                operand = BeforeDirectiveComment(operand);
+                string symbol = TakeConditionalSymbol(ref operand);
+                if (symbol == null || !operand.Trim().IsEmpty)
                 {
-                    end++;
+                    // An invalid directive cannot establish or retain definite symbol values.
+                    _supportedUnityFloor = false;
+                    _symbols?.Clear();
+                    return false;
                 }
-                if (end == 0)
-                {
-                    return;
-                }
-                string symbol = operand.Slice(0, end).ToString();
+
                 if (symbol == UnityFloorSymbol)
                 {
                     // A file-local definition can override the compiler's Unity version symbol.
@@ -13149,6 +13157,45 @@ namespace DxMessaging.Editor
                     // Some configurations may apply this directive. Preserve both possibilities.
                     _symbols?.Remove(symbol);
                 }
+                return true;
+            }
+
+            private static string TakeConditionalSymbol(ref ReadOnlySpan<char> input)
+            {
+                input = input.TrimStart();
+                if (input.IsEmpty || input[0] == '@')
+                {
+                    return null;
+                }
+
+                Match token = DirectMemberIdentifierRegex.Match(input.ToString());
+                if (!token.Success || (token.Length < input.Length && input[token.Length] == '\\'))
+                {
+                    return null;
+                }
+
+                string decoded = token.Value;
+                if (decoded.Contains('\\'))
+                {
+                    decoded = DecodeIdentifierEscapes(decoded);
+                    if (
+                        decoded[0] == '@'
+                        || decoded.Contains('\\')
+                        || DirectMemberIdentifierRegex.Match(decoded).Length != decoded.Length
+                    )
+                    {
+                        return null;
+                    }
+                }
+
+                input = input.Slice(token.Length);
+                return IdentifierFormattingRegex.Replace(decoded, string.Empty);
+            }
+
+            private static ReadOnlySpan<char> BeforeDirectiveComment(ReadOnlySpan<char> operand)
+            {
+                int comment = operand.IndexOf("//".AsSpan(), StringComparison.Ordinal);
+                return comment < 0 ? operand : operand.Slice(0, comment);
             }
 
             public void ObserveMaskedToken(ReadOnlySpan<char> token, int tokenStart)
@@ -13219,10 +13266,11 @@ namespace DxMessaging.Editor
 
             private BranchState ReadCondition(ReadOnlySpan<char> condition)
             {
-                int comment = condition.IndexOf("//".AsSpan(), StringComparison.Ordinal);
-                ReadOnlySpan<char> expression =
-                    comment < 0 ? condition : condition.Slice(0, comment);
-                ConditionalExpression reader = new(expression, _supportedUnityFloor, _symbols);
+                ConditionalExpression reader = new(
+                    BeforeDirectiveComment(condition),
+                    _supportedUnityFloor,
+                    _symbols
+                );
                 BranchState state = reader.Read();
                 UnresolvedSymbol = reader.UnresolvedSymbol;
                 return state;
@@ -13330,33 +13378,22 @@ namespace DxMessaging.Editor
 
                 private BranchState ReadSymbol()
                 {
-                    _remaining = _remaining.TrimStart();
-                    int length = 0;
-                    while (length < _remaining.Length && IsIdentifierPart(_remaining[length]))
-                    {
-                        length++;
-                    }
-                    if (length == 0 || char.IsDigit(_remaining[0]))
+                    string symbol = TakeConditionalSymbol(ref _remaining);
+                    if (symbol == null)
                     {
                         _invalid = true;
                         return BranchState.Uncertain;
                     }
-                    ReadOnlySpan<char> name = _remaining.Slice(0, length);
-                    _remaining = _remaining.Slice(length);
-                    if (
-                        name.SequenceEqual("true".AsSpan())
-                        || (_supportedUnityFloor && name.SequenceEqual(UnityFloorSymbol.AsSpan()))
-                    )
+                    if (symbol == "true" || (_supportedUnityFloor && symbol == UnityFloorSymbol))
                     {
                         return BranchState.Active;
                     }
-                    if (name.SequenceEqual("false".AsSpan()))
+                    if (symbol == "false")
                     {
                         return BranchState.Inactive;
                     }
                     if (_symbols != null)
                     {
-                        string symbol = name.ToString();
                         if (_symbols.TryGetValue(symbol, out bool defined))
                         {
                             return defined ? BranchState.Active : BranchState.Inactive;
@@ -14486,6 +14523,7 @@ namespace DxMessaging.Editor
         {
             private const string BackupMarker = ".dxmsg-backup-";
             private const string RollbackCopyMarker = ".dxmsg-rollback-original-";
+            private const string BackupDiffers = "differs from the previewed original";
 
             private readonly string _assetsRoot;
             private readonly Action<string, string, string> _replaceFile;
@@ -14776,22 +14814,27 @@ namespace DxMessaging.Editor
                 byte[] expectedCurrentBytes
             )
             {
-                string rollbackCopyPath;
-                try
+                string recoveryPath = backupPath;
+                string primaryIssue = CheckContents(backupPath, originalBytes, BackupDiffers);
+                if (primaryIssue != null)
                 {
-                    rollbackCopyPath = VerifyRollbackCopy(fullPath, backupPath);
+                    recoveryPath = StagedOriginalPath(fullPath, backupPath);
+                    string stagedIssue = CheckContents(recoveryPath, originalBytes, BackupDiffers);
+                    if (stagedIssue != null)
+                    {
+                        throw new IOException(
+                            $"Could not verify an original for {fullPath}. Primary backup {backupPath} {primaryIssue}. "
+                                + $"Staged original {recoveryPath} {stagedIssue}."
+                        );
+                    }
                 }
-                catch (IOException) when (!File.Exists(backupPath))
-                {
-                    RestoreStagedOriginal(
-                        fullPath,
-                        StagedOriginalPath(fullPath, backupPath),
-                        originalBytes,
-                        expectedCurrentBytes
-                    );
-                    return;
-                }
-                RestoreDestination(fullPath, rollbackCopyPath, expectedCurrentBytes, backupPath);
+
+                RestoreVerifiedOriginal(
+                    fullPath,
+                    recoveryPath,
+                    originalBytes,
+                    expectedCurrentBytes
+                );
             }
 
             private void RestoreStagedOriginal(
@@ -14801,25 +14844,37 @@ namespace DxMessaging.Editor
                 byte[] expectedCurrentBytes
             )
             {
-                ValidatePath(rollbackCopyPath);
-                byte[] staged = File.ReadAllBytes(rollbackCopyPath);
-                if (!staged.AsSpan().SequenceEqual(originalBytes))
+                string issue = CheckContents(rollbackCopyPath, originalBytes, BackupDiffers);
+                if (issue != null)
                 {
-                    throw new IOException(
-                        $"The staged original at {rollbackCopyPath} differs from the preview."
-                    );
+                    throw new IOException($"The staged original {rollbackCopyPath} {issue}.");
                 }
 
-                // Preserve the only original on disk while recovering the destination.
+                RestoreVerifiedOriginal(
+                    fullPath,
+                    rollbackCopyPath,
+                    originalBytes,
+                    expectedCurrentBytes
+                );
+            }
+
+            private void RestoreVerifiedOriginal(
+                string fullPath,
+                string recoveryPath,
+                byte[] originalBytes,
+                byte[] expectedCurrentBytes
+            )
+            {
+                // The verified recovery copy stays in place. Replace the destination with matching preview bytes.
                 string replacementPath = fullPath + ".dxmsg-abort-" + Guid.NewGuid().ToString("N");
                 try
                 {
-                    File.WriteAllBytes(replacementPath, staged);
+                    File.WriteAllBytes(replacementPath, originalBytes);
                     RestoreDestination(
                         fullPath,
                         replacementPath,
                         expectedCurrentBytes,
-                        rollbackCopyPath
+                        recoveryPath
                     );
                 }
                 finally
@@ -14912,7 +14967,6 @@ namespace DxMessaging.Editor
             )
             {
                 string rollbackCopyPath = StagedOriginalPath(fullPath, backupPath);
-                const string BackupDiffers = "differs from the previewed original";
                 string primaryIssue = CheckContents(backupPath, originalBytes, BackupDiffers);
                 string stagingIssue = CheckContents(rollbackCopyPath, originalBytes, BackupDiffers);
                 string primary =
@@ -14959,24 +15013,6 @@ namespace DxMessaging.Editor
                 fullPath
                 + RollbackCopyMarker
                 + backupPath.Substring(fullPath.Length + BackupMarker.Length);
-
-            private string VerifyRollbackCopy(string fullPath, string backupPath)
-            {
-                string rollbackCopyPath = StagedOriginalPath(fullPath, backupPath);
-                ValidatePath(backupPath);
-                ValidatePath(rollbackCopyPath);
-                if (
-                    !File.ReadAllBytes(rollbackCopyPath)
-                        .AsSpan()
-                        .SequenceEqual(File.ReadAllBytes(backupPath))
-                )
-                {
-                    throw new IOException(
-                        $"The original backup {backupPath} and staged rollback {rollbackCopyPath} differ."
-                    );
-                }
-                return rollbackCopyPath;
-            }
 
             private static void TryDelete(string path)
             {

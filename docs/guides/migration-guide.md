@@ -200,9 +200,11 @@ it keeps the primary and staged originals for review and checks the upgraded scr
 planned bytes. The Console lists the recovery paths and reports a changed or missing backup.
 Keep the staged copy if the primary backup can no longer be verified.
 
-If a later write fails, the tool uses the recovery copies to restore earlier scripts. If a
-replacement error displaces the original, the tool restores it when the script path is still
-empty. If a save arrives during replacement or rollback, use the paths in the Console to compare
+If a later write fails, the tool uses a verified recovery copy to restore earlier scripts. If a
+replacement error leaves the script path empty, automatic recovery requires the backup that holds
+the displaced script. If the script remains missing, verify the staged original named in the
+Console and copy it back to the script path using an operation that refuses to overwrite an
+existing file. If a save arrives during replacement or rollback, use the Console paths to compare
 the live script with the retained copies and any displaced edits.
 
 The preview leaves unsupported encodings, overloads, qualified or cross-file callback declarations,
