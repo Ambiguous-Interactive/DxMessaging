@@ -24,6 +24,18 @@
       Include="../Tests/Runtime/Core/GeneratedNullableEnumDefaultTests.cs"
       Link="GeneratedNullableEnumDefaultTests.cs"
     />
+    <Compile
+      Include="../Tests/Runtime/Core/GeneratedFloatingDefaultTests.cs"
+      Link="GeneratedFloatingDefaultTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/GeneratedIntegralDefaultTests.cs"
+      Link="GeneratedIntegralDefaultTests.cs"
+    />
+    <Compile
+      Include="../Tests/Runtime/Core/GeneratedNameofDefaultsTests.cs"
+      Link="GeneratedNameofDefaultsTests.cs"
+    />
     <PackageReference
       Include="WallstopStudios.DxMessaging.Attributes"
       Version="$(AttributesPackageVersion)"
