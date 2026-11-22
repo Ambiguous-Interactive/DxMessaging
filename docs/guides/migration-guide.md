@@ -174,8 +174,10 @@ has imported. Refresh the Asset Database and preview again when an unimported sc
 When the tool updates an inherited string-handler override and can verify that it can add the
 opt-in, it inserts `protected override bool RegisterForStringMessages => true;` to preserve the
 3.x behavior. Existing opt-ins, opt-outs, and computed properties stay unchanged. The preview
-skips generated scripts identified by file names such as `Receiver.g.i.cs` or by a generated header.
-It leaves package sources, interceptors, emission calls, comments, and strings unchanged.
+skips generated scripts identified by file names such as `Receiver.g.i.cs` or by a generated header
+that can be active before the first code token in a build configuration. The Console reports any
+conditional header the preview cannot verify. The tool leaves package sources, interceptors,
+emission calls, comments, and strings unchanged.
 
 The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
@@ -197,7 +199,8 @@ the staged copies to restore earlier scripts and keeps the original backups for 
 arrives during rollback, use the paths in the Console to compare the live script, original backup,
 and any displaced edits. If a primary backup disappears, the tool can restore the previewed bytes
 from the staged copy. If verification fails after a replacement, the Console also reports the
-staged file path.
+staged file path. The tool rechecks each script before cleaning up its staging copy. When the
+bytes differ from the planned upgrade, the Console identifies the script and the original backup.
 
 The preview leaves unsupported encodings, overloads, qualified or cross-file callback declarations,
 and ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
@@ -244,8 +247,9 @@ to `separate(in pulse)` and `separate?.Invoke(ref pulse)` to `separate?.Invoke(i
 separate writable callback for callers that need to modify the argument. When the preview cannot
 account for callers of a standalone `new MessageHandler.FastHandler<T>(...)` construction or a
 property, indexer, or method returning a fast delegate, review the delegate and its calls together.
-This includes explicit interface implementations. A global import in another script in the same
-assembly can reveal a delegate initializer that needs manual review. Check direct calls
+This includes explicit interface implementations. The preview reports legacy initializers
+declared through a fast-delegate type alias, including global aliases from another script in the
+same assembly. Check direct calls
 that omit an argument modifier. A call such as `this.Forward(default(Pulse))` can select a different
 overload after `Forward` changes from `ref` to `in`. If the call must keep using an extension, call
 it explicitly, for example `Extensions.Forward(this, default(Pulse))`.

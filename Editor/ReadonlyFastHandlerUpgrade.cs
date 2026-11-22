@@ -420,9 +420,19 @@ namespace DxMessaging.Editor
                     EncodedSource source = EncodedSource.FromBytes(originalBytes);
                     scriptAssemblies.TryGetValue(assetPath, out string assemblyName);
                     projectUses.AddScript(assetPath, source.Text, assemblyName);
-                    if (!IsGeneratedPath(assetPath) && !IsGeneratedSource(assetPath, source.Text))
+                    if (!IsGeneratedPath(assetPath))
                     {
-                        readableScripts.Add(assetPath, (fullPath, source));
+                        GeneratedHeader header = ClassifyGeneratedHeader(source.Text);
+                        if (header == GeneratedHeader.Absent)
+                        {
+                            readableScripts.Add(assetPath, (fullPath, source));
+                        }
+                        else if (header == GeneratedHeader.Unverified)
+                        {
+                            manualReview.Add(
+                                $"{assetPath}: line 1: the preview could not verify the conditional generated-file header"
+                            );
+                        }
                     }
                 }
                 catch (Exception exception)
@@ -3681,6 +3691,18 @@ namespace DxMessaging.Editor
             SortedDictionary<int, string> insertions = new();
             AddStringHandlerOptIns(masked, metadata, replacementStarts, insertions, manualReview);
             manualReview.UnionWith(metadata.PackageBindingReviews);
+            foreach (
+                var (_, review) in metadata.FastDelegateAliasReviews.Where(alias =>
+                    !metadata.ReportedDelegateValues.Exists(reported =>
+                        reported.Start <= alias.Value.Start
+                        && alias.Value.Start + alias.Value.Length
+                            <= reported.Start + reported.Length
+                    )
+                )
+            )
+            {
+                manualReview.Add(review);
+            }
 
             List<int> orderedStarts = new(replacementStarts);
             orderedStarts.Sort();
@@ -3742,54 +3764,109 @@ namespace DxMessaging.Editor
             {
                 throw new ArgumentNullException(nameof(source));
             }
-            if (IsGeneratedPath(assetPath))
+            return IsGeneratedPath(assetPath)
+                || ClassifyGeneratedHeader(source) == GeneratedHeader.Present;
+        }
+
+        private enum GeneratedHeader
+        {
+            Absent,
+            Present,
+            Unverified,
+        }
+
+        private static GeneratedHeader ClassifyGeneratedHeader(string source)
+        {
+            if (source.IndexOf("generated", StringComparison.OrdinalIgnoreCase) < 0)
             {
-                return true;
+                return GeneratedHeader.Absent;
             }
 
+            // Consider only configurations that reach a leading comment. Keeping each symbol's
+            // assigned value for the whole scan ties the header to a feasible configuration.
+            const int MaximumHeaderScans = 256;
+            int remainingScans = MaximumHeaderScans;
+            Dictionary<string, bool> configuration = new(StringComparer.Ordinal);
+            return Explore();
+
+            GeneratedHeader Explore()
+            {
+                if (remainingScans <= 0)
+                {
+                    return GeneratedHeader.Unverified;
+                }
+                remainingScans--;
+
+                GeneratedHeader result = ScanGeneratedHeader(
+                    source,
+                    configuration,
+                    out string unresolved
+                );
+                if (unresolved == null)
+                {
+                    return result;
+                }
+
+                GeneratedHeader withoutSymbol = ExploreWithSymbol(false);
+                if (withoutSymbol == GeneratedHeader.Present)
+                {
+                    return withoutSymbol;
+                }
+
+                GeneratedHeader withSymbol = ExploreWithSymbol(true);
+                return withSymbol == GeneratedHeader.Absent ? withoutSymbol : withSymbol;
+
+                GeneratedHeader ExploreWithSymbol(bool defined)
+                {
+                    configuration.Add(unresolved, defined);
+                    GeneratedHeader branch = Explore();
+                    configuration.Remove(unresolved);
+                    return branch;
+                }
+            }
+        }
+
+        private static GeneratedHeader ScanGeneratedHeader(
+            string source,
+            Dictionary<string, bool> configuration,
+            out string unresolved
+        )
+        {
+            unresolved = null;
             ConditionalMask conditionals = null;
-            Stack<(bool EntryOpen, bool EarlierArmOpen)> headers = new();
-            bool headerOpen = true;
+            Dictionary<string, bool> symbols = new(configuration, StringComparer.Ordinal);
             for (int position = NextNonWhitespace(source, 0); 0 <= position; )
             {
                 if (source[position] == '#' && IsDirectiveStart(source.AsSpan(), position))
                 {
                     int lineEnd = FindDirectiveLineEnd(source.AsSpan(), position);
-                    string keyword = ReadConditionalKeyword(
+                    string keyword = ReadDirectiveKeyword(
                         source.AsSpan(),
                         position,
                         lineEnd,
                         out int keywordEnd
                     );
-                    if (keyword != null)
+                    ReadOnlySpan<char> operand = source.AsSpan(keywordEnd, lineEnd - keywordEnd);
+                    if (IsConditionalBranchKeyword(keyword))
                     {
-                        conditionals ??= new ConditionalMask(new SourceMetadata(source));
-                        if (keyword == "if")
-                        {
-                            headers.Push((headerOpen, false));
-                        }
-                        else if (headers.TryPop(out var header))
-                        {
-                            bool selectedArmOpen =
-                                headerOpen && conditionals.State != BranchState.Inactive;
-                            bool completedArmOpen = header.EarlierArmOpen || selectedArmOpen;
-                            if (keyword == "endif")
-                            {
-                                headerOpen =
-                                    completedArmOpen
-                                    || (header.EntryOpen && conditionals.MaySkipCurrentGroup);
-                            }
-                            else
-                            {
-                                headers.Push((header.EntryOpen, completedArmOpen));
-                                headerOpen = header.EntryOpen;
-                            }
-                        }
-                        conditionals.Visit(
-                            keyword,
-                            source.AsSpan(keywordEnd, lineEnd - keywordEnd),
-                            position
+                        conditionals ??= new ConditionalMask(
+                            new SourceMetadata(source),
+                            symbols: symbols
                         );
+                        conditionals.Visit(keyword, operand, position);
+                        if (conditionals.State == BranchState.Uncertain)
+                        {
+                            unresolved = conditionals.UnresolvedSymbol;
+                            return GeneratedHeader.Unverified;
+                        }
+                    }
+                    else if (keyword is "define" or "undef")
+                    {
+                        conditionals ??= new ConditionalMask(
+                            new SourceMetadata(source),
+                            symbols: symbols
+                        );
+                        conditionals.ObserveSymbolDefinition(operand, keyword == "define");
                     }
                     position = NextNonWhitespace(source, lineEnd);
                     continue;
@@ -3802,52 +3879,36 @@ namespace DxMessaging.Editor
                     );
                     continue;
                 }
-
-                bool commentStart =
-                    source[position] == '/'
-                    && position + 1 < source.Length
-                    && source[position + 1] is '/' or '*';
-                if (commentStart)
-                {
-                    int end = FindCommentEnd(source, position, source.Length);
-                    if (end < 0)
-                    {
-                        break;
-                    }
-                    bool block = source[position + 1] == '*';
-                    int contentEnd = block ? end - 2 : end;
-                    if (
-                        headerOpen
-                        && HasGeneratedCommentMarker(
-                            source.AsSpan(position + 2, contentEnd - position - 2),
-                            block && conditionals?.State == BranchState.Uncertain
-                        )
-                    )
-                    {
-                        return true;
-                    }
-                    position = NextNonWhitespace(source, end);
-                    continue;
-                }
-
-                if (headers.Count == 0)
+                if (
+                    source[position] != '/'
+                    || source.Length <= position + 1
+                    || source[position + 1] is not ('/' or '*')
+                )
                 {
                     break;
                 }
-                headerOpen = false;
-                int tokenEnd = FindNonCodeEnd(source, position, interpolatedExpressions: null);
-                position = NextNonWhitespace(source, Math.Max(position + 1, tokenEnd));
+
+                int commentEnd = FindCommentEnd(source, position, source.Length);
+                if (commentEnd < 0)
+                {
+                    break;
+                }
+                int contentEnd = source[position + 1] == '*' ? commentEnd - 2 : commentEnd;
+                if (
+                    HasGeneratedCommentMarker(
+                        source.AsSpan(position + 2, contentEnd - position - 2)
+                    )
+                )
+                {
+                    return GeneratedHeader.Present;
+                }
+                position = NextNonWhitespace(source, commentEnd);
             }
-            return false;
+            return GeneratedHeader.Absent;
         }
 
-        private static bool HasGeneratedCommentMarker(
-            ReadOnlySpan<char> comment,
-            bool conditionalBlock
-        )
+        private static bool HasGeneratedCommentMarker(ReadOnlySpan<char> comment)
         {
-            bool firstLine = true;
-            bool mayBeLeadingLineComment = false;
             while (!comment.IsEmpty)
             {
                 int terminator = comment.IndexOfAny(CSharpLineTerminators.AsSpan());
@@ -3857,37 +3918,6 @@ namespace DxMessaging.Editor
                 {
                     return true;
                 }
-
-                if (conditionalBlock && !firstLine && line.Length != 0)
-                {
-                    /*
-                     * If the block opener is skipped, an arm boundary inside the block
-                     * can expose an ordinary leading line comment.
-                     */
-                    if (line[0] == '#')
-                    {
-                        mayBeLeadingLineComment =
-                            ReadConditionalKeyword(line.AsSpan(), 0, line.Length, out _)
-                                is "elif"
-                                    or "else"
-                                    or "endif";
-                    }
-                    else if (line.StartsWith("//", StringComparison.Ordinal))
-                    {
-                        if (
-                            mayBeLeadingLineComment
-                            && GeneratedCommentMarkerRegex.IsMatch(line.Substring(2).TrimStart())
-                        )
-                        {
-                            return true;
-                        }
-                    }
-                    else
-                    {
-                        mayBeLeadingLineComment = false;
-                    }
-                }
-                firstLine = false;
                 comment = terminator < 0 ? default : comment.Slice(terminator + 1);
             }
             return false;
@@ -3915,7 +3945,8 @@ namespace DxMessaging.Editor
             Dictionary<string, string> unprovenMethodGroups
         )
         {
-            foreach (Match handler in FastDelegateNames(masked, metadata))
+            Match[] handlers = FastDelegateNames(masked, metadata).ToArray();
+            foreach (Match handler in handlers)
             {
                 int fastHandler = handler.Index;
                 bool isCandidate = TryClassifyFastDelegateType(
@@ -3930,14 +3961,26 @@ namespace DxMessaging.Editor
                     continue;
                 }
 
+                int genericOpen = NextNonWhitespace(masked, handler.Index + handler.Length);
+                if (IsGenericTypeTestOperand(masked, genericOpen))
+                {
+                    continue;
+                }
+                int genericClose = FindMatching(masked, genericOpen, '<', '>');
+                if (genericClose < 0)
+                {
+                    continue;
+                }
+                string messageType = CompactType(
+                    masked.Substring(genericOpen + 1, genericClose - genericOpen - 1)
+                );
                 foreach (
                     (
                         int variable,
                         TextSpan rightHandSideSpan,
-                        string messageType,
                         bool declarationIsProven,
                         string returningMember
-                    ) in FindFastDelegateInitializers(masked, handler, metadata)
+                    ) in FindFastDelegateInitializers(masked, genericClose + 1, metadata)
                 )
                 {
                     if (returningMember != null)
@@ -4042,6 +4085,203 @@ namespace DxMessaging.Editor
                     );
                 }
             }
+            ReportFastDelegateAliasUses(
+                masked,
+                metadata,
+                handlers,
+                replacementStarts,
+                methodGroups,
+                unprovenMethodGroups
+            );
+        }
+
+        private static void ReportFastDelegateAliasUses(
+            string masked,
+            SourceMetadata metadata,
+            Match[] handlers,
+            HashSet<int> replacementStarts,
+            List<(string Name, TextSpan Use)> methodGroups,
+            Dictionary<string, string> unprovenMethodGroups
+        )
+        {
+            IEnumerable<(string Name, int Start, int End, int ScopeStart)> localAliases =
+                FindFastDelegateAliases(masked, metadata, handlers)
+                    .Select(alias => (alias.Name, alias.Start, alias.End, alias.ScopeStart));
+            IEnumerable<(string Name, int Start, int End, int ScopeStart)> projectAliases =
+                metadata.GlobalFastDelegateAliases.Select(name => (name, 0, masked.Length, -1));
+            var declarations = NamespaceAliasRegex
+                .Matches(masked)
+                .Cast<Match>()
+                .Select(alias => (Alias: alias, Scope: FindAliasScope(masked, alias.Index)))
+                .ToLookup(declaration => IdentifierValue(declaration.Alias.Groups["alias"].Value));
+            foreach (
+                (string name, int start, int end, int scopeStart) in localAliases.Concat(
+                    projectAliases
+                )
+            )
+            {
+                foreach (Match use in metadata.MaskedIdentifierUses(masked, name))
+                {
+                    if (
+                        use.Index < start
+                        || end <= use.Index
+                        || FindQualifiedTypeStart(masked, use.Index) != use.Index
+                    )
+                    {
+                        continue;
+                    }
+                    List<int> nearerDeclarations = declarations[name]
+                        .Where(declaration =>
+                            scopeStart < declaration.Scope.Start
+                            && declaration.Alias.Index < use.Index
+                            && use.Index < declaration.Scope.Start + declaration.Scope.Length
+                        )
+                        .Select(declaration => declaration.Alias.Index)
+                        .ToList();
+                    if (metadata.HasAvailableDeclaration(nearerDeclarations, use.Index))
+                    {
+                        continue;
+                    }
+
+                    const string Reason = "uses a fast delegate declared through a type alias";
+                    int afterAlias = use.Index + use.Length;
+                    foreach (
+                        var (_, initializer, _, _) in FindFastDelegateInitializers(
+                            masked,
+                            afterAlias,
+                            metadata
+                        )
+                    )
+                    {
+                        Report(initializer);
+                    }
+                    int open = NextNonWhitespace(masked, afterAlias);
+                    if (
+                        0 <= open
+                        && masked[open] == '('
+                        && FollowsKeyword(
+                            masked,
+                            0,
+                            PreviousNonWhitespace(masked, use.Index - 1),
+                            "new"
+                        )
+                        && TryFindSingleArgumentValue(masked, open, out TextSpan argument)
+                    )
+                    {
+                        Report(argument);
+                    }
+
+                    void Report(TextSpan expression)
+                    {
+                        SortedSet<string> reviews = new(StringComparer.Ordinal);
+                        ReviewUnprovenDelegateValue(
+                            masked,
+                            metadata,
+                            expression,
+                            isProven: false,
+                            Reason,
+                            replacementStarts,
+                            methodGroups,
+                            unprovenMethodGroups,
+                            reviews,
+                            reportCompoundReturnValue: true,
+                            unprovenTypeReason: Reason
+                        );
+                        metadata.FastDelegateAliasReviews.AddRange(
+                            reviews.Select(review => (expression, review))
+                        );
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<(
+            string Name,
+            int Start,
+            int End,
+            int ScopeStart,
+            bool Global
+        )> FindFastDelegateAliases(string masked, SourceMetadata metadata, Match[] handlers)
+        {
+            if (handlers.Length == 0)
+            {
+                yield break;
+            }
+
+            foreach (Match alias in NamespaceAliasRegex.Matches(masked))
+            {
+                int target = NextNonWhitespace(masked, alias.Index + alias.Length);
+                int statementEnd = target < 0 ? -1 : masked.IndexOf(';', target);
+                if (statementEnd < 0)
+                {
+                    continue;
+                }
+                Match handler = handlers.FirstOrDefault(match =>
+                    target <= match.Index
+                    && match.Index < statementEnd
+                    && FindQualifiedTypeStart(masked, match.Index) == target
+                );
+                if (
+                    handler == null
+                    || !TryClassifyFastDelegateType(masked, handler.Index, metadata, out _, out _)
+                )
+                {
+                    continue;
+                }
+                int genericOpen = NextNonWhitespace(masked, handler.Index + handler.Length);
+                int genericClose = FindMatching(masked, genericOpen, '<', '>');
+                if (genericClose < 0 || NextNonWhitespace(masked, genericClose + 1) != statementEnd)
+                {
+                    continue;
+                }
+
+                TextSpan scope = FindAliasScope(masked, alias.Index);
+                bool global = FollowsKeyword(
+                    masked,
+                    0,
+                    PreviousNonWhitespace(masked, alias.Index - 1),
+                    "global"
+                );
+                yield return (
+                    IdentifierValue(alias.Groups["alias"].Value),
+                    statementEnd + 1,
+                    scope.Start + scope.Length,
+                    scope.Start,
+                    global
+                );
+            }
+        }
+
+        private static TextSpan FindAliasScope(string masked, int directive)
+        {
+            int owner = FindEnclosingBrace(masked, directive);
+            int end = masked.Length;
+            if (0 <= owner)
+            {
+                int close = FindMatching(masked, owner, '{', '}');
+                if (0 <= close)
+                {
+                    end = close;
+                }
+            }
+            else
+            {
+                foreach (Match declaration in NamespaceDeclarationRegex.Matches(masked))
+                {
+                    int boundary = declaration.Index + declaration.Length - 1;
+                    if (directive <= boundary)
+                    {
+                        break;
+                    }
+                    if (masked[boundary] == ';')
+                    {
+                        owner = boundary;
+                        break;
+                    }
+                }
+            }
+
+            return new TextSpan(owner + 1, end - owner - 1);
         }
 
         private static bool TryFindDelegateConstructorArgument(
@@ -4100,7 +4340,8 @@ namespace DxMessaging.Editor
             List<(string Name, TextSpan Use)> methodGroups,
             Dictionary<string, string> unprovenMethodGroups,
             SortedSet<string> manualReview,
-            bool reportCompoundReturnValue = false
+            bool reportCompoundReturnValue = false,
+            string unprovenTypeReason = null
         )
         {
             if (
@@ -4115,7 +4356,8 @@ namespace DxMessaging.Editor
 
             string reason = isProven
                 ? provenTypeReason
-                : "uses a delegate whose MessageHandler type cannot be proven";
+                : unprovenTypeReason
+                    ?? "uses a delegate whose MessageHandler type cannot be proven";
             Invocation expression = new(
                 "callback",
                 argument.Start,
@@ -4278,24 +4520,11 @@ namespace DxMessaging.Editor
         private static IEnumerable<(
             int Variable,
             TextSpan Initializer,
-            string MessageType,
             bool DeclarationIsProven,
             string ReturningMember
-        )> FindFastDelegateInitializers(string masked, Match handler, SourceMetadata metadata)
+        )> FindFastDelegateInitializers(string masked, int typeEnd, SourceMetadata metadata)
         {
-            int open = NextNonWhitespace(masked, handler.Index + handler.Length);
-            if (IsGenericTypeTestOperand(masked, open))
-            {
-                yield break;
-            }
-
-            int close = FindMatching(masked, open, '<', '>');
-            if (close < 0)
-            {
-                yield break;
-            }
-            string messageType = CompactType(masked.Substring(open + 1, close - open - 1));
-            int variable = NextNonWhitespace(masked, close + 1);
+            int variable = NextNonWhitespace(masked, typeEnd);
             if (0 <= variable && masked[variable] == '?')
             {
                 variable = NextNonWhitespace(masked, variable + 1);
@@ -4340,7 +4569,7 @@ namespace DxMessaging.Editor
                 {
                     foreach (var (value, form) in FindFastDelegateMethodReturns(masked, following))
                     {
-                        yield return (variable, value, messageType, false, form);
+                        yield return (variable, value, false, form);
                     }
                     yield break;
                 }
@@ -4361,7 +4590,6 @@ namespace DxMessaging.Editor
                     yield return (
                         variable,
                         new TextSpan(start, end - start),
-                        messageType,
                         false,
                         $"an expression-bodied {memberKind}"
                     );
@@ -4391,13 +4619,7 @@ namespace DxMessaging.Editor
                             )
                         )
                         {
-                            yield return (
-                                variable,
-                                value,
-                                messageType,
-                                false,
-                                $"{form} {memberKind}"
-                            );
+                            yield return (variable, value, false, $"{form} {memberKind}");
                         }
                     }
                     following =
@@ -4414,7 +4636,7 @@ namespace DxMessaging.Editor
                     }
 
                     int declarationStart =
-                        masked.LastIndexOfAny(new[] { '{', '}', ';' }, handler.Index - 1) + 1;
+                        masked.LastIndexOfAny(new[] { '{', '}', ';' }, typeEnd - 1) + 1;
                     declarationIsProven =
                         IsAutoPropertyAccessorList(masked, accessors, closeAccessors)
                         && !metadata.UncertainBranches.Exists(branch =>
@@ -4438,7 +4660,6 @@ namespace DxMessaging.Editor
                     yield return (
                         variable,
                         new TextSpan(initializer, following - initializer),
-                        messageType,
                         declarationIsProven,
                         null
                     );
@@ -9515,10 +9736,12 @@ namespace DxMessaging.Editor
                                 masked,
                                 metadata,
                                 suffix,
-                                IdentifierValue(declaredType.Value)
+                                IdentifierValue(declaredType.Value),
+                                out TextSpan reportedValue
                             )
                         )
                         {
+                            metadata.ReportedDelegateValues.Add(reportedValue);
                             manualReview.Add(
                                 $"{CallbackLocation(masked, use)} selects a delegate value '{name}' whose binding cannot be proven safe for 'in'; inspect its binding manually"
                             );
@@ -9534,9 +9757,12 @@ namespace DxMessaging.Editor
             string masked,
             SourceMetadata metadata,
             int suffix,
-            string typeName
+            string typeName,
+            out TextSpan reportedValue
         )
         {
+            reportedValue = default;
+
             bool ValueRequiresReview(TextSpan value)
             {
                 int first = NextNonWhitespace(masked, value.Start);
@@ -9583,6 +9809,7 @@ namespace DxMessaging.Editor
                         .Any(getter => ValueRequiresReview(getter.Value))
                 )
                 {
+                    reportedValue = new TextSpan(suffix, close + 1 - suffix);
                     return true;
                 }
                 suffix = NextNonWhitespace(masked, close + 1);
@@ -9594,7 +9821,8 @@ namespace DxMessaging.Editor
 
             int start = suffix + (IsArrow(masked, suffix) ? 2 : 1);
             int end = FindExpressionEnd(masked, start);
-            return ValueRequiresReview(new TextSpan(start, end - start));
+            reportedValue = new TextSpan(start, end - start);
+            return ValueRequiresReview(reportedValue);
         }
 
         private static int FindCallbackParametersOpen(
@@ -11668,7 +11896,7 @@ namespace DxMessaging.Editor
             }
             else if (keyword is "define" or "undef")
             {
-                conditional.ObserveSymbolDefinition(operand);
+                conditional.ObserveSymbolDefinition(operand, keyword == "define");
             }
             Mask(masked, index, lineEnd);
             return lineEnd;
@@ -11827,6 +12055,8 @@ namespace DxMessaging.Editor
             public readonly Dictionary<int, string> NamedCallbackUseIssues = new();
             public readonly Dictionary<int, string> UnprovenDelegateValueUses = new();
             public readonly List<TextSpan> ReportedCallbackExpressions = new();
+            public readonly List<TextSpan> ReportedDelegateValues = new();
+            public readonly List<(TextSpan Value, string Review)> FastDelegateAliasReviews = new();
             public readonly List<(
                 int TypeName,
                 int Variable,
@@ -11870,6 +12100,10 @@ namespace DxMessaging.Editor
 
             public bool CanInspectProjectMemberUses =>
                 _projectTypes != null && FindExternalCallbackUse != null;
+
+            public IEnumerable<string> GlobalFastDelegateAliases =>
+                _projectTypes?.GetGlobalFastDelegateAliases(_assemblyName)
+                ?? Enumerable.Empty<string>();
 
             public bool HasAvailableDeclaration(List<int> declarations, int use)
             {
@@ -12495,7 +12729,9 @@ namespace DxMessaging.Editor
                 }
 
                 if (
-                    0 <= after
+                    0 <= before
+                    && masked[before] is '(' or '[' or ','
+                    && 0 <= after
                     && masked[after] == ':'
                     && (after + 1 == masked.Length || masked[after + 1] != ':')
                 )
@@ -12670,18 +12906,23 @@ namespace DxMessaging.Editor
             private const string UnityFloorSymbol = "UNITY_2021_3_OR_NEWER";
             private readonly SourceMetadata _metadata;
             private bool _supportedUnityFloor;
+            private Dictionary<string, bool> _symbols;
             private int _uncertainTail = int.MaxValue;
 
-            public ConditionalMask(SourceMetadata metadata, bool supportedUnityFloor = false)
+            public ConditionalMask(
+                SourceMetadata metadata,
+                bool supportedUnityFloor = false,
+                Dictionary<string, bool> symbols = null
+            )
             {
                 _metadata = metadata;
                 _supportedUnityFloor = supportedUnityFloor;
+                _symbols = symbols;
             }
 
             public BranchState State { get; private set; } = BranchState.Active;
 
-            public bool MaySkipCurrentGroup =>
-                _scopes.TryPeek(out var scope) && scope.Remaining != BranchState.Inactive;
+            public string UnresolvedSymbol { get; private set; }
 
             public void Visit(string keyword, ReadOnlySpan<char> condition, int start)
             {
@@ -12721,8 +12962,12 @@ namespace DxMessaging.Editor
                     return;
                 }
 
-                BranchState selected =
-                    keyword == "else" ? BranchState.Active : ReadCondition(condition);
+                BranchState selected = keyword switch
+                {
+                    "else" => BranchState.Active,
+                    _ when remaining == BranchState.Inactive => BranchState.Inactive,
+                    _ => ReadCondition(condition),
+                };
                 BranchState unselected = selected switch
                 {
                     BranchState.Active => BranchState.Inactive,
@@ -12733,22 +12978,39 @@ namespace DxMessaging.Editor
                 State = Intersect(remaining, selected);
             }
 
-            public void ObserveSymbolDefinition(ReadOnlySpan<char> operand)
+            public void ObserveSymbolDefinition(ReadOnlySpan<char> operand, bool defined)
             {
-                if (!_supportedUnityFloor || State == BranchState.Inactive)
+                if (State == BranchState.Inactive)
                 {
                     return;
                 }
 
                 operand = operand.TrimStart();
-                int length = UnityFloorSymbol.Length;
-                if (
-                    operand.StartsWith(UnityFloorSymbol.AsSpan(), StringComparison.Ordinal)
-                    && (length == operand.Length || !IsIdentifierPart(operand[length]))
-                )
+                int end = 0;
+                while (end < operand.Length && IsIdentifierPart(operand[end]))
                 {
-                    // The version symbol from the compiler no longer proves the branch in this unit.
+                    end++;
+                }
+                if (end == 0)
+                {
+                    return;
+                }
+                string symbol = operand.Slice(0, end).ToString();
+                if (symbol == UnityFloorSymbol)
+                {
+                    // A file-local definition can override the compiler's Unity version symbol.
                     _supportedUnityFloor = false;
+                }
+
+                if (State == BranchState.Active)
+                {
+                    _symbols ??= new Dictionary<string, bool>(StringComparer.Ordinal);
+                    _symbols[symbol] = defined;
+                }
+                else
+                {
+                    // Some configurations may apply this directive. Preserve both possibilities.
+                    _symbols?.Remove(symbol);
                 }
             }
 
@@ -12823,8 +13085,10 @@ namespace DxMessaging.Editor
                 int comment = condition.IndexOf("//".AsSpan(), StringComparison.Ordinal);
                 ReadOnlySpan<char> expression =
                     comment < 0 ? condition : condition.Slice(0, comment);
-                ConditionalExpression reader = new(expression, _supportedUnityFloor);
-                return reader.Read();
+                ConditionalExpression reader = new(expression, _supportedUnityFloor, _symbols);
+                BranchState state = reader.Read();
+                UnresolvedSymbol = reader.UnresolvedSymbol;
+                return state;
             }
 
             private ref struct ConditionalExpression
@@ -12832,17 +13096,23 @@ namespace DxMessaging.Editor
                 private const int MaximumDepth = 64;
                 private ReadOnlySpan<char> _remaining;
                 private readonly bool _supportedUnityFloor;
+                private readonly IReadOnlyDictionary<string, bool> _symbols;
                 private bool _invalid;
 
                 public ConditionalExpression(
                     ReadOnlySpan<char> expression,
-                    bool supportedUnityFloor
+                    bool supportedUnityFloor,
+                    IReadOnlyDictionary<string, bool> symbols
                 )
                 {
                     _remaining = expression;
                     _supportedUnityFloor = supportedUnityFloor;
+                    _symbols = symbols;
                     _invalid = false;
+                    UnresolvedSymbol = null;
                 }
+
+                public string UnresolvedSymbol { get; private set; }
 
                 public BranchState Read()
                 {
@@ -12943,9 +13213,20 @@ namespace DxMessaging.Editor
                     {
                         return BranchState.Active;
                     }
-                    return name.SequenceEqual("false".AsSpan())
-                        ? BranchState.Inactive
-                        : BranchState.Uncertain;
+                    if (name.SequenceEqual("false".AsSpan()))
+                    {
+                        return BranchState.Inactive;
+                    }
+                    if (_symbols != null)
+                    {
+                        string symbol = name.ToString();
+                        if (_symbols.TryGetValue(symbol, out bool defined))
+                        {
+                            return defined ? BranchState.Active : BranchState.Inactive;
+                        }
+                        UnresolvedSymbol ??= symbol;
+                    }
+                    return BranchState.Uncertain;
                 }
 
                 private bool Take(string token)
@@ -13788,6 +14069,8 @@ namespace DxMessaging.Editor
                 )
             > _routeDeclarations = new();
             private readonly HashSet<(string Assembly, string Name)> _globalAliases = new();
+            private readonly HashSet<(string Assembly, string Name)> _globalFastDelegateAliases =
+                new();
             private readonly HashSet<string> _globalStaticImportAssemblies = new(
                 StringComparer.Ordinal
             );
@@ -13820,6 +14103,11 @@ namespace DxMessaging.Editor
                     route.Body,
                     marker
                 );
+
+            public IEnumerable<string> GetGlobalFastDelegateAliases(string assemblyName) =>
+                _globalFastDelegateAliases
+                    .Where(alias => MayShareCompilation(alias.Assembly, assemblyName))
+                    .Select(alias => alias.Name);
 
             public bool CanImportGlobalType(string name, string assemblyName) =>
                 _globalStaticImportAssemblies.Any(importAssembly =>
@@ -13897,6 +14185,19 @@ namespace DxMessaging.Editor
                 )
                 {
                     _globalStaticImportAssemblies.Add(assemblyName);
+                }
+                foreach (
+                    var (name, _, _, _, global) in FindFastDelegateAliases(
+                        masked,
+                        metadata,
+                        FastDelegateNames(masked, metadata).ToArray()
+                    )
+                )
+                {
+                    if (global)
+                    {
+                        _globalFastDelegateAliases.Add((assemblyName, name));
+                    }
                 }
                 foreach (Match alias in NamespaceAliasRegex.Matches(masked))
                 {
@@ -14376,8 +14677,17 @@ namespace DxMessaging.Editor
                 byte[] expectedCurrentBytes
             )
             {
+                string rollbackCopyPath = VerifyRollbackCopy(fullPath, backupPath);
+                if (!MatchesDestination(fullPath, expectedCurrentBytes))
+                {
+                    throw new IOException(
+                        $"{fullPath} changed during final upgrade verification. "
+                            + $"The file and its original backup at {backupPath} were preserved."
+                    );
+                }
+
                 // Keep the original backup for review. The staging copy is redundant.
-                TryDelete(VerifyRollbackCopy(fullPath, backupPath));
+                TryDelete(rollbackCopyPath);
                 return false;
             }
 

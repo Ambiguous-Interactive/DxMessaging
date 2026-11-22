@@ -1644,6 +1644,155 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             }
         }
 
+        [TestCase("Handler", false)]
+        [TestCase("global::DxMessaging.Core.MessageHandler.FastHandler<Game.Pulse>", true)]
+        public void AnalyzeReportsStandaloneLegacyDelegateFieldsDeclaredThroughAnAlias(
+            string fieldType,
+            bool migrate
+        )
+        {
+            string source = @"
+using Handler = global::DxMessaging.Core.MessageHandler.FastHandler<Game.Pulse>;
+namespace Game
+{
+    readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+}
+class Listener
+{
+    private DELEGATE handler = (ref Game.Pulse message) => { };
+}
+".Replace("DELEGATE", fieldType);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Game.Pulse", "in Game.Pulse") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains("line 9"));
+        }
+
+        [TestCase("Game", true)]
+        [TestCase("Game.dll", true)]
+        [TestCase(null, true)]
+        [TestCase("Other", false)]
+        public void AnalyzeReportsGlobalFastDelegateAliasesWithinTheirCompilation(
+            string aliasAssembly,
+            bool reviews
+        )
+        {
+            const string Alias =
+                "global using Handler = global::DxMessaging.Core.MessageHandler.FastHandler<Game.Pulse>;";
+            string source = @"
+namespace Game
+{
+    DECLARATION
+    readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+    class Listener
+    {
+        private Handler handler = (ref Pulse message) => { };
+    }
+}".Replace("DECLARATION", reviews ? "" : "delegate void Handler(ref Pulse message);");
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
+            project.AddScript("Assets/Aliases.cs", Alias, aliasAssembly);
+            project.AddScript("Assets/Listener.cs", source, "Game");
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source,
+                projectTypes: project,
+                assemblyName: "Game"
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(reviews ? 1 : 0));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("line 8").And.Contains("type alias")
+            );
+        }
+
+        [Test]
+        public void AnalyzeLimitsFastDelegateAliasReportsToTheirNamespaceScope()
+        {
+            const string Source =
+                @"
+namespace Game
+{
+    readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+}
+namespace Consumer
+{
+    using Handler = global::DxMessaging.Core.MessageHandler.FastHandler<Game.Pulse>;
+    class Listener
+    {
+        private Handler handler = (ref Game.Pulse message) => { };
+    }
+}
+namespace Other
+{
+    delegate void Handler(ref Game.Pulse message);
+    class Listener
+    {
+        private Handler handler = (ref Game.Pulse message) => { };
+    }
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("line 11").And.Contain("type alias")
+            );
+        }
+
+        [TestCase("", false, 0)]
+        [TestCase("", true, 1)]
+        [TestCase("#define LEGACY", true, 0)]
+        [TestCase("#undef LEGACY", true, 1)]
+        public void AnalyzeChecksWhetherAnInnerAliasAlwaysShadowsThePackageAlias(
+            string prelude,
+            bool conditional,
+            int reviews
+        )
+        {
+            string source =
+                prelude
+                + @"
+using Handler = global::DxMessaging.Core.MessageHandler.FastHandler<Game.Pulse>;
+namespace Game
+{
+    readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+}
+namespace Compat
+{
+    delegate void Writable(ref Game.Pulse message);
+}
+namespace Consumer
+{
+BEGIN
+    using Handler = global::Compat.Writable;
+END
+    class Listener
+    {
+        private Handler handler = (ref Game.Pulse message) => { };
+    }
+}".Replace("BEGIN", conditional ? "#if LEGACY" : "").Replace("END", conditional ? "#endif" : "");
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(reviews));
+        }
+
         [TestCase("=> (ref Pulse message) => { };", "expression-bodied indexer")]
         [TestCase("{ get => Forward; }", "expression-bodied indexer")]
         [TestCase("{ get { return Forward; } }", "block-bodied indexer")]
@@ -6172,6 +6321,52 @@ class Other { public global::Vendor.CustomToken token; }".Replace("RECEIVER", re
             );
         }
 
+        [TestCase(
+            "case { } token: token.RegisterUntargeted<Pulse>((ref Pulse message) => { }); break;",
+            false
+        )]
+        [TestCase(
+            "case { } vendor: Observation.Observe(token: vendor); token.RegisterUntargeted<Pulse>((ref Pulse message) => { }); break;",
+            true
+        )]
+        public void AnalyzeDistinguishesSwitchPatternVariablesFromNamedArguments(
+            string arm,
+            bool migrate
+        )
+        {
+            string source = @"
+sealed class Receiver
+{
+    private global::DxMessaging.Core.MessageRegistrationToken token;
+    private void Register(VendorToken candidate)
+    {
+        switch (candidate)
+        {
+            ARM
+        }
+    }
+}
+static class Observation { public static void Observe(VendorToken token) { } }
+delegate void Writable<T>(ref T message);
+class VendorToken
+{
+    public void RegisterUntargeted<T>(Writable<T> callback) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("ARM", arm);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            Assert.That(result.ManualReviewMethods, Has.All.Contains("line 9"));
+        }
+
         [TestCase("global::Registration", false)]
         [TestCase("Vendor::Registration", false)]
         [TestCase("this.Registration", true)]
@@ -8817,6 +9012,45 @@ void OnPulse(ref Pulse message) { }";
             );
         }
 
+        [TestCase("LEGACY", false)]
+        [TestCase("!LEGACY", true)]
+        public void IsGeneratedSourceCorrelatesSeparateConditionalHeaderGroups(
+            string markerCondition,
+            bool generated
+        )
+        {
+            string source =
+                "#if LEGACY\nusing System;\n#endif\n#if "
+                + markerCondition
+                + "\n// <auto-generated />\n#endif\nclass Receiver { }";
+            Assert.That(
+                ReadonlyFastHandlerUpgrade.IsGeneratedSource("Assets/Receiver.cs", source),
+                Is.EqualTo(generated)
+            );
+        }
+
+        [TestCase("", "LEGACY && BUILD", "BUILD && LEGACY", false)]
+        [TestCase("", "LEGACY || BUILD", "!LEGACY && !BUILD", true)]
+        [TestCase("#define LEGACY\n", "LEGACY", "!LEGACY", false)]
+        [TestCase("#undef LEGACY\n", "LEGACY", "!LEGACY", true)]
+        public void IsGeneratedSourceEvaluatesCompoundConditionsAndLocalSymbols(
+            string prelude,
+            string codeCondition,
+            string markerCondition,
+            bool generated
+        )
+        {
+            string source =
+                prelude
+                + $"#if {codeCondition}\nusing System;\n#endif\n#if {markerCondition}\n"
+                + "// <auto-generated />\n#endif\nclass Receiver { }";
+
+            Assert.That(
+                ReadonlyFastHandlerUpgrade.IsGeneratedSource("Assets/Receiver.cs", source),
+                Is.EqualTo(generated)
+            );
+        }
+
         [TestCase("// <autogenerated />\nclass Receiver { }", true)]
         [TestCase("class Receiver { }\n// <autogenerated />", false)]
         [TestCase(
@@ -9110,6 +9344,43 @@ void OnPulse(ref Pulse message) { }";
             Assert.That(store.Files["Caller.cs"], Is.EqualTo(new byte[] { 99 }));
             Assert.That(store.Backups, Has.Count.EqualTo(1));
             Assert.That(store.Backups["receiver.cs.backup"], Is.EqualTo(new byte[] { 1 }));
+        }
+
+        [Test]
+        public void PhysicalBackupCleanupReportsAConcurrentSaveAfterTheBatchCheck()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string path = Path.Combine(directory, "Handler.cs");
+                byte[] original = { 1 };
+                byte[] upgraded = { 2 };
+                byte[] newer = { 3 };
+                File.WriteAllBytes(path, original);
+                ReadonlyFastHandlerUpgrade.PhysicalAtomicFileStore store = new();
+                string backup = store.Replace(path, original, upgraded);
+                Assert.That(store.MatchesDestination(path, upgraded), Is.True);
+                File.WriteAllBytes(path, newer);
+
+                var failure = Assert.Throws<IOException>(() =>
+                    store.TryDiscardBackup(path, backup, upgraded)
+                );
+                Assert.That(
+                    failure!.Message,
+                    Does.Contain(path).And.Contain("changed during final upgrade verification")
+                );
+                Assert.That(File.ReadAllBytes(path), Is.EqualTo(newer));
+                Assert.That(File.ReadAllBytes(backup), Is.EqualTo(original));
+                Assert.That(
+                    Directory.GetFiles(directory, "*.dxmsg-rollback-original-*"),
+                    Has.Length.EqualTo(1)
+                );
+            }
+            finally
+            {
+                Directory.Delete(directory, recursive: true);
+            }
         }
 
         [Test]
