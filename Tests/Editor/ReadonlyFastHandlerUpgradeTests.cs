@@ -1343,6 +1343,7 @@ namespace Consumer
         [TestCase("Game.dll", "MessageHandler", false)]
         [TestCase("Game.dll", "global::DxMessaging.Core.MessageHandler", true)]
         [TestCase("Unrelated.dll", "MessageHandler", true)]
+        [TestCase(null, "MessageHandler", false)]
         public void AnalyzeChecksGlobalNamespaceImportsFromOtherScripts(
             string importsAssembly,
             string handler,
@@ -1374,6 +1375,46 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             Assert.That(
                 result.UpgradedSource,
                 Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+        }
+
+        [TestCase("global using static Vendor.Utility;", "Game.dll", false)]
+        [TestCase("global using static Vendor.Utility;", "Game", false)]
+        [TestCase("global using static Vendor.Utility;", "Other.dll", true)]
+        [TestCase("global using static Vendor.Utility;", null, false)]
+        [TestCase("global using MessageHandler = Vendor.Utility;", "Game.dll", false)]
+        [TestCase("global using MessageHandler = Vendor.Utility;", "Other.dll", true)]
+        [TestCase("global using MessageHandler = Vendor.Utility;", null, false)]
+        public void AnalyzeLimitsGlobalStaticImportsAndAliasesToTheirCompilation(
+            string import,
+            string importAssembly,
+            bool migrate
+        )
+        {
+            const string Source =
+                @"
+using DxMessaging.Core;
+sealed class Receiver
+{
+    MessageHandler.FastHandler<Pulse> Callback = (ref Pulse message) => { };
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+";
+            const string Assembly = "Game.dll";
+            ReadonlyFastHandlerUpgrade.ProjectCallbackUses project = new();
+            project.AddScript("Assets/Receiver.cs", Source, Assembly);
+            project.AddScript("Assets/Imports.cs", import, importAssembly);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source,
+                projectTypes: project,
+                assemblyName: Assembly
+            );
+
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? Source.Replace("ref Pulse", "in Pulse") : Source)
             );
             Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));

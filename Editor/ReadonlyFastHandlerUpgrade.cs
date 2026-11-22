@@ -938,6 +938,11 @@ namespace DxMessaging.Editor
             }
         }
 
+        private static string NormalizeScriptAssemblyName(string assemblyName) =>
+            assemblyName?.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) == true
+                ? assemblyName.Substring(0, assemblyName.Length - 4)
+                : assemblyName;
+
         private const string StringOptInProperty = "RegisterForStringMessages";
         private const string StringOptInSymbol = "MessageAwareComponent." + StringOptInProperty;
 
@@ -1055,10 +1060,7 @@ namespace DxMessaging.Editor
                 {
                     return "Unity has not established this script's compilation assembly";
                 }
-                if (assemblyName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-                {
-                    assemblyName = assemblyName.Substring(0, assemblyName.Length - 4);
-                }
+                assemblyName = NormalizeScriptAssemblyName(assemblyName);
                 try
                 {
                     _editorAssemblies ??= CompilationPipeline.GetAssemblies(AssembliesType.Editor);
@@ -1246,12 +1248,16 @@ namespace DxMessaging.Editor
                     string relative = Path.GetRelativePath(_projectRoot, path)
                         .Replace(Path.DirectorySeparatorChar, '/');
                     if (
-                        !_scriptAssemblies.ContainsKey(relative)
+                        !_scriptAssemblies.TryGetValue(relative, out string assignedAssembly)
                         || !_originalFiles.TryGetValue(relative, out byte[] bytes)
                         || bytes == null
                     )
                     {
                         return $"the compilation includes a source outside the script index ('{input}')";
+                    }
+                    if (NormalizeScriptAssemblyName(assignedAssembly) != assembly.name)
+                    {
+                        return $"Unity's source assignment for '{input}' differs from the compilation graph";
                     }
                 }
 
@@ -11042,7 +11048,7 @@ namespace DxMessaging.Editor
             {
                 string root = spelling.Split('.')[0];
                 if (
-                    _projectTypes?.CanImportGlobalType(root) == true
+                    _projectTypes?.CanImportGlobalType(root, _assemblyName) == true
                     || StaticImportRegex.IsMatch(masked)
                     || (
                         !spelling.Contains('.')
@@ -11099,7 +11105,7 @@ namespace DxMessaging.Editor
 
             public bool MayAliasType(string masked, string name) =>
                 ContainsNamespaceAlias(masked, name)
-                || _projectTypes?.CanImportGlobalType(name) == true;
+                || _projectTypes?.CanImportGlobalType(name, _assemblyName) == true;
 
             public bool HasNamespaceShadow(string masked, string name)
             {
@@ -12565,7 +12571,10 @@ namespace DxMessaging.Editor
                     string AssemblyName
                 )
             > _routeDeclarations = new();
-            private readonly HashSet<string> _globalAliases = new(StringComparer.Ordinal);
+            private readonly HashSet<(string Assembly, string Name)> _globalAliases = new();
+            private readonly HashSet<string> _globalStaticImportAssemblies = new(
+                StringComparer.Ordinal
+            );
             private readonly HashSet<(string Assembly, string Path)> _globalNamespaceImports =
                 new();
             private (string Path, string Source, int Position) _possibleMemberLookup;
@@ -12596,10 +12605,19 @@ namespace DxMessaging.Editor
                     marker
                 );
 
-            private bool _hasGlobalStaticImport;
+            public bool CanImportGlobalType(string name, string assemblyName) =>
+                _globalStaticImportAssemblies.Any(importAssembly =>
+                    MayShareCompilation(importAssembly, assemblyName)
+                )
+                || _globalAliases.Any(alias =>
+                    alias.Name == name && MayShareCompilation(alias.Assembly, assemblyName)
+                );
 
-            public bool CanImportGlobalType(string name) =>
-                _hasGlobalStaticImport || _globalAliases.Contains(name);
+            // Missing assembly information cannot rule out an import in the same compilation.
+            private static bool MayShareCompilation(string first, string second) =>
+                string.IsNullOrEmpty(first)
+                || string.IsNullOrEmpty(second)
+                || NormalizeScriptAssemblyName(first) == NormalizeScriptAssemblyName(second);
 
             public bool HasCompetingGlobalNamespaceImport(
                 string name,
@@ -12608,7 +12626,7 @@ namespace DxMessaging.Editor
                 string assemblyName
             ) =>
                 _globalNamespaceImports.Any(import =>
-                    import.Assembly == assemblyName
+                    MayShareCompilation(import.Assembly, assemblyName)
                     && import.Path + "." + name != qualifiedName
                     && MayDeclareType(import.Path + "." + name, arity)
                 );
@@ -12643,23 +12661,30 @@ namespace DxMessaging.Editor
                         );
                     }
                 }
-                _hasGlobalStaticImport |= StaticImportRegex
-                    .Matches(masked)
-                    .Cast<Match>()
-                    .Any(import =>
-                        FollowsKeyword(
-                            masked,
-                            0,
-                            PreviousNonWhitespace(masked, import.Index - 1),
-                            "global"
+                if (
+                    StaticImportRegex
+                        .Matches(masked)
+                        .Cast<Match>()
+                        .Any(import =>
+                            FollowsKeyword(
+                                masked,
+                                0,
+                                PreviousNonWhitespace(masked, import.Index - 1),
+                                "global"
+                            )
                         )
-                    );
+                )
+                {
+                    _globalStaticImportAssemblies.Add(assemblyName);
+                }
                 foreach (Match alias in NamespaceAliasRegex.Matches(masked))
                 {
                     int prefix = PreviousNonWhitespace(masked, alias.Index - 1);
                     if (FollowsKeyword(masked, 0, prefix, "global"))
                     {
-                        _globalAliases.Add(IdentifierValue(alias.Groups["alias"].Value));
+                        _globalAliases.Add(
+                            (assemblyName, IdentifierValue(alias.Groups["alias"].Value))
+                        );
                     }
                 }
                 foreach (
