@@ -11,6 +11,7 @@ namespace DxMessaging.Editor
     using System.Text.RegularExpressions;
     using UnityEditor;
     using UnityEditor.Compilation;
+    using UnityEditor.PackageManager;
     using UnityEngine;
     using BindingFlags = System.Reflection.BindingFlags;
     using MethodInfo = System.Reflection.MethodInfo;
@@ -379,12 +380,12 @@ namespace DxMessaging.Editor
                 when (exception is IOException or UnauthorizedAccessException)
             {
                 DxMessagingEditorLog.LogWarning(
-                    "Could not enumerate C# scripts and assembly settings under Assets.",
+                    "Could not enumerate C# scripts and compilation settings under Assets.",
                     exception
                 );
                 EditorUtility.DisplayDialog(
                     "DxMessaging Fast Handler Upgrade",
-                    "The preview needs to read the C# scripts and assembly settings under Assets. See the Console for details.",
+                    "The preview needs to read the C# scripts and compilation settings under Assets. See the Console for details.",
                     "OK"
                 );
                 return;
@@ -408,7 +409,7 @@ namespace DxMessaging.Editor
                 try
                 {
                     string fullPath = GetProjectFileFullPath(assetsRoot, assetPath);
-                    byte[] originalBytes = File.ReadAllBytes(fullPath);
+                    byte[] originalBytes = ReadProjectFileSnapshot(fullPath);
                     originalFiles.Add(assetPath, originalBytes);
                     if (!isScript)
                     {
@@ -438,7 +439,7 @@ namespace DxMessaging.Editor
                     {
                         assemblySettingsAreCurrent = false;
                         manualReview.Add(
-                            $"{assetPath}: assembly settings could not be read. {exception.Message}"
+                            $"{assetPath}: compilation settings could not be read. {exception.Message}"
                         );
                     }
                 }
@@ -677,13 +678,40 @@ namespace DxMessaging.Editor
             path.EndsWith(".asmdef.meta", StringComparison.OrdinalIgnoreCase)
             || path.EndsWith(".asmref.meta", StringComparison.OrdinalIgnoreCase);
 
+        // cspell:ignore winmd
+        private static bool IsPluginBinaryPath(string path) =>
+            path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".winmd", StringComparison.OrdinalIgnoreCase);
+
+        private static byte[] ReadProjectFileSnapshot(string path)
+        {
+            if (!IsPluginBinaryPath(path))
+            {
+                return File.ReadAllBytes(path);
+            }
+
+            using SHA256 hash = SHA256.Create();
+            using FileStream stream = File.OpenRead(path);
+            return hash.ComputeHash(stream);
+        }
+
         private static string[] GetProjectFilePaths(
             string assetsRoot,
             HashSet<string> importedScripts
         )
         {
             // The imported inventory can lag additions, removals and changes to disk.
-            IEnumerable<string> diskPaths = EnumerateProjectFiles(assetsRoot)
+            IEnumerable<string> diskPaths = EnumerateProjectFiles(assetsRoot, path =>
+                    IsScriptPath(path)
+                    || IsAssemblySettingsPath(path)
+                    || IsAssemblySettingsMetadata(path)
+                    || IsPluginBinaryPath(path)
+                    || (
+                        path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase)
+                        && IsPluginBinaryPath(path.Substring(0, path.Length - ".meta".Length))
+                    )
+                    || path.EndsWith(".rsp", StringComparison.OrdinalIgnoreCase)
+                )
                 .Select(path =>
                     "Assets/"
                     + Path.GetRelativePath(assetsRoot, path)
@@ -699,7 +727,10 @@ namespace DxMessaging.Editor
                 .ToArray();
         }
 
-        private static IEnumerable<string> EnumerateProjectFiles(string assetsRoot)
+        private static IEnumerable<string> EnumerateProjectFiles(
+            string root,
+            Func<string, bool> include
+        )
         {
             EnumerationOptions options = new()
             {
@@ -707,10 +738,10 @@ namespace DxMessaging.Editor
                 IgnoreInaccessible = false,
             };
             Stack<string> directories = new();
-            directories.Push(assetsRoot);
+            directories.Push(root);
             while (directories.TryPop(out string directory))
             {
-                ValidateProjectPath(assetsRoot, directory);
+                ValidateProjectPath(root, directory);
                 foreach (string child in Directory.EnumerateDirectories(directory, "*", options))
                 {
                     if (
@@ -721,19 +752,13 @@ namespace DxMessaging.Editor
                         directories.Push(child);
                     }
                 }
-                foreach (string path in Directory.EnumerateFiles(directory, "*", options))
+                foreach (
+                    string path in Directory
+                        .EnumerateFiles(directory, "*", options)
+                        .Where(path => !IsUnityIgnoredName(Path.GetFileName(path)) && include(path))
+                )
                 {
-                    if (
-                        !IsUnityIgnoredName(Path.GetFileName(path))
-                        && (
-                            IsScriptPath(path)
-                            || IsAssemblySettingsPath(path)
-                            || IsAssemblySettingsMetadata(path)
-                        )
-                    )
-                    {
-                        yield return path;
-                    }
+                    yield return path;
                 }
             }
         }
@@ -886,7 +911,7 @@ namespace DxMessaging.Editor
             )
             {
                 throw new IOException(
-                    "The project's C# script or assembly settings inventory changed after the preview."
+                    "The project's C# script or compilation settings inventory changed after the preview."
                 );
             }
 
@@ -914,7 +939,7 @@ namespace DxMessaging.Editor
                         && expectedWrites.TryGetValue(fullPath, out byte[] upgraded)
                             ? upgraded
                             : original;
-                    if (!File.ReadAllBytes(fullPath).AsSpan().SequenceEqual(expected))
+                    if (!ReadProjectFileSnapshot(fullPath).AsSpan().SequenceEqual(expected))
                     {
                         throw new IOException(
                             $"The project file '{path}' changed after the preview."
@@ -946,7 +971,7 @@ namespace DxMessaging.Editor
         private const string StringOptInProperty = "RegisterForStringMessages";
         private const string StringOptInSymbol = "MessageAwareComponent." + StringOptInProperty;
 
-        private sealed class ProjectPackageBindings
+        internal sealed class ProjectPackageBindings
         {
             private const BindingFlags RuntimeInstanceMembers =
                 BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
@@ -988,6 +1013,9 @@ namespace DxMessaging.Editor
             private readonly Dictionary<string, string> _scriptAssemblies;
             private readonly Dictionary<string, byte[]> _originalFiles;
             private readonly HashSet<(string Path, string Type)> _provedBindings = new();
+            private readonly Dictionary<string, byte[]> _compilerResponseFiles = new(
+                StringComparer.Ordinal
+            );
             private readonly Dictionary<(string Assembly, string Type), string> _assemblyIssues =
                 new();
             private readonly Dictionary<string, string> _registrationIssues = new(
@@ -1037,6 +1065,21 @@ namespace DxMessaging.Editor
                 string
             > _providerConditionalIssues = new();
             private Dictionary<string, string> _outsideAssemblyReferences;
+            private List<(string Input, HashSet<string> Names)> _alternateInputs;
+            private Dictionary<string, (bool Exists, byte[] Bytes)> _packageSettings;
+
+            [Serializable]
+            private sealed class PackageManifest
+            {
+                public string[] testables = null;
+            }
+
+            [Serializable]
+            private sealed class PackageAssemblyDefinition
+            {
+                public string[] defineConstraints = null;
+                public string[] optionalUnityReferences = null;
+            }
 
             public ProjectPackageBindings(
                 string assetsRoot,
@@ -1100,6 +1143,10 @@ namespace DxMessaging.Editor
                         {
                             issue = FindAssemblyIssue(player, type, stringOptIn);
                         }
+                        if (issue == null)
+                        {
+                            issue = FindAlternateInputIssue(type);
+                        }
                         if (
                             issue == null
                             && player == null
@@ -1131,6 +1178,10 @@ namespace DxMessaging.Editor
                                 registration
                             );
                         }
+                    }
+                    if (issue == null && registration != null)
+                    {
+                        issue = FindAlternateInputIssue(registration);
                     }
                     if (issue == null)
                     {
@@ -1172,6 +1223,43 @@ namespace DxMessaging.Editor
                             $"Could not recheck the {type} binding for '{path}': {issue}."
                         );
                     }
+                }
+
+                foreach ((string path, var original) in _packageSettings)
+                {
+                    var currentFile = ReadOptionalFile(path);
+                    if (
+                        original.Exists != currentFile.Exists
+                        || !original.Bytes.AsSpan().SequenceEqual(currentFile.Bytes)
+                    )
+                    {
+                        throw new IOException(
+                            $"Package settings '{path}' changed after the preview."
+                        );
+                    }
+                }
+
+                foreach ((string path, byte[] original) in _compilerResponseFiles)
+                {
+                    if (
+                        !File.Exists(path)
+                        || !File.ReadAllBytes(path).AsSpan().SequenceEqual(original)
+                    )
+                    {
+                        throw new IOException(
+                            $"Compiler response file '{path}' changed after the preview."
+                        );
+                    }
+                }
+                if (
+                    current._compilerResponseFiles.Keys.Any(path =>
+                        !_compilerResponseFiles.ContainsKey(path)
+                    )
+                )
+                {
+                    throw new IOException(
+                        "Unity reported a new compiler response file after the preview."
+                    );
                 }
             }
 
@@ -1220,6 +1308,318 @@ namespace DxMessaging.Editor
                 return null;
             }
 
+            private string FindAlternateInputIssue(string name)
+            {
+                // Unity's public Editor and Player graphs use the active build target. Other
+                // supported targets can add sources and precompiled references to a compilation.
+                if (_alternateInputs == null)
+                {
+                    IndexAlternateInputs();
+                }
+
+                bool mayChangeRuntimeComponent =
+                    name is "MessageAwareComponent" or "MessageRegistrationToken";
+                foreach ((string input, HashSet<string> names) in _alternateInputs)
+                {
+                    if (
+                        names.Contains(name)
+                        || (mayChangeRuntimeComponent && names.Overlaps(ComponentBindingTypeNames))
+                    )
+                    {
+                        return $"{input} can affect {name} binding on another build target";
+                    }
+                }
+                return null;
+            }
+
+            private void IndexAlternateInputs()
+            {
+                HashSet<string> activeSources = _editorAssemblies
+                    .Concat(_playerAssemblies)
+                    .SelectMany(assembly => assembly.sourceFiles)
+                    .Select(PhysicalPath)
+                    .ToHashSet(StringComparer.Ordinal);
+                Dictionary<string, string> inputs = new(StringComparer.Ordinal);
+                foreach (
+                    string assetPath in _originalFiles.Keys.Where(path =>
+                        IsScriptPath(path) || IsPluginBinaryPath(path)
+                    )
+                )
+                {
+                    inputs.TryAdd(PhysicalPath(assetPath), assetPath);
+                }
+                IEnumerable<string> importedPackageSources = GetImportedPaths("t:MonoScript", null)
+                    .Where(path =>
+                        path.StartsWith("Packages/", StringComparison.Ordinal) && IsScriptPath(path)
+                    );
+                IEnumerable<string> importedPlugins = PluginImporter
+                    .GetAllImporters()
+                    .Select(plugin => plugin.assetPath)
+                    .Where(path => !string.IsNullOrEmpty(path) && IsPluginBinaryPath(path));
+                foreach (string assetPath in importedPackageSources.Concat(importedPlugins))
+                {
+                    inputs.TryAdd(PhysicalPath(assetPath), assetPath);
+                }
+                string packagesDirectory = Path.Combine(_projectRoot, "Packages");
+                string manifestPath = Path.Combine(packagesDirectory, "manifest.json");
+                var manifest = ReadOptionalFile(manifestPath);
+                Dictionary<string, (bool Exists, byte[] Bytes)> packageSettings = new(
+                    StringComparer.Ordinal
+                )
+                {
+                    [manifestPath] = manifest,
+                };
+                string lockPath = Path.Combine(packagesDirectory, "packages-lock.json");
+                packageSettings.Add(lockPath, ReadOptionalFile(lockPath));
+
+                PackageInfo[] packages = PackageInfo.GetAllRegisteredPackages();
+                Dictionary<string, string> disabledPackageTests = FindPackagesWithDisabledTests(
+                    packages,
+                    manifest.Bytes
+                );
+                foreach (
+                    (string root, string assetRoot) in GetPackageRoots(packagesDirectory, packages)
+                )
+                {
+                    foreach (
+                        string path in EnumerateProjectFiles(root, path =>
+                            IsScriptPath(path) || IsPluginBinaryPath(path)
+                        )
+                    )
+                    {
+                        inputs.TryAdd(
+                            path,
+                            assetRoot
+                                + "/"
+                                + Path.GetRelativePath(root, path)
+                                    .Replace(Path.DirectorySeparatorChar, '/')
+                        );
+                    }
+                }
+
+                List<(string Input, HashSet<string> Names)> alternateInputs = new();
+                Dictionary<string, bool> testAssemblyDefinitions = new(StringComparer.Ordinal);
+                foreach ((string path, string assetPath) in inputs)
+                {
+                    if (IsScriptPath(assetPath))
+                    {
+                        if (!activeSources.Contains(path))
+                        {
+                            string source = EncodedSource.FromBytes(File.ReadAllBytes(path)).Text;
+                            HashSet<string> names = FindAlternateSourceNames(source);
+                            if (
+                                0 < names.Count
+                                && !IsDisabledPackageTest(
+                                    path,
+                                    assetPath,
+                                    disabledPackageTests,
+                                    testAssemblyDefinitions
+                                )
+                            )
+                            {
+                                alternateInputs.Add(
+                                    (
+                                        $"source '{assetPath}' outside the active compilation graphs",
+                                        names
+                                    )
+                                );
+                            }
+                        }
+                    }
+                    else if (path != _runtimePath && !IsEditorInstallationFile(path))
+                    {
+                        HashSet<string> names = ReadManagedDeclarations(
+                            path,
+                            allowNative: true
+                        ).Names;
+                        if (0 < names.Count)
+                        {
+                            alternateInputs.Add(($"precompiled plugin '{assetPath}'", names));
+                        }
+                    }
+                }
+                _packageSettings = packageSettings;
+                _alternateInputs = alternateInputs;
+            }
+
+            private static (bool Exists, byte[] Bytes) ReadOptionalFile(string path)
+            {
+                try
+                {
+                    return (true, File.ReadAllBytes(path));
+                }
+                catch (Exception exception)
+                    when (exception is FileNotFoundException or DirectoryNotFoundException)
+                {
+                    return (false, Array.Empty<byte>());
+                }
+            }
+
+            private static IEnumerable<(string Root, string AssetRoot)> GetPackageRoots(
+                string packagesDirectory,
+                PackageInfo[] packages
+            )
+            {
+                HashSet<string> roots = new(StringComparer.Ordinal);
+                foreach (PackageInfo package in packages)
+                {
+                    string root = DirectoryRoot(package.resolvedPath);
+                    if (roots.Add(root))
+                    {
+                        yield return (root, package.assetPath);
+                    }
+                }
+
+                if (Directory.Exists(packagesDirectory))
+                {
+                    foreach (string path in Directory.EnumerateDirectories(packagesDirectory))
+                    {
+                        string name = Path.GetFileName(path);
+                        string root = DirectoryRoot(path);
+                        if (
+                            !IsUnityIgnoredName(name)
+                            && File.Exists(Path.Combine(path, "package.json"))
+                            && roots.Add(root)
+                        )
+                        {
+                            yield return (root, "Packages/" + name);
+                        }
+                    }
+                }
+
+                static string DirectoryRoot(string path) =>
+                    Path.GetFullPath(path)
+                        .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    + Path.DirectorySeparatorChar;
+            }
+
+            private static Dictionary<string, string> FindPackagesWithDisabledTests(
+                PackageInfo[] packages,
+                byte[] manifest
+            )
+            {
+                Dictionary<string, string> result = new(StringComparer.Ordinal);
+                if (manifest.Length == 0 || packages.Length == 0)
+                {
+                    return result;
+                }
+
+                PackageManifest settings = JsonUtility.FromJson<PackageManifest>(
+                    EncodedSource.FromBytes(manifest).Text
+                );
+                if (settings != null)
+                {
+                    foreach (PackageInfo package in packages)
+                    {
+                        if (
+                            package.source
+                                is PackageSource.Git
+                                    or PackageSource.Registry
+                                    or PackageSource.LocalTarball
+                            && settings.testables?.Contains(package.name) != true
+                        )
+                        {
+                            result.TryAdd(
+                                package.assetPath,
+                                Path.GetFullPath(package.resolvedPath)
+                            );
+                        }
+                    }
+                }
+                return result;
+            }
+
+            private bool IsDisabledPackageTest(
+                string path,
+                string assetPath,
+                Dictionary<string, string> disabledTestRoots,
+                Dictionary<string, bool> testAssemblyDefinitions
+            )
+            {
+                const string PackagePrefix = "Packages/";
+                if (
+                    disabledTestRoots.Count == 0
+                    || !assetPath.StartsWith(PackagePrefix, StringComparison.Ordinal)
+                )
+                {
+                    return false;
+                }
+
+                int end = assetPath.IndexOf('/', PackagePrefix.Length);
+                if (
+                    end < 0
+                    || !disabledTestRoots.TryGetValue(assetPath.Substring(0, end), out string root)
+                    || !IsWithinDirectory(root, path)
+                )
+                {
+                    return false;
+                }
+
+                // Unity excludes these assemblies regardless of the active platform when the
+                // installed package is absent from the project's testables list.
+                string definition = CompilationPipeline.GetAssemblyDefinitionFilePathFromScriptPath(
+                    assetPath
+                );
+                if (string.IsNullOrEmpty(definition))
+                {
+                    return false;
+                }
+                string fullPath = PhysicalPath(definition);
+                if (!IsWithinDirectory(root, fullPath))
+                {
+                    return false;
+                }
+                if (!testAssemblyDefinitions.TryGetValue(definition, out bool isTestAssembly))
+                {
+                    TextAsset imported = AssetDatabase.LoadAssetAtPath<TextAsset>(definition);
+                    byte[] bytes = File.ReadAllBytes(fullPath);
+                    if (imported != null && bytes.AsSpan().SequenceEqual(imported.bytes))
+                    {
+                        PackageAssemblyDefinition settings =
+                            JsonUtility.FromJson<PackageAssemblyDefinition>(
+                                EncodedSource.FromBytes(bytes).Text
+                            );
+                        isTestAssembly =
+                            settings?.defineConstraints?.Contains("UNITY_INCLUDE_TESTS") == true
+                            || (settings?.optionalUnityReferences?.Length ?? 0) != 0;
+                    }
+                    testAssemblyDefinitions.Add(definition, isTestAssembly);
+                }
+                return isTestAssembly;
+            }
+
+            internal static HashSet<string> FindAlternateSourceNames(string source)
+            {
+                SourceMetadata metadata = new(source);
+                string masked = MaskNonCode(source, null, metadata, supportedUnityFloor: true);
+                if (metadata.UncertainDirectivePosition != null)
+                {
+                    masked = source;
+                }
+
+                bool maySplitDeclaration =
+                    metadata.UncertainDirectivePosition != null
+                    || metadata.UncertainBranches.Exists(branch =>
+                    {
+                        int before = PreviousNonWhitespace(masked, branch.Start - 1);
+                        return (
+                                (0 <= before && masked[before] is not (';' or '{' or '}'))
+                                || !ConditionalMask.IsContainedBranch(masked, branch)
+                            )
+                            && !LocalAliasBranch.IsMatch(
+                                masked.Substring(branch.Start, branch.Length)
+                            );
+                    });
+                HashSet<string> names = FindBindingTypeNames(
+                    masked,
+                    maySplitDeclaration || HasAssemblyAttributes(masked)
+                );
+                names.UnionWith(
+                    FindRegistrationExtensionNames(masked, metadata, maySplitDeclaration)
+                );
+                return names;
+            }
+
             private HashSet<string> ReadRegistrationExtensionNames(string path)
             {
                 if (!_registrationExtensionNames.TryGetValue(path, out HashSet<string> names))
@@ -1227,31 +1627,32 @@ namespace DxMessaging.Editor
                     string source = EncodedSource.FromBytes(File.ReadAllBytes(path)).Text;
                     SourceMetadata metadata = new(source);
                     string masked = MaskNonCode(source, null, metadata);
-                    if (metadata.UncertainDirectivePosition == null)
-                    {
-                        names = ReadonlyRegistrationNames
-                            .Where(name =>
-                                metadata.HasCompetingRegistrationExtension(
-                                    masked,
-                                    name,
-                                    argumentCount: null
-                                )
-                            )
-                            .ToHashSet(StringComparer.Ordinal);
-                    }
-                    else
-                    {
-                        names = IdentifierUseRegex
-                            .Matches(source)
-                            .Cast<Match>()
-                            .Select(token => IdentifierValue(token.Value))
-                            .Where(ReadonlyRegistrationNames.Contains)
-                            .ToHashSet(StringComparer.Ordinal);
-                    }
+                    bool opaque = metadata.UncertainDirectivePosition != null;
+                    names = FindRegistrationExtensionNames(
+                            opaque ? source : masked,
+                            metadata,
+                            opaque
+                        )
+                        .ToHashSet(StringComparer.Ordinal);
                     _registrationExtensionNames.Add(path, names);
                 }
                 return names;
             }
+
+            private static IEnumerable<string> FindRegistrationExtensionNames(
+                string code,
+                SourceMetadata metadata,
+                bool opaque
+            ) =>
+                opaque
+                    ? IdentifierUseRegex
+                        .Matches(code)
+                        .Cast<Match>()
+                        .Select(token => IdentifierValue(token.Value))
+                        .Where(ReadonlyRegistrationNames.Contains)
+                    : ReadonlyRegistrationNames.Where(name =>
+                        metadata.HasCompetingRegistrationExtension(code, name, argumentCount: null)
+                    );
 
             private string FindAssemblyIssue(Assembly assembly, string type, bool stringOptIn)
             {
@@ -2646,18 +3047,21 @@ namespace DxMessaging.Editor
                     return $"compiler options for '{assembly.name}' can affect the package type binding";
                 }
 
-                foreach (string file in options.ResponseFiles ?? Array.Empty<string>())
+                IEnumerable<string> responseFiles = (
+                    options.ResponseFiles ?? Array.Empty<string>()
+                ).Select(PhysicalPath);
+                string assets = Path.Combine(_projectRoot, "Assets");
+                string projectResponse = Path.Combine(assets, "csc.rsp");
+                if (File.Exists(projectResponse))
                 {
-                    if (
-                        File.ReadLines(PhysicalPath(file))
-                            .Any(line =>
-                            {
-                                string option = line.Trim();
-                                return option.Length != 0
-                                    && !option.StartsWith("#", StringComparison.Ordinal)
-                                    && !NonBindingCompilerOption.IsMatch(option);
-                            })
-                    )
+                    // A new project response file can reach disk before Unity reports it in the graph.
+                    ValidateProjectPath(assets + Path.DirectorySeparatorChar, projectResponse);
+                    responseFiles = responseFiles.Append(projectResponse);
+                }
+
+                foreach (string file in responseFiles.Distinct(StringComparer.Ordinal))
+                {
+                    if (CompilerResponseCanAffectBinding(file))
                     {
                         return $"compiler response file '{file}' can affect the package type binding";
                     }
@@ -2686,6 +3090,31 @@ namespace DxMessaging.Editor
                 return null;
             }
 
+            private bool CompilerResponseCanAffectBinding(string path)
+            {
+                if (!_compilerResponseFiles.TryGetValue(path, out byte[] bytes))
+                {
+                    bytes = File.ReadAllBytes(path);
+                    _compilerResponseFiles.Add(path, bytes);
+                }
+
+                using StringReader reader = new(EncodedSource.FromBytes(bytes).Text);
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    string option = line.Trim();
+                    if (
+                        option.Length != 0
+                        && !option.StartsWith("#", StringComparison.Ordinal)
+                        && !NonBindingCompilerOption.IsMatch(option)
+                    )
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
             private HashSet<string> ReadSourceNames(string path)
             {
                 if (!_sourceNames.TryGetValue(path, out HashSet<string> names))
@@ -2704,32 +3133,38 @@ namespace DxMessaging.Editor
                         || metadata.UncertainBranches.Exists(branch =>
                             !LocalAliasBranch.IsMatch(masked.Substring(branch.Start, branch.Length))
                         )
-                        || Regex.IsMatch(
-                            masked,
-                            @"\[\s*assembly\s*:",
-                            RegexOptions.CultureInvariant,
-                            TimeSpan.FromSeconds(1)
-                        );
-                    names = opaque
-                        ? IdentifierUseRegex
-                            .Matches(masked)
-                            .Cast<Match>()
-                            .Select(token => IdentifierValue(token.Value))
-                            .Where(name => Array.IndexOf(BindingTypeNames, name) >= 0)
-                            .ToHashSet(StringComparer.Ordinal)
-                        : TypeDeclarationRegex
-                            .Matches(masked)
-                            .Cast<Match>()
-                            .Concat(DelegateTypeDeclarationRegex.Matches(masked).Cast<Match>())
-                            .Select(declaration =>
-                                IdentifierValue(declaration.Groups["name"].Value)
-                            )
-                            .Where(name => Array.IndexOf(BindingTypeNames, name) >= 0)
-                            .ToHashSet(StringComparer.Ordinal);
+                        || HasAssemblyAttributes(masked);
+                    names = FindBindingTypeNames(masked, opaque);
                     _sourceNames.Add(path, names);
                 }
                 return names;
             }
+
+            private static bool HasAssemblyAttributes(string code) =>
+                Regex.IsMatch(
+                    code,
+                    @"\[\s*assembly\s*:",
+                    RegexOptions.CultureInvariant,
+                    TimeSpan.FromSeconds(1)
+                );
+
+            private static HashSet<string> FindBindingTypeNames(string code, bool opaque) =>
+                (
+                    opaque
+                        ? IdentifierUseRegex
+                            .Matches(code)
+                            .Cast<Match>()
+                            .Select(token => IdentifierValue(token.Value))
+                        : TypeDeclarationRegex
+                            .Matches(code)
+                            .Cast<Match>()
+                            .Concat(DelegateTypeDeclarationRegex.Matches(code).Cast<Match>())
+                            .Select(declaration =>
+                                IdentifierValue(declaration.Groups["name"].Value)
+                            )
+                )
+                    .Where(name => Array.IndexOf(BindingTypeNames, name) >= 0)
+                    .ToHashSet(StringComparer.Ordinal);
 
             private HashSet<string> ReadMetadataNames(string path) =>
                 ReadMetadataDeclarations(path).Names;
@@ -2741,7 +3176,7 @@ namespace DxMessaging.Editor
             {
                 if (!_metadataDeclarations.TryGetValue(path, out var declarations))
                 {
-                    declarations = ReadManagedDeclarations(File.ReadAllBytes(path));
+                    declarations = ReadManagedDeclarations(path);
                     _metadataDeclarations.Add(path, declarations);
                 }
                 return declarations;
@@ -2750,10 +3185,15 @@ namespace DxMessaging.Editor
             private static (
                 HashSet<string> Names,
                 HashSet<(string Namespace, string Name)> Types
-            ) ReadManagedDeclarations(byte[] image)
+            ) ReadManagedDeclarations(string path, bool allowNative = false)
             {
-                using BinaryReader reader = new(new MemoryStream(image, writable: false));
-                var (root, size) = ReadManagedMetadataLocation(reader);
+                using BinaryReader reader = new(File.OpenRead(path));
+                var location = ReadManagedMetadataLocation(reader, allowNative);
+                if (location == null)
+                {
+                    return (new(StringComparer.Ordinal), new());
+                }
+                var (root, size) = location.Value;
                 Dictionary<string, TextSpan> streams = ReadMetadataStreams(reader, root, size);
                 if (
                     !streams.TryGetValue("#~", out TextSpan tables)
@@ -2809,8 +3249,15 @@ namespace DxMessaging.Editor
 
                 HashSet<string> names = new(StringComparer.Ordinal);
                 HashSet<(string Namespace, string Name)> types = new();
-                ReadOnlySpan<byte> stringHeap = image.AsSpan(strings.Start, strings.Length);
                 long offset = reader.BaseStream.Position;
+                reader.BaseStream.Position = strings.Start;
+                ReadOnlySpan<byte> stringHeap = reader.ReadBytes(strings.Length);
+                if (stringHeap.Length != strings.Length)
+                {
+                    throw new IOException(
+                        "The compiler reference has a truncated metadata string heap."
+                    );
+                }
                 int last = rows[ExportedTypes] == 0 ? MethodDefinitions : ExportedTypes;
                 for (int table = 0; table <= last; table++)
                 {
@@ -2884,10 +3331,17 @@ namespace DxMessaging.Editor
                 return Encoding.UTF8.GetString(value.Slice(0, terminator));
             }
 
-            private static (int Offset, int Size) ReadManagedMetadataLocation(BinaryReader reader)
+            private static (int Offset, int Size)? ReadManagedMetadataLocation(
+                BinaryReader reader,
+                bool allowNative
+            )
             {
-                if (reader.ReadUInt16() != 0x5A4D)
+                if (reader.BaseStream.Length < sizeof(ushort) || reader.ReadUInt16() != 0x5A4D)
                 {
+                    if (allowNative)
+                    {
+                        return null;
+                    }
                     throw new IOException("The compiler reference is not a Portable Executable.");
                 }
                 reader.BaseStream.Position = 0x3C;
@@ -2914,17 +3368,29 @@ namespace DxMessaging.Editor
                 const int CliDirectory = 14 * 8;
                 if (dataDirectories == 0 || optionalSize < dataDirectories + CliDirectory + 8)
                 {
+                    if (allowNative)
+                    {
+                        return null;
+                    }
                     throw new IOException("The compiler reference has no CLI directory.");
                 }
                 reader.BaseStream.Position = optional + dataDirectories - 4;
                 if (reader.ReadUInt32() <= 14)
                 {
+                    if (allowNative)
+                    {
+                        return null;
+                    }
                     throw new IOException("The compiler reference has no CLI directory.");
                 }
                 reader.BaseStream.Position = optional + dataDirectories + CliDirectory;
                 uint cliRva = reader.ReadUInt32();
                 if (cliRva == 0 || reader.ReadUInt32() < 16)
                 {
+                    if (allowNative)
+                    {
+                        return null;
+                    }
                     throw new IOException("The compiler reference has no CLI header.");
                 }
                 long sections = optional + optionalSize;
@@ -3854,9 +4320,19 @@ namespace DxMessaging.Editor
 
                 int explicitMember = FindExplicitInterfaceMemberSuffix(masked, following, scanEnd);
                 bool hasExplicitInterface = 0 <= explicitMember;
+                bool isIndexer =
+                    !hasExplicitInterface && name.Value == "this" && masked[following] == '[';
                 if (hasExplicitInterface)
                 {
                     following = explicitMember;
+                }
+                else if (isIndexer)
+                {
+                    following = FindIndexerAccessorStart(masked, following);
+                    if (following < 0 || scanEnd <= following)
+                    {
+                        yield break;
+                    }
                 }
 
                 if (masked[following] is '(' or '<')
@@ -3869,6 +4345,7 @@ namespace DxMessaging.Editor
                 }
 
                 bool declarationIsProven = true;
+                string memberKind = isIndexer ? "indexer" : "property";
                 if (
                     IsArrow(masked, following)
                     && IsDirectTypeMember(
@@ -3885,14 +4362,14 @@ namespace DxMessaging.Editor
                         new TextSpan(start, end - start),
                         messageType,
                         false,
-                        "an expression-bodied property"
+                        $"an expression-bodied {memberKind}"
                     );
                     yield break;
                 }
                 if (
                     masked[following] == '{'
                     && (
-                        !hasExplicitInterface
+                        !(hasExplicitInterface || isIndexer)
                         || IsDirectTypeMember(
                             masked,
                             FindContainingTypeStart(masked, variable),
@@ -3913,13 +4390,20 @@ namespace DxMessaging.Editor
                             )
                         )
                         {
-                            yield return (variable, value, messageType, false, form + " property");
+                            yield return (
+                                variable,
+                                value,
+                                messageType,
+                                false,
+                                $"{form} {memberKind}"
+                            );
                         }
                     }
                     following =
                         closeAccessors < 0 ? -1 : NextNonWhitespace(masked, closeAccessors + 1);
                     if (
                         hasExplicitInterface
+                        || isIndexer
                         || following < 0
                         || statementEnd <= following
                         || masked[following] != '='
@@ -4019,11 +4503,16 @@ namespace DxMessaging.Editor
                 suffix = NextNonWhitespace(text, nameStart + name.Length);
                 if (0 <= suffix && suffix < limit && text[suffix] == '[' && name.Value == "this")
                 {
-                    int close = FindMatching(text, suffix, '[', ']');
-                    suffix = close < 0 ? -1 : NextNonWhitespace(text, close + 1);
+                    suffix = FindIndexerAccessorStart(text, suffix);
                 }
             }
             return -1;
+        }
+
+        private static int FindIndexerAccessorStart(string text, int open)
+        {
+            int close = FindMatching(text, open, '[', ']');
+            return close < 0 ? -1 : NextNonWhitespace(text, close + 1);
         }
 
         private static IEnumerable<(TextSpan Value, string Form)> FindFastDelegateMethodReturns(
@@ -5621,6 +6110,10 @@ namespace DxMessaging.Editor
                 masked.Substring(receiverStart, receiverEnd - receiverStart + 1)
             );
             int qualifierDot = PreviousNonWhitespace(masked, receiverStart - 1);
+            if (0 < qualifierDot && masked[qualifierDot] == ':' && masked[qualifierDot - 1] == ':')
+            {
+                return false;
+            }
             int usageScope = FindContainingTypeStart(masked, methodNameStart);
             bool ownMemberOnly = false;
             if (0 <= qualifierDot && masked[qualifierDot] == '.')
@@ -12483,7 +12976,7 @@ namespace DxMessaging.Editor
                 return available == BranchState.Active ? branch : BranchState.Uncertain;
             }
 
-            private static bool IsContainedBranch(ReadOnlySpan<char> masked, TextSpan branch)
+            public static bool IsContainedBranch(ReadOnlySpan<char> masked, TextSpan branch)
             {
                 int end = branch.Start + branch.Length;
                 Stack<char> delimiters = new();
@@ -13573,20 +14066,28 @@ namespace DxMessaging.Editor
                 string backupPath = fullPath + BackupMarker + transaction;
                 string rollbackCopyPath = fullPath + RollbackCopyMarker + transaction;
                 string temporaryPath = fullPath + ".dxmsg-new-" + transaction;
-                bool readyForRollback = false;
+                bool destinationWasReplaced = false;
                 try
                 {
                     // Reserve the original bytes before any destination change can fail.
                     File.WriteAllBytes(rollbackCopyPath, originalBytes);
                     File.WriteAllBytes(temporaryPath, upgradedBytes);
-                    File.Replace(temporaryPath, fullPath, backupPath);
+                    _replaceFile(temporaryPath, fullPath, backupPath);
+                    destinationWasReplaced = true;
                     VerifyReplacement(fullPath, backupPath, originalBytes, upgradedBytes);
-                    readyForRollback = true;
+                }
+                catch (Exception exception) when (destinationWasReplaced)
+                {
+                    DxMessagingEditorLog.LogWarning(
+                        $"The previewed original for {fullPath} remains at {rollbackCopyPath}.",
+                        exception
+                    );
+                    throw;
                 }
                 finally
                 {
                     TryDelete(temporaryPath);
-                    if (!readyForRollback)
+                    if (!destinationWasReplaced)
                     {
                         TryDelete(rollbackCopyPath);
                     }

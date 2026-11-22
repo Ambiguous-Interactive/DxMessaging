@@ -1605,6 +1605,68 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             Assert.That(result.ManualReviewMethods, Has.All.Contains("line 3"));
         }
 
+        [TestCase(
+            "#if UNITY_ANDROID\nclass Consumer { void Install(MessageRegistrationToken token) { token.RegisterUntargeted<Pulse>(null); } }\n#endif",
+            null
+        )]
+        [TestCase("#if false\nstruct Int32 { }\n#endif", null)]
+        [TestCase(
+            "#if UNITY_ANDROID\nnamespace Consumer { public struct Int32 { } }\n#endif",
+            "Int32"
+        )]
+        [TestCase(
+            "public struct\n#if UNITY_ANDROID\nPlaceholder { }\n#else\nInt32 { }\n#endif",
+            "Int32"
+        )]
+        [TestCase(
+            "#if UNITY_ANDROID\nstatic class Registrations { public static void RegisterUntargeted<T>(this MessageRegistrationToken token) { } }\n#endif",
+            "RegisterUntargeted"
+        )]
+        [TestCase(
+            "static class Registrations { public static void RegisterUntargeted<T>(\n#if UNITY_ANDROID\nthis\n#endif\nMessageRegistrationToken token) { } }",
+            "RegisterUntargeted"
+        )]
+        public void AlternateSourceScanFindsBindingDeclarationsAcrossBuildTargets(
+            string source,
+            string name
+        )
+        {
+            HashSet<string> names =
+                ReadonlyFastHandlerUpgrade.ProjectPackageBindings.FindAlternateSourceNames(source);
+
+            if (name == null)
+            {
+                Assert.That(names, Is.Empty);
+            }
+            else
+            {
+                Assert.That(names, Does.Contain(name));
+            }
+        }
+
+        [TestCase("=> (ref Pulse message) => { };", "expression-bodied indexer")]
+        [TestCase("{ get => Forward; }", "expression-bodied indexer")]
+        [TestCase("{ get { return Forward; } }", "block-bodied indexer")]
+        public void AnalyzeReportsLegacyHandlersReturnedByAnIndexer(string accessor, string reason)
+        {
+            string source = @"
+sealed class Receiver
+{
+    public global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> this[int index] ACCESSOR
+    private void Forward(ref Pulse message) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("ACCESSOR", accessor);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("line 4").And.Contain(reason));
+        }
+
         [TestCase("GetHandler() => (ref Pulse message) => { };")]
         [TestCase("GetHandler<T>(T context) => (ref Pulse message) => { };")]
         [TestCase("GetHandler<T>() where T : class { return Forward; }")]
@@ -6110,6 +6172,56 @@ class Other { public global::Vendor.CustomToken token; }".Replace("RECEIVER", re
             );
         }
 
+        [TestCase("global::Registration", false)]
+        [TestCase("Vendor::Registration", false)]
+        [TestCase("this.Registration", true)]
+        [TestCase("Registration", true)]
+        public void AnalyzeDistinguishesAliasQualifiedTypesFromItsOwnRegistrationField(
+            string receiver,
+            bool migrate
+        )
+        {
+            string source = @"
+using Vendor = VendorNamespace;
+
+sealed class Receiver
+{
+    global::DxMessaging.Core.MessageRegistrationToken Registration;
+    void SetUp()
+    {
+        RECEIVER.RegisterUntargeted<Pulse>((ref Pulse message) => { });
+    }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+public delegate void Writable<T>(ref T message);
+static class Registration { public static void RegisterUntargeted<T>(Writable<T> handler) { } }
+namespace VendorNamespace
+{
+    static class Registration { public static void RegisterUntargeted<T>(Writable<T> handler) { } }
+}
+".Replace("RECEIVER", receiver);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.ReplacementCount, Is.EqualTo(migrate ? 1 : 0));
+            Assert.That(
+                result.UpgradedSource,
+                Is.EqualTo(migrate ? source.Replace("ref Pulse", "in Pulse") : source)
+            );
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
+            if (!migrate)
+            {
+                Assert.That(
+                    result.ManualReviewMethods[0],
+                    Does.Contain("line 9")
+                        .And.Contain(
+                            "receiver whose MessageRegistrationToken type cannot be proven"
+                        )
+                );
+            }
+        }
+
         [TestCase(
             "Read(message);",
             false,
@@ -9029,6 +9141,51 @@ void OnPulse(ref Pulse message) { }";
             }
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public void PhysicalReplacementRetainsThePreviewedOriginalWhenASaveRaces(bool secondSave)
+        {
+            string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string path = Path.Combine(directory, "Handler.cs");
+                byte[] before = { 1 };
+                byte[] after = { 2 };
+                byte[] firstEdit = { 3 };
+                byte[] secondEdit = { 4 };
+                File.WriteAllBytes(path, before);
+                ReadonlyFastHandlerUpgrade.PhysicalAtomicFileStore store = new(
+                    replaceFile: (source, destination, displaced) =>
+                    {
+                        File.WriteAllBytes(destination, firstEdit);
+                        File.Replace(source, destination, displaced);
+                        if (secondSave)
+                        {
+                            File.WriteAllBytes(destination, secondEdit);
+                        }
+                    }
+                );
+
+                Assert.That(() => store.Replace(path, before, after), Throws.TypeOf<IOException>());
+                Assert.That(File.ReadAllBytes(path), Is.EqualTo(firstEdit));
+                string staged = Directory
+                    .GetFiles(directory, "*.dxmsg-rollback-original-*")
+                    .Single();
+                Assert.That(File.ReadAllBytes(staged), Is.EqualTo(before));
+                string[] recovery = Directory.GetFiles(directory, "*.dxmsg-recovery-*");
+                Assert.That(recovery, Has.Length.EqualTo(secondSave ? 1 : 0));
+                if (secondSave)
+                {
+                    Assert.That(File.ReadAllBytes(recovery[0]), Is.EqualTo(secondEdit));
+                }
+            }
+            finally
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+
         [Test]
         public void PhysicalRollbackPreservesTheOriginalAndBothConcurrentEdits()
         {
@@ -9046,7 +9203,13 @@ void OnPulse(ref Pulse message) { }";
                 ReadonlyFastHandlerUpgrade.PhysicalAtomicFileStore store = new(
                     replaceFile: (source, destination, displaced) =>
                     {
-                        File.WriteAllBytes(destination, replaces++ == 0 ? firstEdit : secondEdit);
+                        if (!source.Contains(".dxmsg-new-", StringComparison.Ordinal))
+                        {
+                            File.WriteAllBytes(
+                                destination,
+                                replaces++ == 0 ? firstEdit : secondEdit
+                            );
+                        }
                         File.Replace(source, destination, displaced);
                     }
                 );

@@ -128,11 +128,14 @@ See [settings lifetime](../reference/runtime-settings.md#settings-lifetime).
 ### Opt in to inherited string demo handlers
 
 `MessageAwareComponent` no longer registers two targeted `StringMessage` handlers and one
-untargeted `GlobalStringMessage` handler by default. Most components need no migration. If a
-component overrides the inherited string handler methods, add
-`protected override bool RegisterForStringMessages => true;`.
+untargeted `GlobalStringMessage` handler by default. Add
+`protected override bool RegisterForStringMessages => true;` to a component that overrides these
+handlers and relied on their automatic registration in 3.x. Preserve intentional opt-outs and
+existing computed properties. Keep calling `base.RegisterMessageHandlers()` so registrations
+declared by parent components run.
 
-Keep calling `base.RegisterMessageHandlers()` so registrations declared by parent components run.
+See [Use `in` parameters for fast handlers](#use-in-parameters-for-fast-handlers) for the signature
+changes and build-target checks.
 
 ### Observe callback-driven configuration after the outer call
 
@@ -176,9 +179,9 @@ It leaves package sources, interceptors, emission calls, comments, and strings u
 
 The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
-replacement. After confirmation, the tool rechecks C# scripts, assembly settings under `Assets`,
-and Unity's script assembly assignments. It checks readable project files again after checking the
-package. Original backups stay beside the upgraded scripts because referenced compilation inputs
+replacement. After confirmation, the tool rechecks C# scripts, assembly settings, precompiled
+plug-ins under `Assets`, compiler response files, Unity's script assembly assignments, and package
+settings. Original backups stay beside the upgraded scripts because referenced compilation inputs
 can change outside `Assets`. Review the changes and compile the project before removing the
 backups listed in the Console. Keep project scripts and assembly settings in regular files and
 directories under `Assets` so the preview can verify them.
@@ -190,23 +193,27 @@ from disk. When a script is eligible for migration but comments or strings can h
 some build configurations, the preview leaves the script untouched and reports the directive location.
 
 The tool stages a rollback copy before replacing each script. If a later write fails, it uses
-those staged copies to restore earlier scripts while keeping the original backups for review. If a save arrives during rollback, use the
-paths reported in the Console to compare the live script, original backup, and any displaced edits.
-The preview leaves unsupported
-encodings, overloads, qualified or cross-file callback declarations, and
-ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
+the staged copies to restore earlier scripts and keeps the original backups for review. If a save
+arrives during rollback, use the paths in the Console to compare the live script, original backup,
+and any displaced edits. If verification fails after a replacement, the Console also lists the
+retained copy from the preview.
+
+The preview leaves unsupported encodings, overloads, qualified or cross-file callback declarations,
+and ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
 alias can hide the `DxMessaging` namespace. A `using` inside a namespace can also change which type
 the compiler selects. Confirm the intended type before qualifying its name. If a project script
 declares a type with the package type's full name, verify which declaration the compiler selects
-before migrating it. The preview
-uses Unity's compilation inputs for the active build target to check that package types come from
+before migrating it. The preview uses Unity's
+compilation inputs for the active build target to check that package types come from
 the installed DxMessaging runtime. It reports the callback or type location when it cannot verify
 that binding. A source outside the script index, competing metadata, a modified or conditionally
 compiled runtime handler or registration method, missing runtime source checksums, or unverified
-compiler options can require manual review. An extension in another file or assembly can also defer a registration when
-the preview cannot establish which overload it selects. Check the binding and related callers in your other build targets
-before making a deferred edit. The preview also defers a callback that passes
-its newly readonly parameter as a `ref` or `out` argument, takes a typed reference with
+compiler options can require manual review. The preview also checks project and package sources
+and precompiled plug-ins for declarations that can compete on another build target. Check the
+binding and related callers in your other build targets before making a deferred edit.
+
+The preview defers a callback that passes its newly readonly parameter as a `ref` or `out`
+argument, takes a typed reference with
 `__makeref`, or takes its address in a `fixed` initializer. It also preserves callbacks with
 parameter attributes that may require writable references, such as `OutAttribute`.
 It can update proven `base` calls in a changed
@@ -235,9 +242,9 @@ too. This includes calls through fields and properties. For example, change `sep
 to `separate(in pulse)` and `separate?.Invoke(ref pulse)` to `separate?.Invoke(in pulse)`. Keep a
 separate writable callback for callers that need to modify the argument. When the preview cannot
 account for callers of a standalone `new MessageHandler.FastHandler<T>(...)` construction or a
-property or method returning a fast delegate, including an explicit interface implementation, review
-the delegate and its calls together. A global import in another script in the same assembly can reveal a
-delegate initializer that needs manual review. Check direct calls
+property, indexer, or method returning a fast delegate, review the delegate and its calls together.
+This includes explicit interface implementations. A global import in another script in the same
+assembly can reveal a delegate initializer that needs manual review. Check direct calls
 that omit an argument modifier. A call such as `this.Forward(default(Pulse))` can select a different
 overload after `Forward` changes from `ref` to `in`. If the call must keep using an extension, call
 it explicitly, for example `Extensions.Forward(this, default(Pulse))`.
