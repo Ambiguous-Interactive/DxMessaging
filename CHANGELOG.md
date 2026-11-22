@@ -31,9 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
 - Add **Tools / Wallstop Studios / DxMessaging / Upgrade 3.x Fast Handlers to 4.0** to preview and
   update consumer callbacks under `Assets`. The command preserves source encoding and line endings,
-  applies the batch transactionally, preserves inherited string-handler behavior, upgrades matching
-  `base` forwarding calls, and reports ambiguous callbacks or other callbacks with `ref` or `out`
-  argument uses for manual review ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
+  upgrades matching `base` forwarding calls, and attempts to restore earlier writes if the batch
+  fails. It reports files it cannot restore. It adds inherited string-handler opt-ins when it can
+  prove the edit. Review the setting in each build
+  configuration when it needs manual attention. The command also flags ambiguous callbacks,
+  incompatible `ref` or `out` arguments, and writes or unresolved member access on newly readonly
+  parameters. [Migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#use-in-parameters-for-fast-handlers)
+  ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573),
+  [#796](https://github.com/Ambiguous-Interactive/DxMessaging/issues/796)).
 
 ### Changed
 
