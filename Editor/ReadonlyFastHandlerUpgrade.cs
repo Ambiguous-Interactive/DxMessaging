@@ -1321,8 +1321,10 @@ namespace DxMessaging.Editor
 
             private string FindAlternateInputIssue(string name)
             {
-                // Unity's public Editor and Player graphs use the active build target. Other
-                // supported targets can add sources and precompiled references to a compilation.
+                /*
+                Unity's public Editor and Player graphs use the active build target. Other
+                supported targets can add sources and precompiled references to a compilation.
+                */
                 if (_alternateInputs == null)
                 {
                     IndexAlternateInputs();
@@ -1566,8 +1568,10 @@ namespace DxMessaging.Editor
                     return false;
                 }
 
-                // Unity excludes these assemblies regardless of the active platform when the
-                // installed package is absent from the project's testables list.
+                /*
+                Unity excludes these assemblies regardless of the active platform when the
+                installed package is absent from the project's testables list.
+                */
                 string definition = CompilationPipeline.GetAssemblyDefinitionFilePathFromScriptPath(
                     assetPath
                 );
@@ -3137,8 +3141,10 @@ namespace DxMessaging.Editor
                     {
                         masked = source;
                     }
-                    // A possibly conditional declaration or an assembly-level attribute can
-                    // introduce a type definition or a type forwarder before the file is rebuilt.
+                    /*
+                    A possibly conditional declaration or an assembly-level attribute can
+                    introduce a type definition or a type forwarder before the file is rebuilt.
+                    */
                     bool opaque =
                         metadata.UncertainDirectivePosition != null
                         || metadata.UncertainBranches.Exists(branch =>
@@ -3174,7 +3180,7 @@ namespace DxMessaging.Editor
                                 IdentifierValue(declaration.Groups["name"].Value)
                             )
                 )
-                    .Where(name => Array.IndexOf(BindingTypeNames, name) >= 0)
+                    .Where(name => 0 <= Array.IndexOf(BindingTypeNames, name))
                     .ToHashSet(StringComparer.Ordinal);
 
             private HashSet<string> ReadMetadataNames(string path) =>
@@ -3305,7 +3311,7 @@ namespace DxMessaging.Editor
                             {
                                 name = name.Substring(0, arity);
                             }
-                            if (Array.IndexOf(BindingTypeNames, name) >= 0)
+                            if (0 <= Array.IndexOf(BindingTypeNames, name))
                             {
                                 names.Add(name);
                                 if (ComponentBindingTypeNames.Contains(name))
@@ -3461,8 +3467,10 @@ namespace DxMessaging.Editor
                     return targets.Any(target => maxSmallRows <= rows[target]) ? 4 : 2;
                 }
 
-                // ECMA-335 II.22–24. Offset calculation only needs tables through
-                // ExportedType. We read definitions and exports, rather than their references.
+                /*
+                ECMA-335 II.22–24. Offset calculation only needs tables through
+                ExportedType. We read definitions and exports, rather than their references.
+                */
                 return table switch
                 {
                     0 => 2 + text + 3 * guid, // Module
@@ -3782,8 +3790,10 @@ namespace DxMessaging.Editor
                 return GeneratedHeader.Absent;
             }
 
-            // Consider only configurations that reach a leading comment. Keeping each symbol's
-            // assigned value for the whole scan ties the header to a feasible configuration.
+            /*
+            Consider only configurations that reach a leading comment. Keeping each symbol's
+            assigned value for the whole scan ties the header to a feasible configuration.
+            */
             const int MaximumHeaderScans = 256;
             int remainingScans = MaximumHeaderScans;
             Dictionary<string, bool> configuration = new(StringComparer.Ordinal);
@@ -7419,7 +7429,7 @@ namespace DxMessaging.Editor
         {
             if (start < end && text[start] is '+' or '-' && text[start + 1] == text[start])
             {
-                return ReadStorageTarget(text, start + 2, end) > end;
+                return end < ReadStorageTarget(text, start + 2, end);
             }
 
             int following = ReadStorageTarget(text, start, end);
@@ -7440,8 +7450,10 @@ namespace DxMessaging.Editor
             return following + write.Length <= end;
         }
 
-        // The writable operand must start at the outside of the expression.
-        // An assignment nested in a lambda or a query is not a statement expression for a void delegate.
+        /*
+        The writable operand must start at the outside of the expression.
+        An assignment nested in a lambda or a query is not a statement expression for a void delegate.
+        */
         private static int ReadStorageTarget(string text, int start, int end)
         {
             int cursor = NextNonWhitespace(text, start);
@@ -7460,7 +7472,7 @@ namespace DxMessaging.Editor
                         .TrueForAll(element =>
                         {
                             int elementEnd = element.Start + element.Length - 1;
-                            return ReadStorageTarget(text, element.Start, elementEnd) > elementEnd;
+                            return elementEnd < ReadStorageTarget(text, element.Start, elementEnd);
                         })
                 )
                 {
@@ -7760,7 +7772,7 @@ namespace DxMessaging.Editor
             {
                 return false;
             }
-            return masked.IndexOf("Message", colon, body - colon, StringComparison.Ordinal) >= 0;
+            return 0 <= masked.IndexOf("Message", colon, body - colon, StringComparison.Ordinal);
         }
 
         private static bool IsFileLocalDeclaration(string masked, Match declaration)
@@ -9236,8 +9248,10 @@ namespace DxMessaging.Editor
             {
                 return false;
             }
-            // A renamed argument is proved only at the callable's own statement level.
-            // A deeper expression or block might belong to an unrecognized nested callable.
+            /*
+            A renamed argument is proved only at the callable's own statement level.
+            A deeper expression or block might belong to an unrecognized nested callable.
+            */
             int depth = 0;
             for (int index = body.Start; index < callStart; index++)
             {
@@ -9376,8 +9390,10 @@ namespace DxMessaging.Editor
                         continue;
                     }
 
-                    // A tentative method lookup can turn out to point away from a delegate value.
-                    // Once any sibling is withheld, preserve every initializer the call may use.
+                    /*
+                    A tentative method lookup can turn out to point away from a delegate value.
+                    Once any sibling is withheld, preserve every initializer the call may use.
+                    */
                     IEnumerable<int> coupled = mayUseSeparateInitializer
                         ? callbacks.Concat(delegateInitializers).Distinct()
                         : callbacks;
@@ -10618,7 +10634,7 @@ namespace DxMessaging.Editor
                 return false;
             }
 
-            if (following < 0 || scopeEnd <= following || ",);]".IndexOf(source[following]) >= 0)
+            if (following < 0 || scopeEnd <= following || 0 <= ",);]".IndexOf(source[following]))
             {
                 return true;
             }
@@ -11262,7 +11278,7 @@ namespace DxMessaging.Editor
         {
             int index = PreviousNonWhitespace(text, beforeWhen);
             // An ordinary call to a method named when can occur inside a switch.
-            if (index < bodyStart || "({[,;:=!?.&|^~+-*/%".IndexOf(text[index]) >= 0)
+            if (index < bodyStart || 0 <= "({[,;:=!?.&|^~+-*/%".IndexOf(text[index]))
             {
                 return false;
             }
@@ -11358,7 +11374,7 @@ namespace DxMessaging.Editor
                     index = groupStart;
                 }
                 else if (
-                    "([{;}=+-/%&|^~!".IndexOf(current) >= 0
+                    0 <= "([{;}=+-/%&|^~!".IndexOf(current)
                     || (
                         char.IsDigit(current)
                         && (index == bodyStart || !IsIdentifierPart(text[index - 1]))
@@ -11483,7 +11499,7 @@ namespace DxMessaging.Editor
 
         private static bool FollowsTargetBoundary(string text, int bodyStart, int beforeTarget) =>
             beforeTarget < bodyStart
-            || "({[};,:?=".IndexOf(text[beforeTarget]) >= 0
+            || 0 <= "({[};,:?=".IndexOf(text[beforeTarget])
             || (
                 bodyStart < beforeTarget
                 && text[beforeTarget - 1] == '='
@@ -12258,8 +12274,10 @@ namespace DxMessaging.Editor
                     return true;
                 }
 
-                // A complete conditional supplies a declaration only if each feasible branch
-                // supplies one without requiring another unresolved condition.
+                /*
+                A complete conditional supplies a declaration only if each feasible branch
+                supplies one without requiring another unresolved condition.
+                */
                 foreach (ConditionalGroup group in CompleteConditionalGroups)
                 {
                     TextSpan first = group.Branches[0];
@@ -12727,7 +12745,7 @@ namespace DxMessaging.Editor
                     );
                     if (
                         !StartsWithIdentifier(masked, first, "this")
-                        || first + "this".Length >= masked.Length
+                        || masked.Length <= first + "this".Length
                         || !char.IsWhiteSpace(masked[first + "this".Length])
                     )
                     {
@@ -12860,8 +12878,10 @@ namespace DxMessaging.Editor
                         continue;
                     }
 
-                    // Unknown forms can introduce an inferred lambda or pattern variable, or a
-                    // deconstruction local. A same-named package field does not prove that binding.
+                    /*
+                    Unknown forms can introduce an inferred lambda or pattern variable, or a
+                    deconstruction local. A same-named package field does not prove that binding.
+                    */
                     return true;
                 }
                 return false;
@@ -12914,8 +12934,10 @@ namespace DxMessaging.Editor
                     int opening = FindEnclosingOpenParenthesis(masked, use.Index);
                     int closing = 0 <= opening ? FindMatching(masked, opening, '(', ')') : -1;
                     int following = 0 <= closing ? NextNonWhitespace(masked, closing + 1) : -1;
-                    // A completed argument list followed by a semicolon or conditional operator
-                    // cannot declare an inferred lambda parameter or a deconstruction local.
+                    /*
+                    A completed argument list followed by a semicolon or conditional operator
+                    cannot declare an inferred lambda parameter or a deconstruction local.
+                    */
                     return 0 <= following && masked[following] is ';' or '?';
                 }
                 return false;
@@ -13229,8 +13251,10 @@ namespace DxMessaging.Editor
                         ) != null
                     )
                     {
-                        // A directive-position hash can become active when this token is disabled.
-                        // This can conceal a use of a callback declared earlier in the script.
+                        /*
+                        A directive-position hash can become active when this token is disabled.
+                        This can conceal a use of a callback declared earlier in the script.
+                        */
                         _metadata.UncertainDirectivePosition ??= tokenStart + hash;
                         return;
                     }

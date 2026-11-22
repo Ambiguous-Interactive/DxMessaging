@@ -20,8 +20,10 @@ namespace DxMessaging.Tests.Editor
             string source
         )
         {
-            // The lexical fixtures omit the surrounding application types unless they test a binding.
-            // Supply actual routing declarations so the preview can prove ordinary package overloads.
+            /*
+            The lexical fixtures omit the surrounding application types unless they test a binding.
+            Supply actual routing declarations so the preview can prove ordinary package overloads.
+            */
             const string Contracts =
                 " : global::DxMessaging.Core.Messages.IUntargetedMessage,"
                 + " global::DxMessaging.Core.Messages.ITargetedMessage,"
