@@ -1281,6 +1281,65 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(migrate ? 0 : 1));
         }
 
+        [TestCase("namespace Consumer { using global::DxMessaging.Core;", "}")]
+        [TestCase("namespace Consumer { using DxMessaging.Core;", "}")]
+        [TestCase("namespace Consumer; using global::DxMessaging.Core;", "")]
+        public void AnalyzeReportsDelegateFromANamespaceScopedPackageImport(
+            string header,
+            string footer
+        )
+        {
+            string source =
+                header
+                + @"
+sealed class Receiver
+{
+    MessageHandler.FastHandler<Pulse> callback = (ref Pulse message) => { };
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+"
+                + footer;
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(
+                result.ManualReviewMethods[0],
+                Does.Contain("line 4").And.Contain("MessageHandler type cannot be proven")
+            );
+        }
+
+        [Test]
+        public void AnalyzeIgnoresAPackageImportInASiblingNamespace()
+        {
+            const string Source =
+                @"
+namespace Other { using global::DxMessaging.Core; }
+namespace Vendor
+{
+    static class MessageHandler { public delegate void FastHandler<T>(ref T message); }
+}
+namespace Consumer
+{
+    using Vendor;
+    sealed class Receiver
+    {
+        MessageHandler.FastHandler<Pulse> callback = (ref Pulse message) => { };
+    }
+    readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+}";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Is.Empty);
+        }
+
         [TestCase("Game.dll", "MessageHandler", false)]
         [TestCase("Game.dll", "global::DxMessaging.Core.MessageHandler", true)]
         [TestCase("Unrelated.dll", "MessageHandler", true)]
@@ -1459,6 +1518,120 @@ readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
             );
         }
 
+        [TestCase("return (ref Pulse message) => { message = default; };", "writes to parameter")]
+        [TestCase("return (ref Pulse message) => Observe(message);", "block-bodied property")]
+        [TestCase("return Forward;", "block-bodied property")]
+        public void AnalyzeReportsLegacyHandlersReturnedByABlockGetter(string body, string reason)
+        {
+            string source = @"
+sealed class Receiver
+{
+    private global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> Handler
+    {
+        get
+        {
+            BODY
+        }
+    }
+
+    private void Forward(ref Pulse message) { }
+    private void Observe(Pulse message) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("BODY", body);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("line 8").And.Contain(reason));
+        }
+
+        [Test]
+        public void AnalyzeReportsGetterReturnsFromSeparateBranchesAndIgnoresLocalFunctionReturns()
+        {
+            const string Source =
+                @"
+sealed class Receiver
+{
+    private delegate void Writable(ref Pulse value);
+    private bool condition;
+    private global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> Handler
+    {
+        get
+        {
+            Writable Local()
+            {
+                return (ref Pulse value) => { value = default; };
+            }
+            if (condition)
+            {
+                return (ref Pulse message) => { message = default; };
+            }
+            return Forward;
+        }
+    }
+
+    private void Forward(ref Pulse message) { }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(2));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.Some.Contains("line 16").And.Contains("writes to parameter")
+            );
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.Some.Contains("line 18").And.Contains("block-bodied property")
+            );
+        }
+
+        [TestCase("condition ? (ref Pulse a) => { } : (ref Pulse b) => { }", 2)]
+        [TestCase(
+            "condition switch { true => (ref Pulse a) => { }, false => (ref Pulse b) => { } }",
+            2
+        )]
+        [TestCase("((ref Pulse message) => { })", 1)]
+        [TestCase("condition ? (in Pulse a) => { } : (in Pulse b) => { }", 0)]
+        [TestCase("((in Pulse message) => { })", 0)]
+        [TestCase("Build((ref int unrelated) => { })", 0)]
+        public void AnalyzeReportsExplicitCallbacksInCompoundGetterValues(
+            string value,
+            int expected
+        )
+        {
+            string source = @"
+sealed class Receiver
+{
+    private bool condition;
+    private delegate void Builder(ref int unrelated);
+    private global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> Build(Builder input) => null;
+    private global::DxMessaging.Core.MessageHandler.FastHandler<Pulse> Handler { get { return VALUE; } }
+}
+readonly struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage { }
+".Replace("VALUE", value);
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                source
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(source));
+            Assert.That(result.ReplacementCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(expected));
+            Assert.That(
+                result.ManualReviewMethods,
+                Has.All.Contains("line 7").And.Contains("block-bodied property")
+            );
+        }
+
         [TestCase(true)]
         [TestCase(false)]
         public void AnalyzeRequiresProofOfTheInstalledRegistration(bool verified)
@@ -1600,6 +1773,31 @@ sealed class COMPONENT : global::DxMessaging.Unity.MessageAwareComponent
             Assert.That(result.StringHandlerOptInCount, Is.Zero);
             Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
             Assert.That(result.ManualReviewMethods[0], Does.Contain("component has the same name"));
+        }
+
+        [Test]
+        public void AnalyzeRequiresSeparateInstalledStringOptInProof()
+        {
+            const string Source =
+                @"
+sealed class Receiver : global::DxMessaging.Unity.MessageAwareComponent
+{
+    protected override void HandleGlobalStringMessage(ref global::DxMessaging.Core.Messages.GlobalStringMessage message) =>
+        base.HandleGlobalStringMessage(ref message);
+}
+";
+            const string Symbol = "MessageAwareComponent.RegisterForStringMessages";
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
+                Source,
+                findPackageBindingIssue: symbol =>
+                    symbol == Symbol ? "the installed getter is not overridable" : null
+            );
+
+            Assert.That(result.UpgradedSource, Is.EqualTo(Source.Replace("ref ", "in ")));
+            Assert.That(result.ReplacementCount, Is.EqualTo(2));
+            Assert.That(result.StringHandlerOptInCount, Is.Zero);
+            Assert.That(result.ManualReviewMethods, Has.Count.EqualTo(1));
+            Assert.That(result.ManualReviewMethods[0], Does.Contain("not overridable"));
         }
 
         [Test]
@@ -3134,6 +3332,11 @@ class Receiver
         public void AnalyzeReportsFixedPointerToCallbackStorage(string operand, string pointerType)
         {
             string source = @"
+struct Pulse : global::DxMessaging.Core.Messages.IUntargetedMessage
+{
+    public int Value;
+}
+
 class Receiver
 {
     unsafe void SetUp()
@@ -3147,7 +3350,7 @@ class Receiver
         };
     }
 }".Replace("OPERAND", operand).Replace("TYPE", pointerType);
-            ReadonlyFastHandlerUpgrade.UpgradeResult result = AnalyzeWithFixtureMessageTypes(
+            ReadonlyFastHandlerUpgrade.UpgradeResult result = ReadonlyFastHandlerUpgrade.Analyze(
                 source
             );
             Assert.That(result.UpgradedSource, Is.EqualTo(source));
@@ -8472,7 +8675,7 @@ void OnPulse(ref Pulse message) { }";
         }
 
         [Test]
-        public void PhysicalCleanupPreservesABackupWhenRemovalCannotBeVerified()
+        public void PhysicalUpgradeRetainsTheOriginalUntilManualReview()
         {
             string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
@@ -8483,35 +8686,56 @@ void OnPulse(ref Pulse message) { }";
                 byte[] after = { 2 };
                 File.WriteAllBytes(path, before);
                 ReadonlyFastHandlerUpgrade.PhysicalAtomicFileStore store = new();
-                string backup = store.Replace(path, before, after);
-                using (
-                    FileStream existing = new(
-                        backup,
-                        FileMode.Open,
-                        FileAccess.Read,
-                        FileShare.Read
-                    )
-                )
+                var upgrades = new[]
                 {
-                    if (Path.DirectorySeparatorChar == '\\')
-                    {
-                        Assert.That(
-                            () => store.TryDiscardBackup(path, backup, after),
-                            Throws.InstanceOf<IOException>()
-                        );
-                    }
-                    else
-                    {
-                        Assert.That(store.TryDiscardBackup(path, backup, after), Is.False);
-                    }
-                }
+                    new ReadonlyFastHandlerUpgrade.PendingFileUpgrade(path, before, after),
+                };
+
+                Assert.That(ReadonlyFastHandlerUpgrade.ApplyAtomically(upgrades, store), Is.False);
+                string backup = Directory.GetFiles(directory, "*.dxmsg-backup-*").Single();
                 Assert.That(File.ReadAllBytes(backup), Is.EqualTo(before));
                 Assert.That(File.ReadAllBytes(path), Is.EqualTo(after));
-                if (Path.DirectorySeparatorChar == '\\')
-                {
-                    Assert.That(store.TryDiscardBackup(path, backup, after), Is.True);
-                    Assert.That(File.Exists(backup), Is.False);
-                }
+            }
+            finally
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+
+        [Test]
+        public void PhysicalRollbackPreservesTheOriginalAndBothConcurrentEdits()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                string path = Path.Combine(directory, "Handler.cs");
+                byte[] before = { 1 };
+                byte[] after = { 2 };
+                byte[] firstEdit = { 3 };
+                byte[] secondEdit = { 4 };
+                int replaces = 0;
+                File.WriteAllBytes(path, before);
+                ReadonlyFastHandlerUpgrade.PhysicalAtomicFileStore store = new(
+                    replaceFile: (source, destination, displaced) =>
+                    {
+                        File.WriteAllBytes(destination, replaces++ == 0 ? firstEdit : secondEdit);
+                        File.Replace(source, destination, displaced);
+                    }
+                );
+                string backup = store.Replace(path, before, after);
+
+                Assert.That(
+                    () => store.Restore(path, backup, after),
+                    Throws.TypeOf<IOException>().With.Message.Contains(backup)
+                );
+                string recovery = Directory
+                    .GetFiles(directory, "*.dxmsg-rollback-recovery-*")
+                    .Single();
+                Assert.That(replaces, Is.EqualTo(2));
+                Assert.That(File.ReadAllBytes(path), Is.EqualTo(firstEdit));
+                Assert.That(File.ReadAllBytes(recovery), Is.EqualTo(secondEdit));
+                Assert.That(File.ReadAllBytes(backup), Is.EqualTo(before));
             }
             finally
             {
@@ -8583,7 +8807,7 @@ void OnPulse(ref Pulse message) { }";
 
                 store.Restore(path, backup, upgraded);
                 Assert.That(File.ReadAllBytes(path), Is.EqualTo(original));
-                Assert.That(File.Exists(backup), Is.False);
+                Assert.That(File.ReadAllBytes(backup), Is.EqualTo(original));
             }
             finally
             {

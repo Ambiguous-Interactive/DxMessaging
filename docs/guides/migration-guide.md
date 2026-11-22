@@ -167,27 +167,31 @@ To update project scripts automatically, choose **Tools / Wallstop Studios / DxM
 Upgrade 3.x Fast Handlers to 4.0**. The command previews the number of changes before writing. It
 scans C# scripts under `Assets` for callbacks used by recognized DxMessaging registrations, explicit
 `FastHandler` delegates, and the changed `MessageAwareComponent` overrides. It edits scripts Unity
-has imported. Refresh the Asset Database and preview again when an unimported script needs review. When it
-updates an inherited string-handler override, it also adds
-`protected override bool RegisterForStringMessages => true;` to preserve the 3.x behavior. It
-keeps an existing opt-in, opt-out, or computed property unchanged. It does not change package or
+has imported. Refresh the Asset Database and preview again when an unimported script needs review.
+When the tool updates an inherited string-handler override and can verify that it can add the
+opt-in, it inserts `protected override bool RegisterForStringMessages => true;` to preserve the
+3.x behavior. Existing opt-ins, opt-outs, and computed properties stay unchanged. It does not change package or
 generated sources, interceptors, emission calls, comments, or strings.
 
 The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
 replacement. After confirmation, the tool rechecks C# scripts, assembly settings under `Assets`,
-and Unity's script assembly assignments. It compares the bytes of the files it could read again
-after checking the package and before backup cleanup. On Windows, the tool holds read handles during
-backup cleanup to keep those files stable. On other platforms, the original backups remain beside
-the upgraded scripts. Review the migration and compile the project before removing the backups listed
-in the Console. Keep project scripts and assembly settings in regular files and directories
-under `Assets` so the preview can verify them.
-Refresh the Asset Database and rerun the preview when the imported assembly settings or their asset GUIDs differ from disk.
-Resolve unreadable-script warnings before applying changes. If comments or strings can hide a directive in some
-build configurations, the preview leaves the script untouched and reports the directive location. The tool attempts to restore every earlier
-write if a later write fails. If a script changes
-again before rollback, the tool preserves the newer edit and its backup. It rechecks each upgraded
-file before removing its backup and reports files whose contents changed. It leaves unsupported
+and Unity's script assembly assignments. It checks readable project files again after checking the
+package. Original backups stay beside the upgraded scripts because referenced compilation inputs
+can change outside `Assets`. Review the changes and compile the project before removing the
+backups listed in the Console. Keep project scripts and assembly settings in regular files and
+directories under `Assets` so the preview can verify them.
+
+The Console lists files requiring manual review before you confirm the upgrade. If it reports an
+unreadable script, cancel any pending confirmation, resolve the warning, and rerun the preview. Refresh the Asset
+Database and rerun the preview when the imported assembly settings or their asset GUIDs differ
+from disk. If comments or strings can hide a directive in some build configurations, the preview
+leaves the script untouched and reports the directive location.
+
+The tool attempts to restore earlier writes if a later write fails. It uses a copy for rollback so
+the pre-upgrade original remains at the backup path. If a save arrives during rollback, use the
+paths reported in the Console to compare the live script, original backup, and any displaced edits.
+The preview leaves unsupported
 encodings, overloads, qualified or cross-file callback declarations, and
 ambiguous receivers or delegate types unchanged. Prefix a package type with `global::` when an
 alias can hide the `DxMessaging` namespace. A `using` inside a namespace can also change which type
@@ -240,8 +244,11 @@ bind to the same overload. If the preview cannot trace an argument back to its d
 also defer separate fast delegate initializers in that script. Reports include the source line
 and column so you can find the callback or its use.
 Partial `MessageAwareComponent` declarations require manual review before adding the string-handler
-opt-in because another part can already declare the property. A component named
-`RegisterForStringMessages` also needs review before adding the property.
+opt-in because another part can already declare the property. The preview also defers the opt-in
+when it cannot verify that the installed property is a protected overridable `bool` getter.
+A component named `RegisterForStringMessages` cannot declare the property itself. Rename the
+component or declare the override in a differently named base class you control. Without an override
+that returns `true`, the 4.0 default is `false`.
 Review project-wide callback uses. The preview skips branches when it can prove a preprocessor
 condition is false. It defers callbacks whose boundaries or method-group bindings depend on unresolved
 branches. Check those callbacks in each build configuration. Use separate callback declarations
