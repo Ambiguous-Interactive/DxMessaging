@@ -11,10 +11,11 @@ namespace DxMessaging.Editor
     using System.Text.RegularExpressions;
     using UnityEditor;
     using UnityEditor.Compilation;
-    using UnityEditor.PackageManager;
     using UnityEngine;
     using BindingFlags = System.Reflection.BindingFlags;
     using MethodInfo = System.Reflection.MethodInfo;
+    using PackageInfo = UnityEditor.PackageManager.PackageInfo;
+    using PackageSource = UnityEditor.PackageManager.PackageSource;
     using ParameterInfo = System.Reflection.ParameterInfo;
     using PropertyInfo = System.Reflection.PropertyInfo;
 
