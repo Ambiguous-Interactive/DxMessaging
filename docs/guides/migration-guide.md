@@ -170,8 +170,9 @@ scans C# scripts under `Assets` for callbacks used by recognized DxMessaging reg
 has imported. Refresh the Asset Database and preview again when an unimported script needs review.
 When the tool updates an inherited string-handler override and can verify that it can add the
 opt-in, it inserts `protected override bool RegisterForStringMessages => true;` to preserve the
-3.x behavior. Existing opt-ins, opt-outs, and computed properties stay unchanged. It does not change package or
-generated sources, interceptors, emission calls, comments, or strings.
+3.x behavior. Existing opt-ins, opt-outs, and computed properties stay unchanged. The preview
+skips generated scripts identified by file names such as `Receiver.g.i.cs` or by a generated header.
+It leaves package sources, interceptors, emission calls, comments, and strings unchanged.
 
 The upgrade tool preserves UTF-8, including an optional byte-order mark, and BOM-marked UTF-16 or
 UTF-32 encoding. It also keeps line endings unchanged and checks for edits immediately before each
@@ -185,8 +186,8 @@ directories under `Assets` so the preview can verify them.
 The Console lists files requiring manual review before you confirm the upgrade. If it reports an
 unreadable script, cancel any pending confirmation, resolve the warning, and rerun the preview. Refresh the Asset
 Database and rerun the preview when the imported assembly settings or their asset GUIDs differ
-from disk. If comments or strings can hide a directive in some build configurations, the preview
-leaves the script untouched and reports the directive location.
+from disk. When a script is eligible for migration but comments or strings can hide a directive in
+some build configurations, the preview leaves the script untouched and reports the directive location.
 
 The tool attempts to restore earlier writes if a later write fails. It uses a copy for rollback so
 the pre-upgrade original remains at the backup path. If a save arrives during rollback, use the
@@ -201,8 +202,8 @@ before migrating it. The preview
 uses Unity's compilation inputs for the active build target to check that package types come from
 the installed DxMessaging runtime. It reports the callback or type location when it cannot verify
 that binding. A source outside the script index, competing metadata, a modified or conditionally
-compiled registration API, missing runtime source checksums, or unverified compiler options can
-require manual review. An extension in another file or assembly can also defer a registration when
+compiled runtime handler or registration method, missing runtime source checksums, or unverified
+compiler options can require manual review. An extension in another file or assembly can also defer a registration when
 the preview cannot establish which overload it selects. Check the binding and related callers in your other build targets
 before making a deferred edit. The preview also defers a callback that passes
 its newly readonly parameter as a `ref` or `out` argument, takes a typed reference with
@@ -234,7 +235,9 @@ too. This includes calls through fields and properties. For example, change `sep
 to `separate(in pulse)` and `separate?.Invoke(ref pulse)` to `separate?.Invoke(in pulse)`. Keep a
 separate writable callback for callers that need to modify the argument. When the preview cannot
 account for callers of a standalone `new MessageHandler.FastHandler<T>(...)` construction or a
-property returning a fast delegate, review the delegate and its calls together. Check direct calls
+property returning a fast delegate, including an explicit interface implementation, review the
+delegate and its calls together. A global import in another script in the same assembly can reveal a
+delegate initializer that needs manual review. Check direct calls
 that omit an argument modifier. A call such as `this.Forward(default(Pulse))` can select a different
 overload after `Forward` changes from `ref` to `in`. If the call must keep using an extension, call
 it explicitly, for example `Extensions.Forward(this, default(Pulse))`.

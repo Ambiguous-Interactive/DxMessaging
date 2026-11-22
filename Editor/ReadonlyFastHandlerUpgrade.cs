@@ -1755,19 +1755,29 @@ namespace DxMessaging.Editor
                         return $"the runtime base has an unverified {name} overload";
                     }
 
-                    System.Reflection.ParameterInfo[] parameters = candidates[0].GetParameters();
+                    MethodInfo handler = candidates[0];
+                    ParameterInfo[] parameters = handler.GetParameters();
+                    Type payloadType = component.Assembly.GetType(
+                        "DxMessaging.Core.Messages." + payload
+                    );
                     ParameterList declaration = declarations[0];
                     string sourceParameter = masked.Substring(
                         declaration.ParametersStart,
                         declaration.ParametersEnd - declaration.ParametersStart
                     );
                     if (
-                        candidates[0].DeclaringType != component
-                        || !candidates[0].IsVirtual
+                        handler.DeclaringType != component
+                        || !handler.IsFamily
+                        || !handler.IsVirtual
+                        || handler.IsFinal
+                        || handler.IsAbstract
+                        || handler.IsGenericMethod
+                        || handler.ReturnType != typeof(void)
                         || parameters.Length != 1
                         || !parameters[0].IsIn
-                        || parameters[0].ParameterType.GetElementType()?.FullName
-                            != "DxMessaging.Core.Messages." + payload
+                        || payloadType == null
+                        || payloadType.Assembly != component.Assembly
+                        || parameters[0].ParameterType != payloadType.MakeByRefType()
                         || !Regex.IsMatch(
                             sourceParameter,
                             @"\A\s*in\s+" + payload + @"\s+" + IdentifierSpellingPattern + @"\s*\z",
@@ -3000,11 +3010,13 @@ namespace DxMessaging.Editor
                     {
                         break;
                     }
-                    int contentEnd = source[position + 1] == '*' ? end - 2 : end;
+                    bool block = source[position + 1] == '*';
+                    int contentEnd = block ? end - 2 : end;
                     if (
                         headerOpen
                         && HasGeneratedCommentMarker(
-                            source.AsSpan(position + 2, contentEnd - position - 2)
+                            source.AsSpan(position + 2, contentEnd - position - 2),
+                            block && conditionals?.State == BranchState.Uncertain
                         )
                     )
                     {
@@ -3025,22 +3037,53 @@ namespace DxMessaging.Editor
             return false;
         }
 
-        private static bool HasGeneratedCommentMarker(ReadOnlySpan<char> comment)
+        private static bool HasGeneratedCommentMarker(
+            ReadOnlySpan<char> comment,
+            bool conditionalBlock
+        )
         {
+            bool firstLine = true;
+            bool mayBeLeadingLineComment = false;
             while (!comment.IsEmpty)
             {
                 int terminator = comment.IndexOfAny(CSharpLineTerminators.AsSpan());
                 int length = terminator < 0 ? comment.Length : terminator;
-                string line = comment
-                    .Slice(0, length)
-                    .ToString()
-                    .TrimStart()
-                    .TrimStart('*')
-                    .TrimStart();
-                if (GeneratedCommentMarkerRegex.IsMatch(line))
+                string line = comment.Slice(0, length).ToString().TrimStart();
+                if (GeneratedCommentMarkerRegex.IsMatch(line.TrimStart('*').TrimStart()))
                 {
                     return true;
                 }
+
+                if (conditionalBlock && !firstLine && line.Length != 0)
+                {
+                    /*
+                     * If the block opener is skipped, an arm boundary inside the block
+                     * can expose an ordinary leading line comment.
+                     */
+                    if (line[0] == '#')
+                    {
+                        mayBeLeadingLineComment =
+                            ReadConditionalKeyword(line.AsSpan(), 0, line.Length, out _)
+                                is "elif"
+                                    or "else"
+                                    or "endif";
+                    }
+                    else if (line.StartsWith("//", StringComparison.Ordinal))
+                    {
+                        if (
+                            mayBeLeadingLineComment
+                            && GeneratedCommentMarkerRegex.IsMatch(line.Substring(2).TrimStart())
+                        )
+                        {
+                            return true;
+                        }
+                    }
+                    else
+                    {
+                        mayBeLeadingLineComment = false;
+                    }
+                }
+                firstLine = false;
                 comment = terminator < 0 ? default : comment.Slice(terminator + 1);
             }
             return false;
@@ -3050,6 +3093,7 @@ namespace DxMessaging.Editor
         {
             string normalized = assetPath.Replace('\\', '/');
             return normalized.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith(".g.i.cs", StringComparison.OrdinalIgnoreCase)
                 || normalized.EndsWith(".generated.cs", StringComparison.OrdinalIgnoreCase)
                 || normalized.EndsWith(".designer.cs", StringComparison.OrdinalIgnoreCase)
                 || 0 <= normalized.IndexOf("/Generated/", StringComparison.OrdinalIgnoreCase)
@@ -3447,6 +3491,17 @@ namespace DxMessaging.Editor
                     yield break;
                 }
 
+                int explicitPropertyBody = FindExplicitInterfacePropertyBody(
+                    masked,
+                    following,
+                    scanEnd
+                );
+                bool explicitProperty = 0 <= explicitPropertyBody;
+                if (explicitProperty)
+                {
+                    following = explicitPropertyBody;
+                }
+
                 bool declarationIsProven = true;
                 if (
                     IsArrow(masked, following)
@@ -3468,7 +3523,17 @@ namespace DxMessaging.Editor
                     );
                     yield break;
                 }
-                if (masked[following] == '{')
+                if (
+                    masked[following] == '{'
+                    && (
+                        !explicitProperty
+                        || IsDirectTypeMember(
+                            masked,
+                            FindContainingTypeStart(masked, variable),
+                            variable
+                        )
+                    )
+                )
                 {
                     int accessors = following;
                     int closeAccessors = FindMatching(masked, accessors, '{', '}');
@@ -3487,7 +3552,12 @@ namespace DxMessaging.Editor
                     }
                     following =
                         closeAccessors < 0 ? -1 : NextNonWhitespace(masked, closeAccessors + 1);
-                    if (following < 0 || statementEnd <= following || masked[following] != '=')
+                    if (
+                        explicitProperty
+                        || following < 0
+                        || statementEnd <= following
+                        || masked[following] != '='
+                    )
                     {
                         yield break;
                     }
@@ -3533,6 +3603,56 @@ namespace DxMessaging.Editor
                     yield break;
                 }
             }
+        }
+
+        private static int FindExplicitInterfacePropertyBody(string text, int suffix, int limit)
+        {
+            bool qualified = false;
+            while (0 <= suffix && suffix < limit)
+            {
+                if (text[suffix] == '<')
+                {
+                    int close = FindMatching(text, suffix, '<', '>');
+                    suffix = close < 0 ? -1 : NextNonWhitespace(text, close + 1);
+                    if (suffix < 0 || limit <= suffix || text[suffix] != '.')
+                    {
+                        return -1;
+                    }
+                }
+
+                int separatorLength = text[suffix] switch
+                {
+                    '.' => 1,
+                    ':' when !qualified && suffix + 1 < limit && text[suffix + 1] == ':' => 2,
+                    _ => 0,
+                };
+                if (separatorLength == 0)
+                {
+                    return qualified && (text[suffix] == '{' || IsArrow(text, suffix))
+                        ? suffix
+                        : -1;
+                }
+
+                int nameStart = NextNonWhitespace(text, suffix + separatorLength);
+                if (nameStart < 0 || limit <= nameStart)
+                {
+                    return -1;
+                }
+                Match name = DirectMemberIdentifierRegex.Match(text, nameStart, limit - nameStart);
+                if (!name.Success)
+                {
+                    return -1;
+                }
+
+                qualified = true;
+                suffix = NextNonWhitespace(text, nameStart + name.Length);
+                if (0 <= suffix && suffix < limit && text[suffix] == '[' && name.Value == "this")
+                {
+                    int close = FindMatching(text, suffix, '[', ']');
+                    suffix = close < 0 ? -1 : NextNonWhitespace(text, close + 1);
+                }
+            }
+            return -1;
         }
 
         private static IEnumerable<(TextSpan Value, string Form)> FindAccessorGetterValues(
@@ -10899,6 +11019,9 @@ namespace DxMessaging.Editor
                 );
             }
 
+            public bool MayHaveGlobalNamespaceImport(string namespaceName) =>
+                _projectTypes?.MayHaveGlobalNamespaceImport(namespaceName, _assemblyName) == true;
+
             public bool HasCompetingNamespaceImport(
                 string masked,
                 string spelling,
@@ -12298,12 +12421,14 @@ namespace DxMessaging.Editor
             }
 
             int handlerQualifier = PreviousNonWhitespace(text, identifierStart - 1);
-            if (
-                (0 <= handlerQualifier && text[handlerQualifier] is '.' or ':')
-                || !metadata.HasNamespaceImportAtUse(text, "DxMessaging.Core", identifierStart)
-            )
+            if (0 <= handlerQualifier && text[handlerQualifier] is '.' or ':')
             {
                 return false;
+            }
+            if (!metadata.HasNamespaceImportAtUse(text, "DxMessaging.Core", identifierStart))
+            {
+                // The project-wide import index establishes only a manual review candidate.
+                return metadata.MayHaveGlobalNamespaceImport("DxMessaging.Core");
             }
 
             // A possible import identifies a review candidate but does not prove its binding.
@@ -12659,6 +12784,11 @@ namespace DxMessaging.Editor
                 string.IsNullOrEmpty(first)
                 || string.IsNullOrEmpty(second)
                 || NormalizeScriptAssemblyName(first) == NormalizeScriptAssemblyName(second);
+
+            public bool MayHaveGlobalNamespaceImport(string path, string assemblyName) =>
+                _globalNamespaceImports.Any(import =>
+                    import.Path == path && MayShareCompilation(import.Assembly, assemblyName)
+                );
 
             public bool HasCompetingGlobalNamespaceImport(
                 string name,
