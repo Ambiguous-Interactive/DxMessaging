@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prove the edit. Review the setting in each build
   configuration when it needs manual attention. The command also flags ambiguous callbacks,
   incompatible `ref` or `out` arguments, and writes or unresolved member access on newly readonly
-  parameters. [Migration guide](docs/guides/migration-guide.md#use-in-parameters-for-fast-handlers)
+  parameters. [Migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#use-in-parameters-for-fast-handlers)
   ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573),
   [#796](https://github.com/Ambiguous-Interactive/DxMessaging/issues/796)).
 

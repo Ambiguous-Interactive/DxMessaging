@@ -305,7 +305,7 @@ namespace DxMessaging.Editor
         );
 
         private static readonly Regex GeneratedCommentMarkerRegex = new(
-            @"^(?:<auto-?generated(?:\s*/)?\s*>|@generated\b)",
+            @"^(?:<auto-?generated(?=[\s/>]|$)|@generated\b)",
             RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
             TimeSpan.FromSeconds(1)
         );
@@ -966,6 +966,14 @@ namespace DxMessaging.Editor
                 "GameObject",
                 "Int32",
             };
+            private static readonly HashSet<string> ComponentBindingTypeNames = new(
+                StringComparer.Ordinal
+            )
+            {
+                "MessageRegistrationToken",
+                "StringMessage",
+                "GlobalStringMessage",
+            };
             private static readonly Regex NonBindingCompilerOption = new(
                 @"\A[-/](?:(?:d|define|langversion|nullable|nowarn|warn|warnaserror):[\w.,;_+-]+|(?:unsafe|checked|optimize|warnaserror)[+-]?|additionalfile:(?:""[^""\r\n]+""|[^\s""]+))\z",
                 RegexOptions.CultureInvariant | RegexOptions.IgnoreCase
@@ -991,9 +999,10 @@ namespace DxMessaging.Editor
             private readonly Dictionary<string, HashSet<string>> _sourceNames = new(
                 StringComparer.Ordinal
             );
-            private readonly Dictionary<string, HashSet<string>> _metadataNames = new(
-                StringComparer.Ordinal
-            );
+            private readonly Dictionary<
+                string,
+                (HashSet<string> Names, HashSet<(string Namespace, string Name)> Types)
+            > _metadataDeclarations = new(StringComparer.Ordinal);
             private static readonly Regex LocalAliasBranch = new(
                 @"\A\s*(?:using\s+"
                     + IdentifierSpellingPattern
@@ -1019,6 +1028,10 @@ namespace DxMessaging.Editor
                 "ff1816ec-aa5e-4d10-87f7-6f4963833460"
             );
             private readonly Dictionary<Assembly, string> _providerInputsIssues = new();
+            private readonly Dictionary<
+                Assembly,
+                (HashSet<string> Namespaces, bool IsOpaque)
+            > _runtimeLookupNamespaces = new();
             private readonly Dictionary<
                 (Assembly Provider, bool Component, bool OptIn),
                 string
@@ -1455,7 +1468,8 @@ namespace DxMessaging.Editor
                 {
                     issue = _providerIssue
                         ?? FindCompilerOptionsIssue(provider)
-                        ?? FindRuntimeSourceIssue(provider);
+                        ?? FindRuntimeSourceIssue(provider)
+                        ?? FindRuntimeReferenceIssue(provider);
                     _providerInputsIssues.Add(provider, issue);
                 }
                 return issue;
@@ -1506,6 +1520,215 @@ namespace DxMessaging.Editor
                     }
                 }
                 return null;
+            }
+
+            private string FindRuntimeReferenceIssue(Assembly provider)
+            {
+                IEnumerable<string> metadataReferences = provider.compiledAssemblyReferences.Concat(
+                    provider
+                        .assemblyReferences.Select(reference => reference.outputPath)
+                        .Where(path => File.Exists(PhysicalPath(path)))
+                );
+                foreach (string reference in metadataReferences.Distinct(StringComparer.Ordinal))
+                {
+                    string path = PhysicalPath(reference);
+                    if (
+                        path != _runtimePath
+                        && !IsEditorInstallationFile(path)
+                        && ReadMetadataDeclarations(path)
+                            .Types.Any(type =>
+                                ComponentBindingTypeNames.Contains(type.Name)
+                                && RuntimeNamespaceMayBind(provider, type.Namespace)
+                            )
+                    )
+                    {
+                        return $"runtime reference '{reference}' can change the installed component's type bindings";
+                    }
+                }
+
+                foreach (Assembly dependency in provider.assemblyReferences)
+                {
+                    string issue = FindCompilerOptionsIssue(dependency);
+                    if (issue != null)
+                    {
+                        return issue;
+                    }
+
+                    foreach (string input in dependency.sourceFiles)
+                    {
+                        string path = PhysicalPath(input);
+                        if (!ReadSourceNames(path).Overlaps(ComponentBindingTypeNames))
+                        {
+                            continue;
+                        }
+                        string source = EncodedSource.FromBytes(File.ReadAllBytes(path)).Text;
+                        SourceMetadata metadata = new(source);
+                        string masked = MaskNonCode(source, null, metadata);
+                        bool unverifiedDeclaration =
+                            metadata.UncertainDirectivePosition != null
+                            || metadata.UncertainBranches.Count != 0
+                            || Regex.IsMatch(
+                                masked,
+                                @"\[\s*assembly\s*:",
+                                RegexOptions.CultureInvariant,
+                                TimeSpan.FromSeconds(1)
+                            );
+                        if (
+                            unverifiedDeclaration
+                            || metadata
+                                .QualifiedTypeDeclarations(masked)
+                                .Any(type =>
+                                {
+                                    int dot = type.Name.LastIndexOf('.');
+                                    return ComponentBindingTypeNames.Contains(
+                                            SimpleTypeName(type.Name)
+                                        )
+                                        && RuntimeNamespaceMayBind(
+                                            provider,
+                                            dot < 0 ? string.Empty : type.Name.Substring(0, dot)
+                                        );
+                                })
+                        )
+                        {
+                            return $"runtime reference source '{input}' can change the installed component's type bindings";
+                        }
+                    }
+                }
+                return null;
+            }
+
+            private bool RuntimeNamespaceMayBind(Assembly provider, string name)
+            {
+                if (!_runtimeLookupNamespaces.TryGetValue(provider, out var lookup))
+                {
+                    lookup = ReadRuntimeLookupNamespaces(provider);
+                    _runtimeLookupNamespaces.Add(provider, lookup);
+                }
+                return lookup.IsOpaque || lookup.Namespaces.Contains(name);
+            }
+
+            private (HashSet<string> Namespaces, bool IsOpaque) ReadRuntimeLookupNamespaces(
+                Assembly provider
+            )
+            {
+                string componentSource = Path.Combine(
+                    _runtimeRoot,
+                    "Unity",
+                    "MessageAwareComponent.cs"
+                );
+                HashSet<string> namespaces = new(StringComparer.Ordinal)
+                {
+                    string.Empty,
+                    "DxMessaging",
+                    "DxMessaging.Unity",
+                    "DxMessaging.Core",
+                    "DxMessaging.Core.Messages",
+                };
+                foreach (string input in provider.sourceFiles)
+                {
+                    string path = PhysicalPath(input);
+                    string source = EncodedSource.FromBytes(File.ReadAllBytes(path)).Text;
+                    bool component = path == componentSource;
+                    if (!component && !source.Contains("global"))
+                    {
+                        continue;
+                    }
+
+                    SourceMetadata metadata = new(source);
+                    string masked = MaskNonCode(source, null, metadata, supportedUnityFloor: true);
+                    if (metadata.UncertainDirectivePosition != null)
+                    {
+                        return (namespaces, true);
+                    }
+                    int[] componentPositions = component
+                        ? TypeDeclarationRegex
+                            .Matches(masked)
+                            .Cast<Match>()
+                            .Where(match =>
+                                IdentifierValue(match.Groups["name"].Value)
+                                    == "MessageAwareComponent"
+                                && NamespaceAt(masked, match.Index) == "DxMessaging.Unity"
+                            )
+                            .Select(match => match.Index)
+                            .ToArray()
+                        : Array.Empty<int>();
+                    if (component && componentPositions.Length == 0)
+                    {
+                        return (namespaces, true);
+                    }
+                    foreach (Match import in NamespaceUsingRegex.Matches(masked))
+                    {
+                        bool global = FollowsKeyword(
+                            masked,
+                            0,
+                            PreviousNonWhitespace(masked, import.Index - 1),
+                            "global"
+                        );
+                        if (
+                            !global
+                            && !componentPositions.Any(position =>
+                                import.Index < position
+                                && ImportCanReach(masked, import.Index, position)
+                            )
+                        )
+                        {
+                            continue;
+                        }
+
+                        int targetStart = NextNonWhitespace(masked, import.Index + import.Length);
+                        Match alias = NamespaceAliasRegex.Match(masked, import.Index);
+                        bool isAlias = alias.Success && alias.Index == import.Index;
+                        if (isAlias)
+                        {
+                            targetStart = NextNonWhitespace(masked, alias.Index + alias.Length);
+                        }
+                        else if (StartsWithIdentifier(masked, targetStart, "static"))
+                        {
+                            targetStart = NextNonWhitespace(masked, targetStart + "static".Length);
+                        }
+                        Match target =
+                            targetStart < 0
+                                ? Match.Empty
+                                : NamespaceImportPathRegex.Match(masked, targetStart);
+                        if (!target.Success)
+                        {
+                            return (namespaces, true);
+                        }
+
+                        string imported = NormalizeNamespacePath(target.Groups["path"].Value);
+                        string scope =
+                            global || target.Groups["rooted"].Success
+                                ? string.Empty
+                                : NamespaceAt(masked, import.Index);
+                        while (true)
+                        {
+                            string pathInScope =
+                                scope.Length == 0 ? imported : scope + "." + imported;
+                            namespaces.Add(pathInScope);
+                            if (isAlias)
+                            {
+                                int dot = pathInScope.LastIndexOf('.');
+                                if (0 <= dot)
+                                {
+                                    namespaces.Add(pathInScope.Substring(0, dot));
+                                }
+                            }
+                            if (scope.Length == 0)
+                            {
+                                break;
+                            }
+                            int parent = scope.LastIndexOf('.');
+                            scope = parent < 0 ? string.Empty : scope.Substring(0, parent);
+                        }
+                    }
+                }
+                return (namespaces, false);
+            }
+
+            private static bool ImportCanReach(string masked, int import, int position)
+            {
+                int owner = FindEnclosingBrace(masked, import);
+                return owner < 0 || position < FindMatching(masked, owner, '{', '}');
             }
 
             private static string FindRuntimeStringOptInIssue()
@@ -1575,6 +1798,7 @@ namespace DxMessaging.Editor
                         metadata.UncertainDirectivePosition == null ? masked : source;
                     bool mayChangeType = component
                         ? HasConditionalComponentSurface(declarations, metadata, stringOptIn)
+                            || HasConditionalComponentTypes(provider, declarations, metadata)
                         : TypeDeclarationRegex
                             .Matches(declarations)
                             .Cast<Match>()
@@ -1600,6 +1824,65 @@ namespace DxMessaging.Editor
                     }
                 }
                 return null;
+            }
+
+            private bool HasConditionalComponentTypes(
+                Assembly provider,
+                string code,
+                SourceMetadata metadata
+            )
+            {
+                bool Overlaps(int start, int end) =>
+                    metadata.UncertainBranches.Exists(branch =>
+                        branch.Start < end && start < branch.Start + branch.Length
+                    );
+
+                foreach (Match definition in TypeDeclarationRegex.Matches(code))
+                {
+                    if (
+                        !ComponentBindingTypeNames.Contains(
+                            IdentifierValue(definition.Groups["name"].Value)
+                        )
+                    )
+                    {
+                        continue;
+                    }
+                    if (metadata.UncertainDirectivePosition != null)
+                    {
+                        return true;
+                    }
+
+                    bool conditionalNamespace = NamespaceDeclarationRegex
+                        .Matches(code)
+                        .Cast<Match>()
+                        .TakeWhile(candidate => candidate.Index < definition.Index)
+                        .Any(candidate =>
+                        {
+                            int boundary = candidate.Index + candidate.Length - 1;
+                            return Overlaps(candidate.Index, boundary + 1)
+                                && (
+                                    code[boundary] == ';'
+                                    || definition.Index < FindMatching(code, boundary, '{', '}')
+                                );
+                        });
+                    if (
+                        conditionalNamespace
+                        || (
+                            Overlaps(
+                                FindDeclarationHeaderStart(code, definition.Index),
+                                definition.Index + definition.Length
+                            )
+                            && RuntimeNamespaceMayBind(
+                                provider,
+                                NamespaceAt(code, definition.Index)
+                            )
+                        )
+                    )
+                    {
+                        return true;
+                    }
+                }
+                return false;
             }
 
             private static bool HasConditionalComponentSurface(
@@ -1631,6 +1914,29 @@ namespace DxMessaging.Editor
                     {
                         return true;
                     }
+                    bool conditionalImports = NamespaceUsingRegex
+                        .Matches(declarations)
+                        .Cast<Match>()
+                        .TakeWhile(import => import.Index < declaration.Index)
+                        .Any(import =>
+                        {
+                            int importEnd = declarations.IndexOf(';', import.Index + import.Length);
+                            if (
+                                importEnd < 0
+                                || declaration.Index <= importEnd
+                                || !Overlaps(import.Index, importEnd + 1)
+                            )
+                            {
+                                return false;
+                            }
+
+                            return ImportCanReach(declarations, import.Index, declaration.Index);
+                        });
+                    if (conditionalImports)
+                    {
+                        return true;
+                    }
+
                     bool hasConditionalHandler = ChangedOverrideNames
                         .SelectMany(name =>
                             FindMethodDeclarations(declarations, name, requireOverride: false)
@@ -1683,7 +1989,10 @@ namespace DxMessaging.Editor
                             .Any(token =>
                                 open < token.Index
                                 && token.Index < close
-                                && Overlaps(token.Index, token.Index + token.Length)
+                                && Overlaps(
+                                    FindDeclarationHeaderStart(declarations, token.Index),
+                                    token.Index + token.Length
+                                )
                             ) || (stringOptIn && HasConditionalStringOptIn())
                     )
                     {
@@ -2422,17 +2731,26 @@ namespace DxMessaging.Editor
                 return names;
             }
 
-            private HashSet<string> ReadMetadataNames(string path)
+            private HashSet<string> ReadMetadataNames(string path) =>
+                ReadMetadataDeclarations(path).Names;
+
+            private (
+                HashSet<string> Names,
+                HashSet<(string Namespace, string Name)> Types
+            ) ReadMetadataDeclarations(string path)
             {
-                if (!_metadataNames.TryGetValue(path, out HashSet<string> names))
+                if (!_metadataDeclarations.TryGetValue(path, out var declarations))
                 {
-                    names = ReadManagedDeclarations(File.ReadAllBytes(path));
-                    _metadataNames.Add(path, names);
+                    declarations = ReadManagedDeclarations(File.ReadAllBytes(path));
+                    _metadataDeclarations.Add(path, declarations);
                 }
-                return names;
+                return declarations;
             }
 
-            private static HashSet<string> ReadManagedDeclarations(byte[] image)
+            private static (
+                HashSet<string> Names,
+                HashSet<(string Namespace, string Name)> Types
+            ) ReadManagedDeclarations(byte[] image)
             {
                 using BinaryReader reader = new(new MemoryStream(image, writable: false));
                 var (root, size) = ReadManagedMetadataLocation(reader);
@@ -2490,6 +2808,7 @@ namespace DxMessaging.Editor
                 }
 
                 HashSet<string> names = new(StringComparer.Ordinal);
+                HashSet<(string Namespace, string Name)> types = new();
                 ReadOnlySpan<byte> stringHeap = image.AsSpan(strings.Start, strings.Length);
                 long offset = reader.BaseStream.Position;
                 int last = rows[ExportedTypes] == 0 ? MethodDefinitions : ExportedTypes;
@@ -2513,16 +2832,8 @@ namespace DxMessaging.Editor
                         for (int row = 0; row < rows[table]; row++)
                         {
                             reader.BaseStream.Position = offset + (long)row * rowSize + nameOffset;
-                            int index = ReadSymbolHeapIndex(reader, (heaps & 1) != 0);
-                            ReadOnlySpan<byte> nameBytes = stringHeap.Slice(index);
-                            int terminator = nameBytes.IndexOf((byte)0);
-                            if (terminator < 0)
-                            {
-                                throw new IOException(
-                                    "The compiler reference has an unterminated metadata identifier."
-                                );
-                            }
-                            string name = Encoding.UTF8.GetString(nameBytes.Slice(0, terminator));
+                            bool largeStrings = (heaps & 1) != 0;
+                            string name = ReadManagedName(reader, stringHeap, largeStrings);
                             if (table == MethodDefinitions)
                             {
                                 if (ReadonlyRegistrationNames.Contains(name))
@@ -2539,12 +2850,38 @@ namespace DxMessaging.Editor
                             if (Array.IndexOf(BindingTypeNames, name) >= 0)
                             {
                                 names.Add(name);
+                                if (ComponentBindingTypeNames.Contains(name))
+                                {
+                                    string @namespace = ReadManagedName(
+                                        reader,
+                                        stringHeap,
+                                        largeStrings
+                                    );
+                                    types.Add((@namespace, name));
+                                }
                             }
                         }
                     }
                     offset = end;
                 }
-                return names;
+                return (names, types);
+            }
+
+            private static string ReadManagedName(
+                BinaryReader reader,
+                ReadOnlySpan<byte> strings,
+                bool largeStrings
+            )
+            {
+                ReadOnlySpan<byte> value = strings.Slice(ReadSymbolHeapIndex(reader, largeStrings));
+                int terminator = value.IndexOf((byte)0);
+                if (terminator < 0)
+                {
+                    throw new IOException(
+                        "The compiler reference has an unterminated metadata identifier."
+                    );
+                }
+                return Encoding.UTF8.GetString(value.Slice(0, terminator));
             }
 
             private static (int Offset, int Size) ReadManagedMetadataLocation(BinaryReader reader)
@@ -3096,6 +3433,8 @@ namespace DxMessaging.Editor
                 || normalized.EndsWith(".g.i.cs", StringComparison.OrdinalIgnoreCase)
                 || normalized.EndsWith(".generated.cs", StringComparison.OrdinalIgnoreCase)
                 || normalized.EndsWith(".designer.cs", StringComparison.OrdinalIgnoreCase)
+                || Path.GetFileName(normalized)
+                    .StartsWith("TemporaryGeneratedFile_", StringComparison.OrdinalIgnoreCase)
                 || 0 <= normalized.IndexOf("/Generated/", StringComparison.OrdinalIgnoreCase)
                 || 0 <= normalized.IndexOf("/GeneratedCode/", StringComparison.OrdinalIgnoreCase);
         }
@@ -3130,11 +3469,11 @@ namespace DxMessaging.Editor
                         TextSpan rightHandSideSpan,
                         string messageType,
                         bool declarationIsProven,
-                        string propertyForm
+                        string returningMember
                     ) in FindFastDelegateInitializers(masked, handler, metadata)
                 )
                 {
-                    if (propertyForm != null)
+                    if (returningMember != null)
                     {
                         if (isCandidate)
                         {
@@ -3143,12 +3482,12 @@ namespace DxMessaging.Editor
                                 metadata,
                                 rightHandSideSpan,
                                 isProven,
-                                $"is returned by {propertyForm} property whose callers cannot be proven",
+                                $"is returned by {returningMember} whose callers cannot be proven",
                                 replacementStarts,
                                 methodGroups,
                                 unprovenMethodGroups,
                                 manualReview,
-                                reportCompoundGetterValue: true
+                                reportCompoundReturnValue: true
                             );
                         }
                         continue;
@@ -3284,7 +3623,7 @@ namespace DxMessaging.Editor
             List<(string Name, TextSpan Use)> methodGroups,
             Dictionary<string, string> unprovenMethodGroups,
             SortedSet<string> manualReview,
-            bool reportCompoundGetterValue = false
+            bool reportCompoundReturnValue = false
         )
         {
             if (
@@ -3324,7 +3663,7 @@ namespace DxMessaging.Editor
                 }
             }
             else if (
-                reportCompoundGetterValue
+                reportCompoundReturnValue
                 && ReportCompoundGetterCallbacks(masked, argument, reason, manualReview)
             )
             {
@@ -3452,7 +3791,7 @@ namespace DxMessaging.Editor
             TextSpan Initializer,
             string MessageType,
             bool DeclarationIsProven,
-            string PropertyForm
+            string ReturningMember
         )> FindFastDelegateInitializers(string masked, Match handler, SourceMetadata metadata)
         {
             int open = NextNonWhitespace(masked, handler.Index + handler.Length);
@@ -3491,15 +3830,20 @@ namespace DxMessaging.Editor
                     yield break;
                 }
 
-                int explicitPropertyBody = FindExplicitInterfacePropertyBody(
-                    masked,
-                    following,
-                    scanEnd
-                );
-                bool explicitProperty = 0 <= explicitPropertyBody;
-                if (explicitProperty)
+                int explicitMember = FindExplicitInterfaceMemberSuffix(masked, following, scanEnd);
+                bool hasExplicitInterface = 0 <= explicitMember;
+                if (hasExplicitInterface)
                 {
-                    following = explicitPropertyBody;
+                    following = explicitMember;
+                }
+
+                if (masked[following] is '(' or '<')
+                {
+                    foreach (var (value, form) in FindFastDelegateMethodReturns(masked, following))
+                    {
+                        yield return (variable, value, messageType, false, form);
+                    }
+                    yield break;
                 }
 
                 bool declarationIsProven = true;
@@ -3519,14 +3863,14 @@ namespace DxMessaging.Editor
                         new TextSpan(start, end - start),
                         messageType,
                         false,
-                        "an expression-bodied"
+                        "an expression-bodied property"
                     );
                     yield break;
                 }
                 if (
                     masked[following] == '{'
                     && (
-                        !explicitProperty
+                        !hasExplicitInterface
                         || IsDirectTypeMember(
                             masked,
                             FindContainingTypeStart(masked, variable),
@@ -3547,13 +3891,13 @@ namespace DxMessaging.Editor
                             )
                         )
                         {
-                            yield return (variable, value, messageType, false, form);
+                            yield return (variable, value, messageType, false, form + " property");
                         }
                     }
                     following =
                         closeAccessors < 0 ? -1 : NextNonWhitespace(masked, closeAccessors + 1);
                     if (
-                        explicitProperty
+                        hasExplicitInterface
                         || following < 0
                         || statementEnd <= following
                         || masked[following] != '='
@@ -3605,7 +3949,7 @@ namespace DxMessaging.Editor
             }
         }
 
-        private static int FindExplicitInterfacePropertyBody(string text, int suffix, int limit)
+        private static int FindExplicitInterfaceMemberSuffix(string text, int suffix, int limit)
         {
             bool qualified = false;
             while (0 <= suffix && suffix < limit)
@@ -3613,11 +3957,16 @@ namespace DxMessaging.Editor
                 if (text[suffix] == '<')
                 {
                     int close = FindMatching(text, suffix, '<', '>');
-                    suffix = close < 0 ? -1 : NextNonWhitespace(text, close + 1);
-                    if (suffix < 0 || limit <= suffix || text[suffix] != '.')
+                    int afterType = close < 0 ? -1 : NextNonWhitespace(text, close + 1);
+                    if (afterType < 0 || limit <= afterType)
                     {
                         return -1;
                     }
+                    if (text[afterType] != '.')
+                    {
+                        return qualified && text[afterType] == '(' ? suffix : -1;
+                    }
+                    suffix = afterType;
                 }
 
                 int separatorLength = text[suffix] switch
@@ -3628,7 +3977,7 @@ namespace DxMessaging.Editor
                 };
                 if (separatorLength == 0)
                 {
-                    return qualified && (text[suffix] == '{' || IsArrow(text, suffix))
+                    return qualified && (text[suffix] is '(' or '{' || IsArrow(text, suffix))
                         ? suffix
                         : -1;
                 }
@@ -3653,6 +4002,45 @@ namespace DxMessaging.Editor
                 }
             }
             return -1;
+        }
+
+        private static IEnumerable<(TextSpan Value, string Form)> FindFastDelegateMethodReturns(
+            string text,
+            int parameters
+        )
+        {
+            if (text[parameters] == '<')
+            {
+                int typeParametersEnd = FindMatching(text, parameters, '<', '>');
+                parameters =
+                    typeParametersEnd < 0 ? -1 : NextNonWhitespace(text, typeParametersEnd + 1);
+            }
+            if (parameters < 0 || text[parameters] != '(')
+            {
+                yield break;
+            }
+
+            int parametersEnd = FindMatching(text, parameters, '(', ')');
+            if (parametersEnd < 0 || !TryFindCallableBody(text, parametersEnd, out TextSpan body))
+            {
+                yield break;
+            }
+            if (text[body.Start - 1] != '{')
+            {
+                yield return (body, "an expression-bodied method");
+                yield break;
+            }
+
+            foreach (
+                TextSpan value in FindCallableReturnValues(
+                    text,
+                    body.Start - 1,
+                    body.Start + body.Length
+                )
+            )
+            {
+                yield return (value, "a block-bodied method");
+            }
         }
 
         private static IEnumerable<(TextSpan Value, string Form)> FindAccessorGetterValues(
@@ -3713,7 +4101,7 @@ namespace DxMessaging.Editor
                     finish = FindMatching(masked, body, '{', '}');
                     if (accessor.Value == "get" && 0 <= finish && finish < close)
                     {
-                        foreach (TextSpan value in FindBlockGetterReturns(masked, body, finish))
+                        foreach (TextSpan value in FindCallableReturnValues(masked, body, finish))
                         {
                             yield return (value, "a block-bodied");
                         }
@@ -3735,7 +4123,7 @@ namespace DxMessaging.Editor
             }
         }
 
-        private static IEnumerable<TextSpan> FindBlockGetterReturns(
+        private static IEnumerable<TextSpan> FindCallableReturnValues(
             string text,
             int open,
             int close
@@ -3743,7 +4131,7 @@ namespace DxMessaging.Editor
         {
             for (int index = open + 1; index < close; index++)
             {
-                if (text[index] == '{' && !IsGetterStatementBlock(text, open, index))
+                if (text[index] == '{' && !IsCallableStatementBlock(text, open, index))
                 {
                     // A local function or lambda body has its own return statements.
                     int nestedEnd = FindMatching(text, index, '{', '}');
@@ -3774,17 +4162,17 @@ namespace DxMessaging.Editor
             }
         }
 
-        private static bool IsGetterStatementBlock(string text, int getter, int block)
+        private static bool IsCallableStatementBlock(string text, int body, int block)
         {
             int previous = PreviousNonWhitespace(text, block - 1);
-            if (previous == getter || text[previous] is ';' or '{' or '}' or ':')
+            if (previous == body || text[previous] is ';' or '{' or '}' or ':')
             {
                 return true;
             }
             bool followsParentheses = text[previous] == ')';
             if (followsParentheses)
             {
-                int opening = FindMatchingBackward(text, previous, '(', ')', getter + 1);
+                int opening = FindMatchingBackward(text, previous, '(', ')', body + 1);
                 if (opening < 0)
                 {
                     return false;
@@ -3792,7 +4180,7 @@ namespace DxMessaging.Editor
                 previous = PreviousNonWhitespace(text, opening - 1);
             }
             int start = FindIdentifierStart(text, previous);
-            if (start <= getter)
+            if (start <= body)
             {
                 return false;
             }
@@ -4295,7 +4683,11 @@ namespace DxMessaging.Editor
             for (int index = start; index < end; index++)
             {
                 char token = text[index];
-                if (token == '=')
+                if (
+                    token == '='
+                    && (index == start || text[index - 1] is not ('<' or '>' or '!' or '='))
+                    && (end <= index + 1 || text[index + 1] != '=')
+                )
                 {
                     initializer = true;
                 }
@@ -10650,16 +11042,35 @@ namespace DxMessaging.Editor
         {
             ReadOnlySpan<char> text = source.AsSpan();
             int lineEnd = FindDirectiveLineEnd(text, index);
-            string keyword = ReadConditionalKeyword(text, index, lineEnd, out int keywordEnd);
-            if (keyword != null)
+            string keyword = ReadDirectiveKeyword(text, index, lineEnd, out int keywordEnd);
+            ReadOnlySpan<char> operand = text.Slice(keywordEnd, lineEnd - keywordEnd);
+            if (IsConditionalBranchKeyword(keyword))
             {
-                conditional.Visit(keyword, text.Slice(keywordEnd, lineEnd - keywordEnd), index);
+                conditional.Visit(keyword, operand, index);
+            }
+            else if (keyword is "define" or "undef")
+            {
+                conditional.ObserveSymbolDefinition(operand);
             }
             Mask(masked, index, lineEnd);
             return lineEnd;
         }
 
         private static string ReadConditionalKeyword(
+            ReadOnlySpan<char> text,
+            int hash,
+            int lineEnd,
+            out int keywordEnd
+        )
+        {
+            string keyword = ReadDirectiveKeyword(text, hash, lineEnd, out keywordEnd);
+            return IsConditionalBranchKeyword(keyword) ? keyword : null;
+        }
+
+        private static bool IsConditionalBranchKeyword(string keyword) =>
+            keyword is "if" or "elif" or "else" or "endif";
+
+        private static string ReadDirectiveKeyword(
             ReadOnlySpan<char> text,
             int hash,
             int lineEnd,
@@ -10677,8 +11088,7 @@ namespace DxMessaging.Editor
                 keywordEnd++;
             }
 
-            string keyword = text.Slice(keywordStart, keywordEnd - keywordStart).ToString();
-            return keyword is "if" or "elif" or "else" or "endif" ? keyword : null;
+            return text.Slice(keywordStart, keywordEnd - keywordStart).ToString();
         }
 
         private static bool IsDirectiveStart(ReadOnlySpan<char> source, int index)
@@ -11639,8 +12049,9 @@ namespace DxMessaging.Editor
                 BranchState Remaining,
                 ConditionalGroup Group
             )> _scopes = new();
+            private const string UnityFloorSymbol = "UNITY_2021_3_OR_NEWER";
             private readonly SourceMetadata _metadata;
-            private readonly bool _supportedUnityFloor;
+            private bool _supportedUnityFloor;
             private int _uncertainTail = int.MaxValue;
 
             public ConditionalMask(SourceMetadata metadata, bool supportedUnityFloor = false)
@@ -11702,6 +12113,25 @@ namespace DxMessaging.Editor
                 };
                 _scopes.Push((start, outer, Intersect(remaining, unselected), group));
                 State = Intersect(remaining, selected);
+            }
+
+            public void ObserveSymbolDefinition(ReadOnlySpan<char> operand)
+            {
+                if (!_supportedUnityFloor || State == BranchState.Inactive)
+                {
+                    return;
+                }
+
+                operand = operand.TrimStart();
+                int length = UnityFloorSymbol.Length;
+                if (
+                    operand.StartsWith(UnityFloorSymbol.AsSpan(), StringComparison.Ordinal)
+                    && (length == operand.Length || !IsIdentifierPart(operand[length]))
+                )
+                {
+                    // The version symbol from the compiler no longer proves the branch in this unit.
+                    _supportedUnityFloor = false;
+                }
             }
 
             public void ObserveMaskedToken(ReadOnlySpan<char> token, int tokenStart)
@@ -11890,10 +12320,7 @@ namespace DxMessaging.Editor
                     _remaining = _remaining.Slice(length);
                     if (
                         name.SequenceEqual("true".AsSpan())
-                        || (
-                            _supportedUnityFloor
-                            && name.SequenceEqual("UNITY_2021_3_OR_NEWER".AsSpan())
-                        )
+                        || (_supportedUnityFloor && name.SequenceEqual(UnityFloorSymbol.AsSpan()))
                     )
                     {
                         return BranchState.Active;
@@ -12985,6 +13412,9 @@ namespace DxMessaging.Editor
 
         internal sealed class PhysicalAtomicFileStore : IAtomicFileStore
         {
+            private const string BackupMarker = ".dxmsg-backup-";
+            private const string RollbackCopyMarker = ".dxmsg-rollback-original-";
+
             private readonly string _assetsRoot;
             private readonly Action<string, string, string> _replaceFile;
 
@@ -13015,17 +13445,38 @@ namespace DxMessaging.Editor
                         $"{fullPath} changed after the upgrade preview. No newer content was overwritten."
                     );
                 }
-                string backupPath = fullPath + ".dxmsg-backup-" + Guid.NewGuid().ToString("N");
-                string temporaryPath = fullPath + ".dxmsg-new-" + Guid.NewGuid().ToString("N");
-                File.WriteAllBytes(temporaryPath, upgradedBytes);
+                string transaction = Guid.NewGuid().ToString("N");
+                string backupPath = fullPath + BackupMarker + transaction;
+                string rollbackCopyPath = fullPath + RollbackCopyMarker + transaction;
+                string temporaryPath = fullPath + ".dxmsg-new-" + transaction;
+                bool readyForRollback = false;
                 try
                 {
+                    // Reserve the original bytes before any destination change can fail.
+                    File.WriteAllBytes(rollbackCopyPath, originalBytes);
+                    File.WriteAllBytes(temporaryPath, upgradedBytes);
                     File.Replace(temporaryPath, fullPath, backupPath);
+                    VerifyReplacement(fullPath, backupPath, originalBytes, upgradedBytes);
+                    readyForRollback = true;
                 }
                 finally
                 {
                     TryDelete(temporaryPath);
+                    if (!readyForRollback)
+                    {
+                        TryDelete(rollbackCopyPath);
+                    }
                 }
+                return backupPath;
+            }
+
+            private static void VerifyReplacement(
+                string fullPath,
+                string backupPath,
+                byte[] originalBytes,
+                byte[] upgradedBytes
+            )
+            {
                 bool backupMatchesOriginal;
                 bool destinationMatchesUpgrade;
                 try
@@ -13098,7 +13549,6 @@ namespace DxMessaging.Editor
                             + $"preserved, and the pre-upgrade content remains at {backupPath}."
                     );
                 }
-                return backupPath;
             }
 
             public void Restore(string fullPath, string backupPath, byte[] expectedCurrentBytes)
@@ -13111,7 +13561,6 @@ namespace DxMessaging.Editor
                     );
                 }
                 ValidatePath(fullPath);
-                ValidatePath(backupPath);
                 byte[] currentBytes = File.ReadAllBytes(fullPath);
                 if (!currentBytes.AsSpan().SequenceEqual(expectedCurrentBytes))
                 {
@@ -13122,17 +13571,8 @@ namespace DxMessaging.Editor
                 }
                 string rollbackSafetyPath =
                     fullPath + ".dxmsg-rollback-safety-" + Guid.NewGuid().ToString("N");
-                string rollbackCopyPath =
-                    fullPath + ".dxmsg-rollback-original-" + Guid.NewGuid().ToString("N");
-                File.Copy(backupPath, rollbackCopyPath);
-                try
-                {
-                    _replaceFile(rollbackCopyPath, fullPath, rollbackSafetyPath);
-                }
-                finally
-                {
-                    TryDelete(rollbackCopyPath);
-                }
+                string rollbackCopyPath = VerifyRollbackCopy(fullPath, backupPath);
+                _replaceFile(rollbackCopyPath, fullPath, rollbackSafetyPath);
                 if (
                     File.ReadAllBytes(rollbackSafetyPath)
                         .AsSpan()
@@ -13183,9 +13623,30 @@ namespace DxMessaging.Editor
                 byte[] expectedCurrentBytes
             )
             {
-                // The compilation graph can change outside Assets during cleanup.
-                // Keep recovery bytes until the user has reviewed and compiled the project.
+                // Keep the original backup for review. The staging copy is redundant.
+                TryDelete(VerifyRollbackCopy(fullPath, backupPath));
                 return false;
+            }
+
+            private string VerifyRollbackCopy(string fullPath, string backupPath)
+            {
+                string rollbackCopyPath =
+                    fullPath
+                    + RollbackCopyMarker
+                    + backupPath.Substring(fullPath.Length + BackupMarker.Length);
+                ValidatePath(backupPath);
+                ValidatePath(rollbackCopyPath);
+                if (
+                    !File.ReadAllBytes(rollbackCopyPath)
+                        .AsSpan()
+                        .SequenceEqual(File.ReadAllBytes(backupPath))
+                )
+                {
+                    throw new IOException(
+                        $"The original backup {backupPath} and staged rollback {rollbackCopyPath} differ."
+                    );
+                }
+                return rollbackCopyPath;
             }
 
             private static void TryDelete(string path)

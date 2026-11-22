@@ -189,8 +189,8 @@ Database and rerun the preview when the imported assembly settings or their asse
 from disk. When a script is eligible for migration but comments or strings can hide a directive in
 some build configurations, the preview leaves the script untouched and reports the directive location.
 
-The tool attempts to restore earlier writes if a later write fails. It uses a copy for rollback so
-the pre-upgrade original remains at the backup path. If a save arrives during rollback, use the
+The tool stages a rollback copy before replacing each script. If a later write fails, it uses
+those staged copies to restore earlier scripts while keeping the original backups for review. If a save arrives during rollback, use the
 paths reported in the Console to compare the live script, original backup, and any displaced edits.
 The preview leaves unsupported
 encodings, overloads, qualified or cross-file callback declarations, and
@@ -235,8 +235,8 @@ too. This includes calls through fields and properties. For example, change `sep
 to `separate(in pulse)` and `separate?.Invoke(ref pulse)` to `separate?.Invoke(in pulse)`. Keep a
 separate writable callback for callers that need to modify the argument. When the preview cannot
 account for callers of a standalone `new MessageHandler.FastHandler<T>(...)` construction or a
-property returning a fast delegate, including an explicit interface implementation, review the
-delegate and its calls together. A global import in another script in the same assembly can reveal a
+property or method returning a fast delegate, including an explicit interface implementation, review
+the delegate and its calls together. A global import in another script in the same assembly can reveal a
 delegate initializer that needs manual review. Check direct calls
 that omit an argument modifier. A call such as `this.Forward(default(Pulse))` can select a different
 overload after `Forward` changes from `ref` to `in`. If the call must keep using an extension, call
