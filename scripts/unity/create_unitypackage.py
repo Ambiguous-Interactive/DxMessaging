@@ -13,7 +13,7 @@ import subprocess
 import tarfile
 import tempfile
 import zlib
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Iterator, NamedTuple
 
 
@@ -207,6 +207,7 @@ def _extract_pack(pack_path: Path, destination: Path) -> Path:
 
 
 def stage_packed_payload(repo_root: Path, scratch: Path) -> Path:
+    package_name = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))["name"]
     npm = "npm.cmd" if os.name == "nt" else "npm"
     completed = subprocess.run(
         [npm, "pack", "--ignore-scripts", "--json", "--pack-destination", str(scratch)],
@@ -215,10 +216,29 @@ def stage_packed_payload(repo_root: Path, scratch: Path) -> Path:
         capture_output=True,
         text=True,
     )
-    pack = json.loads(completed.stdout)
-    if len(pack) != 1 or Path(pack[0].get("filename", "")).name != pack[0].get("filename"):
-        raise ValueError("npm pack did not produce exactly one package tarball.")
-    packed_root = _extract_pack(scratch / pack[0]["filename"], scratch / "extract")
+    try:
+        pack = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise ValueError("npm pack did not produce valid JSON.") from error
+    # npm 11 returns an array. npm 12 keys records by package name.
+    if isinstance(pack, list) and len(pack) == 1:
+        record = pack[0]
+    elif isinstance(pack, dict) and set(pack) == {package_name}:
+        record = pack[package_name]
+    else:
+        record = None
+    if not isinstance(record, dict) or record.get("name") != package_name:
+        raise ValueError("npm pack did not produce exactly one matching package record.")
+    filename = record.get("filename")
+    if (
+        not isinstance(filename, str)
+        or not filename.endswith(".tgz")
+        or "\0" in filename
+        or PurePosixPath(filename).name != filename
+        or PureWindowsPath(filename).name != filename
+    ):
+        raise ValueError("npm pack did not report a safe tarball filename.")
+    packed_root = _extract_pack(scratch / filename, scratch / "extract")
     for entry in REQUIRED_ROOT_ENTRIES:
         if not (packed_root / entry).exists():
             raise ValueError(f"Packed npm package is missing required Unity export entry: {entry}")

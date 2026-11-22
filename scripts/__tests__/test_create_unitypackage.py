@@ -6,9 +6,12 @@ from __future__ import annotations
 import gzip
 import hashlib
 import importlib.util
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "unity" / "create_unitypackage.py"
@@ -44,6 +47,62 @@ def parse_archive(archive_path: Path) -> dict[str, bytes]:
 
 
 class UnityPackageWriterTests(unittest.TestCase):
+    def test_stages_the_reported_tarball_from_npm_11_and_12(self) -> None:
+        package_name = "com.wallstop-studios.dxmessaging"
+        record = {"name": package_name, "filename": f"{package_name}-4.0.0.tgz"}
+        for pack_json in ([record], {package_name: record}):
+            with self.subTest(pack_json=pack_json), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "package.json").write_text(json.dumps({"name": package_name}))
+                packed = root / "package"
+                packed.mkdir()
+                for entry in MODULE.REQUIRED_ROOT_ENTRIES:
+                    path = packed / entry
+                    if entry in {"Editor", "Runtime", "Samples~"}:
+                        path.mkdir()
+                    else:
+                        path.touch()
+                command = subprocess.CompletedProcess([], 0, stdout=json.dumps(pack_json))
+                with (
+                    patch.object(MODULE.subprocess, "run", return_value=command),
+                    patch.object(MODULE, "_extract_pack", return_value=packed) as extract,
+                ):
+                    staged = MODULE.stage_packed_payload(root, root)
+                extract.assert_called_once_with(root / record["filename"], root / "extract")
+                self.assertTrue((staged / "Samples").is_dir())
+
+    def test_refuses_invalid_npm_pack_json_before_extraction(self) -> None:
+        package_name = "com.wallstop-studios.dxmessaging"
+        record = {"name": package_name, "filename": "package.tgz"}
+        invalid = [
+            None,
+            [],
+            [record, record],
+            [None],
+            [{**record, "name": "other"}],
+            {"other": record},
+            {package_name: record, "other": record},
+            {package_name: None},
+            {package_name: {**record, "name": "other"}},
+        ]
+        invalid.extend(
+            [{**record, "filename": filename}]
+            for filename in (None, "../package.tgz", "other\\package.tgz", "A:package.tgz", "package.zip")
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "package.json").write_text(json.dumps({"name": package_name}))
+            for pack_json in [*(json.dumps(value) for value in invalid), "{"]:
+                with self.subTest(pack_json=pack_json):
+                    command = subprocess.CompletedProcess([], 0, stdout=pack_json)
+                    with (
+                        patch.object(MODULE.subprocess, "run", return_value=command),
+                        patch.object(MODULE, "_extract_pack") as extract,
+                    ):
+                        with self.assertRaisesRegex(ValueError, "npm pack did not"):
+                            MODULE.stage_packed_payload(root, root)
+                    extract.assert_not_called()
+
     def test_preserves_metadata_and_writes_deterministic_valid_archive(self) -> None:
         with tempfile.TemporaryDirectory(prefix="dxm-unitypackage-test-") as temporary:
             root = Path(temporary)
