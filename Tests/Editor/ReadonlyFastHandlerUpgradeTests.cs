@@ -9367,7 +9367,7 @@ void OnPulse(ref Pulse message) { }";
                     store.TryDiscardBackup(path, backup, upgraded)
                 );
                 Assert.That(
-                    failure!.Message,
+                    failure?.Message,
                     Does.Contain(path).And.Contain("changed during final upgrade verification")
                 );
                 Assert.That(File.ReadAllBytes(path), Is.EqualTo(newer));
