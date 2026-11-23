@@ -2,12 +2,9 @@
   <!--
     DxMessaging analyzer (Roslyn 3.8.0).
 
-    Why a separate csproj? Unity 2021 ships its compiler with Roslyn 3.8.x and its
-    analyzer loader rejects analyzer/source-generator DLLs built against Roslyn 4.x — the
-    DXMSG006/007/008/009 warnings simply do not appear. Microsoft.Unity.Analyzers
-    pins 3.8.0 for the same reason. The companion source-generator project also
-    pins 3.8.0 and uses classic `ISourceGenerator` instead of Roslyn 4.x-only
-    incremental generator APIs so Unity 2021 can instantiate it.
+    The analyzer and source generator target the Roslyn 3.8.0 API for Unity 2021
+    compatibility. The Unity 2021.3.45f1 Linux script compiler uses Roslyn 3.9.
+    The source generator uses the classic ISourceGenerator API.
 
     Both DLLs ship under `Runtime/Analyzers/` with Unity's `RoslynAnalyzer` label.
     Unity scopes a folder-resident analyzer to the assembly defined by the nearest
@@ -19,10 +16,7 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <!-- DO NOT bump this without verifying Unity 2021 still loads the analyzer.
-         Unity 2021's analyzer loader silently rejects analyzers compiled against
-         Roslyn 4.x. No automated test pins this anymore; verify in Unity
-         before changing it. -->
+    <!-- Verify analyzer loading in the supported Unity 2021.3 Editor before changing this pin. -->
     <MicrosoftCodeAnalysisVersion>3.8.0</MicrosoftCodeAnalysisVersion>
     <RootNamespace>WallstopStudios.DxMessaging.SourceGenerators</RootNamespace>
     <AssemblyName>WallstopStudios.DxMessaging.Analyzer</AssemblyName>

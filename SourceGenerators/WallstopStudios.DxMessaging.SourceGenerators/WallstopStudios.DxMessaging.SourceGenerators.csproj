@@ -2,11 +2,7 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <!-- DO NOT bump this without verifying Unity 2021 still loads the source
-         generators. Unity 2021's analyzer/source-generator loader runs on
-         Roslyn 3.8.x and fails to instantiate generators compiled against
-         Roslyn 4.x. No automated test pins this anymore; verify in Unity
-         before changing it. -->
+    <!-- Verify generator loading in the supported Unity 2021.3 Editor before changing this pin. -->
     <MicrosoftCodeAnalysisVersion>3.8.0</MicrosoftCodeAnalysisVersion>
     <AssemblyInformationalVersion>$(Version)</AssemblyInformationalVersion>
   </PropertyGroup>
@@ -15,7 +11,7 @@
     <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Keep the usage checker compatible with Unity 2021's Roslyn 3.8 generator API.
+    <!-- Keep the usage checker compatible with the targeted Roslyn 3.8 API.
          Version 5.9.0 reports RS1035 for the required non-incremental generator contexts. -->
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4">
       <PrivateAssets>all</PrivateAssets>

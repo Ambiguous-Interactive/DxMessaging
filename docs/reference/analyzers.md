@@ -603,11 +603,12 @@ a player build immediately after it in the same callback.
 ## Unity 2021 setup notes
 
 DxMessaging splits its compiler extensions into two DLLs: one analyzer and one source generator.
-Both target Roslyn 3.8.0 for Unity 2021 compatibility:
+Both target the Roslyn 3.8.0 API for Unity 2021 compatibility. The archived Linux Unity
+2021.3.45f1 script compiler uses Roslyn 3.9. In a load check, it ran a 3.8-targeted analyzer
+and reported CS8032 for the same analyzer built against Roslyn 4.8.
 
 - `WallstopStudios.DxMessaging.Analyzer.dll` contains the base-call analyzer
-  (DXMSG006/007/008/009/010/015). Unity 2021 rejects analyzers built against Roslyn 4.x;
-  Microsoft's `Microsoft.Unity.Analyzers` package pins Roslyn 3.8.0 for the same reason.
+  (DXMSG006/007/008/009/010/015).
 - `WallstopStudios.DxMessaging.SourceGenerators.dll` contains the source generators
   (DXMSG002/003/004/005/011/012/013/014/016). They use the classic `ISourceGenerator` API so Unity 2021 can
   instantiate them.
