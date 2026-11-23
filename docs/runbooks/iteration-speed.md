@@ -112,6 +112,14 @@ edit. Six measured saves per compiler mode gave shared-compiler medians of 1.194
 down from 1.422 and 1.762 with the direct compiler. Both missed the one-second screen and stopped
 before the 40-save confirmation. Every save produced the expected NUnit verdict and fresh binary.
 The runtime, generator, and Editor targets remain open.
+
+With six extra verified compile-and-verdict warmup requests, the medians fell from 1.344 to
+1.131 seconds for the runtime edit and from 1.534 to 1.205 seconds for the generator edit.
+All six measured saves per warmed lane exceeded one second. Median compiler time fell to
+0.224 and 0.251 seconds, while VSTest still took 0.883 and 0.963 seconds. The first cold verdict
+and six warmup requests cost 10.339 and 11.602 seconds before measurement. These screens
+stopped before the 40-save confirmation.
+[Compiler warmup results](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7113483433).
 [Runtime and generator screen](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7098746835).
 
 ## Rolling PR latency
