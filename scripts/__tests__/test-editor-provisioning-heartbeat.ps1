@@ -15,7 +15,8 @@
 #>
 [CmdletBinding()]
 param(
-    [switch]$VerboseOutput
+    [switch]$VerboseOutput,
+    [switch]$ReportFiniteTiming
 )
 
 Set-StrictMode -Version Latest
@@ -267,23 +268,57 @@ try {
     $env:DXM_ENSURE_EDITOR_PROGRESS_NOTICE_INTERVAL_SECONDS = '1'
 
     $noisyFinite = @'
+function Publish-Timestamp {
+    param([string]$Name)
+    $timestamp = [Diagnostics.Stopwatch]::GetTimestamp()
+    $path = Join-Path $env:DXM_TEST_HEARTBEAT_TIMING_DIR $Name
+    [IO.File]::WriteAllText("$path.tmp", [string]$timestamp)
+    [IO.File]::Move("$path.tmp", $path)
+}
+Publish-Timestamp 'entered'
 1..7 | ForEach-Object {
     $line = '{"type":"progress","pct":50,"msg":"Installing Unity...","phase":"install"}'
+    if ($_ -eq 1) {
+        Publish-Timestamp 'before-first-write'
+    }
     if ($_ % 2 -eq 0) {
         [Console]::Error.WriteLine($line)
     } else {
         Write-Output $line
     }
+    if ($_ -eq 1) {
+        [Console]::Out.Flush()
+        Publish-Timestamp 'first-flushed'
+    }
     Start-Sleep -Milliseconds 500
 }
 '@
     $script:noisyFiniteResult = $null
-    $noticeOutput = @(& {
-        $script:noisyFiniteResult = Invoke-UnityCliCaptureWithTimeout `
-            -Arguments @('-NoLogo', '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $noisyFinite)) `
-            -TimeoutSeconds 10 `
-            -StallSeconds 3
-    } 6>&1)
+    $parentTiming = [ordered]@{}
+    $childTiming = [ordered]@{}
+    $timingDirectory = [IO.Directory]::CreateTempSubdirectory('dxm-heartbeat-timing-')
+    $savedTimingDirectory = $env:DXM_TEST_HEARTBEAT_TIMING_DIR
+    try {
+        $env:DXM_TEST_HEARTBEAT_TIMING_DIR = $timingDirectory.FullName
+        $noticeOutput = @(& {
+            $script:noisyFiniteResult = Invoke-UnityCliCaptureWithTimeout `
+                -Arguments @('-NoLogo', '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $noisyFinite)) `
+                -TimeoutSeconds 10 `
+                -StallSeconds 3 `
+                -HeartbeatTiming $parentTiming
+        } 6>&1)
+        foreach ($marker in @('entered', 'before-first-write', 'first-flushed')) {
+            $path = Join-Path $timingDirectory.FullName $marker
+            $childTiming[$marker] = if ([IO.File]::Exists($path)) {
+                [long][IO.File]::ReadAllText($path)
+            } else {
+                $null
+            }
+        }
+    } finally {
+        $env:DXM_TEST_HEARTBEAT_TIMING_DIR = $savedTimingDirectory
+        $timingDirectory.Delete($true)
+    }
     $result = $script:noisyFiniteResult
     $noticeText = (@($noticeOutput | ForEach-Object { [string]$_ }) -join "`n")
     Assert-That 'repeated stdout/stderr progress completes successfully' $result.Success
@@ -293,12 +328,15 @@ try {
     Assert-That 'repeated stdout/stderr progress confirms direct child exit' $result.DirectChildExited
     Assert-That 'every repeated stdout/stderr progress line is captured' (@($result.Output).Count -eq 7)
     Assert-That 'periodic notice reports monotonic idle elapsed time' ($noticeText -match 'install heartbeat:.*idleElapsed=\d+s')
+    $finiteFailures = $failed
+    $finiteStartupStall = $result.StallKilled -and $result.DirectChildExited -and @($result.Output).Count -eq 0
 
-    if ($failed -ne 0) {
-        # This first control captures stream 6 to assert the periodic notices. Print that
-        # captured evidence on failure so CI retains startup silence and later progress.
-        Write-Host '::group::Finite heartbeat control failure evidence'
+    if ($failed -ne 0 -or $ReportFiniteTiming) {
+        # Stream 6 is captured for the periodic-notice assertion. Retain it with the
+        # independent child markers when diagnosing startup silence or delayed capture.
+        Write-Host '::group::Finite heartbeat control evidence'
         Write-Host "PowerShell $($PSVersionTable.PSVersion); $([Runtime.InteropServices.RuntimeInformation]::FrameworkDescription); logical processors $([Environment]::ProcessorCount)"
+        Write-Host (@{ Parent = $parentTiming; Child = $childTiming } | ConvertTo-Json -Depth 4)
         Write-Host ($result | ConvertTo-Json -Depth 4)
         Write-Host $noticeText
         Write-Host '::endgroup::'
@@ -559,5 +597,9 @@ Write-Output 'published'
 
 Write-Host "Unity editor heartbeat tests: $passed passed, $failed failed."
 if ($failed -gt 0) {
+    # A completed suite with only the startup-silence failure can safely run an isolated comparison.
+    if ($finiteStartupStall -and $failed -eq $finiteFailures) {
+        Write-Host 'Isolated heartbeat comparison eligible.'
+    }
     exit 1
 }

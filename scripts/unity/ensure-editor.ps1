@@ -1132,7 +1132,8 @@ function Invoke-UnityCliCaptureWithTimeout {
         [int]$TimeoutSeconds = 2700,
         [string]$TimeoutKnob = 'DXM_ENSURE_EDITOR_INSTALL_TIMEOUT_SECONDS',
         [int]$StallSeconds = -1,
-        [string]$StallKnob = 'DXM_ENSURE_EDITOR_PROGRESS_STALL_SECONDS'
+        [string]$StallKnob = 'DXM_ENSURE_EDITOR_PROGRESS_STALL_SECONDS',
+        [System.Collections.IDictionary]$HeartbeatTiming
     )
 
     # Default the stall threshold from the env-aware helper when the caller did
@@ -1207,8 +1208,16 @@ function Invoke-UnityCliCaptureWithTimeout {
         $proc = New-Object System.Diagnostics.Process
         $proc.StartInfo = $psi
 
+        # The heartbeat fixture compares shared monotonic timestamps without relying on either pipe.
+        if ($null -ne $HeartbeatTiming) {
+            $HeartbeatTiming['SpawnRequested'] = [Diagnostics.Stopwatch]::GetTimestamp()
+        }
         [void]$proc.Start()
         $clock = [System.Diagnostics.Stopwatch]::StartNew()
+        if ($null -ne $HeartbeatTiming) {
+            $HeartbeatTiming['ClockStart'] = [Diagnostics.Stopwatch]::GetTimestamp()
+            $HeartbeatTiming['Frequency'] = [Diagnostics.Stopwatch]::Frequency
+        }
 
         # Keep ONE outstanding async line read per stream and poll both from the
         # main thread. A completed read whose Result is $null means that stream
@@ -1300,6 +1309,12 @@ function Invoke-UnityCliCaptureWithTimeout {
             # window. Tree-kills with the distinct stall sentinel so the failure
             # diagnostic can distinguish output silence from wall-clock expiry.
             if ($stallEnabled -and ($elapsedMs - $lastActivityMs) -ge ([int64]$StallSeconds * 1000)) {
+                if ($null -ne $HeartbeatTiming) {
+                    $HeartbeatTiming['Cutoff'] = [Diagnostics.Stopwatch]::GetTimestamp()
+                    $HeartbeatTiming['CutoffElapsedMs'] = $elapsedMs
+                    $HeartbeatTiming['StdoutReadCompleted'] = $oTask.IsCompleted
+                    $HeartbeatTiming['StderrReadCompleted'] = $eTask.IsCompleted
+                }
                 $stalled = $true
                 $timedOut = $true
                 try {
