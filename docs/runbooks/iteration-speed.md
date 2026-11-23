@@ -236,6 +236,22 @@ trusted-skip shape. Consolidating it with the four-version matrix would require 
 change or duplicated licensed jobs. Keep both gates' documentation allowlists synchronized until
 that upstream capability exists. Unknown paths and incomplete listings must not skip validation.
 
+## Editor-free devcontainer
+
+Set `UNITY_MCP_ENABLED=false` in the checkout's ignored `.env.local`, run
+`npm run unity:mcp:configure -- --offline`, and reconnect the MCP clients you have open.
+Container creation, startup, and attachment honor this setting. It removes the Unity
+connection from the seven generated client configs and skips host discovery and token creation.
+A host outage alone leaves the selected mode in place.
+
+Use the two managed fast lanes under [local commands](#local-commands) for runtime changes.
+Use `npm run test:unit` for script feedback and `npm test` before delivering script changes.
+Record counts, failures, and durations for the lanes you ran. Mark EditMode, PlayMode, and
+IL2CPP checks pending until a licensed host produces results for that revision.
+
+To reconnect, set `UNITY_MCP_ENABLED=true` or remove the setting. With the licensed host ready,
+run `npm run unity:mcp:configure`, reconnect clients, and run `npm run unity:mcp:probe`.
+
 ## Dedicated Unity package host
 
 From the host checkout, generate a package-only host with the existing runner. Container-generated

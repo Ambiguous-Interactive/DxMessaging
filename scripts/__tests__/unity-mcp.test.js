@@ -796,38 +796,27 @@ test("mergeCodexToml normalizes CRLF input so a second run is a no-op", () => {
     "configure converges on run 2, not run 3"
   );
 });
+function failCommitAt(indexToFail) {
+  return (index) => {
+    if (index === indexToFail) throw new Error("commit failure");
+  };
+}
 test("transactionalWrite commits every file or none", () => {
   const directory = temporaryDirectory();
   const first = path.join(directory, "first.json");
   const second = path.join(directory, "nested", "second.json");
   fs.writeFileSync(first, "original\n");
-  const written = mcp.transactionalWrite([
+  const changes = [
     [first, "updated\n"],
     [second, "created\n"]
-  ]);
+  ];
+  const written = mcp.transactionalWrite(changes);
   assert.deepEqual(written.sort(), [first, second].sort());
   assert.equal(fs.readFileSync(first, "utf8"), "updated\n");
   assert.equal(fs.readFileSync(second, "utf8"), "created\n");
-  assert.deepEqual(
-    mcp.transactionalWrite([[first, "updated\n"]]),
-    [],
-    "unchanged content is not rewritten"
-  );
-  assert.throws(
-    () =>
-      mcp.transactionalWrite(
-        [
-          [first, "second-update\n"],
-          [second, "second-create\n"]
-        ],
-        (index) => {
-          if (index === 1) {
-            throw new Error("commit failure");
-          }
-        }
-      ),
-    /commit failure/
-  );
+  assert.deepEqual(mcp.transactionalWrite(changes), [], "unchanged content is not rewritten");
+  const updated = changes.map(([file, value]) => [file, value + "second update"]);
+  assert.throws(() => mcp.transactionalWrite(updated, failCommitAt(1)), /commit failure/);
   assert.equal(fs.readFileSync(first, "utf8"), "updated\n", "the committed file is rolled back");
   assert.equal(fs.readFileSync(second, "utf8"), "created\n");
 });
@@ -842,13 +831,9 @@ test("transactionalWrite removes files it created when a later commit fails", ()
           [created, "new\n"],
           [other, "new\n"]
         ],
-        (index) => {
-          if (index === 1) {
-            throw new Error("boom");
-          }
-        }
+        failCommitAt(1)
       ),
-    /boom/
+    /commit failure/
   );
   assert.equal(
     fs.existsSync(created),
@@ -879,11 +864,7 @@ test("transactionalWrite finishes rollback and rethrows the original error", () 
         [second, "b\n"],
         [third, "c\n"]
       ],
-      (index) => {
-        if (index === 2) {
-          throw new Error("commit failure");
-        }
-      }
+      failCommitAt(2)
     );
   } catch (error) {
     thrown = error;
@@ -935,13 +916,9 @@ test(
             [first, "a\n"],
             [second, "b\n"]
           ],
-          (index) => {
-            if (index === 1) {
-              throw new Error("boom");
-            }
-          }
+          failCommitAt(1)
         ),
-      /boom/
+      /commit failure/
     );
     assert.equal(
       fs.statSync(first).mode & 0o777,
@@ -1487,8 +1464,12 @@ for (const [label, argv, expected] of [
   });
 }
 
+function clientServerMap(client, raw) {
+  if (client === "codex") return { ...require("smol-toml").parse(raw).mcp_servers };
+  const key = client === "vscode" ? "servers" : client === "openCode" ? "mcp" : "mcpServers";
+  return JSON.parse(raw)[key];
+}
 test("ZAI credentials and local tools reach every client without losing user settings", async (t) => {
-  const { parse } = await import("smol-toml");
   const repoRoot = temporaryDirectory(t);
   fs.writeFileSync(path.join(repoRoot, ".env.local"), "ZAI_API_KEY=file-key\n");
   const options = mcp.resolveOptions({}, { Z_AI_API_KEY: "environment-key" }, undefined, repoRoot);
@@ -1497,12 +1478,7 @@ test("ZAI credentials and local tools reach every client without losing user set
   mcp.configure(options, endpoint);
   for (const [client, file] of Object.entries(mcp.clientConfigPaths(repoRoot))) {
     const raw = fs.readFileSync(file, "utf8");
-    const servers =
-      client === "codex"
-        ? parse(raw).mcp_servers
-        : JSON.parse(raw)[
-            client === "vscode" ? "servers" : client === "openCode" ? "mcp" : "mcpServers"
-          ];
+    const servers = clientServerMap(client, raw);
     for (const name of [
       "unity-mcp",
       "github",
@@ -1621,6 +1597,49 @@ test("bridge reports readiness only after a live editor answers and closes on SI
   await mcp.assertPortAvailable(port, "127.0.0.1");
 });
 
+test("Editor-free mode removes stale Unity entries and can restore them", async (t) => {
+  const repoRoot = temporaryDirectory(t);
+  captureConsole(t, "log");
+  const envFile = path.join(repoRoot, ".env.local");
+  const disabledEnv = "UNITY_MCP_ENABLED=false\nUNITY_MCP_BRIDGE_PORT=stale\n";
+  fs.writeFileSync(envFile, disabledEnv);
+  const options = mcp.resolveOptions({ command: "configure" }, {}, undefined, repoRoot);
+  const enabled = mcp.resolveOptions(
+    { offline: true, token: BRIDGE_TOKEN, port: "9020" },
+    { UNITY_MCP_ENABLED: "true" },
+    undefined,
+    repoRoot
+  );
+  const clients = mcp.clientConfigPaths(repoRoot);
+  const paths = Object.values(clients);
+  const maps = () =>
+    Object.entries(clients).map(([client, file]) =>
+      clientServerMap(client, fs.readFileSync(file, "utf8"))
+    );
+  const snapshot = () => paths.map((file) => fs.readFileSync(file, "utf8"));
+  fs.writeFileSync(paths[0], JSON.stringify({ mcpServers: { personal: { command: "my-tool" } } }));
+  await mcp.runConfigure(enabled);
+  const original = maps();
+  assert.ok(original.every((servers) => servers["unity-mcp"]));
+  const noDiscovery = {
+    get candidates() {
+      assert.fail("Editor-free mode started discovery");
+    }
+  };
+  await mcp.runConfigure(options, noDiscovery);
+  const expected = original.map(({ ["unity-mcp"]: unity, ...others }) => others);
+  assert.ok(expected[0].personal);
+  assert.deepEqual(maps(), expected);
+  assert.equal(fs.readFileSync(envFile, "utf8"), disabledEnv);
+  assert.deepEqual(mcp.configure(options).written, []);
+  await assert.rejects(mcp.runProbe(options, noDiscovery), /UNITY_MCP_ENABLED=true/);
+  await mcp.runConfigure(enabled);
+  assert.deepEqual(maps(), original);
+  fs.writeFileSync(paths.at(-1), "{invalid");
+  const malformed = snapshot();
+  await assert.rejects(mcp.runConfigure(options, noDiscovery), /Invalid JSON/);
+  assert.deepEqual(snapshot(), malformed);
+});
 test("offline configuration never attempts a host connection", async (t) => {
   const repoRoot = temporaryDirectory(t);
   const options = mcp.resolveOptions({ offline: true }, {}, {}, repoRoot);
