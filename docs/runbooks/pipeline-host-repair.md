@@ -55,6 +55,10 @@ Do not add it to the general shipping harness, which supports Unity `2021.3`.
 The runtime package remains dependency-free. Keep every transport control in
 `Tests/Editor/PipelineTransportResearch`; ordinary shipping selection does not run it.
 
+The research assembly's Version Define matches `0.8.0-exp.1` exactly. The fixture
+overrides members of `BasePipelineServer` that changed in later Pipeline releases.
+Verify the resolved revision and source hash before running the research controls.
+
 The assembly selector classifies these controls separately. The composite action
 reports their names through `excluded-transport-controls` and a notice when they
 are excluded from EditMode. A passing shipping result does not qualify transport.
