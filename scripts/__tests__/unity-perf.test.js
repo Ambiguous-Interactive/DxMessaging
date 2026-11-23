@@ -518,23 +518,12 @@ test("generated performance block summarizes comparisons before internal dispatc
 });
 
 test("comparison ratios require matching positive rates on the same commit and platform", () => {
-  const reference = comparisonRow("90000000.000");
-  const cases = [
-    [comparisonRow("100000000.000"), reference, "111.1%"],
-    [comparisonRow("30000000.000"), reference, "33.3%"],
-    [comparisonRow("30000000.000"), undefined, "N/A"],
-    [comparisonRow("30000000.000"), { ...reference, commit: "different" }, "N/A"],
-    [comparisonRow("30000000.000"), { ...reference, platform: "other" }, "N/A"],
-    [comparisonRow("30000000.000"), comparisonRow("0"), "N/A"],
-    [comparisonRow("30000000.000"), comparisonRow("not a rate"), "N/A"]
-  ];
-
-  for (const [dxMessaging, messagePipe, expected] of cases) {
-    const rows = standaloneRows([["DxMessaging|GlobalToOne", dxMessaging]]);
-    if (messagePipe) {
-      rows.get("Standalone").set("MessagePipe|GlobalToOne", messagePipe);
+  for (const [rate, reference, expected] of PERF_TEST_VECTORS.comparisonRatioCases) {
+    const entries = [["DxMessaging|GlobalToOne", comparisonRow(rate)]];
+    if (reference) {
+      entries.push(["MessagePipe|GlobalToOne", { ...comparisonRow("90000000.000"), ...reference }]);
     }
-    const summary = buildComparisonSections(rows)[0];
+    const [summary] = buildComparisonSections(standaloneRows(entries));
     const rendered = summary
       .join("\n")
       .split("\n")
