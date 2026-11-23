@@ -82,8 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#810](https://github.com/Ambiguous-Interactive/DxMessaging/issues/810)).
 - Preserve `MessagingComponent` listener ownership during callbacks and report unresolved provider
   recursion during initial setup ([#805](https://github.com/Ambiguous-Interactive/DxMessaging/issues/805)).
-- Reduce diagnostic scan buffering in the opt-in Editor Console bridge and release its Console
-  enumeration reliably ([#801](https://github.com/Ambiguous-Interactive/DxMessaging/issues/801)).
+- Replace the opt-in Inspector scan of Unity's Console history with a compiler warning feed.
+  Existing settings carry forward, and compiler warnings keep their source locations
+  ([#801](https://github.com/Ambiguous-Interactive/DxMessaging/issues/801),
+  [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
 - Preserve broken-base-chain warnings (`DXMSG010`) in the opt-in Editor compiler-message bridge
   ([#802](https://github.com/Ambiguous-Interactive/DxMessaging/issues/802)).
 - Remove stale compiler diagnostics from the Editor bridge when assemblies report the same type

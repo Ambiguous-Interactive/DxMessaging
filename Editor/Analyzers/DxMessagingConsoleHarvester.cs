@@ -6,7 +6,6 @@ namespace DxMessaging.Editor.Analyzers
     using System.Globalization;
     using System.IO;
     using System.Linq;
-    using System.Reflection;
     using DxMessaging.Editor.Settings;
     using UnityEditor;
     using UnityEditor.Compilation;
@@ -58,8 +57,8 @@ namespace DxMessaging.Editor.Analyzers
 
     /// <summary>
     /// Builds the per-FQN snapshot consumed by the inspector overlay from a deterministic IL
-    /// reflection scanner (<see cref="BaseCallTypeScanner"/>) -- and, optionally, a legacy
-    /// console-scrape bridge for users who want the union of both data sources.
+    /// reflection scanner (<see cref="BaseCallTypeScanner"/>) and an optional compiler warning
+    /// feed.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -73,14 +72,10 @@ namespace DxMessaging.Editor.Analyzers
     /// <see cref="EditorApplication.delayCall"/>).
     /// </para>
     /// <para>
-    /// <b>Secondary source (opt-in): legacy console-scrape bridge.</b> When
-    /// <see cref="DxMessagingSettings.UseConsoleBridge"/> is <c>true</c>, the harvester ALSO
-    /// reads warnings from <c>UnityEditor.LogEntries</c> via reflection and from
-    /// <c>CompilationPipeline.assemblyCompilationFinished</c>'s per-assembly
-    /// <c>CompilerMessage[]</c> payloads. This path is non-deterministic on Unity 2021 (Bee/csc
-    /// cache hits cause Unity to skip surfacing analyzer warnings to either store) and is the
-    /// reason the IL-reflection scanner exists. Default off; available for users who want the
-    /// union of both data sources.
+    /// <b>Secondary source (opt-in): compiler warnings.</b>
+    /// <see cref="DxMessagingSettings.UseConsoleBridge"/> adds diagnostics from the public
+    /// <c>CompilationPipeline.assemblyCompilationFinished</c> event to the IL scanner's report.
+    /// The event supplies messages from compilations observed in the current Editor session.
     /// </para>
     /// <para>
     /// The inspector overlay reads its snapshot from the unified per-FQN map populated here on
@@ -90,8 +85,7 @@ namespace DxMessaging.Editor.Analyzers
     /// <para>
     /// <see cref="IsAvailable"/> stays <c>true</c> as long as the static constructor itself does
     /// not throw -- the IL scanner is always wired, so the overlay never falls back to its
-    /// degraded "harvester unavailable" warning surface in normal operation. <see cref="LogEntriesAvailable"/>
-    /// continues to report whether the legacy reflection layer is bindable, for diagnostics only.
+    /// degraded "harvester unavailable" warning surface in normal operation.
     /// </para>
     /// </remarks>
     [InitializeOnLoad]
@@ -100,12 +94,6 @@ namespace DxMessaging.Editor.Analyzers
         private const string ReportFileName = "baseCallReport.json";
         private const string ReportDirectoryName = "DxMessaging";
         private const double PollIntervalSeconds = 0.25;
-
-        /*
-            Bound the initial buffer allocation. It can still grow when the console contains
-            more diagnostic candidates.
-        */
-        private const int MaxLineListInitialCapacity = 1024;
 
         private static readonly Dictionary<string, BaseCallReportEntry> SnapshotInternal = new(
             StringComparer.Ordinal
@@ -130,27 +118,7 @@ namespace DxMessaging.Editor.Analyzers
             Dictionary<string, ParsedTypeReport>
         > _pendingByAssembly = new(StringComparer.OrdinalIgnoreCase);
 
-        /*
-            True when the LogEntries reflection layer failed to bind. The harvester remains
-            available via the CompilerMessage path; this flag just gates the LogEntries-specific
-            code paths (Tick polling, RescanNow's reflection call). Renamed from `_disabled` so
-            the name reflects what it actually means.
-        */
-        private static readonly bool _logEntriesDisabled;
-
-        /*
-            Reflection handles. Resolved once in the static ctor; null when the running Unity version
-            does not expose the expected LogEntries shape.
-        */
-        private static readonly Type _logEntryType;
-        private static readonly MethodInfo _startGettingEntries;
-        private static readonly MethodInfo _endGettingEntries;
-        private static readonly MethodInfo _getEntryInternal;
-        private static readonly MethodInfo _getCount;
-        private static readonly FieldInfo _messageField;
-
         private static double _lastTickTime;
-        private static int _lastSeenCount;
         private static int _lastSettingsRevision = -1;
 
         /*
@@ -219,20 +187,14 @@ namespace DxMessaging.Editor.Analyzers
         /// The <c>CompilationPipeline.assemblyCompilationFinished</c> feed is wired
         /// unconditionally on every supported Unity version, so this property is effectively
         /// always <c>true</c> in normal operation; it only flips to <c>false</c> when the static
-        /// constructor itself throws (a hard initialization failure). The LogEntries reflection
-        /// layer is the optional source -- see <see cref="LogEntriesAvailable"/> for that flag.
+        /// constructor itself throws (a hard initialization failure).
         /// The inspector overlay reads this property to decide whether to render its degraded
         /// warning surface, so the contract here is "should the overlay attempt to render at all".
         /// </remarks>
         public static bool IsAvailable { get; private set; } = true;
 
-        /// <summary>
-        /// <c>true</c> when the legacy <c>UnityEditor.LogEntries</c> reflection layer resolved
-        /// successfully on this Unity version. The harvester does not require this to be true to
-        /// function -- Unity 2021's analyzer warnings flow through the CompilerMessage feed
-        /// instead. Available for editor diagnostics.
-        /// </summary>
-        public static bool LogEntriesAvailable => !_logEntriesDisabled;
+        /// <summary>Reports <c>false</c> for the retired Console history bridge.</summary>
+        public static bool LogEntriesAvailable => false;
 
         /// <summary>
         /// <c>true</c> once the first <see cref="RescanNow"/> of this Editor session has produced
@@ -249,80 +211,13 @@ namespace DxMessaging.Editor.Analyzers
         /// </remarks>
         public static bool IsFreshThisSession => _isFreshThisSession;
 
-        /// <summary>Raised whenever the snapshot changes (post-compile, post-domain-reload, or polled console-count change).</summary>
+        /// <summary>Raised whenever the snapshot changes (after compilation, reload, or a settings change).</summary>
         public static event Action ReportUpdated;
 
         static DxMessagingConsoleHarvester()
         {
             try
             {
-                Type logEntriesType = Type.GetType("UnityEditor.LogEntries,UnityEditor.dll")
-                    /*
-                        S9: legacy / future-Unity probe. UnityEditorInternal.LogEntries doesn't
-                        exist today, but documenting the fallback as a one-liner keeps us forward-
-                        compatible at zero cost.
-                    */
-                    ?? Type.GetType("UnityEditorInternal.LogEntries,UnityEditor.dll");
-                _logEntryType = Type.GetType("UnityEditor.LogEntry,UnityEditor.dll")
-                    ?? Type.GetType("UnityEditorInternal.LogEntry,UnityEditor.dll");
-
-                bool logEntriesBound = false;
-                if (logEntriesType is not null && _logEntryType is not null)
-                {
-                    if (_logEntryType.IsValueType)
-                    {
-                        /*
-                            S8: defensive value-type guard. If a future Unity version makes LogEntry
-                            a struct, Activator.CreateInstance would hand us a boxed copy and the
-                            GetEntry call would mutate that copy in-place; harvest would silently
-                            report empty. Disable the LogEntries path rather than silently producing
-                            a wrong result; the CompilerMessage feed still runs.
-                        */
-                        LogOnce(
-                            "logentry-is-struct",
-                            "LogEntry is a value type on this Unity version; LogEntries scanning disabled. Falling back to the CompilerMessage feed."
-                        );
-                    }
-                    else
-                    {
-                        _startGettingEntries = SafeGetStaticMethod(
-                            logEntriesType,
-                            "StartGettingEntries"
-                        );
-                        _endGettingEntries = SafeGetStaticMethod(
-                            logEntriesType,
-                            "EndGettingEntries"
-                        );
-                        _getEntryInternal = SafeGetStaticMethod(logEntriesType, "GetEntryInternal");
-                        _getCount = SafeGetStaticMethod(logEntriesType, "GetCount");
-                        _messageField = SafeGetInstanceField(_logEntryType, "message");
-
-                        logEntriesBound =
-                            _startGettingEntries is not null
-                            && _endGettingEntries is not null
-                            && _getEntryInternal is not null
-                            && _getCount is not null
-                            && _messageField is not null;
-                    }
-                }
-
-                if (!logEntriesBound)
-                {
-                    /*
-                        The LogEntries reflection layer is unavailable. The IL-reflection scanner
-                        is the primary data source so this is no longer a critical path; the
-                        log-once is kept for diagnostic purposes (and only matters when the user
-                        has enabled the legacy bridge via DxMessagingSettings.UseConsoleBridge).
-                    */
-                    LogOnce(
-                        "reflection-fallback",
-                        "LogEntries reflection unavailable on this Unity version. The IL-reflection "
-                            + "scanner remains the primary data source; the legacy console-scrape bridge "
-                            + "(opt-in via DxMessagingSettings.UseConsoleBridge) cannot read LogEntries on this version."
-                    );
-                    _logEntriesDisabled = true;
-                }
-
                 LoadFromDisk();
 
                 /*
@@ -341,18 +236,17 @@ namespace DxMessaging.Editor.Analyzers
                     "DxMessagingConsoleHarvester failed to initialize.",
                     ex
                 );
-                _logEntriesDisabled = true;
                 IsAvailable = false;
             }
         }
 
         /// <summary>
-        /// Force a re-read of the editor console and drain any pending CompilerMessage payloads.
+        /// Rescan loaded types and apply any pending compiler warnings.
         /// Called automatically on domain reload and compilation events; the menu entry exposes it
         /// for manual invocation. Settings setters (e.g.
         /// <see cref="DxMessagingSettings.BaseCallCheckEnabled"/>) call this via
         /// <see cref="EditorApplication.delayCall"/> so a re-enable repopulates the snapshot
-        /// without waiting for the next polled tick.
+        /// without waiting for the next settings check.
         /// </summary>
         [MenuItem("Tools/Wallstop Studios/DxMessaging/Rescan Base-Call Warnings")]
         public static void RescanNow()
@@ -363,12 +257,8 @@ namespace DxMessaging.Editor.Analyzers
             }
 
             /*
-                Critical: NEVER touch LogEntries reflection or AssetDatabase while Unity is mid-
-                compile or mid-asset-update. Reading LogEntries during compilation contends with the
-                compiler's own log-buffer lock and can deadlock the editor. Touching AssetDatabase
-                during compilation risks importer reentrancy. Settings reads stay passive and
-                never create an asset. Defer to the post-compile state
-                and let the polled tick (or the explicit afterAssemblyReload hook) pick it up.
+                Defer until compilation and asset imports finish. Settings reads stay passive and
+                never create an asset.
             */
             if (EditorApplication.isCompiling || EditorApplication.isUpdating)
             {
@@ -387,7 +277,6 @@ namespace DxMessaging.Editor.Analyzers
                 {
                     _pendingByAssembly.Clear();
                 }
-                _lastSeenCount = 0;
                 PersistToDisk();
                 /*
                     The "check disabled" path still represents a successful session-time decision
@@ -406,8 +295,7 @@ namespace DxMessaging.Editor.Analyzers
             /*
                 -- Primary source (always-on): IL-reflection scanner over loaded
                    MessageAwareComponent subclasses. Deterministic across Unity 2021 cache hits and
-                   incremental compiles; replaces the lossy console-scrape harvester as the
-                   inspector overlay's source of truth.
+                   incremental compiles.
             */
             Dictionary<string, BaseCallReportEntry> scannerEntries;
             try
@@ -425,7 +313,7 @@ namespace DxMessaging.Editor.Analyzers
             /*
                 The scanner produces a complete view of all loaded subclasses on every call, so it
                 fully replaces the snapshot. Build the new map up-front from the scanner's output;
-                we'll union the legacy-bridge entries into it below if the user opted in.
+                we will add compiler warnings below if the user opted in.
             */
             Dictionary<string, BaseCallReportEntry> nextSnapshot = new(
                 scannerEntries,
@@ -434,21 +322,8 @@ namespace DxMessaging.Editor.Analyzers
 
             bool useBridge = settings != null && settings._useConsoleBridge;
 
-            int currentCount = 0;
-            bool logEntriesHarvested = false;
             if (useBridge)
             {
-                // -- Secondary source (opt-in): LogEntries reflection (Unity 2022+ reliable path).
-                Dictionary<string, ParsedTypeReport> logEntriesAggregate = HarvestFromLogEntries(
-                    out currentCount,
-                    out logEntriesHarvested
-                );
-
-                /*
-                    -- Secondary source (opt-in): pending CompilerMessage payloads (Unity 2021's
-                       primary path under the legacy bridge). Drain the cross-thread channel
-                       atomically.
-                */
                 Dictionary<string, Dictionary<string, ParsedTypeReport>> drained;
                 lock (_compilationFeedLock)
                 {
@@ -469,35 +344,28 @@ namespace DxMessaging.Editor.Analyzers
                 ApplyCompilerMessageDrain(drained);
 
                 /*
-                    Merge the bridge view (LogEntries + CompilerMessage) and union it INTO the
-                    scanner-produced snapshot. The scanner is authoritative; the bridge can only
-                    ADD methods/diagnostic ids it sees that the scanner missed (e.g. exotic IL
-                    shapes the byte walker stepped past). Bridge entries never override the
-                    scanner's classification.
+                    The compiler feed can contribute methods or diagnostic IDs the scanner missed.
+                    It cannot override the scanner's classification.
                 */
                 try
                 {
                     Dictionary<string, BaseCallReportEntryDto> bridgeSnapshot =
-                        _compilerReports.BuildMergedSnapshot(
-                            logEntriesHarvested ? logEntriesAggregate : null
-                        );
+                        _compilerReports.BuildMergedSnapshot(null);
                     UnionBridgeIntoSnapshot(bridgeSnapshot, nextSnapshot);
                 }
                 catch (Exception ex)
                 {
                     LogExceptionOnce("aggregate", "Snapshot merge failed.", ex);
                     /*
-                        Fall through with the scanner-only snapshot; partial data is better than
-                        wiping the snapshot when the bridge half misbehaves.
+                        Keep the scanner snapshot if merging compiler warnings fails.
                     */
                 }
             }
             else
             {
                 /*
-                    Bridge is disabled: drop any pending CompilerMessage entries the harvester may
-                    have buffered (they would otherwise leak into the snapshot the next time the
-                    user toggles the bridge on). The bridge bookkeeping is reset below as well.
+                    Discard compiler messages when the bridge is disabled so stale warnings do
+                    not appear when the user enables it later.
                 */
                 lock (_compilationFeedLock)
                 {
@@ -517,10 +385,6 @@ namespace DxMessaging.Editor.Analyzers
                 SnapshotInternal[kvp.Key] = kvp.Value;
             }
 
-            if (useBridge && logEntriesHarvested)
-            {
-                _lastSeenCount = currentCount;
-            }
             PersistToDisk();
             /*
                 Mark the snapshot as session-fresh AFTER the persist + before the event fires, so
@@ -595,153 +459,6 @@ namespace DxMessaging.Editor.Analyzers
             }
         }
 
-        /*
-            Reads the editor console via LogEntries reflection. Returns the aggregated per-type
-            report, the current console count, and whether the harvest actually ran (false when
-            the LogEntries reflection layer is unavailable or threw). On Unity 2021 this returns
-            an empty aggregate every time; the analyzer warnings flow through the CompilerMessage
-            feed instead and arrive via ApplyCompilerMessageDrain.
-        */
-        private static Dictionary<string, ParsedTypeReport> HarvestFromLogEntries(
-            out int currentCount,
-            out bool harvested
-        )
-        {
-            currentCount = 0;
-            harvested = false;
-            if (_logEntriesDisabled)
-            {
-                return new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal);
-            }
-
-            try
-            {
-                currentCount = (int)_getCount.Invoke(null, null);
-            }
-            catch (Exception ex)
-            {
-                LogExceptionOnce("getcount", "GetCount invocation failed.", ex);
-                return new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal);
-            }
-
-            /*
-                S4: console-clear handling. We always overwrite _lastSeenCount near the bottom of
-                RescanNow, so the only point of acting on a shrunken count here is to be explicit
-                about the semantic. The accumulator is rebuilt from scratch every rescan, so the
-                clear case is naturally consistent; even an empty log produces an empty aggregate
-                and a ReportUpdated fire that drops stale rows.
-            */
-
-            // Allocate before acquiring the Console enumeration so failure cannot skip its release.
-            List<string> lines = new(Math.Min(currentCount, MaxLineListInitialCapacity));
-            try
-            {
-                _startGettingEntries.Invoke(null, null);
-            }
-            catch (Exception ex)
-            {
-                LogExceptionOnce("start", "StartGettingEntries invocation failed.", ex);
-                return new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal);
-            }
-
-            int harvestedCount = currentCount;
-            try
-            {
-                if (_startGettingEntries.ReturnType == typeof(int))
-                {
-                    /*
-                        The Invoke return value is intentionally discarded; we re-pull via GetCount
-                        because the polled count is authoritative.
-                    */
-                    try
-                    {
-                        harvestedCount = (int)_getCount.Invoke(null, null);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogExceptionOnce(
-                            "getcount-after-start",
-                            "GetCount after StartGettingEntries failed.",
-                            ex
-                        );
-                        // Retain the previous count.
-                    }
-                }
-
-                object entryInstance = Activator.CreateInstance(_logEntryType);
-                object[] invokeArgs = new object[2];
-                invokeArgs[1] = entryInstance;
-                for (int j = 0; j < harvestedCount; j++)
-                {
-                    invokeArgs[0] = j;
-                    try
-                    {
-                        _getEntryInternal.Invoke(null, invokeArgs);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogExceptionOnce(
-                            "getentry",
-                            $"GetEntryInternal invocation failed at index {j}.",
-                            ex
-                        );
-                        continue;
-                    }
-
-                    string message;
-                    try
-                    {
-                        message = _messageField.GetValue(entryInstance) as string;
-                    }
-                    catch (Exception ex)
-                    {
-                        LogExceptionOnce(
-                            "getmessage",
-                            $"LogEntry.message read failed at index {j}.",
-                            ex
-                        );
-                        continue;
-                    }
-
-                    if (BaseCallLogMessageParser.IsDiagnosticCandidate(message))
-                    {
-                        lines.Add(message);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                LogExceptionOnce("harvest", "Harvest loop failed.", ex);
-            }
-            finally
-            {
-                try
-                {
-                    _endGettingEntries.Invoke(null, null);
-                }
-                catch (Exception ex)
-                {
-                    LogExceptionOnce("end", "EndGettingEntries invocation failed.", ex);
-                }
-            }
-
-            harvested = true;
-            try
-            {
-                return BaseCallLogMessageParser.Aggregate(lines);
-            }
-            catch (Exception ex)
-            {
-                LogExceptionOnce(
-                    "aggregate-logentries",
-                    "Aggregating LogEntries lines failed.",
-                    ex
-                );
-                return new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal);
-            }
-        }
-
-        // Apply each assembly's own latest report, including empty batches that retire it.
         private static void ApplyCompilerMessageDrain(
             Dictionary<string, Dictionary<string, ParsedTypeReport>> drained
         )
@@ -757,12 +474,7 @@ namespace DxMessaging.Editor.Analyzers
             }
         }
 
-        /// <summary>
-        /// Hint the harvester that something external changed (e.g., a settings toggle) and the
-        /// next polled tick should treat the console as fresh. Cheaper than a synchronous
-        /// <see cref="RescanNow"/> when the caller is on a thread / context that may not be safe
-        /// to do reflection from.
-        /// </summary>
+        /// <summary>Schedules a rescan after compilation and asset imports finish.</summary>
         public static void RequestRescan()
         {
             ScheduleRescanWhenIdle();
@@ -770,22 +482,7 @@ namespace DxMessaging.Editor.Analyzers
 
         private static void Tick()
         {
-            /*
-                Settings invalidation is observed even when the optional LogEntries bridge is
-                unavailable. Asset loading and rescans remain on the idle editor main thread.
-            */
-            if (!IsAvailable)
-            {
-                return;
-            }
-
-            /*
-                Defensive belt: never reflect into LogEntries while a compile or asset-import is
-                running. Even though RescanNow() itself bails on this state, we don't want to even
-                call GetCount(); the lock contention is the source of the freeze, and GetCount
-                touches the same buffer.
-            */
-            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+            if (!IsAvailable || EditorApplication.isCompiling || EditorApplication.isUpdating)
             {
                 return;
             }
@@ -802,36 +499,6 @@ namespace DxMessaging.Editor.Analyzers
                 if (_lastSettingsRevision != DxMessagingSettings.SettingsRevision)
                 {
                     RescanNow();
-                    return;
-                }
-                if (_logEntriesDisabled)
-                {
-                    return;
-                }
-                DxMessagingSettings settings = TryLoadSettings();
-                if (
-                    settings == null
-                    || !settings._baseCallCheckEnabled
-                    || !settings._useConsoleBridge
-                )
-                {
-                    return;
-                }
-
-                int currentCount;
-                try
-                {
-                    currentCount = (int)_getCount.Invoke(null, null);
-                }
-                catch (Exception ex)
-                {
-                    LogExceptionOnce("tick-count", "GetCount during Tick failed.", ex);
-                    return;
-                }
-
-                if (currentCount != _lastSeenCount)
-                {
-                    RescanNow();
                 }
             }
             catch (Exception ex)
@@ -846,38 +513,41 @@ namespace DxMessaging.Editor.Analyzers
         )
         {
             /*
-                CRITICAL: this fires for EVERY assembly compiled (10s of times per build). Running
-                RescanNow synchronously here invokes LogEntries reflection while OTHER assemblies
-                are still compiling; the compiler holds its log-buffer lock and our reflection
-                call blocks waiting for it. Combined with AssetDatabase touches inside RescanNow,
-                this caused permanent script-compilation freezes on Unity startup.
-                We DO parse the per-assembly CompilerMessage payload here (cheap, pure-CPU work,
-                no AssetDatabase / LogEntries contact) and stash it in the cross-thread channel
-                without checking settings here. The settings gate requires AssetDatabase access, so
-                RescanNow applies it later after DrainScheduledRescan has requeued until Unity is
-                idle; if the bridge is disabled, RescanNow clears this pending buffer. This is the
-                primary bridge data path on Unity 2021, where Roslyn-analyzer warnings DO arrive in
-                CompilerMessage[] but do NOT reliably appear in the LogEntries store.
+                Each assembly supplies its own messages. Parse those messages here and defer
+                the settings check and report update until Unity is idle.
             */
             try
             {
                 if (!string.IsNullOrEmpty(assemblyPath) && messages != null)
                 {
-                    List<string> lines = null;
+                    Dictionary<string, ParsedTypeReport> aggregated = new(StringComparer.Ordinal);
                     foreach (CompilerMessage compilerMessage in messages)
                     {
                         string body = compilerMessage.message;
-                        if (!BaseCallLogMessageParser.IsDiagnosticCandidate(body))
+                        if (
+                            !BaseCallLogMessageParser.IsDiagnosticCandidate(body)
+                            || BaseCallLogMessageParser.ParseLine(body) is not ParsedEntry entry
+                        )
                         {
                             continue;
                         }
-                        lines ??= new List<string>();
-                        lines.Add(body);
-                    }
 
-                    Dictionary<string, ParsedTypeReport> aggregated = lines is null
-                        ? new Dictionary<string, ParsedTypeReport>(StringComparer.Ordinal)
-                        : BaseCallLogMessageParser.Aggregate(lines);
+                        if (
+                            string.IsNullOrEmpty(entry.FilePath)
+                            && !string.IsNullOrEmpty(compilerMessage.file)
+                        )
+                        {
+                            entry = new ParsedEntry(
+                                entry.DiagnosticId,
+                                entry.TypeFullName,
+                                entry.MethodName,
+                                compilerMessage.file,
+                                Math.Max(0, compilerMessage.line)
+                            );
+                        }
+
+                        BaseCallLogMessageParser.AddEntry(aggregated, entry);
+                    }
 
                     lock (_compilationFeedLock)
                     {
@@ -967,49 +637,6 @@ namespace DxMessaging.Editor.Analyzers
                 LogExceptionOnce("settings", "Could not load DxMessagingSettings.", ex);
                 return null;
             }
-        }
-
-        private static MethodInfo SafeGetStaticMethod(Type type, string name)
-        {
-            try
-            {
-                return type.GetMethod(name, BindingFlags.Public | BindingFlags.Static);
-            }
-            catch (Exception ex)
-            {
-                LogExceptionOnce(
-                    $"resolve-{name}",
-                    $"Failed to resolve static method '{name}' on {type.FullName}.",
-                    ex
-                );
-                return null;
-            }
-        }
-
-        private static FieldInfo SafeGetInstanceField(Type type, string name)
-        {
-            try
-            {
-                return type.GetField(name, BindingFlags.Public | BindingFlags.Instance);
-            }
-            catch (Exception ex)
-            {
-                LogExceptionOnce(
-                    $"resolve-field-{name}",
-                    $"Failed to resolve instance field '{name}' on {type.FullName}.",
-                    ex
-                );
-                return null;
-            }
-        }
-
-        private static void LogOnce(string key, string message)
-        {
-            if (!AlreadyWarned.Add(key))
-            {
-                return;
-            }
-            Debug.LogWarning($"[DxMessaging] {message}");
         }
 
         private static void LogExceptionOnce(string key, string message, Exception exception)

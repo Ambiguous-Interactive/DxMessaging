@@ -343,27 +343,35 @@ namespace DxMessaging.Editor.Analyzers
                     continue;
                 }
 
-                if (!result.TryGetValue(entry.TypeFullName, out ParsedTypeReport? report))
-                {
-                    report = new ParsedTypeReport { TypeFullName = entry.TypeFullName };
-                    result[entry.TypeFullName] = report;
-                }
-
-                report.DiagnosticIds.Add(entry.DiagnosticId);
-
-                if (!string.IsNullOrEmpty(entry.MethodName))
-                {
-                    report.MissingBaseFor.Add(entry.MethodName);
-                }
-
-                if (string.IsNullOrEmpty(report.FilePath) && !string.IsNullOrEmpty(entry.FilePath))
-                {
-                    report.FilePath = entry.FilePath;
-                    report.Line = entry.Line;
-                }
+                AddEntry(result, entry);
             }
 
             return result;
+        }
+
+        internal static void AddEntry(
+            Dictionary<string, ParsedTypeReport> result,
+            ParsedEntry entry
+        )
+        {
+            if (!result.TryGetValue(entry.TypeFullName, out ParsedTypeReport? report))
+            {
+                report = new ParsedTypeReport { TypeFullName = entry.TypeFullName };
+                result[entry.TypeFullName] = report;
+            }
+
+            report.DiagnosticIds.Add(entry.DiagnosticId);
+
+            if (!string.IsNullOrEmpty(entry.MethodName))
+            {
+                report.MissingBaseFor.Add(entry.MethodName);
+            }
+
+            if (string.IsNullOrEmpty(report.FilePath) && !string.IsNullOrEmpty(entry.FilePath))
+            {
+                report.FilePath = entry.FilePath;
+                report.Line = entry.Line;
+            }
         }
     }
 }

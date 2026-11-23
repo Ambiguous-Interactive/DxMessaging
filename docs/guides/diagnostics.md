@@ -74,7 +74,7 @@ project-wide defaults without writing bootstrap code:
 - **Diagnostics Targets** -- the `DiagnosticsTarget` flags enum.
 - **Message Buffer Size** -- the default diagnostics ring-buffer size.
 - **Suppress Domain Reload Warning** -- editor-safety warning control.
-- **Base-Call Check Enabled** and **Use Console Bridge** -- Inspector warning
+- **Base-Call Check Enabled** and **Include Compiler Warnings** -- Inspector warning
   controls for missing `MessageAwareComponent` base calls.
 
 The ignore list for base-call warnings still lives on

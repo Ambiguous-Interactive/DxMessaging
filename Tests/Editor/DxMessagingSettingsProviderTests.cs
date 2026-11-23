@@ -134,6 +134,7 @@ namespace DxMessaging.Tests.Editor
             Assert.That(provider.keywords, Does.Contain("Editor Safety"));
             Assert.That(provider.keywords, Does.Contain("Inspector Checks"));
             Assert.That(provider.keywords, Does.Contain("Base-Call Check Enabled"));
+            Assert.That(provider.keywords, Does.Contain("Include Compiler Warnings"));
             Assert.That(provider.keywords, Does.Contain("Use Console Bridge"));
             Assert.That(provider.keywords, Does.Contain("Ignored Base-Call Types"));
         }

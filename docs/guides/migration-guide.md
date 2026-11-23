@@ -27,6 +27,12 @@ scripts.
 For a Package Manager upgrade, update the installed package and review any
 [samples you previously copied into Assets](#update-samples-copied-into-assets).
 
+### Find the compiler warning setting
+
+**Use Console Bridge** is now **Include Compiler Warnings**. Your existing setting carries
+forward. The Inspector still runs its IL scan and can add messages from new compilations.
+Warnings already in Unity's Console history are no longer imported by the Inspector.
+
 ### Reference the dedicated attributes assembly
 
 The six public attributes from 3.3.0 move to `WallstopStudios.DxMessaging.Attributes` with unchanged namespaces and names. The attributes assembly also contains the new `DxAotMessageAttribute`. Add that assembly reference to each Unity assembly definition that uses a DxMessaging attribute. Keep the `WallstopStudios.DxMessaging` reference when the same assembly also uses message interfaces or runtime APIs. Predefined assemblies receive both references automatically.
