@@ -17,7 +17,7 @@
   "versionDefines": [
     {
       "name": "com.unity.pipeline",
-      "expression": "0.8.0-exp.1",
+      "expression": "[0.8.0-exp.1]",
       "define": "DXM_621_PIPELINE_PRESENT"
     }
   ],

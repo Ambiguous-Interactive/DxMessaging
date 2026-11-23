@@ -5,6 +5,7 @@ namespace DxMessaging.Tests.Runtime.Core
     using System.Collections.Generic;
     using System.Reflection;
     using System.Text;
+    using DxMessaging.Core;
     using NUnit.Framework;
     using UnityEngine;
     using DebuggableAttribute = System.Diagnostics.DebuggableAttribute;
@@ -34,7 +35,7 @@ namespace DxMessaging.Tests.Runtime.Core
             List<string> unoptimized = new();
             List<string> unreadable = new();
 
-            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (Assembly assembly in LoadedAssemblyUtility.GetAssemblies())
             {
                 string name;
                 try

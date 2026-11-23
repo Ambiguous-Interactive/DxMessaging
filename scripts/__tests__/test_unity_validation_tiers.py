@@ -47,6 +47,19 @@ class UnityValidationTiersTests(unittest.TestCase):
         ])
         self.assertNotIn("include", matrix)
 
+    def test_transport_research_compiles_only_with_the_admitted_pipeline_version(self):
+        directory = ROOT / "Tests/Editor/PipelineTransportResearch"
+        definition_path, = directory.glob("*.asmdef")
+        definition = json.loads(definition_path.read_text(encoding="utf-8"))
+        symbol = "DXM_621_PIPELINE_PRESENT"
+        self.assertIn(symbol, definition["defineConstraints"])
+        definitions = [
+            (entry["name"], entry["expression"])
+            for entry in definition["versionDefines"]
+            if entry["define"] == symbol
+        ]
+        self.assertEqual(definitions, [("com.unity.pipeline", "[0.8.0-exp.1]")])
+
     def test_performance_is_manual_or_nightly_dispatch_only(self):
         self.assertEqual(set(self.perf["on"]), {"workflow_dispatch"})
         self.assertNotIn("comment-perf-doc", self.perf["jobs"])

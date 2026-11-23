@@ -9,6 +9,7 @@ namespace DxMessaging.Editor
     using System.Security.Cryptography;
     using System.Text;
     using System.Text.RegularExpressions;
+    using DxMessaging.Core;
     using UnityEditor;
     using UnityEditor.Compilation;
     using UnityEngine;
@@ -1848,7 +1849,17 @@ namespace DxMessaging.Editor
             private string FindProviderIssue(Assembly consumer, out Assembly provider)
             {
                 Type component = typeof(global::DxMessaging.Unity.MessageAwareComponent);
-                _runtimePath ??= PhysicalPath(component.Assembly.Location);
+                if (_runtimePath == null)
+                {
+                    string location = LoadedAssemblyUtility.GetAssemblyPath(component.Assembly);
+                    if (string.IsNullOrEmpty(location))
+                    {
+                        provider = null;
+                        return "Unity could not locate the loaded DxMessaging runtime assembly";
+                    }
+                    _runtimePath = PhysicalPath(location);
+                }
+
                 provider = consumer.assemblyReferences.FirstOrDefault(reference =>
                     PhysicalPath(reference.outputPath) == _runtimePath
                 );

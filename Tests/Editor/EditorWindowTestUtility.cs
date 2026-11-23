@@ -4,6 +4,7 @@ namespace DxMessaging.Tests.Editor
     using System;
     using System.Collections.Generic;
     using System.Text;
+    using DxMessaging.Core;
     using DxMessaging.Editor;
     using NUnit.Framework;
     using UnityEditor;
@@ -388,9 +389,7 @@ namespace DxMessaging.Tests.Editor
 
         private static System.Type FindUnityEditorType(string fullName)
         {
-            foreach (
-                System.Reflection.Assembly assembly in System.AppDomain.CurrentDomain.GetAssemblies()
-            )
+            foreach (System.Reflection.Assembly assembly in LoadedAssemblyUtility.GetAssemblies())
             {
                 System.Type type = assembly.GetType(fullName, throwOnError: false);
                 if (type != null)

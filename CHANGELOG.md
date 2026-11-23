@@ -74,6 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve message source links in the Flow Graph and Message Monitor against currently loaded
+  assemblies in Unity 6.6 ([#813](https://github.com/Ambiguous-Interactive/DxMessaging/issues/813)).
+- Use Unity's loaded assembly path to verify the runtime in the 3.x upgrade preview on Unity 6.6
+  ([#813](https://github.com/Ambiguous-Interactive/DxMessaging/issues/813)).
 - Preserve the serialized message bus fallback configured before `MessageAwareComponent.Awake` when a runtime provider is destroyed
   ([#810](https://github.com/Ambiguous-Interactive/DxMessaging/issues/810)).
 - Preserve `MessagingComponent` listener ownership during callbacks and report unresolved provider

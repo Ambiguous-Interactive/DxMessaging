@@ -6,6 +6,7 @@ namespace DxMessaging.Tests.Editor
     using System.IO;
     using System.Linq;
     using System.Reflection;
+    using DxMessaging.Core;
     using DxMessaging.Editor.Settings;
     using NUnit.Framework;
     using UnityEditor;
@@ -176,8 +177,9 @@ namespace DxMessaging.Tests.Editor
                 BindingFlags.Static | BindingFlags.NonPublic
             );
             Assert.That(displayName, Is.Not.Null);
+            string coreLocation = LoadedAssemblyUtility.GetAssemblyPath(typeof(object).Assembly);
             TestContext.Out.WriteLine(
-                $"DXM_PARTIAL_BACKUP_RUNTIME unity={Application.unityVersion}; mono={displayName.Invoke(null, null)}; clr={Environment.Version}; platform={Application.platform}; coreLibrary={typeof(object).Assembly.FullName}; coreModule={typeof(object).Module.ModuleVersionId}; coreLocation={typeof(object).Assembly.Location}"
+                $"DXM_PARTIAL_BACKUP_RUNTIME unity={Application.unityVersion}; mono={displayName.Invoke(null, null)}; clr={Environment.Version}; platform={Application.platform}; coreLibrary={typeof(object).Assembly.FullName}; coreModule={typeof(object).Module.ModuleVersionId}; coreLocation={coreLocation}"
             );
 
             using EditorCompilerInputScope originals = new();
