@@ -1,4 +1,4 @@
-"""Read GitHub Actions receipts for the most recent static CI pull_request runs."""
+"""Read GitHub Actions receipts for the most recent pull request updates observed by static or devcontainer CI."""
 
 import argparse
 import json
@@ -70,6 +70,47 @@ def verdict(gates, start):
     return outcome, elapsed if elapsed is not None and elapsed >= 0 else None
 
 
+def native_receipts(jobs):
+    preflights = [
+        j.get("completed_at")
+        for j in jobs
+        if j["name"] == "Self-hosted runner registration preflight"
+        and j["conclusion"] == "success"
+    ]
+    ready = preflights[0] if len(preflights) == 1 else None
+    for job in jobs:
+        if not (job["name"].startswith("Unity ") and "all modes" in job["name"]):
+            continue
+        setup = next(
+            (
+                s.get("started_at")
+                for s in job.get("steps") or []
+                if s["name"] == "Set up job"
+            ),
+            None,
+        )
+        yield {
+            **{
+                key: job.get(key)
+                for key in (
+                    "id",
+                    "runner_name",
+                    "created_at",
+                    "started_at",
+                    "completed_at",
+                    "conclusion",
+                    "steps",
+                )
+            },
+            "preflight_completed_at": ready,
+            "preflight_to_setup_seconds": max(
+                0, (instant(setup) - instant(ready)).total_seconds()
+            )
+            if ready and setup
+            else None,
+        }
+
+
 def pages(path, field=None, **params):
     url = "https://api.github.com/" + path + "?" + urlencode(dict(params, per_page=100))
     headers = {"Accept": "application/vnd.github+json"}
@@ -100,12 +141,22 @@ def collect(repo, count, through=None):
             **params,
         )
 
-    anchors = list(
-        islice(
-            runs(WORKFLOWS[0], **({"created": "<=" + through} if through else {})),
-            count,
+    cutoff = {"created": "<=" + through} if through else {}
+    static = list(islice(runs(WORKFLOWS[0], **cutoff), count + 1))
+    containers = list(islice(runs(WORKFLOWS[-1], **cutoff), count + 1))
+
+    def source(run):
+        return (
+            (run.get("head_repository") or {}).get("full_name"),
+            run["head_branch"],
+            run["head_sha"],
         )
-    )
+
+    static_heads = {source(run) for run in static}
+    orphaned = [run for run in containers if source(run) not in static_heads]
+    anchors = sorted(
+        static + orphaned, key=lambda r: (r["created_at"], r["id"]), reverse=True
+    )[:count]
     if not anchors:
         return []
     since = min(instant(r["created_at"]) for r in anchors) - timedelta(days=1)
@@ -167,7 +218,8 @@ def collect(repo, count, through=None):
         group = [anchor] + [
             r
             for r in siblings[sha, branch]
-            if (r.get("head_repository") or {}).get("full_name") == origin
+            if r["id"] != anchor["id"]
+            and (r.get("head_repository") or {}).get("full_name") == origin
             and (
                 not number
                 or not r["pull_requests"]
@@ -181,12 +233,13 @@ def collect(repo, count, through=None):
             if candidates:
                 candidates += [t for t in pr_dates(number) if t <= created]
                 start = max(candidates)
-        jobs, gates, history = [], defaultdict(list), {}
+        jobs, native, gates, history = [], [], defaultdict(list), {}
         for r in group:
             latest = list(
                 pages(f"{root}/actions/runs/{r['id']}/jobs", "jobs", filter="latest")
             )
             jobs.extend(latest)
+            native.extend(native_receipts(latest))
             for attempt in range(1, r["run_attempt"]):
                 previous = pages(
                     f"{root}/actions/runs/{r['id']}/attempts/{attempt}/jobs", "jobs"
@@ -209,11 +262,6 @@ def collect(repo, count, through=None):
             > 1
         ):
             outcome, start, seconds = "ambiguous update", None, None
-        native = [
-            j
-            for j in jobs
-            if j["name"].startswith("Unity ") and "all modes" in j["name"]
-        ]
         built = any(
             j["name"].startswith("Build + smoke-test devcontainer")
             and j["conclusion"] != "skipped"
@@ -262,21 +310,7 @@ def collect(repo, count, through=None):
                     for j in native
                     if j.get("created_at") and j.get("started_at")
                 ],
-                "native_jobs": [
-                    {
-                        k: j.get(k)
-                        for k in (
-                            "id",
-                            "runner_name",
-                            "created_at",
-                            "started_at",
-                            "completed_at",
-                            "conclusion",
-                            "steps",
-                        )
-                    }
-                    for j in native
-                ],
+                "native_jobs": native,
             }
         )
     for index, row in enumerate(rows):

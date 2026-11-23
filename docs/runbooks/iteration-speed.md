@@ -61,6 +61,7 @@ a later green run does not erase them.
 
 ## Save to a focused test verdict
 
+Target p95 below one second from a warm production save to its named assertion.
 For a Node helper, start a watcher once and edit its imported production dependency.
 Select the affected case by its name in the test file. For example:
 
@@ -79,30 +80,37 @@ dotnet test .net-tests/DxMessaging.Net.Tests.csproj -c Release --no-restore --fi
 On a mounted checkout at `1362ebb1`, four Node helpers each received five broken/fixed pairs
 with the test source held constant. All 40 saves produced the expected named verdict. Median
 save-to-result was 0.311 seconds and nearest-rank p95 was 0.382 seconds, including the runner
-summary. These observations cover Node 26 in the Linux devcontainer. See the
-[Node watch documentation](https://nodejs.org/api/test.html#watch-mode).
+summary. A single run without `--watch` also works for a one-off check. These observations cover
+Node 26 in the Linux devcontainer. See the [Node watch documentation](https://nodejs.org/api/test.html#watch-mode).
 
 C# results depend on rebuilding the changed dependency. On a Linux-local worktree at `864fc5f8`,
-six alternating runtime edits took a median 4.46 seconds with the filtered command and 5.98 seconds
-with `dotnet watch test`. Six generator edits took 2.81 and 3.91 seconds respectively. The direct
+three matched broken/fixed pairs per command took a median 2.99 seconds per runtime edit
+with the filtered command and 3.92 seconds with `dotnet watch test`. Generator edits took
+2.68 and 3.27 seconds respectively. Each comparison alternated command order. The direct
 command remains the measured choice for both. Preserve `/p:CopyAnalyzerPayload=false` on generator
-runs. Editor-only changes still require the affected fixture on the host. The maintained
-[experiment record](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817) includes
-unsuccessful trials and the limits of each measurement.
+runs. With fresh project outputs and private empty NuGet caches, one initial run took
+6.89 seconds for runtime and 6.88 seconds for generators at `1362ebb1`. These six-edit screens
+establish medians only. Local Unity Editor and desktop Test Explorer save times are unmeasured
+in this editor-free checkout. For command syntax and trial details, see the
+[.NET watch reference](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-watch) and the
+[experiment record](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817).
 
 ## Rolling PR latency
 
-Run the read-only report from the checkout. A read token in `GH_TOKEN` or `GITHUB_TOKEN`
-provides enough API quota for the default 40-update window. The standard-library command prints
-JSON with per-update receipts, required-job conclusions, prior attempts, native step timestamps,
-sample sizes, missing observations, and nearest-rank p95 by validation lane.
+Target p95 below 420 seconds from a PR update to the last required verdict, including queue
+and cleanup. Run the read-only report from the checkout. A read token in `GH_TOKEN` or `GITHUB_TOKEN`
+provides enough API quota for the default 40-update window. The command uses Python 3.11 or
+later. Its JSON includes each required verdict, prior attempts, native steps and the interval
+from runner preflight to native setup. It reports sample sizes, missing observations and
+nearest-rank p95 by validation lane.
 
 ```sh
 python3 scripts/pr_latency.py --count 40
 ```
 
-Use `--through 2026-11-23T01:09:59Z` to select the historical window below. The always-triggered
-static PR workflow identifies updates. Match the head, PR and branch across workflows, including
+Use `--through 2026-11-23T01:09:59Z` to select the historical window below. The static and
+devcontainer PR workflows identify updates. A head with neither workflow has no anchor in this
+report. Match the head, PR and branch across workflows, including
 the Unity companion gate. Use GitHub's recorded branch push or later PR open/reopen time and the
 last of the three required job completions. Count failed updates alongside successful ones.
 Inspect incomplete rows before interpreting percentiles. Require at least 40 representative
@@ -112,9 +120,11 @@ A short docs-only lane cannot establish native PR latency.
 The November 21-23 sample had 40 native updates across three PRs. All three contexts reported on
 each update. Median time to the last verdict was 12m41s and p95 was 30m14s. Five finished in
 under seven minutes, including three of the 33 green updates. In 17 of 39 observable native
-starts, more than seven minutes elapsed between preflight completion and runner setup. Five
-of those waits overlapped a repository manual or nightly-dispatched licensed workflow. Overlap
-alone does not identify the job occupying a runner.
+starts, more than seven minutes elapsed between preflight completion and runner setup. Even
+assigning zero wait to the missing observation, that interval alone had a p95 of 21m41s across
+the 40 updates. Reaching seven minutes in a comparable window requires shorter waits for a
+licensed runner. Five of those 17 waits overlapped a repository manual or nightly-dispatched
+licensed workflow. Overlap alone does not identify the job occupying a runner.
 
 On one Windows runner, a warm standalone step took 106 seconds, including 6.74 seconds for the
 final native build and 35.21 seconds for tests. After a compiled sample assembly definition was
@@ -124,16 +134,23 @@ invalidation and compare native build logs before changing test scope.
 [Warm build](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/45082346198/job/137393121072)
 and [cold build](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/45090872658/job/137419913878).
 
+Windows artifact redaction took 44 seconds in a profiled run. The standalone worker spent
+41.52 sampled seconds in structured text processing, including 22.60 seconds in contextual
+matching. The corresponding PlayMode times were 27.51 and 11.83 seconds. The workers run in
+parallel. A bounded matching experiment preserved all artifact bytes in a local comparison, but
+one of three PlayMode pairs slowed from 9.93 to 10.14 seconds. The existing redactor passed
+the original validation. See the [Windows profile](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/45104084768/job/137461300418).
+
 ## Local commands
 
-| Change               | First feedback                                                                                                                                                           | Before delivery                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Script unit behavior | Named case in [the focused watch loop](#save-to-a-focused-test-verdict) or `node --test <changed-test>`                                                                  | `npm test`                                                                                    |
-| Script integration   | `node --test <integration-test>`                                                                                                                                         | `npm run test:integration`, then the complete suite once                                      |
-| Runtime C#           | `dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --filter 'TestCategory!=Exhaustive&TestCategory!=MemoryReclaim'`                            | Both fast lanes below; affected fixtures without tier filters for lifecycle or memory changes |
-| Compiler/analyzer    | `dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj /p:CopyAnalyzerPayload=false` | Complete generator suite and `npm run check:analyzers`                                        |
-| Documentation C#     | `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`                                                                                                  | Relevant prose checks and strict site build                                                   |
-| Unity behavior       | Affected fixture through the host MCP bridge                                                                                                                             | Affected Unity scopes; CI supplies Windows IL2CPP evidence                                    |
+| Change               | First feedback                                                                                                                                                                                     | Before delivery                                                                               |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Script unit behavior | Named case in [the focused watch loop](#save-to-a-focused-test-verdict) or `node --test <changed-test>`                                                                                            | `npm test`                                                                                    |
+| Script integration   | `node --test <integration-test>`                                                                                                                                                                   | `npm run test:integration`, then the complete suite once                                      |
+| Runtime C#           | Affected method or fixture using the filtered runtime command above                                                                                                                                | Both fast lanes below; affected fixtures without tier filters for lifecycle or memory changes |
+| Compiler/analyzer    | `dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests -c Release --no-restore /p:CopyAnalyzerPayload=false --filter FullyQualifiedName~ReportsNonPartialContainingType` | Complete generator suite and `npm run check:analyzers`                                        |
+| Documentation C#     | `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`                                                                                                                            | Relevant prose checks and strict site build                                                   |
+| Unity behavior       | Affected fixture through the host MCP bridge                                                                                                                                                       | Affected Unity scopes; CI supplies Windows IL2CPP evidence                                    |
 
 Run both managed fast lanes in separate test processes before delivery:
 
