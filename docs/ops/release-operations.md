@@ -94,21 +94,7 @@ exact-revision qualification, release dispatch and publication:
    manual `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z`
    commands as a warning instead. If the App token exists but cannot write the
    tag ref, the job fails with the same manual fallback commands.
-1. After the tag exists, select that exact tag for the qualification dispatches.
-   `.github/workflows/unity-tests.yml` supplies full supported-version
-   compatibility. Select `shipping_fidelity` for stripped-player checks, and
-   run a separate dispatch with `consumer_install_validation` for Git,
-   tarball and classic-package installs. Those two inputs cannot be combined.
-   Wait for each Unity dispatch to finish successfully before starting the next.
-   They share a concurrency group for the tag with `cancel-in-progress: true`,
-   so a new dispatch cancels an unfinished qualification run for that tag.
-   Run `.github/workflows/perf-numbers.yml` from the same tag for performance
-   evidence. The [CI lanes](../runbooks/iteration-speed.md#ci-lanes) describe
-   the full managed and native release requirements.
-1. Wait for successful qualification producers and their retained artifacts
-   at that exact commit. Then select the tag and dispatch
-   `.github/workflows/release.yml`. A branch selection fails the tag verifier;
-   missing or expired qualification artifacts also block publication.
+1. Complete [tag qualification](#qualify-the-tag) and dispatch Release.
 
 The tag must exactly match `package.json.version` with a leading `v`. For
 example, package version `3.0.1` must be released from tag `v3.0.1`.
@@ -117,6 +103,31 @@ example, package version `3.0.1` must be released from tag `v3.0.1`.
 strict-semver tag. A ref such as a branch, `3.0.1`, or `v3.0.1-rc.1` does not
 pass the release verifier. Pushing a valid tag by hand remains a supported
 fallback when the App is unavailable.
+
+## Qualify the Tag
+
+Select the reviewed release tag in the Actions ref picker for each dispatch.
+Confirm the runs resolve to the same commit. The [CI lanes](../runbooks/iteration-speed.md#ci-lanes)
+describe the managed and native release requirements.
+
+1. Run Unity Tests (`unity-tests.yml`) with `shipping_fidelity` enabled and
+   `consumer_install_validation` disabled. This run produces the EditMode,
+   PlayMode, and standalone compatibility results for every supported Editor
+   and the stripped-player shipping bundles for the oldest and newest Editors.
+1. Wait for Unity Tests to finish successfully. Run Unity Tests again with
+   `consumer_install_validation` enabled and `shipping_fidelity` disabled.
+   This run produces Git, UPM tarball, and classic package install results
+   for every supported Editor. Dispatches for the same tag share a concurrency
+   group. A new Unity Tests dispatch for the tag cancels an unfinished one.
+1. Run Performance Numbers (`perf-numbers.yml`) from the same tag and confirm
+   that both internal and comparison standalone artifacts are available.
+1. Verify all three runs succeeded and their compatibility, shipping,
+   consumer-install, and performance artifacts are available. Review the
+   test and benchmark evidence before publishing. Missing or expired
+   artifacts block the publication gate.
+1. Dispatch Release (`release.yml`) from the same tag.
+
+## Release Gates
 
 The release workflow performs these gates:
 
@@ -128,13 +139,16 @@ The release workflow performs these gates:
    (`package.json` is the source of truth for the current validation set).
    Repository identity checks are now the manual checklist in
    [GitHub Transfer](./github-transfer.md).
+1. Run the complete managed release tests, including the source generator,
+   runtime, and documentation suites.
 1. Pack the npm tarball and write a `.sha256` checksum.
 1. Attest the packed `.tgz` with GitHub artifact attestations.
 1. Run the trusted EditMode release check through the PowerShell runner on
    a matching self-hosted Windows runner. The separate qualification producers
    supply full compatibility, stripped-player and consumer evidence.
-1. Create a classic `.unitypackage` directly from the npm payload on an
-   `ubuntu-latest` runner (`scripts/unity/create_unitypackage.py`). The writer
+1. Create a classic `.unitypackage` from the validated npm tarball on an
+   `ubuntu-latest` runner (`scripts/unity/create_unitypackage.py`). The export
+   checks the original tarball checksum and the embedded name and version. The writer
    does not open Unity or acquire a license seat; it runs in parallel with the
    separately required trusted Unity release check.
 1. Assemble the `asset-store-submission` workflow artifact before the npm

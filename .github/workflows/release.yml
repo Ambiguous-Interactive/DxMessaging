@@ -190,6 +190,8 @@ jobs:
   validate:
     name: Validate package
     needs: verify-tag
+    outputs:
+      package-file: ${{ steps.pack.outputs.package-file }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -592,6 +594,7 @@ jobs:
     # The trusted Unity release checks still prove the package in the pinned
     # editor. Archive construction itself is a deterministic packaging task:
     # run it in parallel without occupying a self-hosted runner or license seat.
+    # Use the validated npm artifact as the input to both release formats.
     # This remains release-blocking, so a failed or missing package prevents the
     # irreversible npm publish and keeps the release atomic.
     needs:
@@ -606,25 +609,32 @@ jobs:
         timeout-minutes: 5
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          lfs: true
           persist-credentials: false
 
-      - name: Setup Node.js
+      - name: Download the validated npm package
         timeout-minutes: 5
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          node-version: "26.13.1"
+          name: release-package
+          path: .artifacts/release
 
       - name: Create the .unitypackage
         id: create_unitypackage
         timeout-minutes: 5
         env:
+          PACKAGE_FILE: ${{ needs.validate.outputs.package-file }}
           PACKAGE_VERSION: ${{ needs.verify-tag.outputs.package-version }}
         run: |
           set -euo pipefail
+          release=.artifacts/release
+          if [ -z "${PACKAGE_FILE}" ] || [ ! -s "${release}/${PACKAGE_FILE}" ] ||
+            ! (cd "${release}" && sha256sum -- "${PACKAGE_FILE}" | cmp -s -- - "${PACKAGE_FILE}.sha256"); then
+            echo "::error::The validated npm tarball or its original checksum is missing or invalid."
+            exit 1
+          fi
           dist='.artifacts/release-unitypackage'
           output="${dist}/com.wallstop-studios.dxmessaging-${PACKAGE_VERSION}.unitypackage"
-          python3 scripts/unity/create_unitypackage.py --output "${output}"
+          python3 scripts/unity/create_unitypackage.py --tarball "${release}/${PACKAGE_FILE}" --output "${output}"
           test -s "${output}"
           (cd "${dist}" && sha256sum -c "$(basename "${output}").sha256")
 
@@ -717,18 +727,23 @@ jobs:
 
       - name: Stage the .unitypackage release asset
         id: unitypackage_asset
-        # The .unitypackage is a REQUIRED asset, so a missing or empty file here
-        # is a HARD error -- never a silent downgrade to a tgz-only release.
+        env:
+          PACKAGE_VERSION: ${{ needs.verify-tag.outputs.package-version }}
         run: |
           set -euo pipefail
-          mapfile -t unitypackage_files < <(find .artifacts/unitypackage -maxdepth 1 -type f -name '*.unitypackage' | sort)
-          if [ "${#unitypackage_files[@]}" -lt 1 ] || [ ! -s "${unitypackage_files[0]}" ]; then
-            echo "::error::No non-empty .unitypackage was found in the export artifact; refusing to publish an incomplete release."
+          directory=.artifacts/unitypackage
+          name="com.wallstop-studios.dxmessaging-${PACKAGE_VERSION}.unitypackage"
+          unitypackage_file="${directory}/${name}"
+          shopt -s nullglob
+          unitypackage_files=("${directory}"/*.unitypackage)
+          if [ "${#unitypackage_files[@]}" -ne 1 ] || [ ! -f "${unitypackage_file}" ] || [ ! -s "${unitypackage_file}" ]; then
+            echo "::error::Expected exactly one non-empty ${name} in the export artifact."
             exit 1
           fi
-          unitypackage_file="${unitypackage_files[0]}"
-          # Same checksum pattern as the npm tarball in the validate job.
-          (cd .artifacts/unitypackage && sha256sum "$(basename "${unitypackage_file}")" > "$(basename "${unitypackage_file}").sha256")
+          if ! (cd "${directory}" && sha256sum -- "${name}" | cmp -s -- - "${name}.sha256"); then
+            echo "::error::The exporter's checksum is missing or does not match ${name}."
+            exit 1
+          fi
           {
             echo "unitypackage-file=${unitypackage_file}"
             echo "unitypackage-checksum=${unitypackage_file}.sha256"
@@ -788,25 +803,46 @@ jobs:
       # publish failed and the GitHub Release ran first, a non-draft Release
       # would advertise a version that npm never received.
       - name: Publish to npm with provenance
+        env:
+          PACKAGE_FILE: ${{ steps.release_package.outputs.package-file }}
+          PACKAGE_VERSION: ${{ needs.verify-tag.outputs.package-version }}
         run: |
           set -euo pipefail
           npx --yes --package=npm@12.2.2 npm --version
-          package_file="${{ steps.release_package.outputs.package-file }}"
-          # Make publish safely RE-RUNNABLE: if this exact name@version is
-          # already on the registry (a prior run published it before failing
-          # downstream), skip the publish instead of failing on the
-          # immutable-version error. The GitHub Release step still runs after.
           pkg="$(jq -r .name package.json)"
-          ver="${{ needs.verify-tag.outputs.package-version }}"
-          if npx --yes --package=npm@12.2.2 npm view "${pkg}@${ver}" version \
-              >/dev/null 2>&1; then
-            echo "::notice::${pkg}@${ver} is already on the npm registry; skipping publish."
-          else
-            npx --yes --package=npm@12.2.2 npm publish "${package_file}" --provenance --access public
-          fi
+          registry=https://registry.npmjs.org
+          metadata="$(mktemp)"
+          trap 'rm -f -- "${metadata}"' EXIT
+          status="$(curl --silent --show-error --output "${metadata}" --write-out '%{http_code}' \
+            "${registry}/${pkg}/${PACKAGE_VERSION}")"
+          case "${status}" in
+            404)
+              npx --yes --package=npm@12.2.2 npm publish "${PACKAGE_FILE}" --provenance --access public --registry "${registry}"
+              ;;
+            200)
+              # A prior run may have published npm before failing downstream.
+              # Reuse the immutable version only when its staged bytes match.
+              if ! published="$(jq -er --arg name "${pkg}" --arg version "${PACKAGE_VERSION}" '
+                select(.name == $name and .version == $version) | .dist.integrity | strings
+              ' "${metadata}")"; then
+                echo "::error::The npm registry response for ${pkg}@${PACKAGE_VERSION} lacks exact package integrity metadata."
+                exit 1
+              fi
+              staged="sha512-$(openssl sha512 -binary < "${PACKAGE_FILE}" | openssl base64 -A)"
+              if [ "${published}" != "${staged}" ]; then
+                echo "::error::Existing npm version ${pkg}@${PACKAGE_VERSION} differs from the staged package."
+                exit 1
+              fi
+              echo "::notice::The npm registry already has the staged ${pkg}@${PACKAGE_VERSION} package."
+              ;;
+            *)
+              echo "::error::npm registry lookup for ${pkg}@${PACKAGE_VERSION} returned HTTP ${status}."
+              exit 1
+              ;;
+          esac
 
-      # Runs only AFTER npm publish above succeeds (or confirmed the version
-      # already exists), preserving the ordering invariant: no published
+      # Runs only AFTER npm publish succeeds or the existing package matches
+      # the staged archive, preserving the ordering invariant: no published
       # GitHub Release without the matching npm version. The required
       # .unitypackage (+ .sha256) always rides along (guaranteed by Stage).
       - name: Create or update GitHub Release

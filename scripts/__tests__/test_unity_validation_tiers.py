@@ -1,6 +1,7 @@
 """Exercise the real Unity classifier and static matrix validation tiers."""
 
 import base64
+import hashlib
 import json
 import os
 import shutil
@@ -282,6 +283,61 @@ class ReleaseQualificationTests(unittest.TestCase):
         self.assertIn(".docs-tests/", managed)
         upload = next(step for step in workflow("unity-tests.yml")["jobs"]["unity-tests"]["steps"] if step.get("name") == "Upload EditMode test artifacts")
         self.assertIn("'consumer-install' || 'editmode'", upload["with"]["name"])
+
+    @unittest.skipIf(os.name == "nt", "npm publication runs in Bash")
+    def test_npm_retry_requires_matching_bytes_or_confirmed_absence(self):
+        step = next(step for step in self.document["jobs"]["publish"]["steps"]
+                    if step["name"] == "Publish to npm with provenance")
+        name, version, archive = "com.example.fixture", "1.2.3", "fixture.tgz"
+        payload = b"staged npm package"
+        digest = base64.b64encode(hashlib.sha512(payload).digest()).decode("ascii")
+        metadata = {"name": name, "version": version, "dist": {"integrity": f"sha512-{digest}"}}
+        cases = [
+            ("matching bytes", "200", json.dumps(metadata), payload, True, False),
+            ("different bytes", "200", json.dumps(metadata), b"different", False, False),
+            ("wrong version", "200", json.dumps({**metadata, "version": "1.2.4"}), payload, False, False),
+            ("missing digest", "200", json.dumps({**metadata, "dist": {}}), payload, False, False),
+            ("malformed JSON", "200", "unexpected response", payload, False, False),
+            ("absent version", "404", "", payload, True, True),
+            ("registry error", "503", "", payload, False, False),
+            ("redirect", "302", "", payload, False, False),
+            ("transport error", "transport", "", payload, False, False),
+        ]
+        stubs = r"""
+curl() {
+    [[ "$1" == --silent && "$2" == --show-error && "$3" == --output && "$5" == --write-out ]] || return 87
+    [[ "$6" == '%{http_code}' && "$7" == "https://registry.npmjs.org/com.example.fixture/1.2.3" ]] || return 87
+    if [[ "$REGISTRY_STATUS" == transport ]]; then return 7; fi
+    printf '%s' "$REGISTRY_BODY" > "$4"
+    printf '%s' "$REGISTRY_STATUS"
+}
+npx() {
+    case "$*" in
+        '--yes --package=npm@12.2.2 npm --version') printf '12.2.2\n' ;;
+        '--yes --package=npm@12.2.2 npm view com.example.fixture@1.2.3 version')
+            [[ "$REGISTRY_STATUS" == 200 ]]
+            ;;
+        '--yes --package=npm@12.2.2 npm publish fixture.tgz --provenance --access public'|'--yes --package=npm@12.2.2 npm publish fixture.tgz --provenance --access public --registry https://registry.npmjs.org')
+            touch publish-called
+            ;;
+        *) return 87 ;;
+    esac
+}
+"""
+        script = step["run"].replace(
+            "${{ steps.release_package.outputs.package-file }}", archive
+        ).replace("${{ needs.verify-tag.outputs.package-version }}", version)
+        for case, status, body, content, success, publish in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory(prefix="dxm-npm-retry-") as tmp:
+                root = Path(tmp)
+                (root / "package.json").write_text(json.dumps(metadata))
+                (root / archive).write_bytes(content)
+                env = dict(os.environ, PACKAGE_FILE=archive, PACKAGE_VERSION=version,
+                           REGISTRY_STATUS=status, REGISTRY_BODY=body)
+                result = subprocess.run(["bash", "-c", stubs + script], cwd=root, env=env,
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
+                self.assertEqual((root / "publish-called").exists(), publish)
 
     @unittest.skipIf(os.name == "nt", "bash producer qualification is exercised on Linux and macOS")
     def test_qualification_checks_actual_producer_and_artifact_metadata(self):
