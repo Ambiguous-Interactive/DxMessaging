@@ -968,7 +968,7 @@ public class AchievementTracker : MessageAwareComponent {
 
 See [Design & Architecture](https://ambiguous-interactive.github.io/DxMessaging/architecture/design-and-architecture/#performance-optimizations) for details.
 
-For live, CI-generated Standalone IL2CPP dispatch tables and a cross-library comparison matrix, see [Performance Benchmarks](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/). Those numbers are auto-generated on every push with the .NET Standard 2.1 profile and a Release build; the comparison table below is a static summary, not the live data.
+See [Performance Benchmarks](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/) for Standalone IL2CPP dispatch and comparisons. The workflow measures Release builds using the .NET Standard 2.1 profile. Nightly dispatches and manual runs on the default branch can refresh the published tables.
 
 ## Comparison Table
 

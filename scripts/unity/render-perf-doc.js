@@ -423,6 +423,23 @@ function buildComparisonMatrix(byCell, formatCell, { bold }) {
   return alignTable(dataRows);
 }
 
+function formatMessagePipeRatio(row, reference) {
+  if (
+    !reference ||
+    !row.commit ||
+    row.commit !== reference.commit ||
+    row.platform !== reference.platform
+  ) {
+    return "N/A";
+  }
+  const rate = Number(row.emitsPerSecond);
+  const referenceRate = Number(reference.emitsPerSecond);
+  const ratio = (rate / referenceRate) * 100;
+  return rate > 0 && referenceRate > 0 && Number.isFinite(referenceRate) && Number.isFinite(ratio)
+    ? `${ratio.toFixed(1)}%`
+    : "N/A";
+}
+
 function buildComparisonSections(comparisonByScope) {
   const throughputScope = preferredComparisonScope(comparisonByScope);
   if (!throughputScope) {
@@ -454,7 +471,8 @@ function buildComparisonSections(comparisonByScope) {
           ? `${formatMeasuredInteger(row.gcAllocations)} measured per 10k ops`
           : scenarioKey === "SubUnsub"
             ? "Allocates; count unmeasured"
-            : "0 per emit contract; count unmeasured"
+            : "0 per emit contract; count unmeasured",
+        formatMessagePipeRatio(row, throughputByCell.get(`MessagePipe|${scenarioKey}`))
       ]
     ];
   });
@@ -465,10 +483,17 @@ function buildComparisonSections(comparisonByScope) {
       "",
       "Time per operation is the reciprocal of the measured rate. Allocation evidence uses",
       "measured counts when the selected scope exposes them; otherwise it reports the",
-      "steady-state contract and marks the count unmeasured.",
+      "steady-state contract and marks the count unmeasured. The MessagePipe percentages",
+      "use matching commit and platform rows. Independent-build uncertainty is unmeasured.",
       "",
       alignTable([
-        ["Scenario", "DxMessaging rate", "Time / operation", "GC allocation evidence"],
+        [
+          "Scenario",
+          "DxMessaging rate",
+          "Time / operation",
+          "GC allocation evidence",
+          "Share of MessagePipe rate"
+        ],
         ...summaryRows
       ])
     ]);

@@ -517,6 +517,32 @@ test("generated performance block summarizes comparisons before internal dispatc
   assert.doesNotMatch(monoSummary, /Release player|\|.*count unmeasured.*\|/);
 });
 
+test("comparison ratios require matching positive rates on the same commit and platform", () => {
+  const reference = comparisonRow("90000000.000");
+  const cases = [
+    [comparisonRow("100000000.000"), reference, "111.1%"],
+    [comparisonRow("30000000.000"), reference, "33.3%"],
+    [comparisonRow("30000000.000"), undefined, "N/A"],
+    [comparisonRow("30000000.000"), { ...reference, commit: "different" }, "N/A"],
+    [comparisonRow("30000000.000"), { ...reference, platform: "other" }, "N/A"],
+    [comparisonRow("30000000.000"), comparisonRow("0"), "N/A"],
+    [comparisonRow("30000000.000"), comparisonRow("not a rate"), "N/A"]
+  ];
+
+  for (const [dxMessaging, messagePipe, expected] of cases) {
+    const rows = standaloneRows([["DxMessaging|GlobalToOne", dxMessaging]]);
+    if (messagePipe) {
+      rows.get("Standalone").set("MessagePipe|GlobalToOne", messagePipe);
+    }
+    const summary = buildComparisonSections(rows)[0];
+    const rendered = summary
+      .join("\n")
+      .split("\n")
+      .find((line) => line.startsWith("| Global -> 1 subscriber"));
+    assert.equal(rendered.split("|").at(-2).trim(), expected);
+  }
+});
+
 test("deriveScope reads the execution scope from platform strings", () => {
   const cases = PERF_TEST_VECTORS.scopeCases;
   for (const [platform, expected] of cases) {

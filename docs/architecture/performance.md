@@ -75,19 +75,20 @@ Runner: 13th Gen Intel(R) Core(TM) i9-13900KF; execution profile highest-efficie
 
 Time per operation is the reciprocal of the measured rate. Allocation evidence uses
 measured counts when the selected scope exposes them; otherwise it reports the
-steady-state contract and marks the count unmeasured.
+steady-state contract and marks the count unmeasured. The MessagePipe percentages
+use matching commit and platform rows. Independent-build uncertainty is unmeasured.
 
-| Scenario                              | DxMessaging rate | Time / operation | GC allocation evidence                |
-| ------------------------------------- | ---------------- | ---------------- | ------------------------------------- |
-| Global -> 1 subscriber                | 44.66 M ops/sec  | 22.39 ns/op      | 0 per emit contract; count unmeasured |
-| Global -> 16 subscribers              | 21.66 M ops/sec  | 46.17 ns/op      | 0 per emit contract; count unmeasured |
-| Keyed/targeted -> 1 of many           | 14.52 M ops/sec  | 68.89 ns/op      | 0 per emit contract; count unmeasured |
-| Priority-ordered dispatch             | 36.70 M ops/sec  | 27.25 ns/op      | 0 per emit contract; count unmeasured |
-| Filtered/intercepted dispatch         | 35.45 M ops/sec  | 28.21 ns/op      | 0 per emit contract; count unmeasured |
-| Post-processing dispatch              | 30.39 M ops/sec  | 32.91 ns/op      | 0 per emit contract; count unmeasured |
-| Intercepted + post-processed dispatch | 27.71 M ops/sec  | 36.09 ns/op      | 0 per emit contract; count unmeasured |
-| Subscribe/unsubscribe churn           | 1.11 M ops/sec   | 901.52 ns/op     | Allocates; count unmeasured           |
-| Struct message (no boxing)            | 45.16 M ops/sec  | 22.14 ns/op      | 0 per emit contract; count unmeasured |
+| Scenario                              | DxMessaging rate | Time / operation | GC allocation evidence                | Share of MessagePipe rate |
+| ------------------------------------- | ---------------- | ---------------- | ------------------------------------- | ------------------------- |
+| Global -> 1 subscriber                | 44.66 M ops/sec  | 22.39 ns/op      | 0 per emit contract; count unmeasured | 42.3%                     |
+| Global -> 16 subscribers              | 21.66 M ops/sec  | 46.17 ns/op      | 0 per emit contract; count unmeasured | 101.4%                    |
+| Keyed/targeted -> 1 of many           | 14.52 M ops/sec  | 68.89 ns/op      | 0 per emit contract; count unmeasured | 115.4%                    |
+| Priority-ordered dispatch             | 36.70 M ops/sec  | 27.25 ns/op      | 0 per emit contract; count unmeasured | N/A                       |
+| Filtered/intercepted dispatch         | 35.45 M ops/sec  | 28.21 ns/op      | 0 per emit contract; count unmeasured | 45.4%                     |
+| Post-processing dispatch              | 30.39 M ops/sec  | 32.91 ns/op      | 0 per emit contract; count unmeasured | 35.0%                     |
+| Intercepted + post-processed dispatch | 27.71 M ops/sec  | 36.09 ns/op      | 0 per emit contract; count unmeasured | 38.4%                     |
+| Subscribe/unsubscribe churn           | 1.11 M ops/sec   | 901.52 ns/op     | Allocates; count unmeasured           | 45.2%                     |
+| Struct message (no boxing)            | 45.16 M ops/sec  | 22.14 ns/op      | 0 per emit contract; count unmeasured | 35.7%                     |
 
 ### Library comparison - throughput (Standalone (IL2CPP))
 
