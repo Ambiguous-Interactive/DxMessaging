@@ -75,6 +75,9 @@ Verify the download with `sha256sum -c <file>.sha256`.
   `Assets/WallstopStudios/DxMessaging`. Open the included scenes directly from its `Samples` folder.
   [Unity's local asset import guide](https://docs.unity3d.com/2021.3/Documentation/Manual/AssetPackagesImport.html)
 
+If you already imported DxMessaging 3.3.0 as a classic package, follow the
+[classic upgrade steps](../guides/migration-guide.md#replace-a-classic-330-import) before importing 4.0.0.
+
 ### From Source
 
 Embed the package under your Unity project's `Packages` directory, preserving

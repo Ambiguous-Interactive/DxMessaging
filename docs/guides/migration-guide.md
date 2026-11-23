@@ -4,6 +4,29 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 ## Migrating to 4.0.0
 
+### Replace a classic 3.3.0 import
+
+If you imported DxMessaging 3.3.0 as a `.unitypackage`, replace its package folder before
+importing 4.0.0. The runtime assembly definition and six attribute scripts moved with their
+existing asset IDs. Leaving the old files in place can introduce duplicate assets and obsolete
+scripts.
+
+1. Commit or back up your Unity project. If the project also has DxMessaging installed through
+   Package Manager, [remove that installation](https://docs.unity3d.com/2021.3/Documentation/Manual/upm-ui-remove.html)
+   before importing the classic package.
+1. Close the Unity Editor. Move `Assets/WallstopStudios/DxMessaging` and the adjacent
+   `Assets/WallstopStudios/DxMessaging.meta` file to a backup outside the project. Keep the
+   folder and its metadata together so you can restore your original import.
+1. Reopen Unity and [import the 4.0.0 classic archive](../getting-started/install.md#from-releases).
+1. Restore project-owned assets from the backup with their original `.meta` files. If you
+   customized a shipped script, scene, or sample, compare your backup with the 4.0.0 asset and
+   reapply your changes to the new copy. Keep the new package layout.
+1. Apply the assembly reference changes below. Check the Console for compilation errors and
+   open the scenes and prefabs that use DxMessaging to check their references.
+
+For a Package Manager upgrade, update the installed package and review any
+[samples you previously copied into Assets](#update-samples-copied-into-assets).
+
 ### Reference the dedicated attributes assembly
 
 The six public attributes from 3.3.0 move to `WallstopStudios.DxMessaging.Attributes` with unchanged namespaces and names. The attributes assembly also contains the new `DxAotMessageAttribute`. Add that assembly reference to each Unity assembly definition that uses a DxMessaging attribute. Keep the `WallstopStudios.DxMessaging` reference when the same assembly also uses message interfaces or runtime APIs. Predefined assemblies receive both references automatically.
