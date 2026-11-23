@@ -1017,7 +1017,7 @@ For a classic `.unitypackage` import, open the samples under `Assets/WallstopStu
 
 - Unity 2021.3 or later
 - .NET Standard 2.1
-- Works with all render pipelines (URP, HDRP, Built-in)
+- Built-In Render Pipeline, URP, or HDRP
 
 See [Compatibility](https://ambiguous-interactive.github.io/DxMessaging/reference/compatibility/) for Unity details and the optional
 [plain .NET source build](https://ambiguous-interactive.github.io/DxMessaging/reference/compatibility/#plain-net-runtime).
