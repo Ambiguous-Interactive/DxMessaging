@@ -5,6 +5,7 @@ namespace DxMessaging.Tests.Editor
     using System.Collections.Generic;
     using System.Text;
     using System.Text.RegularExpressions;
+    using DxMessaging.Core;
     using DxMessaging.Editor;
     using NUnit.Framework;
     using UnityEditor;
@@ -554,7 +555,7 @@ namespace DxMessaging.Tests.Editor
             const string brandingNamespacePrefix = "WallstopStudios.DxMessaging.Editor.Branding.";
             List<string> loadedPrototypeArtifacts = new();
 
-            foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (System.Reflection.Assembly assembly in LoadedAssemblyUtility.GetAssemblies())
             {
                 if (
                     string.Equals(

@@ -176,8 +176,13 @@ namespace DxMessaging.Tests.Editor
                 BindingFlags.Static | BindingFlags.NonPublic
             );
             Assert.That(displayName, Is.Not.Null);
+#if UNITY_6000_6_OR_NEWER
+            string coreLocation = typeof(object).Assembly.GetLoadedAssemblyPath();
+#else
+            string coreLocation = typeof(object).Assembly.Location;
+#endif
             TestContext.Out.WriteLine(
-                $"DXM_PARTIAL_BACKUP_RUNTIME unity={Application.unityVersion}; mono={displayName.Invoke(null, null)}; clr={Environment.Version}; platform={Application.platform}; coreLibrary={typeof(object).Assembly.FullName}; coreModule={typeof(object).Module.ModuleVersionId}; coreLocation={typeof(object).Assembly.Location}"
+                $"DXM_PARTIAL_BACKUP_RUNTIME unity={Application.unityVersion}; mono={displayName.Invoke(null, null)}; clr={Environment.Version}; platform={Application.platform}; coreLibrary={typeof(object).Assembly.FullName}; coreModule={typeof(object).Module.ModuleVersionId}; coreLocation={coreLocation}"
             );
 
             using EditorCompilerInputScope originals = new();

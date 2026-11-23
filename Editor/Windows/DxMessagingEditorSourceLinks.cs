@@ -329,9 +329,8 @@ namespace DxMessaging.Editor.Windows
                 return location.IsValid;
             }
 
-            System.Reflection.Assembly[] loadedAssemblies =
-                System.AppDomain.CurrentDomain.GetAssemblies();
-            IEnumerable<System.Reflection.Assembly> candidateAssemblies = loadedAssemblies;
+            IEnumerable<System.Reflection.Assembly> candidateAssemblies =
+                LoadedAssemblyUtility.GetAssemblies();
             if (!string.IsNullOrWhiteSpace(identity.AssemblyName))
             {
                 candidateAssemblies = candidateAssemblies.Where(assembly =>

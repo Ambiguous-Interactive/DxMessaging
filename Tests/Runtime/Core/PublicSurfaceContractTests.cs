@@ -451,7 +451,7 @@ namespace DxMessaging.Tests.Runtime.Core
         private static Type[] CollectAllReflectableTypes()
         {
             List<Type> all = new();
-            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (Assembly assembly in LoadedAssemblyUtility.GetAssemblies())
             {
                 Type[] types;
                 try

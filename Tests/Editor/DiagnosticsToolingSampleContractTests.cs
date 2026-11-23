@@ -7,6 +7,7 @@ namespace DxMessaging.Tests.Editor
     using System.Linq;
     using System.Reflection;
     using System.Text.RegularExpressions;
+    using DxMessaging.Core;
     using NUnit.Framework;
     using UnityEditor;
     using UnityEngine;
@@ -317,8 +318,8 @@ namespace DxMessaging.Tests.Editor
 
         private static Type? FindLoadedType(string fullName)
         {
-            return AppDomain
-                .CurrentDomain.GetAssemblies()
+            return LoadedAssemblyUtility
+                .GetAssemblies()
                 .Select(assembly => assembly.GetType(fullName, throwOnError: false))
                 .FirstOrDefault(type => type != null);
         }
