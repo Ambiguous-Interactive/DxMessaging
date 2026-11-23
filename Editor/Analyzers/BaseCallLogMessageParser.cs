@@ -179,9 +179,51 @@ namespace DxMessaging.Editor.Analyzers
         /// <summary>Rejects rows outside both supported diagnostic text shapes.</summary>
         internal static bool IsDiagnosticCandidate(string? logLine)
         {
-            // Bare bodies start with a quote. Location prefixes contain the uppercase diagnostic ID.
-            return !string.IsNullOrEmpty(logLine)
-                && (logLine[0] == '\'' || 0 <= logLine.IndexOf("DXMSG0", StringComparison.Ordinal));
+            if (string.IsNullOrEmpty(logLine))
+            {
+                return false;
+            }
+
+            // A source path can start with an apostrophe, so check the diagnostic ID first.
+            if (
+                0 <= logLine.IndexOf("DXMSG0", StringComparison.Ordinal)
+                && PrefixRegex.IsMatch(logLine)
+            )
+            {
+                return true;
+            }
+
+            if (logLine[0] != '\'')
+            {
+                return false;
+            }
+
+            int typeEnd = logLine.IndexOf('\'', 1);
+            if (typeEnd <= 1)
+            {
+                return false;
+            }
+
+            int bodyStart = typeEnd + 1;
+            while (bodyStart < logLine.Length && char.IsWhiteSpace(logLine[bodyStart]))
+            {
+                ++bodyStart;
+            }
+
+            // Keep the opening words of all five bare diagnostic formats above.
+            ReadOnlySpan<char> body = logLine.AsSpan(bodyStart);
+            return StartsWithWord(body, "overrides")
+                || StartsWithWord(body, "hides")
+                || (StartsWithWord(body, "is") && StartsWithWord(body[2..].TrimStart(), "excluded"))
+                || StartsWithWord(body, "declares")
+                || StartsWithWord(body, "calls");
+        }
+
+        private static bool StartsWithWord(ReadOnlySpan<char> body, string word)
+        {
+            return word.Length < body.Length
+                && char.IsWhiteSpace(body[word.Length])
+                && body.StartsWith(word.AsSpan());
         }
 
         /// <summary>

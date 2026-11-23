@@ -63,7 +63,10 @@ internal sealed class BaseCallLogMessageParserTests
         foreach ((string id, string body) in diagnostics)
         {
             string prefixed = $"Assets/Sample/Player.cs(12,9): warning {id}: {body}";
-            foreach (string line in new[] { body, prefixed })
+            int typeQuote = body.IndexOf('\'', 1);
+            string unicodeSpace = body.Insert(typeQuote + 1, "\t\u00a0");
+            string quotedPath = $"'{prefixed}";
+            foreach (string line in new[] { body, prefixed, unicodeSpace, quotedPath })
             {
                 Assert.That(
                     BaseCallLogMessageParser.ParseLine(line)?.DiagnosticId,
@@ -84,6 +87,17 @@ internal sealed class BaseCallLogMessageParserTests
             Is.False,
             "The Console buffer should skip ordinary unrelated warnings."
         );
+        string[] unrelatedRows =
+        {
+            "'Tool output' row 000319.",
+            "'com.example.tool' is already installed.",
+            "Build note: see DXMSG006 documentation.",
+            "Assets/Build.cs(12,9): warning DXMSG099: Unrelated diagnostic.",
+        };
+        foreach (string line in unrelatedRows)
+        {
+            Assert.That(BaseCallLogMessageParser.IsDiagnosticCandidate(line), Is.False, line);
+        }
     }
 
     [Test]
