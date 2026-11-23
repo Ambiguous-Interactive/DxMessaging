@@ -1,6 +1,6 @@
-# Install (Unity UPM)
+# Install DxMessaging
 
-This page helps you install DxMessaging into a Unity 2021.3+ project using the Unity Package Manager (UPM).
+Install DxMessaging into a Unity 2021.3+ project through Unity Package Manager (UPM) or from a classic asset package.
 
 ## Quick Reference
 
@@ -9,7 +9,7 @@ This page helps you install DxMessaging into a Unity 2021.3+ project using the U
 | **OpenUPM** (Recommended)    | `openupm add com.wallstop-studios.dxmessaging`             | Select a version in UPM             |
 | **Git URL**                  | `https://github.com/Ambiguous-Interactive/DxMessaging.git` | Reinstall at a chosen revision      |
 | **npm Scoped Registry**      | Add registry + resolve                                     | Select a version in UPM             |
-| **From Releases**            | Download npm `.tgz`                                        | Download and import a new package   |
+| **From Releases**            | Download `.tgz` or `.unitypackage`                         | Download and install a new release  |
 | **From Source**              | Clone/download zip                                         | Update the embedded checkout        |
 | **Manual** (not recommended) | Edit manifest.json                                         | Edit the dependency in the manifest |
 
@@ -65,6 +65,15 @@ Unity will notify you of version updates when using scoped registries.
 Open the [latest package release](https://github.com/Ambiguous-Interactive/DxMessaging/releases/latest)
 and download the npm `.tgz` package or classic `.unitypackage`, plus its matching `.sha256` checksum.
 Verify the download with `sha256sum -c <file>.sha256`.
+
+- For the `.tgz`, open **Window > Package Manager**, click **+**, and choose **Add package from tarball**.
+  Select the downloaded file. To copy a sample into your project, select **DxMessaging**, open
+  **Samples**, and choose **Import** next to that sample.
+  [Unity's tarball installation guide](https://docs.unity3d.com/2021.3/Documentation/Manual/upm-ui-tarball.html)
+- For the `.unitypackage`, choose **Assets > Import Package > Custom Package**, select the file,
+  and click **Import** in the asset list. DxMessaging appears under
+  `Assets/WallstopStudios/DxMessaging`. Open the included scenes directly from its `Samples` folder.
+  [Unity's local asset import guide](https://docs.unity3d.com/2021.3/Documentation/Manual/AssetPackagesImport.html)
 
 ### From Source
 

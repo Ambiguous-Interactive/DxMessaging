@@ -5,9 +5,10 @@ diagnostics.
 
 ## Run the sample
 
-1. Open **Window > Package Manager**.
-1. Select **DxMessaging**, then import **UI Buttons + Inspector**.
-1. Open `UIButtonsInspector.unity` from the imported sample folder.
+For a UPM install, use **DxMessaging > Samples** in Package Manager to import **UI Buttons + Inspector**.
+For a classic asset package, find the scene under `Assets/WallstopStudios/DxMessaging/Samples`.
+
+1. Open `UIButtonsInspector.unity`.
 1. Enter Play Mode.
 1. Click **Emit Play** in the Game view and inspect the Console or the live fields on the
    `Message Observer` component.

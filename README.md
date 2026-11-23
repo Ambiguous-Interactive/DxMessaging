@@ -1005,11 +1005,13 @@ See [Performance Benchmarks](https://ambiguous-interactive.github.io/DxMessaging
 
 ## Samples
 
-Import samples from Package Manager:
+For a UPM install, select **DxMessaging** in Package Manager and use its **Samples** tab.
+For a classic `.unitypackage` import, open the samples under `Assets/WallstopStudios/DxMessaging/Samples`.
 
 - **[Mini Combat](Samples~/Mini%20Combat/README.md)** -- Simple combat with Heal/Damage messages
 - **[UI Buttons + Inspector](Samples~/UI%20Buttons%20%2B%20Inspector/README.md)** -- Interactive diagnostics demo
 - **[Diagnostics Tooling Exerciser](Samples~/Diagnostics%20Tooling%20Exerciser/README.md)** -- Deterministic scene for Message Monitor, Flow Graph, Inspector diagnostics, and Project Settings
+- **[Dependency Injection](Samples~/DI/README.md)** -- Zenject, VContainer, and Reflex setup and disposal examples
 
 ## Requirements
 
