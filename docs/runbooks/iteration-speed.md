@@ -95,6 +95,19 @@ in this editor-free checkout. For command syntax and trial details, see the
 [.NET watch reference](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-watch) and the
 [experiment record](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817).
 
+A fixed-input Attributes experiment on `864fc5f8` reused a dedicated warm Roslyn compiler server
+with SDK 10.0.404 and ran the same named NUnit assertion through VSTest after each save. It
+alternated 20 broken and 20 fixed saves per assertion per compiler mode. For the null-type check,
+nearest-rank p95 fell from 1.019 to 0.784 seconds. For the exact-type check, it fell from 1.042 to
+0.785 seconds. All 80 shared-compiler saves produced the expected verdict in under one second with
+the expected fresh binary. The cold server needed 0.062 seconds to accept requests, then 0.983
+seconds for its first compile and verdict.
+
+These measurements cover two edits of one Attributes constructor with a fixed SDK response in
+the Linux devcontainer. Use the filtered `dotnet test` command above when project inputs change.
+The broader runtime, generator, and Editor save targets remain open.
+[Shared compiler protocol and raw result](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7098607883).
+
 ## Rolling PR latency
 
 Target p95 below 420 seconds from a PR update to the last required verdict, including queue
