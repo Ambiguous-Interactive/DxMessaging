@@ -382,7 +382,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   components carry each one, and mark mixed enabled states so a missing or
   disabled handler stands out across a scene selection
   ([#297](https://github.com/Ambiguous-Interactive/DxMessaging/issues/297)).
-  See [Inspector Overlay](docs/guides/inspector-overlay.md#message-subscriptions).
+  See [Inspector Overlay](https://ambiguous-interactive.github.io/DxMessaging/guides/inspector-overlay/#message-subscriptions).
 
 ### Changed
 
@@ -1042,7 +1042,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Mutation tests now exercise every messaging kind (Untargeted/Targeted/Broadcast) via a single parameterized fixture (`[ValueSource(MessageScenarios.AllKinds)]`) across `MutationDuringEmissionTests`, `MutationInterceptorTests`, and `MutationDestructionTests`. Users get tighter cross-kind parity guarantees; no runtime API change. (~720 lines of duplication removed; test count preserved.)
 - Renamed `UntargetedTests`, `TargetedTests`, `BroadcastTests` to `EmitUntargetedSpecificTests`, `EmitTargetedSpecificTests`, `EmitBroadcastSpecificTests` to clarify that kind-common tests live in `EmitTests` and kind-specific tests live in the renamed files. (Test-suite hardening is test-only; no `Runtime/` behavior was modified.)
-- Documentation now warns up front that `MessageAwareComponent` subclasses must call `base.Awake()`, `base.OnEnable()`, `base.OnDisable()`, `base.OnDestroy()`, and `base.RegisterMessageHandlers()` from any override; admonitions added to the Quick Start, Getting Started Guide, Visual Guide, README, FAQ, and Troubleshooting pages all link to [`DXMSG006`](docs/reference/analyzers.md#dxmsg006-missing-base-call) (issue #195).
+- Documentation now warns up front that `MessageAwareComponent` subclasses must call `base.Awake()`, `base.OnEnable()`, `base.OnDisable()`, `base.OnDestroy()`, and `base.RegisterMessageHandlers()` from any override; admonitions added to the Quick Start, Getting Started Guide, Visual Guide, README, FAQ, and Troubleshooting pages all link to [`DXMSG006`](https://ambiguous-interactive.github.io/DxMessaging/reference/analyzers/#dxmsg006-missing-base-call) (issue #195).
 
 ### Fixed
 

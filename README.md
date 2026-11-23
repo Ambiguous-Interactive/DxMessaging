@@ -14,7 +14,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-f4a836.svg)](LICENSE.md)<br/>
 [![OpenUPM](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging?label=OpenUPM&registry_uri=https://package.openupm.com)](https://openupm.com/packages/com.wallstop-studios.dxmessaging/)<br/>
 [![Version](https://img.shields.io/npm/v/com.wallstop-studios.dxmessaging.svg)](https://www.npmjs.com/package/com.wallstop-studios.dxmessaging)<br/>
-[![Performance: Standalone (IL2CPP)](<https://img.shields.io/badge/Performance-Standalone%20(IL2CPP)-f4a836.svg>)](docs/architecture/performance.md)<br/>
+[![Performance: Standalone (IL2CPP)](<https://img.shields.io/badge/Performance-Standalone%20(IL2CPP)-f4a836.svg>)](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/)<br/>
 [![Markdown Link Validity](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml/badge.svg)](https://github.com/Ambiguous-Interactive/DxMessaging/actions/workflows/markdown-link-validity.yml)
 
 > **AI Assistance Disclosure:**
@@ -37,7 +37,7 @@ openupm add com.wallstop-studios.dxmessaging
 
 The core taxonomy is small: **Untargeted** announcements, **Targeted** commands, and **Broadcast** facts from a source. Diagnostics mark them blue, purple, and green, respectively, and reserve red for problems. Message Monitor shows recent emissions and filters, Flow Graph shows loaded-scene `MessagingComponent` topology and trace evidence, and the Inspector overlay catches `MessageAwareComponent` lifecycle mistakes. Use bus logs or counters for direct bus/token registrations outside those components.
 
-See the [Install Guide](docs/getting-started/install.md) for Git URL, scoped registry, and release tarball options.
+See the [Install Guide](https://ambiguous-interactive.github.io/DxMessaging/getting-started/install/) for Git URL, scoped registry, and release tarball options.
 
 ## Table of Contents
 
@@ -179,9 +179,9 @@ flowchart TD
 > - **Using Broadcast when you need Targeted** -- Broadcasts have no recipient, just an origin. Use Targeted when commanding a specific entity.
 > - **Missing `[Dx*Message]` attribute** -- The source generator won't process the struct without the marker attribute.
 >
-> 📖 See [Troubleshooting](docs/reference/troubleshooting.md) for solutions to these and other issues.
+> 📖 See [Troubleshooting](https://ambiguous-interactive.github.io/DxMessaging/reference/troubleshooting/) for solutions to these and other issues.
 
-**Want more depth?** See the full [Mental Model documentation](docs/concepts/mental-model.md) for detailed examples, lifecycle patterns, and edge cases.
+**Want more depth?** See the full [Mental Model documentation](https://ambiguous-interactive.github.io/DxMessaging/concepts/mental-model/) for detailed examples, lifecycle patterns, and edge cases.
 
 **Ready to code?** Jump to [Quick Start](#quick-start) to send your first message!
 
@@ -191,7 +191,7 @@ flowchart TD
 
 <a id="quick-start-5-minutes"></a>
 
-**New to messaging?** Start with the [Visual Guide](docs/getting-started/visual-guide.md) for a beginner-friendly introduction!
+**New to messaging?** Start with the [Visual Guide](https://ambiguous-interactive.github.io/DxMessaging/getting-started/visual-guide/) for a beginner-friendly introduction!
 
 ### 1. Install
 
@@ -208,7 +208,7 @@ openupm add com.wallstop-studios.dxmessaging
 https://github.com/Ambiguous-Interactive/DxMessaging.git
 ```
 
-See the [Install Guide](docs/getting-started/install.md) for all options including NPM scoped registries and local tarballs.
+See the [Install Guide](https://ambiguous-interactive.github.io/DxMessaging/getting-started/install/) for all options including NPM scoped registries and local tarballs.
 
 ### 2. Define a Damage Command
 
@@ -251,7 +251,7 @@ public sealed class DamageReceiver : MessageAwareComponent
 }
 ```
 
-> **Heads-up:** When you override `Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, or `RegisterMessageHandlers`, call the base method first or handlers fail silently. See [DXMSG006](docs/reference/analyzers.md#dxmsg006-missing-base-call).
+> **Heads-up:** When you override `Awake`, `OnEnable`, `OnDisable`, `OnDestroy`, or `RegisterMessageHandlers`, call the base method first or handlers fail silently. See [DXMSG006](https://ambiguous-interactive.github.io/DxMessaging/reference/analyzers/#dxmsg006-missing-base-call).
 
 ### 4. Add a Hazard
 
@@ -276,10 +276,10 @@ On the hazard GameObject, enable **Is Trigger** on its collider and add a kinema
 GameObject. The hazard targets that exact object without knowing its concrete type. Registration
 cleanup follows the receiver's Unity lifecycle.
 
-Follow the [Play Mode walkthrough](docs/getting-started/quick-start.md#try-it-in-play-mode) to
+Follow the [Play Mode walkthrough](https://ambiguous-interactive.github.io/DxMessaging/getting-started/quick-start/#try-it-in-play-mode) to
 move the hazard into the target and find `Health: 75` in the Console.
 
-**Stuck?** See [Troubleshooting](docs/reference/troubleshooting.md) or [FAQ](docs/reference/faq.md)
+**Stuck?** See [Troubleshooting](https://ambiguous-interactive.github.io/DxMessaging/reference/troubleshooting/) or [FAQ](https://ambiguous-interactive.github.io/DxMessaging/reference/faq/)
 
 ---
 
@@ -332,8 +332,8 @@ public sealed class PlayerService : IDisposable
 
 Call `Initialize()` when the service starts. Have the scope that owns the service call `Dispose()`
 when it ends. To start this service through a container, use the adapter for
-[Zenject](docs/integrations/zenject.md#start-the-readme-service) or
-[VContainer](docs/integrations/vcontainer.md#start-the-readme-service). For Reflex, call
+[Zenject](https://ambiguous-interactive.github.io/DxMessaging/integrations/zenject/#start-the-readme-service) or
+[VContainer](https://ambiguous-interactive.github.io/DxMessaging/integrations/vcontainer/#start-the-readme-service). For Reflex, call
 `Initialize()` explicitly from your scene bootstrap.
 
 ### Why use DI + Messaging?
@@ -350,14 +350,14 @@ when it ends. To start this service through a container, use the adapter for
 
 ##### Get started
 
-- [Zenject Integration Guide](docs/integrations/zenject.md) -- Complete setup with examples
-- [VContainer Integration Guide](docs/integrations/vcontainer.md) -- Scoped buses for scene isolation
-- [Reflex Integration Guide](docs/integrations/reflex.md) -- Minimal, lightweight patterns
+- [Zenject Integration Guide](https://ambiguous-interactive.github.io/DxMessaging/integrations/zenject/) -- Complete setup with examples
+- [VContainer Integration Guide](https://ambiguous-interactive.github.io/DxMessaging/integrations/vcontainer/) -- Scoped buses for scene isolation
+- [Reflex Integration Guide](https://ambiguous-interactive.github.io/DxMessaging/integrations/reflex/) -- Minimal, lightweight patterns
 
 ##### Core DI concepts
 
-- [Runtime Configuration](docs/advanced/runtime-configuration.md) -- Setting message buses at runtime, re-binding registrations
-- [Message Bus Providers](docs/advanced/message-bus-providers.md) -- Provider system for design-time and runtime bus configuration
+- [Runtime Configuration](https://ambiguous-interactive.github.io/DxMessaging/advanced/runtime-configuration/) -- Setting message buses at runtime, re-binding registrations
+- [Message Bus Providers](https://ambiguous-interactive.github.io/DxMessaging/advanced/message-bus-providers/) -- Provider system for design-time and runtime bus configuration
 
 **Not using DI?** No problem. DxMessaging works standalone with zero dependencies.
 
@@ -406,9 +406,9 @@ flowchart TD
     Q3 -->|NO| A4[" Keep it simple"]
 ```
 
-**Rule of thumb:** If decoupling, lifecycle leaks, or handler-ordering bugs match what you're hitting today, DxMessaging fits. If none of those describe your project, start with the [Visual Guide](docs/getting-started/visual-guide.md) or stick with simpler patterns.
+**Rule of thumb:** If decoupling, lifecycle leaks, or handler-ordering bugs match what you're hitting today, DxMessaging fits. If none of those describe your project, start with the [Visual Guide](https://ambiguous-interactive.github.io/DxMessaging/getting-started/visual-guide/) or stick with simpler patterns.
 
-Looking for hard numbers? See the Standalone IL2CPP dispatch and library-comparison [Performance Benchmarks](docs/architecture/performance.md).
+Looking for hard numbers? See the Standalone IL2CPP dispatch and library-comparison [Performance Benchmarks](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/).
 
 ## Why DxMessaging
 
@@ -753,7 +753,7 @@ and any `MessageAwareComponent` subclass for base-call warning surfaces.
 
 **No more:** Setting 50 breakpoints and stepping through code for 30 minutes.
 
-See [Diagnostics](docs/guides/diagnostics.md) for the current editor tooling and
+See [Diagnostics](https://ambiguous-interactive.github.io/DxMessaging/guides/diagnostics/) for the current editor tooling and
 trace-path semantics. The
 [Diagnostics Tooling Exerciser](Samples~/Diagnostics%20Tooling%20Exerciser/README.md)
 sample imports a deterministic scene that drives Message Monitor, Flow Graph,
@@ -813,25 +813,25 @@ Unity messaging tests on the main thread and avoid concurrent access to that sha
 
 ### Learn
 
-- **New here?** Start with [Getting Started Guide](docs/getting-started/getting-started.md)
-- **Want patterns?** See [Common Patterns](docs/guides/patterns.md)
-- **Deep dive?** Read [Design & Architecture](docs/architecture/design-and-architecture.md)
+- **New here?** Start with [Getting Started Guide](https://ambiguous-interactive.github.io/DxMessaging/getting-started/getting-started/)
+- **Want patterns?** See [Common Patterns](https://ambiguous-interactive.github.io/DxMessaging/guides/patterns/)
+- **Deep dive?** Read [Design & Architecture](https://ambiguous-interactive.github.io/DxMessaging/architecture/design-and-architecture/)
 
 ### Core Concepts
 
-- [Overview](docs/getting-started/overview.md) -- What and why
-- [Quick Start](docs/getting-started/quick-start.md) -- Define, register, and emit your first message
-- [Message Types](docs/concepts/message-types.md) -- When to use Untargeted/Targeted/Broadcast
-- [Interceptors & Ordering](docs/concepts/interceptors-and-ordering.md) -- Control execution flow
-- [Listening Patterns](docs/concepts/listening-patterns.md) -- All the ways to receive messages
+- [Overview](https://ambiguous-interactive.github.io/DxMessaging/getting-started/overview/) -- What and why
+- [Quick Start](https://ambiguous-interactive.github.io/DxMessaging/getting-started/quick-start/) -- Define, register, and emit your first message
+- [Message Types](https://ambiguous-interactive.github.io/DxMessaging/concepts/message-types/) -- When to use Untargeted/Targeted/Broadcast
+- [Interceptors & Ordering](https://ambiguous-interactive.github.io/DxMessaging/concepts/interceptors-and-ordering/) -- Control execution flow
+- [Listening Patterns](https://ambiguous-interactive.github.io/DxMessaging/concepts/listening-patterns/) -- All the ways to receive messages
 
 ### Unity Integration
 
-- [Unity Integration](docs/guides/unity-integration.md) -- MessagingComponent deep dive
+- [Unity Integration](https://ambiguous-interactive.github.io/DxMessaging/guides/unity-integration/) -- MessagingComponent deep dive
 - [Subscription Ownership](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/guides/subscription-ownership.md) -- groups, source moves, and static handlers with explicit state (4.0.0)
-- [Targeting & Context](docs/concepts/targeting-and-context.md) -- GameObject vs Component
-- [Diagnostics](docs/guides/diagnostics.md) -- editor tools, traces, and debugging
-- [Memory Reclamation](docs/guides/memory-reclamation.md) -- idle eviction, explicit Trim, and tuning the runtime settings asset
+- [Targeting & Context](https://ambiguous-interactive.github.io/DxMessaging/concepts/targeting-and-context/) -- GameObject vs Component
+- [Diagnostics](https://ambiguous-interactive.github.io/DxMessaging/guides/diagnostics/) -- editor tools, traces, and debugging
+- [Memory Reclamation](https://ambiguous-interactive.github.io/DxMessaging/guides/memory-reclamation/) -- idle eviction, explicit Trim, and tuning the runtime settings asset
 
 Important: Inheritance with MessageAwareComponent
 
@@ -845,14 +845,14 @@ Important: Inheritance with MessageAwareComponent
 
 DxMessaging works standalone (zero dependencies) or with any major DI framework. For detailed setup guides and code examples:
 
-- **[Zenject Integration Guide](docs/integrations/zenject.md)** -- Full-featured DI with extensive Unity support
-- **[VContainer Integration Guide](docs/integrations/vcontainer.md)** -- Lightweight DI with scoped lifetimes for scene isolation
-- **[Reflex Integration Guide](docs/integrations/reflex.md)** -- Minimal API, high-performance DI
+- **[Zenject Integration Guide](https://ambiguous-interactive.github.io/DxMessaging/integrations/zenject/)** -- Full-featured DI with extensive Unity support
+- **[VContainer Integration Guide](https://ambiguous-interactive.github.io/DxMessaging/integrations/vcontainer/)** -- Lightweight DI with scoped lifetimes for scene isolation
+- **[Reflex Integration Guide](https://ambiguous-interactive.github.io/DxMessaging/integrations/reflex/)** -- Minimal API, high-performance DI
 
 #### Core DI concepts
 
-- **[Runtime Configuration](docs/advanced/runtime-configuration.md)** -- Setting and overriding message buses at runtime, re-binding registrations
-- **[Message Bus Providers](docs/advanced/message-bus-providers.md)** -- Provider system and MessageBusProviderHandle for flexible bus configuration
+- **[Runtime Configuration](https://ambiguous-interactive.github.io/DxMessaging/advanced/runtime-configuration/)** -- Setting and overriding message buses at runtime, re-binding registrations
+- **[Message Bus Providers](https://ambiguous-interactive.github.io/DxMessaging/advanced/message-bus-providers/)** -- Provider system and MessageBusProviderHandle for flexible bus configuration
 
 Each guide includes:
 
@@ -865,18 +865,18 @@ See the [DI Compatible section](#dependency-injection-di-compatible) above for a
 
 ### Comparisons
 
-- [Compare with Other Unity Messaging Frameworks](docs/architecture/comparisons.md) -- In-depth comparison with UniRx, MessagePipe, Zenject Signals, C# events, UnityEvents, and more
-- [Scriptable Object Architecture (SOA) Compatibility](docs/guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa) -- Migration patterns and interoperability with SOA
+- [Compare with Other Unity Messaging Frameworks](https://ambiguous-interactive.github.io/DxMessaging/architecture/comparisons/) -- In-depth comparison with UniRx, MessagePipe, Zenject Signals, C# events, UnityEvents, and more
+- [Scriptable Object Architecture (SOA) Compatibility](https://ambiguous-interactive.github.io/DxMessaging/guides/patterns/#14-compatibility-with-scriptable-object-architecture-soa) -- Migration patterns and interoperability with SOA
 
 #### Quick Framework Comparison
 
-| Framework           | Best For                          | Key Strength                                                                         | Unity Support   | Learning Curve |
-| ------------------- | --------------------------------- | ------------------------------------------------------------------------------------ | --------------- | -------------- |
-| **DxMessaging**     | Unity pub/sub with lifecycle mgmt | Visual diagnostics + control                                                         | Built for Unity | Moderate       |
-| **UniRx**           | Complex event stream transforms   | Reactive operators (LINQ)                                                            | Built for Unity | Easy           |
-| **MessagePipe**     | High-performance DI messaging     | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | Built for Unity | Steep          |
-| **Zenject Signals** | DI-integrated messaging           | Zenject ecosystem                                                                    | Built for Unity | Easy           |
-| **C# Events**       | Simple, local communication       | Minimal overhead                                                                     | Native C#       | Steepest       |
+| Framework           | Best For                          | Key Strength                                                                                                                      | Unity Support   | Learning Curve |
+| ------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------- | -------------- |
+| **DxMessaging**     | Unity pub/sub with lifecycle mgmt | Visual diagnostics + control                                                                                                      | Built for Unity | Moderate       |
+| **UniRx**           | Complex event stream transforms   | Reactive operators (LINQ)                                                                                                         | Built for Unity | Easy           |
+| **MessagePipe**     | High-performance DI messaging     | [Current CI results](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/#latest-ci-performance-results) | Built for Unity | Steep          |
+| **Zenject Signals** | DI-integrated messaging           | Zenject ecosystem                                                                                                                 | Built for Unity | Easy           |
+| **C# Events**       | Simple, local communication       | Minimal overhead                                                                                                                  | Native C#       | Steepest       |
 
 ##### Choose DxMessaging when you want
 
@@ -889,11 +889,11 @@ See the [DI Compatible section](#dependency-injection-di-compatible) above for a
 - Post-processing stage (analytics, logging after handlers)
 - No dependencies, plug-and-play setup
 
-See [full comparison](docs/architecture/comparisons.md) for detailed analysis with code examples, performance benchmarks, and decision guides.
+See [full comparison](https://ambiguous-interactive.github.io/DxMessaging/architecture/comparisons/) for detailed analysis with code examples, performance benchmarks, and decision guides.
 
 > **📦 Using Scriptable Object Architecture (SOA)?**
 >
-> DxMessaging can work alongside or replace SOA patterns. See [SOA Compatibility Guide](docs/guides/patterns.md#14-compatibility-with-scriptable-object-architecture-soa) for:
+> DxMessaging can work alongside or replace SOA patterns. See [SOA Compatibility Guide](https://ambiguous-interactive.github.io/DxMessaging/guides/patterns/#14-compatibility-with-scriptable-object-architecture-soa) for:
 >
 > - Fair comparison of SOA vs. DxMessaging
 > - Migration patterns from GameEvent/FloatVariable to DxMessaging
@@ -902,17 +902,17 @@ See [full comparison](docs/architecture/comparisons.md) for detailed analysis wi
 
 ### Reference
 
-- [Install Guide](docs/getting-started/install.md) -- All install options (OpenUPM, Git URL, scoped registry, tarball)
-- [Glossary](docs/reference/glossary.md) -- All terms explained in plain English
-- [Quick Reference](docs/reference/quick-reference.md) -- Cheat sheet
-- [API Reference](docs/reference/reference.md) -- Complete API
-- [Helpers](docs/reference/helpers.md) -- Source generators and utilities
-- [FAQ](docs/reference/faq.md) -- Common questions
-- [Troubleshooting](docs/reference/troubleshooting.md)
+- [Install Guide](https://ambiguous-interactive.github.io/DxMessaging/getting-started/install/) -- All install options (OpenUPM, Git URL, scoped registry, tarball)
+- [Glossary](https://ambiguous-interactive.github.io/DxMessaging/reference/glossary/) -- All terms explained in plain English
+- [Quick Reference](https://ambiguous-interactive.github.io/DxMessaging/reference/quick-reference/) -- Cheat sheet
+- [API Reference](https://ambiguous-interactive.github.io/DxMessaging/reference/reference/) -- Complete API
+- [Helpers](https://ambiguous-interactive.github.io/DxMessaging/reference/helpers/) -- Source generators and utilities
+- [FAQ](https://ambiguous-interactive.github.io/DxMessaging/reference/faq/) -- Common questions
+- [Troubleshooting](https://ambiguous-interactive.github.io/DxMessaging/reference/troubleshooting/)
 
 ### Full Documentation
 
-Browse all docs: [Documentation Hub](docs/getting-started/index.md)
+Browse all docs: [Documentation Hub](https://ambiguous-interactive.github.io/DxMessaging/getting-started/)
 
 ## Real-World Examples
 
@@ -961,47 +961,47 @@ public class AchievementTracker : MessageAwareComponent {
 
 ## Performance
 
-- **Zero GC allocations** for ordinary typed steady-state struct dispatch; stack-trace diagnostics and struct global accept-all dispatch allocate ([details](docs/reference/faq.md#does-dxmessaging-allocate-memory-is-dispatch-zero-gc))
+- **Zero GC allocations** for ordinary typed steady-state struct dispatch; stack-trace diagnostics and struct global accept-all dispatch allocate ([details](https://ambiguous-interactive.github.io/DxMessaging/reference/faq/#does-dxmessaging-allocate-memory-is-dispatch-zero-gc))
 - **CI-generated time/op and cross-library results** for the published runner
 - **Type-indexed caching** for O(1) lookups
 - **Optimized for hot paths** with aggressive inlining
 
-See [Design & Architecture](docs/architecture/design-and-architecture.md#performance-optimizations) for details.
+See [Design & Architecture](https://ambiguous-interactive.github.io/DxMessaging/architecture/design-and-architecture/#performance-optimizations) for details.
 
-For live, CI-generated Standalone IL2CPP dispatch tables and a cross-library comparison matrix, see [Performance Benchmarks](docs/architecture/performance.md). Those numbers are auto-generated on every push with the .NET Standard 2.1 profile and a Release build; the comparison table below is a static summary, not the live data.
+For live, CI-generated Standalone IL2CPP dispatch tables and a cross-library comparison matrix, see [Performance Benchmarks](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/). Those numbers are auto-generated on every push with the .NET Standard 2.1 profile and a Release build; the comparison table below is a static summary, not the live data.
 
 ## Comparison Table
 
 ### Comparison with Unity Messaging Frameworks
 
-| Feature                  | DxMessaging                                                                          | UniRx                                                                                | MessagePipe                                                                          | Zenject Signals                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| **Unity Compatibility**  | Built for Unity                                                                      | Built for Unity                                                                      | Built for Unity                                                                      | Built for Unity                                                                      |
-| **Decoupling**           | Full                                                                                 | Full                                                                                 | Full                                                                                 | Full                                                                                 |
-| **Lifecycle Safety**     | Auto                                                                                 | Manual                                                                               | Manual                                                                               | DI-managed                                                                           |
-| **Execution Order**      | Priority                                                                             | None                                                                                 | None                                                                                 | None                                                                                 |
-| **Type Safety**          | Strong                                                                               | Strong                                                                               | Strong                                                                               | Strong                                                                               |
-| **Visual Diagnostics**   | Built-in                                                                             | No                                                                                   | No                                                                                   | No                                                                                   |
-| **GameObject Targeting** | Yes                                                                                  | No                                                                                   | No                                                                                   | No                                                                                   |
-| **Global Observers**     | Yes                                                                                  | No                                                                                   | No                                                                                   | No                                                                                   |
-| **Interceptors**         | Pipeline                                                                             | No                                                                                   | Filters                                                                              | No                                                                                   |
-| **Post-Processing**      | Dedicated                                                                            | No                                                                                   | Filters                                                                              | No                                                                                   |
-| **Stream Operators**     | No                                                                                   | Extensive                                                                            | No                                                                                   | With UniRx                                                                           |
-| **Performance**          | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) |
-| **Dependencies**         | None                                                                                 | UniTask                                                                              | None                                                                                 | Zenject                                                                              |
+| Feature                  | DxMessaging                                                                                                                       | UniRx                                                                                                                             | MessagePipe                                                                                                                       | Zenject Signals                                                                                                                   |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Unity Compatibility**  | Built for Unity                                                                                                                   | Built for Unity                                                                                                                   | Built for Unity                                                                                                                   | Built for Unity                                                                                                                   |
+| **Decoupling**           | Full                                                                                                                              | Full                                                                                                                              | Full                                                                                                                              | Full                                                                                                                              |
+| **Lifecycle Safety**     | Auto                                                                                                                              | Manual                                                                                                                            | Manual                                                                                                                            | DI-managed                                                                                                                        |
+| **Execution Order**      | Priority                                                                                                                          | None                                                                                                                              | None                                                                                                                              | None                                                                                                                              |
+| **Type Safety**          | Strong                                                                                                                            | Strong                                                                                                                            | Strong                                                                                                                            | Strong                                                                                                                            |
+| **Visual Diagnostics**   | Built-in                                                                                                                          | No                                                                                                                                | No                                                                                                                                | No                                                                                                                                |
+| **GameObject Targeting** | Yes                                                                                                                               | No                                                                                                                                | No                                                                                                                                | No                                                                                                                                |
+| **Global Observers**     | Yes                                                                                                                               | No                                                                                                                                | No                                                                                                                                | No                                                                                                                                |
+| **Interceptors**         | Pipeline                                                                                                                          | No                                                                                                                                | Filters                                                                                                                           | No                                                                                                                                |
+| **Post-Processing**      | Dedicated                                                                                                                         | No                                                                                                                                | Filters                                                                                                                           | No                                                                                                                                |
+| **Stream Operators**     | No                                                                                                                                | Extensive                                                                                                                         | No                                                                                                                                | With UniRx                                                                                                                        |
+| **Performance**          | [Current CI results](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/#latest-ci-performance-results) | [Current CI results](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/#latest-ci-performance-results) | [Current CI results](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/#latest-ci-performance-results) | [Current CI results](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/#latest-ci-performance-results) |
+| **Dependencies**         | None                                                                                                                              | UniTask                                                                                                                           | None                                                                                                                              | Zenject                                                                                                                           |
 
 ### Comparison with Traditional Approaches
 
-| Feature                | DxMessaging                                                                          | C# Events                                                                            | UnityEvents                                                                          | Static Event Bus                                                                     |
-| ---------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| **Decoupling**         | Full                                                                                 | Tight                                                                                | Hidden                                                                               | Yes                                                                                  |
-| **Lifecycle Safety**   | Auto                                                                                 | Manual                                                                               | Unity-only                                                                           | Manual                                                                               |
-| **Execution Order**    | Priority                                                                             | Undefined                                                                            | Undefined                                                                            | Undefined                                                                            |
-| **Type Safety**        | Strong                                                                               | Strong                                                                               | Weak                                                                                 | Weak                                                                                 |
-| **Context (Who/What)** | Rich                                                                                 | None                                                                                 | None                                                                                 | None                                                                                 |
-| **Interception**       | Yes                                                                                  | No                                                                                   | No                                                                                   | No                                                                                   |
-| **Observability**      | Built-in                                                                             | No                                                                                   | No                                                                                   | No                                                                                   |
-| **Performance**        | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) | [Current CI results](docs/architecture/performance.md#latest-ci-performance-results) |
+| Feature                | DxMessaging                                                                                                                       | C# Events                                                                                                                         | UnityEvents                                                                                                                       | Static Event Bus                                                                                                                  |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Decoupling**         | Full                                                                                                                              | Tight                                                                                                                             | Hidden                                                                                                                            | Yes                                                                                                                               |
+| **Lifecycle Safety**   | Auto                                                                                                                              | Manual                                                                                                                            | Unity-only                                                                                                                        | Manual                                                                                                                            |
+| **Execution Order**    | Priority                                                                                                                          | Undefined                                                                                                                         | Undefined                                                                                                                         | Undefined                                                                                                                         |
+| **Type Safety**        | Strong                                                                                                                            | Strong                                                                                                                            | Weak                                                                                                                              | Weak                                                                                                                              |
+| **Context (Who/What)** | Rich                                                                                                                              | None                                                                                                                              | None                                                                                                                              | None                                                                                                                              |
+| **Interception**       | Yes                                                                                                                               | No                                                                                                                                | No                                                                                                                                | No                                                                                                                                |
+| **Observability**      | Built-in                                                                                                                          | No                                                                                                                                | No                                                                                                                                | No                                                                                                                                |
+| **Performance**        | [Current CI results](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/#latest-ci-performance-results) | [Current CI results](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/#latest-ci-performance-results) | [Current CI results](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/#latest-ci-performance-results) | [Current CI results](https://ambiguous-interactive.github.io/DxMessaging/architecture/performance/#latest-ci-performance-results) |
 
 ## Samples
 
@@ -1017,12 +1017,12 @@ Import samples from Package Manager:
 - .NET Standard 2.1
 - Works with all render pipelines (URP, HDRP, Built-in)
 
-See [Compatibility](docs/reference/compatibility.md) for Unity details and the optional
-[plain .NET source build](docs/reference/compatibility.md#plain-net-runtime).
+See [Compatibility](https://ambiguous-interactive.github.io/DxMessaging/reference/compatibility/) for Unity details and the optional
+[plain .NET source build](https://ambiguous-interactive.github.io/DxMessaging/reference/compatibility/#plain-net-runtime).
 
 ## Contributing
 
-Contributions welcome! See [Contributing](CONTRIBUTING.md).
+Contributions welcome! See [Contributing](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/CONTRIBUTING.md).
 
 ## License
 
@@ -1041,13 +1041,13 @@ Created and maintained by [wallstop studios](https://wallstopstudios.com)
 
 ## AI Agent Integration
 
-DxMessaging publishes machine-readable context for AI agents through [llms.txt](llms.txt), following the [llmstxt.org](https://llmstxt.org/) standard. The file collects the project overview, API surface, conventions, and links into one document.
+DxMessaging publishes machine-readable context for AI agents through [llms.txt](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/llms.txt), following the [llmstxt.org](https://llmstxt.org/) standard. The file collects the project overview, API surface, conventions, and links into one document.
 
 ### For AI Agents
 
-- **[llms.txt](llms.txt)** -- Complete project overview, API reference, and context in a single file
-- **[Repository Guidelines](.llm/context.md)** -- Coding standards and development workflows
-- **[AI Agent Skills](.llm/skills/)** -- 35+ specialized skills covering documentation, testing, GitHub Actions, and more
+- **[llms.txt](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/llms.txt)** -- Complete project overview, API reference, and context in a single file
+- **[Repository Guidelines](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/.llm/context.md)** -- Coding standards and development workflows
+- **[AI Agent Skills](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/.llm/skills/)** -- 35+ specialized skills covering documentation, testing, GitHub Actions, and more
 
 The `llms.txt` file is automatically updated via CI/CD to stay current with project changes. It includes:
 
