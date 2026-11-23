@@ -179,15 +179,23 @@ def collect(repo, count, through=None):
 
     @lru_cache(None)
     def pushes(head_repo, branch):
+        remaining = {
+            (a["head_sha"], instant(a["created_at"]))
+            for a in anchors
+            if source(a)[:2] == (head_repo, branch)
+        }
         result = defaultdict(list)
         for item in pages(
             f"repos/{head_repo}/activity", ref="refs/heads/" + branch, direction="desc"
         ):
             stamp = instant(item["timestamp"])
-            if stamp < since:
-                break
-            if item["after"]:
-                result[item["after"]].append(stamp)
+            sha = item["after"]
+            matched = {(key, t) for key, t in remaining if key == sha and stamp <= t}
+            if matched:
+                result[sha].append(stamp)
+                remaining -= matched
+                if not remaining:
+                    break
         return result
 
     @lru_cache(None)
@@ -236,7 +244,10 @@ def collect(repo, count, through=None):
         jobs, native, gates, history = [], [], defaultdict(list), {}
         for r in group:
             latest = list(
-                pages(f"{root}/actions/runs/{r['id']}/jobs", "jobs", filter="latest")
+                pages(
+                    f"{root}/actions/runs/{r['id']}/attempts/{r['run_attempt']}/jobs",
+                    "jobs",
+                )
             )
             jobs.extend(latest)
             native.extend(native_receipts(latest))

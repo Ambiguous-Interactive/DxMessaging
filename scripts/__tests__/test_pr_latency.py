@@ -40,10 +40,14 @@ class LatencyTests(unittest.TestCase):
         }
         responses.update(
             {
-                f"{root}/activity": [{"after": "abc", "timestamp": start}],
-                f"{root}/pulls/7": [{"created_at": "2026-01-01T10:00:00Z"}],
+                f"{root}/activity": [
+                    {"after": "abc", "timestamp": "2025-12-10T10:00:00Z"}
+                ],
+                f"{root}/pulls/7": [{"created_at": start}],
                 f"{root}/issues/7/events": [],
-                f"{root}/actions/runs/1/jobs": [job(10, "CI Success")],
+                # A third attempt starts after listing. Its live job has not finished.
+                f"{root}/actions/runs/1/jobs": [job(11, "CI Success", None, None)],
+                f"{root}/actions/runs/1/attempts/2/jobs": [job(10, "CI Success")],
                 f"{root}/actions/runs/1/attempts/1/jobs": [
                     job(9, "CI Success", "failure", failed)
                 ],
@@ -60,6 +64,10 @@ class LatencyTests(unittest.TestCase):
                 f"{root}/actions/runs/4/jobs": [job(40, "Devcontainer CI Success")],
             }
         )
+        for run_id in (2, 4):
+            responses[f"{root}/actions/runs/{run_id}/attempts/1/jobs"] = responses[
+                f"{root}/actions/runs/{run_id}/jobs"
+            ]
         with patch.object(
             report, "pages", side_effect=lambda path, *a, **kw: iter(responses[path])
         ):
