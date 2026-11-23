@@ -74,6 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix Flow Graph compilation on early Unity 2021.3 patches
+  ([#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
 - Resolve message source links in the Flow Graph and Message Monitor against currently loaded
   assemblies in Unity 6.6 ([#813](https://github.com/Ambiguous-Interactive/DxMessaging/issues/813)).
 - Use Unity's loaded assembly path to verify the runtime in the 3.x upgrade preview on Unity 6.6
