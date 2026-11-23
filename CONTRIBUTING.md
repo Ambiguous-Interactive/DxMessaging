@@ -15,8 +15,8 @@ Git hooks are managed solely by the standard [pre-commit framework](https://pre-
 ## Fast feedback
 
 Use [the iteration runbook](docs/runbooks/iteration-speed.md) for focused checks, full validation,
-Unity host isolation and the coordinator pilot. Start with `npm run test:unit` for script units;
-`npm test` remains the complete suite. Run the managed behavior and representative-retention
+Unity host isolation and the coordinator pilot. Use its named Node watch command during edits.
+Run `npm run test:unit` for the unit subset and `npm test` for the complete suite. Run the managed behavior and representative-retention
 commands from that runbook in separate processes before delivery. Run affected exhaustive fixtures
 when memory or lifecycle owners change.
 

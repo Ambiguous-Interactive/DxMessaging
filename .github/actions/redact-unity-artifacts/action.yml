@@ -62,8 +62,40 @@ runs:
             $outcomes = @($roots | ForEach-Object -Parallel {
               $ErrorActionPreference = 'Stop'
               try {
-                node $using:processor $_ 2>&1 | ForEach-Object { Write-Host "$_" }
-                [pscustomobject]@{ Succeeded = ($LASTEXITCODE -eq 0) }
+                $scope = [System.IO.Path]::GetFileName($_)
+                $diagnostic = $env:GITHUB_HEAD_REF -eq 'work/817-save-to-verdict' -and $env:RUNNER_TEMP
+                if ($diagnostic) {
+                  $file = "dxm-817-$([guid]::NewGuid().ToString('N')).cpuprofile"
+                  $profile = Join-Path $env:RUNNER_TEMP $file
+                  try {
+                    node --cpu-prof "--cpu-prof-dir=$env:RUNNER_TEMP" "--cpu-prof-name=$file" $using:processor $_ 2>&1 | ForEach-Object { Write-Host "$_" }
+                    $status = $LASTEXITCODE
+                    $summarize = @'
+                const fs = require("node:fs");
+                const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+                const stages = ["structuredText", "contextualPattern", "hasPatternAnchor", "decodeSerialized"];
+                const parent = new Map(), names = new Map(), totals = Object.fromEntries(stages.map(s => [s, 0]));
+                for (const n of p.nodes) {
+                  names.set(n.id, n.callFrame.functionName);
+                  for (const child of n.children || []) parent.set(child, n.id);
+                }
+                for (let i = 0; i < p.samples.length; i++) {
+                  const stack = new Set();
+                  for (let id = p.samples[i]; id !== undefined; id = parent.get(id)) stack.add(names.get(id));
+                  for (const s of stages) if (stack.has(s)) totals[s] += p.timeDeltas[i];
+                }
+                console.log("DXM817 profile " + JSON.stringify({scope:process.argv[2], samples:p.samples.length, inclusiveUS:totals}));
+        '@
+                    node -e $summarize $profile $scope | ForEach-Object { Write-Host "$_" }
+                    if ($LASTEXITCODE -ne 0) { throw 'Could not read the diagnostic CPU profile.' }
+                  } finally {
+                    [System.IO.File]::Delete($profile)
+                  }
+                } else {
+                  node $using:processor $_ 2>&1 | ForEach-Object { Write-Host "$_" }
+                  $status = $LASTEXITCODE
+                }
+                [pscustomobject]@{ Succeeded = ($status -eq 0) }
               } catch {
                 Write-Host "Artifact processing worker failed: $_"
                 [pscustomobject]@{ Succeeded = $false }

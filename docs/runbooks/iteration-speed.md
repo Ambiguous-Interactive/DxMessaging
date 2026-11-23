@@ -59,11 +59,76 @@ These local observations do not establish hosted PR queue time, cross-platform t
 cold-install result. The original interrupted diagnostic and failed stale-contract test are retained;
 a later green run does not erase them.
 
+## Save to a focused test verdict
+
+For a Node helper, start a watcher once and edit its imported production dependency.
+Select the affected case by its name in the test file. For example:
+
+```sh
+node --test --watch --test-name-pattern="^normalizeToLf" scripts/lib/__tests__/lib.test.js
+```
+
+Confirm the expected test name and a positive executed count. Keep the watcher open across a broken
+save and its fix. Use the whole file when multiple behaviors change. For runtime C#, restore once,
+then run the affected test with compilation enabled on every edit:
+
+```sh
+dotnet test .net-tests/DxMessaging.Net.Tests.csproj -c Release --no-restore --filter 'FullyQualifiedName~AotSelectionAttributeRejectsNullType'
+```
+
+On a mounted checkout at `1362ebb1`, four Node helpers each received five broken/fixed pairs
+with the test source held constant. All 40 saves produced the expected named verdict. Median
+save-to-result was 0.311 seconds and nearest-rank p95 was 0.382 seconds, including the runner
+summary. These observations cover Node 26 in the Linux devcontainer. See the
+[Node watch documentation](https://nodejs.org/api/test.html#watch-mode).
+
+C# results depend on rebuilding the changed dependency. On a Linux-local worktree at `864fc5f8`,
+six alternating runtime edits took a median 4.46 seconds with the filtered command and 5.98 seconds
+with `dotnet watch test`. Six generator edits took 2.81 and 3.91 seconds respectively. The direct
+command remains the measured choice for both. Preserve `/p:CopyAnalyzerPayload=false` on generator
+runs. Editor-only changes still require the affected fixture on the host. The maintained
+[experiment record](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817) includes
+unsuccessful trials and the limits of each measurement.
+
+## Rolling PR latency
+
+Run the read-only report from the checkout. A read token in `GH_TOKEN` or `GITHUB_TOKEN`
+provides enough API quota for the default 40-update window. The standard-library command prints
+JSON with per-update receipts, required-job conclusions, prior attempts, native step timestamps,
+sample sizes, missing observations, and nearest-rank p95 by validation lane.
+
+```sh
+python3 scripts/pr_latency.py --count 40
+```
+
+Use `--through 2026-11-23T01:09:59Z` to select the historical window below. The always-triggered
+static PR workflow identifies updates. Match the head, PR and branch across workflows, including
+the Unity companion gate. Use GitHub's recorded branch push or later PR open/reopen time and the
+last of the three required job completions. Count failed updates alongside successful ones.
+Inspect incomplete rows before interpreting percentiles. Require at least 40 representative
+measured updates and report missing clocks, cancellations, superseded updates and retries.
+A short docs-only lane cannot establish native PR latency.
+
+The November 21-23 sample had 40 native updates across three PRs. All three contexts reported on
+each update. Median time to the last verdict was 12m41s and p95 was 30m14s. Five finished in
+under seven minutes, including three of the 33 green updates. In 17 of 39 observable native
+starts, more than seven minutes elapsed between preflight completion and runner setup. Five
+of those waits overlapped a repository manual or nightly-dispatched licensed workflow. Overlap
+alone does not identify the job occupying a runner.
+
+On one Windows runner, a warm standalone step took 106 seconds, including 6.74 seconds for the
+final native build and 35.21 seconds for tests. After a compiled sample assembly definition was
+renamed, a new project key selected an empty Library. The same phases took 507.22 and 34.92
+seconds in a 686-second step. The rename belongs in the compiler-input key. Preserve its
+invalidation and compare native build logs before changing test scope.
+[Warm build](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/45082346198/job/137393121072)
+and [cold build](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/45090872658/job/137419913878).
+
 ## Local commands
 
 | Change               | First feedback                                                                                                                                                           | Before delivery                                                                               |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Script unit behavior | `npm run test:unit` or `node --test <changed-test>`                                                                                                                      | `npm test`                                                                                    |
+| Script unit behavior | Named case in [the focused watch loop](#save-to-a-focused-test-verdict) or `node --test <changed-test>`                                                                  | `npm test`                                                                                    |
 | Script integration   | `node --test <integration-test>`                                                                                                                                         | `npm run test:integration`, then the complete suite once                                      |
 | Runtime C#           | `dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --filter 'TestCategory!=Exhaustive&TestCategory!=MemoryReclaim'`                            | Both fast lanes below; affected fixtures without tier filters for lifecycle or memory changes |
 | Compiler/analyzer    | `dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj /p:CopyAnalyzerPayload=false` | Complete generator suite and `npm run check:analyzers`                                        |
