@@ -89,7 +89,8 @@ Wait-Event -Timeout 30 | Out-Null
         $childProcess = Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue
         if ($childProcess) {
             try {
-                if (-not $childProcess.HasExited) { throw 'Shutdown left its child process alive.' }
+                # Wait for the asynchronous tree termination before emergency cleanup can intervene.
+                if (-not $childProcess.WaitForExit(5000)) { throw 'Shutdown left its child process alive.' }
             } finally { $childProcess.Dispose() }
         }
     } finally {
