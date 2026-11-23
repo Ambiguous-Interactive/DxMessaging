@@ -15,6 +15,19 @@ The `.net-attributes` project prepares a matching NuGet package with compiler in
 If your project still has DxMessaging compiler assemblies under `Assets/`, check
 [which copies to remove when upgrading](../reference/analyzers.md#remove-legacy-analyzer-copies).
 
+### Update samples copied into Assets
+
+Unity copies imported samples into `Assets`. Updating DxMessaging leaves those copies at their
+previous version. Older copies of Mini Combat and UI Buttons + Inspector can report missing
+attributes. Older copies of Diagnostics Tooling Exerciser can report obsolete Unity APIs or
+incompatible handler signatures.
+
+If your copy is unmodified and your project has no references to its assets, remove its old
+folder from `Assets`. Import the updated sample from the **Samples** tab in Package Manager.
+If you edited the sample or your project references its assets, back up the copy and import the
+updated sample in a separate project for comparison. Update the scripts and assembly references
+in your existing copy. Keep its `.meta` files so scene and prefab references keep their asset IDs.
+
 ### Replace selected subscription sets
 
 Use [registration groups, source changes, and explicit state handlers](subscription-ownership.md)
