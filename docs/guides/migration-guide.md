@@ -6,7 +6,7 @@ This guide helps you introduce DxMessaging into an existing Unity project **grad
 
 ### Reference the dedicated attributes assembly
 
-The seven public attributes move to `WallstopStudios.DxMessaging.Attributes` with unchanged namespaces and names. Add that assembly reference to each Unity assembly definition that uses a DxMessaging attribute. Keep the `WallstopStudios.DxMessaging` reference when the same assembly also uses message interfaces or runtime APIs. Predefined assemblies receive both references automatically.
+The six public attributes from 3.3.0 move to `WallstopStudios.DxMessaging.Attributes` with unchanged namespaces and names. The attributes assembly also contains the new `DxAotMessageAttribute`. Add that assembly reference to each Unity assembly definition that uses a DxMessaging attribute. Keep the `WallstopStudios.DxMessaging` reference when the same assembly also uses message interfaces or runtime APIs. Predefined assemblies receive both references automatically.
 
 A shared rules assembly that only uses `[DxAutoConstructor]` and `[DxOptionalParameter]` can reference just the attributes and set `noEngineReferences` to `true`. The generator applies to the attributes assembly and assemblies that reference it. Type forwarding preserves legacy attribute lookups. Add the direct assembly reference to compile code that uses the attributes.
 
