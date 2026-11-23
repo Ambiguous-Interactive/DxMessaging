@@ -5406,13 +5406,13 @@ function Invoke-ProcessWithTreeKillTimeout {
                 if ($null -eq $line) {
                     $oDone = $true
                 } else {
+                    $oTask = $outReader.ReadLineAsync()
                     Write-Host $line
                     $buffer.Add([string]$line)
                     if (-not $completionObserved -and $CompletionPattern -and $line -cmatch $CompletionPattern) {
                         $completionObserved = $true
                         $shutdownDeadline = [DateTime]::UtcNow.AddSeconds($ShutdownTimeoutSeconds)
                     }
-                    $oTask = $outReader.ReadLineAsync()
                 }
                 $progressed = $true
             }
@@ -5422,13 +5422,13 @@ function Invoke-ProcessWithTreeKillTimeout {
                 if ($null -eq $line) {
                     $eDone = $true
                 } else {
+                    $eTask = $errReader.ReadLineAsync()
                     Write-Host $line
                     $buffer.Add([string]$line)
                     if (-not $completionObserved -and $CompletionPattern -and $line -cmatch $CompletionPattern) {
                         $completionObserved = $true
                         $shutdownDeadline = [DateTime]::UtcNow.AddSeconds($ShutdownTimeoutSeconds)
                     }
-                    $eTask = $errReader.ReadLineAsync()
                 }
                 $progressed = $true
             }
@@ -5441,8 +5441,24 @@ function Invoke-ProcessWithTreeKillTimeout {
                 # A quick-exit parent cannot identify a reparented descendant that
                 # still holds a pipe. Mirror ensure-editor.ps1: preserve diagnostics
                 # but never report this as confirmed tree cleanup or allow retry.
+                $parentExited = $proc.HasExited
+                if ($parentExited) {
+                    # Forwarding output can block while the child and both
+                    # pipes finish. Accept EOFs that are already available.
+                    $stdoutClosed = $oDone -or (
+                        $oTask.Status -eq [Threading.Tasks.TaskStatus]::RanToCompletion -and $null -eq $oTask.Result
+                    )
+                    $stderrClosed = $eDone -or (
+                        $eTask.Status -eq [Threading.Tasks.TaskStatus]::RanToCompletion -and $null -eq $eTask.Result
+                    )
+                    if ($stdoutClosed -and $stderrClosed) {
+                        $oDone = $true
+                        $eDone = $true
+                        break
+                    }
+                }
                 $timedOut = $true
-                $terminationUnconfirmed = [bool]$proc.HasExited
+                $terminationUnconfirmed = $parentExited
                 if ($completionObserved -and $shutdownDeadline -le $deadline) {
                     Write-Host "::warning::$Label did not close its process/output streams within $ShutdownTimeoutSeconds seconds of its terminal message; requesting process-tree termination. Results can be accepted only after confirmed cleanup."
                 }
