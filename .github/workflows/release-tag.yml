@@ -5,7 +5,7 @@ name: Release Tag
 # a commit whose subject is `release: vX.Y.Z` and whose package.json version
 # is X.Y.Z. This workflow notices that commit and pushes the annotated tag
 # vX.Y.Z at it with the GitHub App token. An operator then selects that exact
-# tag and dispatches release.yml; tag creation alone never publishes.
+# tag for qualification before dispatching release.yml.
 #
 # LOOP SAFETY: the trigger is a BRANCH push filtered to package.json; the tag
 # push this job performs is a tag ref and cannot re-trigger it. The
@@ -169,4 +169,5 @@ jobs:
             echo "::error::${message}"
             exit "${push_status}"
           fi
-          echo "::notice::Pushed ${TAG} at ${GITHUB_SHA}; select this tag and manually dispatch the Release workflow."
+          echo "::notice::Pushed ${TAG} at ${GITHUB_SHA}. Qualify this tag before publishing." \
+            "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/docs/ops/release-operations.md#qualify-the-tag"

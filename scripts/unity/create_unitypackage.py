@@ -13,7 +13,7 @@ import subprocess
 import tarfile
 import tempfile
 import zlib
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Iterator, NamedTuple
 
 
@@ -206,7 +206,7 @@ def _extract_pack(pack_path: Path, destination: Path) -> Path:
     return packed_root
 
 
-def stage_packed_payload(repo_root: Path, scratch: Path) -> Path:
+def _pack_tarball(repo_root: Path, scratch: Path, package_name: str) -> Path:
     npm = "npm.cmd" if os.name == "nt" else "npm"
     completed = subprocess.run(
         [npm, "pack", "--ignore-scripts", "--json", "--pack-destination", str(scratch)],
@@ -215,13 +215,44 @@ def stage_packed_payload(repo_root: Path, scratch: Path) -> Path:
         capture_output=True,
         text=True,
     )
-    pack = json.loads(completed.stdout)
-    if len(pack) != 1 or Path(pack[0].get("filename", "")).name != pack[0].get("filename"):
-        raise ValueError("npm pack did not produce exactly one package tarball.")
-    packed_root = _extract_pack(scratch / pack[0]["filename"], scratch / "extract")
+    try:
+        pack = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise ValueError("npm pack did not produce valid JSON.") from error
+    # npm 11 returns an array. npm 12 keys records by package name.
+    if isinstance(pack, list) and len(pack) == 1:
+        record = pack[0]
+    elif isinstance(pack, dict) and set(pack) == {package_name}:
+        record = pack[package_name]
+    else:
+        record = None
+    if not isinstance(record, dict) or record.get("name") != package_name:
+        raise ValueError("npm pack did not produce exactly one matching package record.")
+    filename = record.get("filename")
+    if (
+        not isinstance(filename, str)
+        or not filename.endswith(".tgz")
+        or "\0" in filename
+        or PurePosixPath(filename).name != filename
+        or PureWindowsPath(filename).name != filename
+    ):
+        raise ValueError("npm pack did not report a safe tarball filename.")
+    return scratch / filename
+
+
+def stage_packed_payload(repo_root: Path, scratch: Path, tarball: Path | None = None) -> Path:
+    package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
+    if tarball is None:
+        tarball = _pack_tarball(repo_root, scratch, package["name"])
+    packed_root = _extract_pack(tarball, scratch / "extract")
     for entry in REQUIRED_ROOT_ENTRIES:
         if not (packed_root / entry).exists():
             raise ValueError(f"Packed npm package is missing required Unity export entry: {entry}")
+    packed_manifest = json.loads((packed_root / "package.json").read_text(encoding="utf-8"))
+    if not isinstance(packed_manifest, dict) or any(
+        packed_manifest.get(key) != package[key] for key in ("name", "version")
+    ):
+        raise ValueError("Packed npm package name or version does not match the release checkout.")
     staged_root = scratch / "staged"
     staged_root.mkdir()
     for source in packed_root.iterdir():
@@ -235,9 +266,11 @@ def stage_packed_payload(repo_root: Path, scratch: Path) -> Path:
     return staged_root
 
 
-def create_unitypackage(repo_root: Path, output_path: Path) -> tuple[list[Asset], str]:
+def create_unitypackage(
+    repo_root: Path, output_path: Path, tarball: Path | None = None
+) -> tuple[list[Asset], str]:
     with tempfile.TemporaryDirectory(prefix="dxm-unitypackage-create-") as temporary:
-        assets = collect_assets(stage_packed_payload(repo_root, Path(temporary)))
+        assets = collect_assets(stage_packed_payload(repo_root, Path(temporary), tarball))
         digest = write_unitypackage(assets, output_path)
     print(f"Created {output_path} with {len(assets)} Unity assets.")
     return assets, digest
@@ -249,8 +282,9 @@ def main() -> None:
     default_output = repo_root / ".artifacts" / "release" / f"{package['name']}-{package['version']}.unitypackage"
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=default_output)
+    parser.add_argument("--tarball", type=Path, help="Use an existing npm tarball instead of running npm pack.")
     arguments = parser.parse_args()
-    create_unitypackage(repo_root, arguments.output.resolve())
+    create_unitypackage(repo_root, arguments.output.resolve(), arguments.tarball)
 
 
 if __name__ == "__main__":

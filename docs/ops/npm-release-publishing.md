@@ -36,8 +36,8 @@ Configure npm Trusted Publishing for:
 - Workflow: `.github/workflows/release.yml`
 - Environment: only if the GitHub release job uses one
 
-Trusted Publishing uses OIDC. npm's current docs require an npm CLI that
-supports trusted publishing; this workflow invokes `npm@^11.5.1` for publish.
+Trusted Publishing uses OIDC. The workflow uses a pinned npm CLI with
+Trusted Publishing support.
 
 ## Release Trigger
 
@@ -52,12 +52,12 @@ The normal path never creates the tag by hand:
 1. Squash-merge that PR with its default `release: vX.Y.Z` title.
 1. `.github/workflows/release-tag.yml` validates the merged commit and pushes
    the annotated tag `vX.Y.Z` with the auto-commit GitHub App token.
-1. Select that exact tag in the Actions UI and manually dispatch
-   `.github/workflows/release.yml`. A branch dispatch fails closed.
+1. Qualify the exact tag and dispatch Release after its required evidence
+   is available. [Qualify the tag](./release-operations.md#qualify-the-tag)
 
 The tag-creation fallback (App unavailable, or recovering from a partial run)
 is pushing a strict semver tag that points at the reviewed release commit, then
-dispatching the release workflow from that tag. Use a signed tag when signing
+following the same qualification and release steps. Use a signed tag when signing
 is available, or the repository-approved annotated tag fallback when signing
 is not available:
 
@@ -76,18 +76,19 @@ Before tagging, `package.json.version` must be `3.0.2`. The workflow rejects:
 - `v3.0.2-rc.1`
 - `v3.0.2` when `package.json.version` is still `3.0.1`
 
-Both release stages are manual dispatches: start with `release-prepare.yml`,
-then dispatch `release.yml` from the exact reviewed tag after it exists.
-
 ## Release Gates
 
 The workflow runs these checks before publishing:
 
+- Successful compatibility, shipping, consumer-install, and performance
+  runs and retained artifacts for the exact tag commit
 - `npm test`
 - `npm run validate:all`
-- trusted Unity editmode release check on the Ambiguous Windows runner
+- complete managed release test suites
+- trusted Unity EditMode release check on a matching self-hosted Windows runner
 
-Run the same commands locally from a clean tracked state before tagging.
+Run the script and repository validation commands locally from a clean
+tracked state before tagging.
 `release-prepare.yml` runs `npm test` and `npm run validate:all` against the
 bumped tree before it opens the release PR, so a broken prepare never reaches
 the tag.
@@ -99,9 +100,8 @@ The release workflow creates:
 - npm `.tgz`
 - `.sha256` checksum
 - GitHub artifact attestation for the `.tgz`
-- a classic `.unitypackage` (plus `.sha256`) created directly from the npm
-  payload on `ubuntu-latest`, without opening Unity or acquiring a license;
-  a REQUIRED release asset
+- a required classic `.unitypackage` and its `.sha256`, exported on
+  `ubuntu-latest` from the same validated npm tarball without opening Unity
 - GitHub Release assets containing the `.tgz`, its checksum, and the
   `.unitypackage` pair, verified present by a final post-publish step
 - npm package version published with provenance
