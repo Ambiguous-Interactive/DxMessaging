@@ -59,16 +59,104 @@ These local observations do not establish hosted PR queue time, cross-platform t
 cold-install result. The original interrupted diagnostic and failed stale-contract test are retained;
 a later green run does not erase them.
 
+## Save to a focused test verdict
+
+Target p95 below one second from a warm production save to its named assertion.
+For a Node helper, start a watcher once and edit its imported production dependency.
+Select the affected case by its name in the test file. For example:
+
+```sh
+node --test --watch --test-name-pattern="^normalizeToLf" scripts/lib/__tests__/lib.test.js
+```
+
+Confirm the expected test name and a positive executed count. Keep the watcher open across a broken
+save and its fix. Use the whole file when multiple behaviors change. For runtime C#, restore once,
+then run the affected test with compilation enabled on every edit:
+
+```sh
+dotnet test .net-tests/DxMessaging.Net.Tests.csproj -c Release --no-restore --filter 'FullyQualifiedName~AotSelectionAttributeRejectsNullType'
+```
+
+On a mounted checkout at `1362ebb1`, four Node helpers each received five broken/fixed pairs
+with the test source held constant. All 40 saves produced the expected named verdict. Median
+save-to-result was 0.311 seconds and nearest-rank p95 was 0.382 seconds, including the runner
+summary. A single run without `--watch` also works for a one-off check. These observations cover
+Node 26 in the Linux devcontainer. See the [Node watch documentation](https://nodejs.org/api/test.html#watch-mode).
+
+C# results depend on rebuilding the changed dependency. On a Linux-local worktree at `864fc5f8`,
+three matched broken/fixed pairs per command took a median 2.99 seconds per runtime edit
+with the filtered command and 3.92 seconds with `dotnet watch test`. Generator edits took
+2.68 and 3.27 seconds respectively. Each comparison alternated command order. The direct
+command remains the measured choice for both. Preserve `/p:CopyAnalyzerPayload=false` on generator
+runs. With fresh project outputs and private empty NuGet caches, one initial run took
+6.89 seconds for runtime and 6.88 seconds for generators at `1362ebb1`. These six-edit screens
+establish medians only. Local Unity Editor and desktop Test Explorer save times are unmeasured
+in this editor-free checkout. For command syntax and trial details, see the
+[.NET watch reference](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-watch) and the
+[experiment record](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817).
+
+## Rolling PR latency
+
+Target p95 below 420 seconds from a PR update to the last required verdict, including queue
+and cleanup. Run the read-only report from the checkout. A read token in `GH_TOKEN` or `GITHUB_TOKEN`
+provides enough API quota for the default 40-update window. The command uses Python 3.11 or
+later. Its JSON includes each required verdict, prior attempts, native steps and the interval
+from runner preflight to native setup. It reports sample sizes, missing observations and
+nearest-rank p95 by validation lane.
+
+```sh
+python3 scripts/pr_latency.py --count 40
+```
+
+Use `--through 2026-11-23T01:09:59Z` to select the historical window below. The static and
+devcontainer PR workflows identify updates. A head with neither workflow has no anchor in this
+report. Match the head, PR and branch across workflows, including
+the Unity companion gate. Use GitHub's recorded branch push or later PR open/reopen time and the
+last of the three required job completions. Count failed updates alongside successful ones.
+Inspect incomplete rows before interpreting percentiles. Require at least 40 representative
+measured updates and report missing clocks, cancellations, superseded updates and retries.
+A short docs-only lane cannot establish native PR latency.
+
+The November 21-23 sample had 40 native updates across three PRs. All three contexts reported on
+each update. Median time to the last verdict was 12m41s and p95 was 30m14s. Five finished in
+under seven minutes, including three of the 33 green updates. In 17 of 39 observable native
+starts, more than seven minutes elapsed between preflight completion and runner setup. Even
+assigning zero wait to the missing observation, that interval alone had a p95 of 21m41s across
+the 40 updates. Reaching seven minutes in a comparable window requires shorter waits for a
+licensed runner. Five of those 17 waits overlapped a repository manual or nightly-dispatched
+licensed workflow. Overlap alone does not identify the job occupying a runner.
+
+On one Windows runner, a warm standalone step took 106 seconds, including 6.74 seconds for the
+final native build and 35.21 seconds for tests. After a compiled sample assembly definition was
+renamed, a new project key selected an empty Library. The same phases took 507.22 and 34.92
+seconds in a 686-second step. The rename belongs in the compiler-input key. Preserve its
+invalidation and compare native build logs before changing test scope.
+[Warm build](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/45082346198/job/137393121072)
+and [cold build](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/45090872658/job/137419913878).
+
+Windows artifact redaction took 44 seconds in a profiled run. The standalone worker spent
+41.52 sampled seconds in structured text processing, including 22.60 seconds in contextual
+matching. The corresponding PlayMode times were 27.51 and 11.83 seconds. The workers run in
+parallel. A bounded matching experiment preserved all artifact bytes in a local comparison, but
+one of three PlayMode pairs slowed from 9.93 to 10.14 seconds. The existing redactor passed
+the original validation. See the [Windows profile](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/45104084768/job/137461300418).
+
 ## Local commands
 
-| Change               | First feedback                                                                                                                                                           | Before delivery                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Script unit behavior | `npm run test:unit` or `node --test <changed-test>`                                                                                                                      | `npm test`                                                                                    |
-| Script integration   | `node --test <integration-test>`                                                                                                                                         | `npm run test:integration`, then the complete suite once                                      |
-| Runtime C#           | `dotnet test .net-tests/DxMessaging.Net.Tests.csproj --configuration Release --filter 'TestCategory!=Exhaustive&TestCategory!=MemoryReclaim'`                            | Both fast lanes below; affected fixtures without tier filters for lifecycle or memory changes |
-| Compiler/analyzer    | `dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests/WallstopStudios.DxMessaging.SourceGenerators.Tests.csproj /p:CopyAnalyzerPayload=false` | Complete generator suite and `npm run check:analyzers`                                        |
-| Documentation C#     | `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`                                                                                                  | Relevant prose checks and strict site build                                                   |
-| Unity behavior       | Affected fixture through the host MCP bridge                                                                                                                             | Affected Unity scopes; CI supplies Windows IL2CPP evidence                                    |
+On a fresh checkout, run `dotnet restore .net-tests/DxMessaging.Net.Tests.csproj` for runtime
+work or `dotnet restore SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests`
+for generator and analyzer work. Repeat the restore after dependency changes. Choose a named
+test for the behavior you changed. The commands below give examples for different edits.
+
+| Change               | First feedback                                                                                                                                                                                                | Before delivery                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Script unit behavior | Named case in [the focused watch loop](#save-to-a-focused-test-verdict) or `node --test <changed-test>`                                                                                                       | `npm test`                                                                                    |
+| Script integration   | `node --test <integration-test>`                                                                                                                                                                              | `npm run test:integration`, then the complete suite once                                      |
+| Runtime C#           | Affected method or fixture using the filtered runtime command above                                                                                                                                           | Both fast lanes below; affected fixtures without tier filters for lifecycle or memory changes |
+| Source generator     | `dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests -c Release --no-restore /p:CopyAnalyzerPayload=false --filter FullyQualifiedName~ReportsNonPartialContainingType`            | Complete generator suite and `npm run check:analyzers`                                        |
+| Analyzer diagnostic  | `dotnet test SourceGenerators/WallstopStudios.DxMessaging.SourceGenerators.Tests -c Release --no-restore /p:CopyAnalyzerPayload=false --filter FullyQualifiedName~MissingForwardingReportsItsLifecycleMethod` | Complete generator suite and `npm run check:analyzers`                                        |
+| Documentation C#     | `dotnet test .docs-tests/WallstopStudios.DxMessaging.Docs.Tests.csproj`                                                                                                                                       | Relevant prose checks and strict site build                                                   |
+| Unity behavior       | Affected fixture through the host MCP bridge                                                                                                                                                                  | Affected Unity scopes; CI supplies Windows IL2CPP evidence                                    |
 
 Run both managed fast lanes in separate test processes before delivery:
 
