@@ -105,6 +105,72 @@ class LatencyTests(unittest.TestCase):
         )
         self.assertEqual(0, report.summarize([row])["under_420s"])
 
+    def test_shared_branch_and_commit_distinguish_forks(self):
+        root = "repos/owner/repo"
+        start = "2026-01-02T10:00:00Z"
+        finish = "2026-01-02T10:07:00Z"
+        forks = ("first/repo", "second/repo")
+        workflow_gates = {
+            "ci.yml": "CI Success",
+            "unity-tests.yml": "Unity CI Success",
+            "devcontainer-test.yml": "Devcontainer CI Success",
+        }
+        responses = {}
+        for workflow in report.WORKFLOWS:
+            responses[f"{root}/actions/workflows/{workflow}/runs"] = []
+        for number, fork in enumerate(forks, 1):
+            head = {"repo": {"full_name": fork}, "ref": "topic"}
+            responses[f"{root}/pulls", fork.split("/")[0] + ":topic"] = [
+                {"number": number, "head": head, "created_at": start, "closed_at": None}
+            ]
+            responses[f"{root}/pulls/{number}"] = [{"created_at": start}]
+            responses[f"{root}/issues/{number}/events"] = []
+            responses[f"repos/{fork}/activity"] = [{"after": "abc", "timestamp": start}]
+            for offset, (workflow, gate) in enumerate(workflow_gates.items()):
+                run_id = number * 10 + offset
+                responses[f"{root}/actions/workflows/{workflow}/runs"].append(
+                    {
+                        "id": run_id,
+                        "head_sha": "abc",
+                        "head_branch": "topic",
+                        "head_repository": {"full_name": fork},
+                        "pull_requests": [],
+                        "created_at": start,
+                        "run_attempt": 1,
+                        "conclusion": "success",
+                    }
+                )
+                responses[f"{root}/actions/runs/{run_id}/attempts/1/jobs"] = [
+                    {
+                        "id": run_id,
+                        "name": gate,
+                        "conclusion": "success",
+                        "completed_at": finish,
+                    }
+                ]
+
+        def pages(path, *args, **kwargs):
+            key = (path, kwargs["head"]) if path == f"{root}/pulls" else path
+            return iter(responses[key])
+
+        with patch.object(report, "pages", side_effect=pages):
+            rows = report.collect("owner/repo", 2)
+            self.assertEqual(
+                [(1, "success", 420), (2, "success", 420)],
+                sorted((row["pr"], row["outcome"], row["seconds"]) for row in rows),
+            )
+
+            anchors = responses[f"{root}/actions/workflows/ci.yml/runs"]
+            anchors.append({**anchors[0], "id": 30})
+            responses[f"{root}/actions/runs/30/attempts/1/jobs"] = [
+                {**responses[f"{root}/actions/runs/10/attempts/1/jobs"][0], "id": 30}
+            ]
+            rows = report.collect("owner/repo", 3)
+            self.assertEqual(
+                [(1, "ambiguous update", None)] * 2 + [(2, "success", 420)],
+                sorted((row["pr"], row["outcome"], row["seconds"]) for row in rows),
+            )
+
     def test_missing_duplicate_and_pending_contexts(self):
         one = {"completed_at": "2026-01-02T10:00:05Z", "conclusion": "success"}
         gates = {key: [one] for key in report.GATES}

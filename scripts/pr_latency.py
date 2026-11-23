@@ -265,8 +265,7 @@ def collect(repo, count, through=None):
         if (
             not number
             or sum(
-                a["head_sha"] == sha
-                and a["head_branch"] == branch
+                source(a) == (origin, branch, sha)
                 and a["pull_requests"] == linked
                 for a in anchors
             )
