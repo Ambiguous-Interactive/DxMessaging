@@ -214,7 +214,7 @@ See the [Install Guide](docs/getting-started/install.md) for all options includi
 
 > **Handler version:** These examples use the 4.0 `in` signature. With a 3.x package, use
 > `ref DamageRequested message` for the receiver callback parameter instead. Keep the registration
-> and emission calls unchanged. See the [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400).
+> and emission calls unchanged. See the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400).
 
 ```csharp
 using DxMessaging.Core.Attributes;
@@ -385,7 +385,7 @@ when it ends. To start this service through a container, use the adapter for
 
 ### Maybe Use DxMessaging (Start Small)
 
-- **Existing large codebase** - Migrate incrementally: start with new features, refactor old code gradually (see [Migration Guide](docs/guides/migration-guide.md))
+- **Existing large codebase** - Migrate incrementally: start with new features, refactor old code gradually (see [Migration Guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/))
 - **Small team learning** - Try it for one system (e.g., achievements) before going all-in
 - **Mid-size projects (5-20k lines)** - Evaluate after trying it for one complex interaction (e.g., combat or scene transitions)
 

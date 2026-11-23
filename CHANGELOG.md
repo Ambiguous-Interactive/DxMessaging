@@ -43,14 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **BREAKING:** Add a direct `WallstopStudios.DxMessaging.Attributes` reference to Unity assembly definitions that use public
-  DxMessaging attributes. Namespaces stay unchanged; see the [4.0 migration guide](docs/guides/migration-guide.md#reference-the-dedicated-attributes-assembly).
+  DxMessaging attributes. Namespaces stay unchanged; see the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#reference-the-dedicated-attributes-assembly).
 - Correct IntelliSense summaries and references, including cache enumeration, bus reset behavior,
   global observer message and context parameters, empty-bus debug logging, and deregistration callback boundaries
   ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503),
   [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
 - **BREAKING:** Remove the test-only `DxMessagingRuntimeSettingsProvider.Override` API. Configure
   the runtime settings resource asset for application behavior and keep fixture configuration in
-  test assemblies; see the [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400).
+  test assemblies; see the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400).
 - Reduce recurring Unity correctness setup by installing only the locked Node.js runtime
   dependencies used to redact and seal test artifacts ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility
@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   materializing registrar sort keys once, and reduce package size by shipping only the optimized
   analyzer payload instead of its development sources ([#576](https://github.com/Ambiguous-Interactive/DxMessaging/issues/576), [#577](https://github.com/Ambiguous-Interactive/DxMessaging/issues/577)).
 - **BREAKING:** Fast handlers and post-processors now use readonly references; change callback
-  parameters from `ref` to `in` and follow the [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400) ([#486](https://github.com/Ambiguous-Interactive/DxMessaging/issues/486)).
+  parameters from `ref` to `in` and follow the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400) ([#486](https://github.com/Ambiguous-Interactive/DxMessaging/issues/486)).
 - Show `DXMSG006` through `DXMSG010` in MessageAwareComponent Inspector diagnostic titles so
   lifecycle failures and opt-outs remain distinguishable
   ([#314](https://github.com/Ambiguous-Interactive/DxMessaging/issues/314)).
@@ -109,11 +109,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DxMessaging namespace text ([#707](https://github.com/Ambiguous-Interactive/DxMessaging/issues/707)).
 - **BREAKING:** Reject record field constructors that replace the record copy constructor and
   can silently change `with` results. Choose a distinct construction API as described in the
-  [migration guide](docs/guides/migration-guide.md#preserve-record-copy-behavior)
+  [migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#preserve-record-copy-behavior)
   ([#720](https://github.com/Ambiguous-Interactive/DxMessaging/issues/720)).
 - **BREAKING:** Order generated constructor parameters by source-file compilation order, then
   declaration order within each file. Check positional calls for split partial types in the
-  [migration guide](docs/guides/migration-guide.md#check-constructors-for-split-partial-types)
+  [migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#check-constructors-for-split-partial-types)
   ([#723](https://github.com/Ambiguous-Interactive/DxMessaging/issues/723)).
 - Initialize excluded struct fields and auto-properties in generated constructors while preserving
   initializers and avoiding unintended constructor calls. Chain empty primary constructors and
