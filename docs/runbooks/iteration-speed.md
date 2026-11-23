@@ -105,8 +105,14 @@ seconds for its first compile and verdict.
 
 These measurements cover two edits of one Attributes constructor with a fixed SDK response in
 the Linux devcontainer. Use the filtered `dotnet test` command above when project inputs change.
-The broader runtime, generator, and Editor save targets remain open.
-[Shared compiler protocol and raw result](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7098607883).
+[Attributes shared compiler study](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7098607883).
+
+A follow-up screened an edit to runtime registration-group cleanup and a generator diagnostic
+edit. Six measured saves per compiler mode gave shared-compiler medians of 1.194 and 1.261 seconds,
+down from 1.422 and 1.762 with the direct compiler. Both missed the one-second screen and stopped
+before the 40-save confirmation. Every save produced the expected NUnit verdict and fresh binary.
+The runtime, generator, and Editor targets remain open.
+[Runtime and generator screen](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7098746835).
 
 ## Rolling PR latency
 
