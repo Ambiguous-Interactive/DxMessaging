@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -296,6 +297,54 @@ class ReleaseQualificationTests(unittest.TestCase):
         self.assertIn(".docs-tests/", managed)
         upload = next(step for step in workflow("unity-tests.yml")["jobs"]["unity-tests"]["steps"] if step.get("name") == "Upload EditMode test artifacts")
         self.assertIn("'consumer-install' || 'editmode'", upload["with"]["name"])
+
+    @unittest.skipIf(os.name == "nt", "NuGet.org verification runs in Bash")
+    def test_attributes_verification_requires_public_source_and_matching_payload(self):
+        steps = workflow("attributes-package.yml")["jobs"]["package"]["steps"]
+        script = next(step["run"] for step in steps if step.get("name") == "Restore and verify the live package")
+        feed = "https://api.nuget.org/v3/index.json"
+        version = "4.0.0"
+        cases = [
+            ("matching public package", feed, b"attribute assembly", True, True),
+            ("local cache", "/local-feed", b"attribute assembly", False, False),
+            ("missing source metadata", None, b"attribute assembly", False, False),
+            ("different public payload", feed, b"other assembly", False, False),
+        ]
+        dotnet = r"""
+dotnet() {
+    case "$1" in
+        restore) printf '%s\n' "$@" > restore-args ;;
+        test) printf '%s\n' "$@" > test-args ;;
+        *) return 87 ;;
+    esac
+}
+"""
+        for name, source, payload, succeeds, runs_consumer in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory(prefix="dxm-nuget-origin-") as tmp:
+                root = Path(tmp)
+                cache = root / "packages"
+                installed = cache / "wallstopstudios.dxmessaging.attributes" / version
+                library = "lib/netstandard2.0/WallstopStudios.DxMessaging.Attributes.dll"
+                (installed / library).parent.mkdir(parents=True)
+                (installed / library).write_bytes(payload)
+                if source is not None:
+                    (installed / ".nupkg.metadata").write_text(json.dumps({"source": source}))
+                package = root / ".artifacts/nuget" / f"WallstopStudios.DxMessaging.Attributes.{version}.nupkg"
+                package.parent.mkdir(parents=True)
+                with ZipFile(package, "w") as archive:
+                    archive.writestr(library, b"attribute assembly")
+                env = dict(os.environ, NUGET_PACKAGES=str(cache), PACKAGE_VERSION=version)
+                result = subprocess.run(["bash", "-c", dotnet + script], cwd=root, env=env,
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, succeeds, result.stdout + result.stderr)
+                self.assertEqual((root / "test-args").exists(), runs_consumer)
+                restore = (root / "restore-args").read_text().splitlines()
+                self.assertEqual(restore.count("--source"), 1)
+                self.assertEqual(restore[restore.index("--source") + 1], feed)
+                self.assertIn("--no-http-cache", restore)
+                self.assertIn("-p:RestoreAdditionalProjectSources=", restore)
+                if runs_consumer:
+                    self.assertIn("--no-restore", (root / "test-args").read_text().splitlines())
 
     @unittest.skipIf(os.name == "nt", "npm publication runs in Bash")
     def test_npm_retry_requires_matching_bytes_or_confirmed_absence(self):
