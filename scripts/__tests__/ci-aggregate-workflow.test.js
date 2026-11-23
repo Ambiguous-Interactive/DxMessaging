@@ -819,7 +819,9 @@ test("managed suites follow their inputs and retain both validation tiers", (t) 
     ["docs/architecture/performance.md", [false, false, false, false]], ["docs/guides/testing.md", [false, true, false, false]],
     ["SourceGenerators/Generator.cs", [true, true, true, false]], ["Runtime/Core/MessageBus/MessageBus.cs", [false, true, true, true]],
     ["Tests/Runtime/MemoryReclaim/DisabledTokenRetentionTests.cs", [false, false, true, true]], ["Tests/Runtime/Core/MessageRecorderTests.cs", [false, false, true, false]],
-    ["Editor/Analyzers/BaseCallIlInspector.cs", [false, true, true, false]], ["scripts/mcp/DxMcpTestRunner.cs.txt", [false, true, false, false]],
+    ["Editor/Analyzers/BaseCallIlInspector.cs", [true, true, true, false]], ["Editor/Analyzers/BaseCallLogMessageParser.cs", [true, true, false, false]],
+    ["Editor/Analyzers/BaseCallReportAggregator.cs", [true, true, false, false]], ["Editor/Analyzers/BaseCallTypeScannerCore.cs", [true, true, false, false]],
+    ["Editor/Analyzers/DxMessagingConsoleHarvester.cs", [false, true, false, false]], ["scripts/mcp/DxMcpTestRunner.cs.txt", [false, true, false, false]],
     ["Runtime/Core/Helper/MessageCache.cs", [false, true, true, true]], [".github/workflows/ci.yml", [true, true, true, true]]
   ]) {
     const output = path.join(root, "output"); fs.writeFileSync(output, "");

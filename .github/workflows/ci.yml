@@ -158,7 +158,7 @@ jobs:
             "(\.md$|\.markdown$|^docs/|^\.lychee\.toml$|^\.github/scripts/check-markdown-links\.ps1$|^\.github/actions/install-pinned-lychee/action\.yml$|$ci_workflow)"
           # Each managed suite follows its actual inputs. Pure documentation must not run runtime retention matrices.
           set_output dotnet \
-            "(^SourceGenerators/|^Runtime/Analyzers/|^Runtime/Attributes/|^\.net-attributes/|^\.nuget-tests/|\.csproj$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^\.config/dotnet-tools\.json$|^\.github/analyzers/|$ci_workflow)"
+            "(^SourceGenerators/|^Editor/Analyzers/(BaseCallIlInspector|BaseCallLogMessageParser|BaseCallReportAggregator|BaseCallTypeScannerCore)\.cs$|^Runtime/Analyzers/|^Runtime/Attributes/|^\.net-attributes/|^\.nuget-tests/|\.csproj$|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^\.config/dotnet-tools\.json$|^\.github/analyzers/|$ci_workflow)"
           set_output runtime_dotnet \
             "(^Runtime/|^Tests/|^Editor/Analyzers/BaseCallIlInspector\.cs$|^\.net[^/]*/|^SourceGenerators/|\.props$|\.targets$|(^|/)global\.json$|(^|/)\.editorconfig$|^\.github/analyzers/|$ci_workflow)"
           set_output docs_dotnet \
