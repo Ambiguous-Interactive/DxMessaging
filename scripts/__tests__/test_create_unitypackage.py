@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import subprocess
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -53,7 +54,8 @@ class UnityPackageWriterTests(unittest.TestCase):
         for pack_json in ([record], {package_name: record}):
             with self.subTest(pack_json=pack_json), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
-                (root / "package.json").write_text(json.dumps({"name": package_name}))
+                manifest = json.dumps({"name": package_name, "version": "4.0.0"})
+                (root / "package.json").write_text(manifest)
                 packed = root / "package"
                 packed.mkdir()
                 for entry in MODULE.REQUIRED_ROOT_ENTRIES:
@@ -62,6 +64,7 @@ class UnityPackageWriterTests(unittest.TestCase):
                         path.mkdir()
                     else:
                         path.touch()
+                (packed / "package.json").write_text(manifest)
                 command = subprocess.CompletedProcess([], 0, stdout=json.dumps(pack_json))
                 with (
                     patch.object(MODULE.subprocess, "run", return_value=command),
@@ -70,6 +73,40 @@ class UnityPackageWriterTests(unittest.TestCase):
                     staged = MODULE.stage_packed_payload(root, root)
                 extract.assert_called_once_with(root / record["filename"], root / "extract")
                 self.assertTrue((staged / "Samples").is_dir())
+
+    def test_existing_tarball_supplies_assets_and_must_match_checkout_identity(self) -> None:
+        package = {"name": "com.wallstop-studios.dxmessaging", "version": "4.0.0"}
+        cases = [package, {**package, "version": "3.3.0"}, {**package, "name": "other"}]
+        for archived_package in cases:
+            with self.subTest(archived_package=archived_package), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "package.json").write_text(json.dumps(package))
+                packed = root / "package"
+                packed.mkdir()
+                for entry in MODULE.REQUIRED_ROOT_ENTRIES:
+                    path = packed / entry
+                    if entry in {"Editor", "Runtime", "Samples~"}:
+                        path.mkdir()
+                    else:
+                        path.touch()
+                manifest = json.dumps(archived_package).encode()
+                (packed / "package.json").write_bytes(manifest)
+                (packed / "Samples~" / "Example.cs").write_text("class Example {}\n")
+                tarball = root / "release.tgz"
+                with tarfile.open(tarball, "w:gz") as archive:
+                    archive.add(packed, arcname="package")
+                scratch = root / "scratch"
+                scratch.mkdir()
+                with patch.object(MODULE.subprocess, "run") as npm:
+                    if archived_package == package:
+                        staged = MODULE.stage_packed_payload(root, scratch, tarball)
+                        self.assertEqual((staged / "package.json").read_bytes(), manifest)
+                        self.assertTrue((staged / "Samples" / "Example.cs").is_file())
+                    else:
+                        with self.assertRaisesRegex(ValueError, "name or version"):
+                            MODULE.stage_packed_payload(root, scratch, tarball)
+                        self.assertFalse((scratch / "staged").exists())
+                    npm.assert_not_called()
 
     def test_refuses_invalid_npm_pack_json_before_extraction(self) -> None:
         package_name = "com.wallstop-studios.dxmessaging"

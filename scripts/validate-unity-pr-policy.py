@@ -3706,6 +3706,7 @@ def validate_unity_aggregate_steps(gate: str) -> None:
 
 def validate_license_free_unitypackage_release() -> None:
     source = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    validated = job_block(source, "validate")
     package_job = job_block(source, "unitypackage")
     require("    runs-on: ubuntu-latest\n" in package_job, "unitypackage must use ubuntu-latest")
     require(
@@ -3713,8 +3714,20 @@ def validate_license_free_unitypackage_release() -> None:
         "unitypackage must follow validation and remain independent of licensed Unity work",
     )
     require("    timeout-minutes: 20\n" in package_job, "unitypackage timeout must stay bounded")
+    download = step_block(package_job, "Download the validated npm package")
+    export = step_block(package_job, "Create the .unitypackage")
     require(
-        "python3 scripts/unity/create_unitypackage.py --output" in package_job
+        "package-file: ${{ steps.pack.outputs.package-file }}" in validated
+        and "actions/download-artifact@" in download
+        and "name: release-package" in download
+        and "path: .artifacts/release" in download
+        and "PACKAGE_FILE: ${{ needs.validate.outputs.package-file }}" in export
+        and 'sha256sum -- "${PACKAGE_FILE}" | cmp -s -- - "${PACKAGE_FILE}.sha256"' in export
+        and 'python3 scripts/unity/create_unitypackage.py --tarball "${release}/${PACKAGE_FILE}" --output' in export,
+        "unitypackage must verify and use the validated npm artifact as its input",
+    )
+    require(
+        "npm pack" not in run_script(export)
         and "sha256sum -c" in package_job
         and "name: release-unitypackage" in package_job
         and ".artifacts/release-unitypackage/" in package_job

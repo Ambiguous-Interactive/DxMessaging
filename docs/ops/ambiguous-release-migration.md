@@ -281,11 +281,12 @@ GitHub Release, and publishing to npm.
       `git tag -s vX.Y.Z` when signing is available, or the repository-approved
       annotated tag method when signing is not available.
 - [ ] Push only the intended release tag: `git push origin vX.Y.Z`.
-- [ ] Select the exact pushed tag and dispatch `.github/workflows/release.yml`.
-- [ ] Confirm the `verify-tag`, `validate`, `unity-checks`, and `publish` jobs
-      complete.
-- [ ] Confirm the GitHub Release includes the `.tgz` package and `.sha256`
-      artifact.
+- [ ] Qualify the exact pushed tag and dispatch Release after its required
+      evidence is available. [Qualify the tag](./release-operations.md#qualify-the-tag)
+- [ ] Confirm the Release workflow succeeded and its qualification receipt
+      and Asset Store submission artifacts are available.
+- [ ] Confirm the GitHub Release includes the npm `.tgz` and classic
+      `.unitypackage`, each with its `.sha256` checksum.
 - [ ] Confirm npm shows the new `com.wallstop-studios.dxmessaging` version with
       provenance linked to the release workflow.
 

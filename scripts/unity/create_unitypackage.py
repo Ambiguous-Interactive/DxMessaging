@@ -206,8 +206,7 @@ def _extract_pack(pack_path: Path, destination: Path) -> Path:
     return packed_root
 
 
-def stage_packed_payload(repo_root: Path, scratch: Path) -> Path:
-    package_name = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))["name"]
+def _pack_tarball(repo_root: Path, scratch: Path, package_name: str) -> Path:
     npm = "npm.cmd" if os.name == "nt" else "npm"
     completed = subprocess.run(
         [npm, "pack", "--ignore-scripts", "--json", "--pack-destination", str(scratch)],
@@ -238,10 +237,22 @@ def stage_packed_payload(repo_root: Path, scratch: Path) -> Path:
         or PureWindowsPath(filename).name != filename
     ):
         raise ValueError("npm pack did not report a safe tarball filename.")
-    packed_root = _extract_pack(scratch / filename, scratch / "extract")
+    return scratch / filename
+
+
+def stage_packed_payload(repo_root: Path, scratch: Path, tarball: Path | None = None) -> Path:
+    package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
+    if tarball is None:
+        tarball = _pack_tarball(repo_root, scratch, package["name"])
+    packed_root = _extract_pack(tarball, scratch / "extract")
     for entry in REQUIRED_ROOT_ENTRIES:
         if not (packed_root / entry).exists():
             raise ValueError(f"Packed npm package is missing required Unity export entry: {entry}")
+    packed_manifest = json.loads((packed_root / "package.json").read_text(encoding="utf-8"))
+    if not isinstance(packed_manifest, dict) or any(
+        packed_manifest.get(key) != package[key] for key in ("name", "version")
+    ):
+        raise ValueError("Packed npm package name or version does not match the release checkout.")
     staged_root = scratch / "staged"
     staged_root.mkdir()
     for source in packed_root.iterdir():
@@ -255,9 +266,11 @@ def stage_packed_payload(repo_root: Path, scratch: Path) -> Path:
     return staged_root
 
 
-def create_unitypackage(repo_root: Path, output_path: Path) -> tuple[list[Asset], str]:
+def create_unitypackage(
+    repo_root: Path, output_path: Path, tarball: Path | None = None
+) -> tuple[list[Asset], str]:
     with tempfile.TemporaryDirectory(prefix="dxm-unitypackage-create-") as temporary:
-        assets = collect_assets(stage_packed_payload(repo_root, Path(temporary)))
+        assets = collect_assets(stage_packed_payload(repo_root, Path(temporary), tarball))
         digest = write_unitypackage(assets, output_path)
     print(f"Created {output_path} with {len(assets)} Unity assets.")
     return assets, digest
@@ -269,8 +282,9 @@ def main() -> None:
     default_output = repo_root / ".artifacts" / "release" / f"{package['name']}-{package['version']}.unitypackage"
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=default_output)
+    parser.add_argument("--tarball", type=Path, help="Use an existing npm tarball instead of running npm pack.")
     arguments = parser.parse_args()
-    create_unitypackage(repo_root, arguments.output.resolve())
+    create_unitypackage(repo_root, arguments.output.resolve(), arguments.tarball)
 
 
 if __name__ == "__main__":
