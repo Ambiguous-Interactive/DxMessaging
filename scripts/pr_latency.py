@@ -318,7 +318,8 @@ def collect(repo, count, through=None):
                         instant(j["started_at"]) - instant(j["created_at"])
                     ).total_seconds()
                     for j in native
-                    if j.get("created_at") and j.get("started_at")
+                    # GitHub can fill in started_at while a job still has no runner.
+                    if j.get("runner_name") and j.get("created_at") and j.get("started_at")
                 ],
                 "native_jobs": native,
             }
