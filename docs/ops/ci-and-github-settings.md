@@ -314,8 +314,8 @@ in this repository. It starts when a pull request opens ready for review,
 becomes ready, reopens while ready, or receives new commits while ready.
 Pull request labels have no effect on OpenAI review.
 
-Automatic Copilot reviews follow the branch ruleset. Wallstop must review the
-final head before merge.
+Automatic Copilot reviews follow the branch ruleset. Agents may merge ordinary pull requests
+after required CI and automated review pass. Wallstop reviews those merges asynchronously.
 
 ## Unity Workspace Contract
 
