@@ -22,11 +22,11 @@ one idea per sentence, active voice.
 - Deciding which measurements, tables, or logs belong in the body.
 - Writing the pull request that closes several issues at once.
 
-## One active pull request
+## Pull request sequence
 
 Resume the existing agent PR, including a draft. Group changes that share a cause and
 acceptance evidence. Push after practical local checks. Confirm the merge and issue closures
-before opening another PR in the same session. Follow the
+before opening another PR. A session may merge any number of PRs in sequence. Follow the
 [session and review procedure](../agent-task-workflow/SKILL.md#session-and-review).
 
 ## Rules

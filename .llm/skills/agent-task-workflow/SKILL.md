@@ -45,26 +45,25 @@ language, test and documentation rules; read only the relevant sections.
    Use a normal protected merge bound to the verified head. Enable native auto-merge only if
    every prerequisite, including review, is enforced when it fires. Never use the maintenance
    App's bypass. Verify the merge SHA and linked issue closures before selecting the next task.
-1. Budget elapsed time, including waits. Reserve time for the task, local checks, a
-   representative CI and review cycle, and one repair. Use recent comparable lane timings.
-   At three hours finish only the active PR and record why it overran. At an external
-   blocker, hand off the PR head, evidence, blocker and next action. Resume it next session.
+   A session may merge any number of PRs in sequence.
+1. Target three hours elapsed, including waits. Reserve time for local checks, a representative CI
+   and review cycle, and one repair. Use recent comparable lane timings and record any overrun.
+   At an external blocker, hand off the PR head, evidence, blocker and next action.
 
-## Maintainer review and rollout
+## Maintainer review and session metrics
 
 Use merged PRs as the human review queue. Record wallstop's last reviewed revision and the
 outstanding compare range in [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575).
 Advance the revision only on human attestation. Link each actionable finding to a new or
 reopened issue. Give a default-branch regression priority for repair or revert.
 
-Before enabling ordinary autonomous merges, verify a distinct agent identity, effective
-branch protections, ordinary merge permission without bypass, and the protected release
-environment. Until verified, prepare changes for human merge. Obtain advance human approval
+Wallstop authorizes ordinary protected merges through the available GitHub connection.
+Maintain branch protections and complete the review checks above. Obtain advance human approval
 for changes that weaken controls or grant publishing authority. For the 4.0.0 release PR,
 tag, manual dispatch, registry publication and Store submission, follow the
 [release approval procedure](../../../docs/ops/npm-release-publishing.md#release-approval).
 
-For the first ten enabled sessions, record start/end time, overruns, blockers, merged PRs,
+For the first ten sessions using this authorization, record start/end time, overruns, blockers, merged PRs,
 issues opened/closed/reopened, time from green and reviewed to merge, CI retries, reverts
 and post-merge findings. Use GitHub timestamps and existing session records. Mark missing
 clocks unmeasured. Compare like task types and report sample sizes and fraction within three

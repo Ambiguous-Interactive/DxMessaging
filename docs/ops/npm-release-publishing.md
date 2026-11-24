@@ -43,9 +43,9 @@ Trusted Publishing support.
 
 Configure the GitHub `release` environment with wallstop as the required reviewer, restrict
 it to release tags, and disable administrator bypass. Match the environment in the npm trusted
-publisher binding. Keep the agent on a separate account without approval or bypass authority.
-Verify these settings before enabling autonomous merges. The publish job checks this workflow
-run's environment review before publishing.
+publisher binding. Reserve release approval for human wallstop. Keep approval and bypass authority
+for this environment outside agent access. Verify these settings before publishing. The publish job
+checks the workflow run's environment review.
 
 Before merging the 4.0.0 release PR, obtain a decision from human wallstop in
 [release readiness](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575).
