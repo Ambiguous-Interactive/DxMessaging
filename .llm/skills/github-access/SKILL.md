@@ -38,6 +38,18 @@ Use `git` for local history and remote transport operations it already supports,
 The repository's `origin` uses SSH, so fetch and push can work even when `gh` has no valid token.
 Do not replace a working remote merely to accommodate `gh`.
 
+## Keep API calls low
+
+- Use local Git for source, diffs, commit ancestry, and ref checks. Fetch new Git objects only
+  when the task needs them.
+- Get open work with one suitably scoped query and reuse the result. When the access path supports
+  it, request related metadata together. Reuse prior results while they still answer the question.
+- Keep the head SHA with CI and review evidence. Check again after a push, a notification, or a
+  scheduled interval for pending work. Refresh mutable state at decision points such as merge,
+  issue closure, and release approval. Complete all required review scans and write verifications.
+- Prefer notifications and space out fallback polls. Once the expected check or review is recorded,
+  wait for a state change or the next decision before reading it again.
+
 ## Use gh last
 
 - Invoke `gh` only when neither the connector/extension nor `git` supports the required action.
