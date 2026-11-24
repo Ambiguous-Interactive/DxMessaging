@@ -122,6 +122,22 @@ stopped before the 40-save confirmation.
 [Compiler warmup results](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7113483433).
 [Runtime and generator screen](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7098746835).
 
+Twelve diagnostic and plain VSTest runs each executed one named test on an existing binary.
+For the runtime case, the median time from the first trace marker to case start was 0.682 seconds.
+Adapter discovery took 0.359 seconds, and the test case callbacks spanned 0.016 seconds.
+For the generator case, the corresponding times were 0.406, 0.115, and 0.447 seconds.
+Trace times include logging overhead. Switching to NUnit's Microsoft Testing Platform executable
+mode with its test reporter was slower in all six matched invocation pairs.
+[VSTest traces](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7113553006).
+[Executable runner study](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7113645310).
+
+NUnitLite ran the same named cases from the same binaries. In three pairs per case, its median
+invocation took 0.327 seconds for runtime and 1.083 seconds for the generator, compared with 2.109
+and 2.189 seconds for VSTest. The generator stopped at invocation timing. On six paired runtime
+saves per runner, the median including compilation was 3.394 seconds for NUnitLite and 7.145
+seconds for VSTest. The host load rose during the trials. All measured saves exceeded one second.
+Use the filtered commands above for the supported runner. [NUnitLite results](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7140441945).
+
 ## Rolling PR latency
 
 Target p95 below 420 seconds from a PR update to the last required verdict, including queue
@@ -152,6 +168,11 @@ assigning zero wait to the missing observation, that interval alone had a p95 of
 the 40 updates. Reaching seven minutes in a comparable window requires shorter waits for a
 licensed runner. Five of those 17 waits overlapped a repository manual or nightly-dispatched
 licensed workflow. Overlap alone does not identify the job occupying a runner.
+
+A later ordinary native PR update took 5m28s through all three required contexts. Its Unity job
+waited 2 seconds for a runner and took 5m06s from assignment through cleanup. This adds one
+low-queue observation to the separate rolling-window results above.
+[Exact-head check receipts](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7138716948).
 
 On one Windows runner, a warm standalone step took 106 seconds, including 6.74 seconds for the
 final native build and 35.21 seconds for tests. After a compiled sample assembly definition was
