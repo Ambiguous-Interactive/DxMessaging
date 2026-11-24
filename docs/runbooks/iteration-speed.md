@@ -146,6 +146,14 @@ predeclared bound. The generator screen stopped after six NUnitLite saves. Its f
 save took 1.219 seconds. Both studies used one named case per project with alternating
 broken and repaired inputs. [Confirmation results](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7141092214).
 
+A later run started the generator first on the same host with lower sampled CPU pressure.
+Both NUnitLite cases finished all 40 confirmation saves under one second. The runtime case
+ranged from 0.265 to 0.402 seconds with an observed p95 of 0.354. The generator case ranged from
+0.667 to 0.836 seconds with a p95 of 0.808. The paired VSTest p95 values were 1.099 and 1.188 seconds,
+respectively. The highest sampled ten-second CPU pressure was 18.63%, below the 25% study bound.
+These results apply to the two named fixtures on this host. Use the filtered VSTest commands above
+for routine development. [Lower-pressure results](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7142210179).
+
 ## Rolling PR latency
 
 Target p95 below 420 seconds from a PR update to the last required verdict, including queue
