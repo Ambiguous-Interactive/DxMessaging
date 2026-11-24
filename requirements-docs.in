@@ -16,7 +16,7 @@
 mkdocs>=1.6.0
 
 # Theme
-mkdocs-material>=9.5.0
+mkdocs-material>=9.8.2
 mkdocs-material-extensions>=1.3.1
 
 # Plugins
