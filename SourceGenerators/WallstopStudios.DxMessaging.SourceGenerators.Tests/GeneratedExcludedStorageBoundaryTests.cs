@@ -62,41 +62,40 @@ internal sealed class GeneratedExcludedStorageBoundaryTests
         string context = $"accessibility={accessibility}, serialized={includeSerializedFields}";
         CSharpParseOptions options = new(LanguageVersion.CSharp9);
 
-        string CreateFixedStorageSource(string attribute, string constructor) =>
-            $$"""
-                using DxMessaging.Core.Attributes;
+        string CreateFixedStorageSource(string attribute, string constructor) => $$"""
+            using DxMessaging.Core.Attributes;
 
-                {{attribute}}
-                public unsafe partial struct Packet
+            {{attribute}}
+            public unsafe partial struct Packet
+            {
+                public readonly int Value;
+                {{fieldAttribute}} {{accessibility}} fixed byte _bytes[4];
+                {{constructor}}
+
+                public int WriteAndRead()
                 {
-                    public readonly int Value;
-                    {{fieldAttribute}} {{accessibility}} fixed byte _bytes[4];
-                    {{constructor}}
-
-                    public int WriteAndRead()
+                    fixed (byte* bytes = _bytes)
                     {
-                        fixed (byte* bytes = _bytes)
-                        {
-                            bytes[3] = 73;
-                            return bytes[3];
-                        }
+                        bytes[3] = 73;
+                        return bytes[3];
                     }
                 }
+            }
 
-                public static class Probe
+            public static class Probe
+            {
+                public static int[] Read()
                 {
-                    public static int[] Read()
-                    {
-                        Packet packet = new Packet(42);
-                        return new[] { packet.Value, packet.WriteAndRead() - 73, 0 };
-                    }
+                    Packet packet = new Packet(42);
+                    return new[] { packet.Value, packet.WriteAndRead() - 73, 0 };
                 }
+            }
 
-                namespace UnityEngine
-                {
-                    public sealed class SerializeField : System.Attribute { }
-                }
-                """;
+            namespace UnityEngine
+            {
+                public sealed class SerializeField : System.Attribute { }
+            }
+            """;
 
         AssertCallerExecutes(
             CreateCompilation(
