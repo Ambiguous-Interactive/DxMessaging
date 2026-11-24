@@ -129,6 +129,10 @@
       Link="MessageBusExtensionsTests.cs"
     />
     <Compile
+      Include="../Tests/Runtime/Core/Extensions/MessageExtensionsProviderTests.cs"
+      Link="MessageExtensionsProviderTests.cs"
+    />
+    <Compile
       Include="../Tests/Runtime/Core/MessageHandlerComparabilityTests.cs"
       Link="MessageHandlerComparabilityTests.cs"
     />
