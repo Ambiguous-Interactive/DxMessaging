@@ -677,6 +677,7 @@ jobs:
 
   publish:
     name: Publish npm package and GitHub Release
+    environment: release
     needs:
       - verify-tag
       - release-qualification
@@ -696,10 +697,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
+      actions: read
       attestations: write
       contents: write
       id-token: write
     steps:
+      # GitHub can create an environment with no configured reviewers.
+      - name: Verify release approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/approvals" |
+            jq -e 'any(.[]; .state == "approved" and .user.login == "wallstop" and
+              any(.environments[]; .name == "release"))' >/dev/null || {
+              echo "::error::This run needs wallstop approval for the release environment."
+              exit 1
+            }
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

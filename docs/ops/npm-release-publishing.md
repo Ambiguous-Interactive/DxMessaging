@@ -34,10 +34,25 @@ Configure npm Trusted Publishing for:
 - GitHub organization: `Ambiguous-Interactive`
 - GitHub repository: `DxMessaging`
 - Workflow: `.github/workflows/release.yml`
-- Environment: only if the GitHub release job uses one
+- Environment: `release`
 
 Trusted Publishing uses OIDC. The workflow uses a pinned npm CLI with
 Trusted Publishing support.
+
+## Release Approval
+
+Configure the GitHub `release` environment with wallstop as the required reviewer, restrict
+it to release tags, and disable administrator bypass. Match the environment in the npm trusted
+publisher binding. Keep the agent on a separate account without approval or bypass authority.
+Verify these settings before enabling autonomous merges. The publish job checks this workflow
+run's environment review before publishing.
+
+Before merging the 4.0.0 release PR, obtain a decision from human wallstop in
+[release readiness](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575).
+Record the version, PR head and candidate tree, and authorized publication destinations.
+Confirm the merged tree matches before dispatch. Obtain a new decision if the candidate
+changes. This decision also applies to manual tagging, registry publication and Asset Store
+submission. An agent operating through wallstop's account cannot supply human approval.
 
 ## Release Trigger
 

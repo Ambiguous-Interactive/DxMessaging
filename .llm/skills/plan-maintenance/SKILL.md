@@ -36,7 +36,11 @@ research bibliographies, implementation notes, or completed checklists into `PLA
 
 ## Task lifecycle
 
-1. Confirm the linked issue is still open before selecting it.
+1. At session start and after each merge, refresh issues, open agent PRs and maintainer findings
+   on GitHub. Resume the active PR first. Otherwise select ready work that unblocks others and
+   fits the remaining time. Remove merged PRs from the queue.
+1. Mark work blocked only on a named external input. Record what makes it ready and continue
+   independent ready work within the one-active-PR limit.
 1. Put the hypothesis, RED condition, GREEN checks, stop rule, and evidence location in the issue
    when issue writes are authorized and available. Otherwise, use the current progress record and
    keep a short pending-issue-sync item in `PLAN.md` with the exact access or authorization condition.
