@@ -56,6 +56,9 @@ class LatencyTests(unittest.TestCase):
                     job(21, "Self-hosted runner registration preflight", end=failed),
                     {
                         **job(22, "Unity 6000 all modes"),
+                        "runner_name": "assigned",
+                        "created_at": failed,
+                        "started_at": "2026-01-02T10:05:00Z",
                         "steps": [
                             {"name": "Set up job", "started_at": "2026-01-02T10:05:00Z"}
                         ],
@@ -90,6 +93,17 @@ class LatencyTests(unittest.TestCase):
             (recovered,) = report.collect("owner/repo", 40)
         self.assertEqual(row, recovered)
         responses[f"{root}/actions/workflows/ci.yml/runs"] = []
+        unity_jobs = responses[f"{root}/actions/runs/2/attempts/1/jobs"]
+        unity_jobs[0] = job(20, "Unity CI Success", None, None)
+        unity_jobs.append(
+            {
+                **job(23, "Unity 2021 all modes", None, None),
+                "runner_name": "",
+                "created_at": failed,
+                "started_at": failed,
+                "steps": None,
+            }
+        )
         with patch.object(
             report, "pages", side_effect=lambda path, *a, **kw: iter(responses[path])
         ):
@@ -98,6 +112,9 @@ class LatencyTests(unittest.TestCase):
             ("missing or ambiguous", None), (orphan["outcome"], orphan["seconds"])
         )
         self.assertEqual(240, row["native_jobs"][0]["preflight_to_setup_seconds"])
+        self.assertEqual([240], row["queue_seconds"])
+        self.assertEqual([240], orphan["queue_seconds"])
+        self.assertIsNone(orphan["native_jobs"][1]["preflight_to_setup_seconds"])
         self.assertTrue(row["retried"])
         self.assertEqual(
             ("success", 420, 60),
