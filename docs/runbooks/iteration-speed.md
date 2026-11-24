@@ -138,6 +138,14 @@ saves per runner, the median including compilation was 3.394 seconds for NUnitLi
 seconds for VSTest. The host load rose during the trials. All measured saves exceeded one second.
 Use the filtered commands above for the supported runner. [NUnitLite results](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7140441945).
 
+In a separate repeat, the runtime NUnitLite arm passed all six screen saves. It finished
+36 of 40 confirmation saves under one second, with a median of 0.533 seconds and a measured
+p95 of 1.062 seconds. VSTest had a median of 1.504 seconds and a p95 of 2.530 seconds. All
+four misses came in the final two pairs, when sampled host CPU pressure exceeded the
+predeclared bound. The generator screen stopped after six NUnitLite saves. Its fastest
+save took 1.219 seconds. Both studies used one named case per project with alternating
+broken and repaired inputs. [Confirmation results](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7141092214).
+
 ## Rolling PR latency
 
 Target p95 below 420 seconds from a PR update to the last required verdict, including queue
