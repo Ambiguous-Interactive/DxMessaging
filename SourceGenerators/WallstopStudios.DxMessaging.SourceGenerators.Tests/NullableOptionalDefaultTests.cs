@@ -213,8 +213,7 @@ public static class Consumer
         string fieldAttribute,
         string constructor,
         string consumer
-    ) =>
-        $$"""
+    ) => $$"""
 {{(constructor.Length == 0 ? "using DxMessaging.Core.Attributes;" : "")}}
 public enum Choice { None, Other }
 public readonly struct Payload
