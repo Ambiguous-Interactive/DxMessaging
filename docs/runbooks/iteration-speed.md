@@ -185,6 +185,15 @@ the 40 updates. Reaching seven minutes in a comparable window requires shorter w
 licensed runner. Five of those 17 waits overlapped a repository manual or nightly-dispatched
 licensed workflow. Overlap alone does not identify the job occupying a runner.
 
+Exact job records confirm 39 runner assignments and one cancellation before assignment.
+The 39 assigned jobs had a 1,459-second p95 from creation to start. From start through
+completion, their p95 was 682 seconds, and 15 jobs took at least 420 seconds.
+Subtracting the full creation-to-start interval from each assigned Unity gate leaves a
+cohort p95 of 664 to 698 seconds, depending on the unassigned row. The other two required
+gate times stay fixed in this calculation. The seven-minute target requires reducing
+both wait and active job time in a comparable cohort.
+[Exact-attempt records and calculation](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7146328421).
+
 A later ordinary native PR update took 5m28s through all three required contexts. Its Unity job
 waited 2 seconds for a runner and took 5m06s from assignment through cleanup. This adds one
 low-queue observation to the separate rolling-window results above.
