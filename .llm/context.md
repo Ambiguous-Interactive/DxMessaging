@@ -28,12 +28,17 @@
 - Keep ignored `progress/` and `.artifacts/` local; never force-add them or their metadata.
 - Keep `PLAN.md` below 100 lines as a routing page. Follow
   [plan maintenance](./skills/plan-maintenance/SKILL.md); issues own durable decisions.
-- Aggregate related local commits into at most one PR per session. Push once practical local
-  verification is complete. Do not push after every commit or run unrelated audits per edit.
+- Work toward zero open issues. Agents may select issues, push, repair and merge ordinary PRs
+  through the protected branch, and close issues with verified acceptance evidence. Keep one
+  active agent PR at a time. Target three hours elapsed per session, including CI and review.
+  Finish the active PR before starting another. Follow the agent task workflow for merge gates.
 - Use the GitHub connector/extension first, local git second, and `gh` last. Follow
   [GitHub access](./skills/github-access/SKILL.md). Never print credentials.
-- Human review remains required. Where present, `GOAL.md` adds maintainer-local release criteria;
-  it is git-ignored and absent from fresh checkouts.
+- Maintainers review ordinary merges asynchronously. Obtain advance human approval for changes
+  that weaken merge or release controls or grant publishing authority. Reserve 4.0.0 launch
+  for explicit human wallstop approval of the candidate and destinations in
+  [readiness issue #575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575).
+  Close it last. Local `GOAL.md` adds release criteria when present.
 
 ## Tooling
 

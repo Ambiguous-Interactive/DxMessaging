@@ -284,6 +284,34 @@ class ReleaseQualificationTests(unittest.TestCase):
         cls.script = cls.document["jobs"]["release-qualification"]["steps"][1]["run"]
         cls.versions = json.loads((ROOT / ".github/unity-versions.json").read_text())["all"]
 
+    @unittest.skipIf(os.name == "nt", "release approval runs in Bash")
+    def test_publish_requires_wallstop_review_for_the_release_environment(self):
+        publish = self.document["jobs"]["publish"]
+        self.assertEqual(publish.get("environment"), "release")
+        self.assertEqual(publish["permissions"]["actions"], "read")
+        gate = publish["steps"][0]
+        self.assertEqual(gate["name"], "Verify release approval")
+        self.assertNotIn("if", gate)
+        self.assertFalse(gate.get("continue-on-error"))
+        review = {"user": {"login": "wallstop"}, "state": "approved", "environments": [{"name": "release"}]}
+        cases = [
+            ("no review", [], False), ("wrong reviewer", [dict(review, user={"login": "other"})], False),
+            ("wrong environment", [dict(review, environments=[{"name": "staging"}])], False),
+            ("rejected", [dict(review, state="rejected")], False), ("approved", [review], True),
+            ("API unavailable", None, False),
+        ]
+        mock = """gh() {
+          [[ "$*" == "api repos/o/r/actions/runs/42/approvals" && -n "$REVIEWS" ]] || return 1
+          echo "$REVIEWS"
+        }
+"""
+        for name, reviews, allowed in cases:
+            with self.subTest(name=name):
+                env = dict(os.environ, GITHUB_REPOSITORY="o/r", GITHUB_RUN_ID="42",
+                           REVIEWS=json.dumps(reviews) if reviews is not None else "")
+                run = subprocess.run(["bash", "-c", mock + gate["run"]], env=env, capture_output=True, text=True)
+                self.assertEqual(run.returncode == 0, allowed, run.stdout + run.stderr)
+
     def test_publication_requires_all_release_lanes(self):
         needs = self.document["jobs"]["publish"]["needs"]
         self.assertIn("release-qualification", needs)

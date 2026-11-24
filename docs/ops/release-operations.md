@@ -69,7 +69,8 @@ organization password manager.
 ## Release Model
 
 The [release-readiness criteria](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)
-define release acceptance. The pipeline runs prepare dispatch, PR, tag,
+define release acceptance. Obtain [4.0.0 launch approval](./npm-release-publishing.md#release-approval)
+before merging the release PR. The pipeline runs prepare dispatch, PR, tag,
 exact-revision qualification, release dispatch and publication:
 
 1. An operator dispatches `.github/workflows/release-prepare.yml` from the

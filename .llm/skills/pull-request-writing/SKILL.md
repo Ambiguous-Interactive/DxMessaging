@@ -22,17 +22,12 @@ one idea per sentence, active voice.
 - Deciding which measurements, tables, or logs belong in the body.
 - Writing the pull request that closes several issues at once.
 
-## Session delivery boundary
+## One active pull request
 
-- Open at most one pull request per agent session. Draft and stacked pull requests count toward
-  this limit.
-- Before opening a pull request, check whether the current session already opened one. Reuse that
-  pull request and bundle related commits into it.
-- If more work does not belong in the same review, keep it local and leave a handoff for a later
-  session. Do not open a second pull request.
-- Run practical local checks before the single push. Do not use separate pull requests as CI probes.
-- If a session already opened several pull requests, stop new work. Consolidate into the earliest
-  suitable pull request, close the redundant pull requests, and avoid restarting their workflows.
+Resume the existing agent PR, including a draft. Group changes that share a cause and
+acceptance evidence. Push after practical local checks. Confirm the merge and issue closures
+before opening another PR in the same session. Follow the
+[session and review procedure](../agent-task-workflow/SKILL.md#session-and-review).
 
 ## Rules
 
@@ -65,8 +60,8 @@ change leaves something open that a reader must know about.
 - A pull request closing several issues has one `Why / What changed / How we know` block per
   issue, so it is longer overall. The ceiling is per block, not per page. It still does not get a
   preamble.
-- Move deep evidence to the issue or to a `progress/` record and link it. The body carries the
-  verdict, not the working.
+- Link durable issue evidence. Identify changed user-facing copy and residual risks for
+  asynchronous maintainer review. Local progress files are unavailable to GitHub readers.
 
 ### Simplified Technical English
 
