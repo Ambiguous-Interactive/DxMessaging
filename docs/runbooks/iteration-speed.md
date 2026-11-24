@@ -95,6 +95,33 @@ in this editor-free checkout. For command syntax and trial details, see the
 [.NET watch reference](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-watch) and the
 [experiment record](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817).
 
+A fixed-input Attributes experiment on `864fc5f8` reused a dedicated warm Roslyn compiler server
+with SDK 10.0.404 and ran the same named NUnit assertion through VSTest after each save. It
+alternated 20 broken and 20 fixed saves per assertion per compiler mode. For the null-type check,
+nearest-rank p95 fell from 1.019 to 0.784 seconds. For the exact-type check, it fell from 1.042 to
+0.785 seconds. All 80 shared-compiler saves produced the expected verdict in under one second with
+the expected fresh binary. The cold server needed 0.062 seconds to accept requests, then 0.983
+seconds for its first compile and verdict.
+
+These measurements cover two edits of one Attributes constructor with a fixed SDK response in
+the Linux devcontainer. Use the filtered `dotnet test` command above when project inputs change.
+[Attributes shared compiler study](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7098607883).
+
+A follow-up screened an edit to runtime registration-group cleanup and a generator diagnostic
+edit. Six measured saves per compiler mode gave shared-compiler medians of 1.194 and 1.261 seconds,
+down from 1.422 and 1.762 with the direct compiler. Both missed the one-second screen and stopped
+before the 40-save confirmation. Every save produced the expected NUnit verdict and fresh binary.
+The runtime, generator, and Editor targets remain open.
+
+With six extra verified compile-and-verdict warmup requests, the medians fell from 1.344 to
+1.131 seconds for the runtime edit and from 1.534 to 1.205 seconds for the generator edit.
+All six measured saves per warmed lane exceeded one second. Median compiler time fell to
+0.224 and 0.251 seconds, while VSTest still took 0.883 and 0.963 seconds. The first cold verdict
+and six warmup requests cost 10.339 and 11.602 seconds before measurement. These screens
+stopped before the 40-save confirmation.
+[Compiler warmup results](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7113483433).
+[Runtime and generator screen](https://github.com/Ambiguous-Interactive/DxMessaging/issues/817#issuecomment-7098746835).
+
 ## Rolling PR latency
 
 Target p95 below 420 seconds from a PR update to the last required verdict, including queue
@@ -216,6 +243,22 @@ The existing documentation gate remains because the pinned central analyzer reco
 trusted-skip shape. Consolidating it with the four-version matrix would require a central contract
 change or duplicated licensed jobs. Keep both gates' documentation allowlists synchronized until
 that upstream capability exists. Unknown paths and incomplete listings must not skip validation.
+
+## Editor-free devcontainer
+
+Set `UNITY_MCP_ENABLED=false` in the checkout's ignored `.env.local`, run
+`npm run unity:mcp:configure -- --offline`, and reconnect the MCP clients you have open.
+Container creation, startup, and attachment honor this setting. It removes the Unity
+connection from the seven generated client configs and skips host discovery and token creation.
+A host outage alone leaves the selected mode in place.
+
+Use the two managed fast lanes under [local commands](#local-commands) for runtime changes.
+Use `npm run test:unit` for script feedback and `npm test` before delivering script changes.
+Record counts, failures, and durations for the lanes you ran. Mark EditMode, PlayMode, and
+IL2CPP checks pending until a licensed host produces results for that revision.
+
+To reconnect, set `UNITY_MCP_ENABLED=true` or remove the setting. With the licensed host ready,
+run `npm run unity:mcp:configure`, reconnect clients, and run `npm run unity:mcp:probe`.
 
 ## Dedicated Unity package host
 

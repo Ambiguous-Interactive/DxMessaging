@@ -263,6 +263,13 @@ def stage_packed_payload(repo_root: Path, scratch: Path, tarball: Path | None = 
             shutil.copytree(source, destination)
         else:
             shutil.copy2(source, destination)
+
+    # Keep the root README's local sample links aligned with the classic layout.
+    readme = staged_root / "README.md"
+    contents = readme.read_bytes()
+    updated = contents.replace(b"](Samples~/", b"](Samples/")
+    if updated != contents:
+        readme.write_bytes(updated)
     return staged_root
 
 

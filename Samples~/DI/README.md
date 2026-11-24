@@ -9,11 +9,12 @@ These snippets illustrate how to consume `IMessageRegistrationBuilder` inside co
    - `ZENJECT_PRESENT`
    - `VCONTAINER_PRESENT`
    - `REFLEX_PRESENT`
-1. Import the sample folder you need into your Unity project (`Assets/Samples/DxMessaging/*`).
+1. For a UPM install, use **DxMessaging > Samples** in Package Manager to import **Dependency Injection**.
+   For a classic asset package, find the examples under `Assets/WallstopStudios/DxMessaging/Samples/DI`.
 
 Each sample shows:
 
-- Registering `IMessageRegistrationBuilder` via the provided shim under [Runtime/Unity/Integrations](../../Runtime/Unity/Integrations/).
+- Registering `IMessageRegistrationBuilder` via the provided shim under [Runtime/Unity/Integrations](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Runtime/Unity/Integrations).
 - Constructing a `MessageRegistrationLease` in a container-managed service.
 - Activating and disposing the lease through the container lifecycle.
 
@@ -27,10 +28,10 @@ Each sample shows:
 
 1. **Hook up one container**
    - **Zenject**:
-     - Add `DxMessagingRegistrationInstaller` (from [Runtime/Unity/Integrations](../../Runtime/Unity/Integrations/)) to your ProjectContext or scene installer list.
+     - Add `DxMessagingRegistrationInstaller` (from [Runtime/Unity/Integrations](https://github.com/Ambiguous-Interactive/DxMessaging/tree/master/Runtime/Unity/Integrations)) to your ProjectContext or scene installer list.
      - Drop [SampleInstaller.cs](./Zenject/SampleInstaller.cs) into your project and register it alongside other installers. When the scene runs, the installer resolves `IMessageRegistrationBuilder`, stages a `PlayerSpawned` listener, and activates via the Zenject lifecycle.
    - **VContainer**:
-     - Define `VCONTAINER_PRESENT` and reference the optional extension under [VContainerRegistrationExtensions.cs](../../Runtime/Unity/Integrations/VContainer/VContainerRegistrationExtensions.cs).
+     - Define `VCONTAINER_PRESENT` and reference the optional extension under [VContainerRegistrationExtensions.cs](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Runtime/Unity/Integrations/VContainer/VContainerRegistrationExtensions.cs).
      - Add [SampleLifetimeScope.cs](./VContainer/SampleLifetimeScope.cs) to the scene (or derive from it). The scope registers one `IMessageBus`, the builder resolves that scoped bus, and the entry point injects the same bus for one `ScoreUpdated` emission per second.
    - **Reflex**:
      - Install Reflex, then enable `REFLEX_PRESENT` for the imported sample assembly.

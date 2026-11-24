@@ -18,9 +18,8 @@ namespace DxMessaging.Editor.CustomEditors
     /// The package-owned fallback editor hosts the UI Toolkit warning view for subclasses without
     /// a more specific user editor. This header hook remains for user-defined custom editors, so
     /// they can keep their own Inspector body while still seeing DxMessaging base-call warnings.
-    /// The overlay reads its data from <see cref="DxMessagingConsoleHarvester"/> (which reflects
-    /// directly into Unity's <c>UnityEditor.LogEntries</c> console store) and from
-    /// <see cref="DxMessagingSettings"/> (project-wide ignore list and master toggle).
+    /// The overlay reads diagnostics from <see cref="DxMessagingConsoleHarvester"/> and applies
+    /// the project-wide ignore list and master toggle from <see cref="DxMessagingSettings"/>.
     ///
     /// <para>
     /// <b>Layout/Repaint control-count invariant.</b> When the overlay renders from inside an

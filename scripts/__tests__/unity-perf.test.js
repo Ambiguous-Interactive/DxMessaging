@@ -517,6 +517,21 @@ test("generated performance block summarizes comparisons before internal dispatc
   assert.doesNotMatch(monoSummary, /Release player|\|.*count unmeasured.*\|/);
 });
 
+test("comparison ratios require matching positive rates on the same commit and platform", () => {
+  for (const [rate, reference, expected] of PERF_TEST_VECTORS.comparisonRatioCases) {
+    const entries = [["DxMessaging|GlobalToOne", comparisonRow(rate)]];
+    if (reference) {
+      entries.push(["MessagePipe|GlobalToOne", { ...comparisonRow("90000000.000"), ...reference }]);
+    }
+    const [summary] = buildComparisonSections(standaloneRows(entries));
+    const rendered = summary
+      .join("\n")
+      .split("\n")
+      .find((line) => line.startsWith("| Global -> 1 subscriber"));
+    assert.equal(rendered.split("|").at(-2).trim(), expected);
+  }
+});
+
 test("deriveScope reads the execution scope from platform strings", () => {
   const cases = PERF_TEST_VECTORS.scopeCases;
   for (const [platform, expected] of cases) {

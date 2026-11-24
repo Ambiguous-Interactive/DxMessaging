@@ -523,7 +523,11 @@ The Inspector overlay's data source is the **`BaseCallTypeScanner`** -- a determ
 
 **DXMSG009 classified as DXMSG007 in the cache.** The scanner's IL-only probe cannot distinguish DXMSG007 (`new` modifier) from DXMSG009 (missing `override` / CS0114) -- Roslyn emits the same IL for both. The cached snapshot conservatively classifies both as `DXMSG007`. The compile-time analyzer remains authoritative for the precise classification -- see the [DXMSG009: Editor inspector overlay subsection](#editor-inspector-overlay) above.
 
-**Legacy console-scrape bridge (opt-in).** The `DxMessagingSettings.UseConsoleBridge` field on `Assets/Editor/DxMessagingSettings.asset` re-enables the old data sources (`UnityEditor.LogEntries` reflection + `CompilationPipeline.assemblyCompilationFinished` `CompilerMessage[]`) and unions them INTO the IL scanner's snapshot -- never overrides it. Default off. Enable only if you want the union of both data sources, e.g. to surface a regression in the IL byte-walker that is correctly captured by the compile-time analyzer's console output.
+**Compiler warnings (opt-in).** Enable **Include Compiler Warnings** in Project Settings
+to add analyzer warnings from `CompilationPipeline.assemblyCompilationFinished` to the IL scan.
+The IL scanner remains the primary source. The feed only sees compilations observed during
+the current Editor session. The saved value and the `DxMessagingSettings.UseConsoleBridge`
+property keep their original names.
 
 The unified per-FQN snapshot is persisted to `Library/DxMessaging/baseCallReport.json` so the overlay has data to render before the first post-load rescan completes; it is rewritten on every successful rescan. A manual `Tools -> Wallstop Studios -> DxMessaging -> Rescan Base-Call Warnings` menu is available for force-rescan.
 
@@ -536,7 +540,7 @@ The overlay itself uses two complementary editor-injection paths:
 
 Components that emit DXMSG006, DXMSG007, DXMSG009, or DXMSG010 show a warning surface at the top of their Inspector with three actions:
 
-- **Open Script** -- opens the offending component's source file; when the legacy console bridge has a line number, it opens at that line.
+- **Open Script** -- opens the offending component's source file; when the compiler provides a line number, it opens at that line.
 - **Ignore this type** -- appends the type's fully-qualified name to the ignore list in `Assets/Editor/DxMessagingSettings.asset`; the generated sidecar is refreshed for the analyzer.
 - **Stop ignoring** -- appears instead of "Ignore this type" when the type is already in the ignore list; removes it.
 
@@ -603,11 +607,12 @@ a player build immediately after it in the same callback.
 ## Unity 2021 setup notes
 
 DxMessaging splits its compiler extensions into two DLLs: one analyzer and one source generator.
-Both target Roslyn 3.8.0 for Unity 2021 compatibility:
+Both target the Roslyn 3.8.0 API for Unity 2021 compatibility. The archived Linux Unity
+2021.3.45f1 script compiler uses Roslyn 3.9. In a load check, it ran a 3.8-targeted analyzer
+and reported CS8032 for the same analyzer built against Roslyn 4.8.
 
 - `WallstopStudios.DxMessaging.Analyzer.dll` contains the base-call analyzer
-  (DXMSG006/007/008/009/010/015). Unity 2021 rejects analyzers built against Roslyn 4.x;
-  Microsoft's `Microsoft.Unity.Analyzers` package pins Roslyn 3.8.0 for the same reason.
+  (DXMSG006/007/008/009/010/015).
 - `WallstopStudios.DxMessaging.SourceGenerators.dll` contains the source generators
   (DXMSG002/003/004/005/011/012/013/014/016). They use the classic `ISourceGenerator` API so Unity 2021 can
   instantiate them.

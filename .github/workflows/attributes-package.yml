@@ -97,16 +97,23 @@ jobs:
           NUGET_PACKAGES: ${{ runner.temp }}/dxm-attributes-live-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          dotnet restore .nuget-tests/DxMessaging.Attributes.Package.Tests.csproj -p:AttributesPackageVersion="$PACKAGE_VERSION" -p:RestoreAdditionalProjectSources=https://api.nuget.org/v3/index.json
-          dotnet test .nuget-tests/DxMessaging.Attributes.Package.Tests.csproj \
-            --configuration Release --no-restore -p:AttributesPackageVersion="$PACKAGE_VERSION" \
-            -p:RestoreAdditionalProjectSources=https://api.nuget.org/v3/index.json \
-            --logger 'trx;LogFileName=live-package-consumer.trx' --results-directory .artifacts/nuget-live-tests
+          feed=https://api.nuget.org/v3/index.json
+          installed="$NUGET_PACKAGES/wallstopstudios.dxmessaging.attributes/$PACKAGE_VERSION"
+          dotnet restore .nuget-tests/DxMessaging.Attributes.Package.Tests.csproj \
+            --source "$feed" --no-http-cache -p:RestoreAdditionalProjectSources= \
+            -p:AttributesPackageVersion="$PACKAGE_VERSION"
+          if ! jq -e --arg feed "$feed" '.source == $feed' "$installed/.nupkg.metadata" > /dev/null; then
+            echo "::error::The restored attributes package does not record NuGet.org as its source."
+            exit 1
+          fi
           package=".artifacts/nuget/WallstopStudios.DxMessaging.Attributes.${PACKAGE_VERSION}.nupkg"
           payloads="$(unzip -Z1 "$package" | grep -E '^(lib/|analyzers/|README.md$)')"
           while IFS= read -r payload; do
-            unzip -p "$package" "$payload" | cmp - "$NUGET_PACKAGES/wallstopstudios.dxmessaging.attributes/$PACKAGE_VERSION/$payload"
+            unzip -p "$package" "$payload" | cmp - "$installed/$payload"
           done <<< "$payloads"
+          dotnet test .nuget-tests/DxMessaging.Attributes.Package.Tests.csproj \
+            --configuration Release --no-restore -p:AttributesPackageVersion="$PACKAGE_VERSION" \
+            --logger 'trx;LogFileName=live-package-consumer.trx' --results-directory .artifacts/nuget-live-tests
 
       - name: Upload live package results
         if: ${{ always() && inputs.mode == 'verify' }}

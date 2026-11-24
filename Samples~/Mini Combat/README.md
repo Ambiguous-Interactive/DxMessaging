@@ -4,9 +4,10 @@ Run one scene to compare untargeted, targeted, and broadcast messages in a small
 
 ## Run the sample
 
-1. Open **Window > Package Manager**.
-1. Select **DxMessaging**, then import **Mini Combat**.
-1. Open `MiniCombat.unity` from the imported sample folder.
+For a UPM install, use **DxMessaging > Samples** in Package Manager to import **Mini Combat**.
+For a classic asset package, find the scene under `Assets/WallstopStudios/DxMessaging/Samples`.
+
+1. Open `MiniCombat.unity`.
 1. Enter Play Mode. Watch the combat feed in the Game view and the gameplay output in the Console.
 
 The scene is already wired. `Boot` emits three messages after every listener has registered:

@@ -320,51 +320,8 @@ function isMeasuredInteger(value) {
   return Number.isFinite(parsed) && parsed >= 0;
 }
 
-function preferredComparisonMetricScope(comparisonByScope, selectMetric) {
-  for (const scope of SCOPE_ORDER) {
-    const byCell = comparisonByScope.get(scope);
-    if (!byCell) {
-      continue;
-    }
-    for (const row of byCell.values()) {
-      if (isMeasuredInteger(selectMetric(row))) {
-        return scope;
-      }
-    }
-  }
-  return preferredComparisonScope(comparisonByScope);
-}
-
-function anyScopeMeasures(comparisonByScope, selectMetric) {
-  return [...comparisonByScope.values()].some((byCell) =>
-    [...byCell.values()].some((row) => isMeasuredInteger(selectMetric(row)))
-  );
-}
-
-function buildMetricComparison(
-  comparisonByScope,
-  throughputScope,
-  throughputByCell,
-  scope,
-  formatCell
-) {
-  let selectedScope = scope;
-  let byCell = comparisonByScope.get(selectedScope);
-  let table = byCell ? buildComparisonMatrix(byCell, formatCell, { bold: false }) : null;
-
-  // Defense-in-depth: never push a null metric table.
-  if (!table) {
-    selectedScope = throughputScope;
-    byCell = throughputByCell;
-    table = buildComparisonMatrix(byCell, formatCell, { bold: false });
-  }
-
-  const sample = byCell.values().next().value;
-  return {
-    scope: selectedScope,
-    platform: sample ? sample.platform : undefined,
-    table
-  };
+function measuresMetric(byCell, selectMetric) {
+  return [...(byCell?.values() ?? [])].some((row) => isMeasuredInteger(selectMetric(row)));
 }
 
 // Throughput matrices bold per-scenario display-precision winners.
@@ -423,6 +380,18 @@ function buildComparisonMatrix(byCell, formatCell, { bold }) {
   return alignTable(dataRows);
 }
 
+function formatMessagePipeRatio(row, reference) {
+  if (!row.commit || row.commit !== reference?.commit || row.platform !== reference.platform) {
+    return "N/A";
+  }
+  const rate = Number(row.emitsPerSecond);
+  const referenceRate = Number(reference.emitsPerSecond);
+  const ratio = (rate / referenceRate) * 100;
+  return rate > 0 && referenceRate > 0 && Number.isFinite(referenceRate) && Number.isFinite(ratio)
+    ? `${ratio.toFixed(1)}%`
+    : "N/A";
+}
+
 function buildComparisonSections(comparisonByScope) {
   const throughputScope = preferredComparisonScope(comparisonByScope);
   if (!throughputScope) {
@@ -454,7 +423,8 @@ function buildComparisonSections(comparisonByScope) {
           ? `${formatMeasuredInteger(row.gcAllocations)} measured per 10k ops`
           : scenarioKey === "SubUnsub"
             ? "Allocates; count unmeasured"
-            : "0 per emit contract; count unmeasured"
+            : "0 per emit contract; count unmeasured",
+        formatMessagePipeRatio(row, throughputByCell.get(`MessagePipe|${scenarioKey}`))
       ]
     ];
   });
@@ -465,10 +435,17 @@ function buildComparisonSections(comparisonByScope) {
       "",
       "Time per operation is the reciprocal of the measured rate. Allocation evidence uses",
       "measured counts when the selected scope exposes them; otherwise it reports the",
-      "steady-state contract and marks the count unmeasured.",
+      "steady-state contract and marks the count unmeasured. The MessagePipe percentages",
+      "use matching commit and platform rows. Independent-build uncertainty is unmeasured.",
       "",
       alignTable([
-        ["Scenario", "DxMessaging rate", "Time / operation", "GC allocation evidence"],
+        [
+          "Scenario",
+          "DxMessaging rate",
+          "Time / operation",
+          "GC allocation evidence",
+          "Share of MessagePipe rate"
+        ],
         ...summaryRows
       ])
     ]);
@@ -484,20 +461,27 @@ function buildComparisonSections(comparisonByScope) {
     ["GC allocations", (row) => row.gcAllocations, formatRowAllocations],
     ["GC allocated bytes", (row) => row.gcAllocatedBytes, formatRowBytes]
   ]) {
-    if (!anyScopeMeasures(comparisonByScope, selectMetric)) {
-      continue;
+    const hasMetric = (byCell) => measuresMetric(byCell, selectMetric);
+    let scope = SCOPE_ORDER.find((candidate) => hasMetric(comparisonByScope.get(candidate)));
+    if (!scope) {
+      if (![...comparisonByScope.values()].some(hasMetric)) {
+        continue;
+      }
+      scope = throughputScope;
     }
-    const result = buildMetricComparison(
-      comparisonByScope,
-      throughputScope,
-      throughputByCell,
-      preferredComparisonMetricScope(comparisonByScope, selectMetric),
-      formatMetric
-    );
+    let byCell = comparisonByScope.get(scope);
+    let table = buildComparisonMatrix(byCell, formatMetric, { bold: false });
+    // A selected scope can contain no recognized comparison technology.
+    if (!table) {
+      scope = throughputScope;
+      byCell = throughputByCell;
+      table = buildComparisonMatrix(byCell, formatMetric, { bold: false });
+    }
+    const platform = byCell.values().next().value?.platform;
     sections.push([
-      `### Library comparison - ${metric} per 10k ops (${scopeLabel(result.scope, result.platform)})`,
+      `### Library comparison - ${metric} per 10k ops (${scopeLabel(scope, platform)})`,
       "",
-      result.table
+      table
     ]);
   }
 
@@ -574,19 +558,6 @@ function firstSelectedCommit(selection) {
   return "unknown";
 }
 
-function countOccurrences(content, needle) {
-  let count = 0;
-  let from = 0;
-  for (;;) {
-    const at = content.indexOf(needle, from);
-    if (at === -1) {
-      return count;
-    }
-    count += 1;
-    from = at + needle.length;
-  }
-}
-
 function locateMarkers(content) {
   const beginIndex = content.indexOf(BEGIN_MARKER);
   const endIndex = content.indexOf(END_MARKER);
@@ -597,8 +568,8 @@ function locateMarkers(content) {
     );
   }
   // Refuse duplicate regions; first-match slicing would leave stale generated docs.
-  const beginCount = countOccurrences(content, BEGIN_MARKER);
-  const endCount = countOccurrences(content, END_MARKER);
+  const beginCount = content.split(BEGIN_MARKER).length - 1;
+  const endCount = content.split(END_MARKER).length - 1;
   if (beginCount !== 1 || endCount !== 1) {
     throw new Error(
       `Expected exactly one AUTOGENERATED dispatch-throughput marker pair, ` +

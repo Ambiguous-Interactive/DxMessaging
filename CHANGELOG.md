@@ -43,14 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **BREAKING:** Add a direct `WallstopStudios.DxMessaging.Attributes` reference to Unity assembly definitions that use public
-  DxMessaging attributes. Namespaces stay unchanged; see the [4.0 migration guide](docs/guides/migration-guide.md#reference-the-dedicated-attributes-assembly).
+  DxMessaging attributes. Namespaces stay unchanged; see the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#reference-the-dedicated-attributes-assembly).
 - Correct IntelliSense summaries and references, including cache enumeration, bus reset behavior,
   global observer message and context parameters, empty-bus debug logging, and deregistration callback boundaries
   ([#503](https://github.com/Ambiguous-Interactive/DxMessaging/issues/503),
   [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
 - **BREAKING:** Remove the test-only `DxMessagingRuntimeSettingsProvider.Override` API. Configure
   the runtime settings resource asset for application behavior and keep fixture configuration in
-  test assemblies; see the [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400).
+  test assemblies; see the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400).
 - Reduce recurring Unity correctness setup by installing only the locked Node.js runtime
   dependencies used to redact and seal test artifacts ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility
@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   materializing registrar sort keys once, and reduce package size by shipping only the optimized
   analyzer payload instead of its development sources ([#576](https://github.com/Ambiguous-Interactive/DxMessaging/issues/576), [#577](https://github.com/Ambiguous-Interactive/DxMessaging/issues/577)).
 - **BREAKING:** Fast handlers and post-processors now use readonly references; change callback
-  parameters from `ref` to `in` and follow the [4.0 migration guide](docs/guides/migration-guide.md#migrating-to-400) ([#486](https://github.com/Ambiguous-Interactive/DxMessaging/issues/486)).
+  parameters from `ref` to `in` and follow the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400) ([#486](https://github.com/Ambiguous-Interactive/DxMessaging/issues/486)).
 - Show `DXMSG006` through `DXMSG010` in MessageAwareComponent Inspector diagnostic titles so
   lifecycle failures and opt-outs remain distinguishable
   ([#314](https://github.com/Ambiguous-Interactive/DxMessaging/issues/314)).
@@ -74,6 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix Flow Graph compilation on early Unity 2021.3 patches
+  ([#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
 - Resolve message source links in the Flow Graph and Message Monitor against currently loaded
   assemblies in Unity 6.6 ([#813](https://github.com/Ambiguous-Interactive/DxMessaging/issues/813)).
 - Use Unity's loaded assembly path to verify the runtime in the 3.x upgrade preview on Unity 6.6
@@ -82,8 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#810](https://github.com/Ambiguous-Interactive/DxMessaging/issues/810)).
 - Preserve `MessagingComponent` listener ownership during callbacks and report unresolved provider
   recursion during initial setup ([#805](https://github.com/Ambiguous-Interactive/DxMessaging/issues/805)).
-- Reduce diagnostic scan buffering in the opt-in Editor Console bridge and release its Console
-  enumeration reliably ([#801](https://github.com/Ambiguous-Interactive/DxMessaging/issues/801)).
+- Replace the opt-in Inspector scan of Unity's Console history with a compiler warning feed.
+  Existing settings carry forward, and compiler warnings keep their source locations
+  ([#801](https://github.com/Ambiguous-Interactive/DxMessaging/issues/801),
+  [#575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)).
 - Preserve broken-base-chain warnings (`DXMSG010`) in the opt-in Editor compiler-message bridge
   ([#802](https://github.com/Ambiguous-Interactive/DxMessaging/issues/802)).
 - Remove stale compiler diagnostics from the Editor bridge when assemblies report the same type
@@ -109,11 +113,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DxMessaging namespace text ([#707](https://github.com/Ambiguous-Interactive/DxMessaging/issues/707)).
 - **BREAKING:** Reject record field constructors that replace the record copy constructor and
   can silently change `with` results. Choose a distinct construction API as described in the
-  [migration guide](docs/guides/migration-guide.md#preserve-record-copy-behavior)
+  [migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#preserve-record-copy-behavior)
   ([#720](https://github.com/Ambiguous-Interactive/DxMessaging/issues/720)).
 - **BREAKING:** Order generated constructor parameters by source-file compilation order, then
   declaration order within each file. Check positional calls for split partial types in the
-  [migration guide](docs/guides/migration-guide.md#check-constructors-for-split-partial-types)
+  [migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#check-constructors-for-split-partial-types)
   ([#723](https://github.com/Ambiguous-Interactive/DxMessaging/issues/723)).
 - Initialize excluded struct fields and auto-properties in generated constructors while preserving
   initializers and avoiding unintended constructor calls. Chain empty primary constructors and
@@ -382,7 +386,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   components carry each one, and mark mixed enabled states so a missing or
   disabled handler stands out across a scene selection
   ([#297](https://github.com/Ambiguous-Interactive/DxMessaging/issues/297)).
-  See [Inspector Overlay](docs/guides/inspector-overlay.md#message-subscriptions).
+  See [Inspector Overlay](https://ambiguous-interactive.github.io/DxMessaging/guides/inspector-overlay/#message-subscriptions).
 
 ### Changed
 
@@ -1042,7 +1046,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Mutation tests now exercise every messaging kind (Untargeted/Targeted/Broadcast) via a single parameterized fixture (`[ValueSource(MessageScenarios.AllKinds)]`) across `MutationDuringEmissionTests`, `MutationInterceptorTests`, and `MutationDestructionTests`. Users get tighter cross-kind parity guarantees; no runtime API change. (~720 lines of duplication removed; test count preserved.)
 - Renamed `UntargetedTests`, `TargetedTests`, `BroadcastTests` to `EmitUntargetedSpecificTests`, `EmitTargetedSpecificTests`, `EmitBroadcastSpecificTests` to clarify that kind-common tests live in `EmitTests` and kind-specific tests live in the renamed files. (Test-suite hardening is test-only; no `Runtime/` behavior was modified.)
-- Documentation now warns up front that `MessageAwareComponent` subclasses must call `base.Awake()`, `base.OnEnable()`, `base.OnDisable()`, `base.OnDestroy()`, and `base.RegisterMessageHandlers()` from any override; admonitions added to the Quick Start, Getting Started Guide, Visual Guide, README, FAQ, and Troubleshooting pages all link to [`DXMSG006`](docs/reference/analyzers.md#dxmsg006-missing-base-call) (issue #195).
+- Documentation now warns up front that `MessageAwareComponent` subclasses must call `base.Awake()`, `base.OnEnable()`, `base.OnDisable()`, `base.OnDestroy()`, and `base.RegisterMessageHandlers()` from any override; admonitions added to the Quick Start, Getting Started Guide, Visual Guide, README, FAQ, and Troubleshooting pages all link to [`DXMSG006`](https://ambiguous-interactive.github.io/DxMessaging/reference/analyzers/#dxmsg006-missing-base-call) (issue #195).
 
 ### Fixed
 
