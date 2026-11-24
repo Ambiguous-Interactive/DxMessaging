@@ -85,6 +85,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             Assert.AreEqual(1, provider.ResolveCount);
             Assert.AreEqual(1, globalCount);
 
+#if UNITY_2021_3_OR_NEWER
             TestScriptableMessageBusProvider destroyedProvider =
                 UnityEngine.ScriptableObject.CreateInstance<TestScriptableMessageBusProvider>();
             destroyedProvider.Configure(new MessageBus());
@@ -97,6 +98,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 globalCount,
                 "A destroyed Unity provider should be unavailable and preserve the global fallback."
             );
+#endif
 
             globalToken.Disable();
         }
@@ -378,6 +380,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
             }
         }
 
+#if UNITY_2021_3_OR_NEWER
         private sealed class TestScriptableMessageBusProvider
             : DxMessaging.Unity.ScriptableMessageBusProvider
         {
@@ -393,6 +396,7 @@ namespace DxMessaging.Tests.Runtime.Core.Extensions
                 return _bus;
             }
         }
+#endif
 
         private readonly struct TestUntargetedMessage : IUntargetedMessage
         {
