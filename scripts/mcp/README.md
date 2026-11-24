@@ -28,6 +28,14 @@ host bind mounts that do not support `chown`. Unwritable files must become writa
 after repair or startup fails with their path. Repair does not recursively change the
 host checkout. A host checkout that is itself read-only must be repaired on the host.
 
+## Editor-free use
+
+Set `UNITY_MCP_ENABLED=false` in `.env.local` to omit Unity from the generated client configs.
+Run `npm run unity:mcp:configure -- --offline` and reconnect open clients.
+Re-enable Unity to validate and apply your saved endpoint settings again.
+With Unity enabled (the default), `--offline` skips discovery and still configures the endpoint.
+See the [Editor-free test workflow](../../docs/runbooks/iteration-speed.md#editor-free-devcontainer).
+
 ## Credentials
 
 Create `.env.local` at the repository root. Values from the process environment take

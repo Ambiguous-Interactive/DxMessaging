@@ -42,13 +42,13 @@ namespace DxMessaging.Editor.Settings
             "Disable the warning shown when Enter Play Mode Options skips domain reload.";
         private const string InspectorChecksSectionTitle = "Inspector Checks";
         private const string InspectorChecksSectionDescription =
-            "Controls Inspector warnings and the optional console bridge for base-call diagnostics.";
+            "Controls Inspector warnings and the optional compiler feed for base-call diagnostics.";
         private const string BaseCallCheckEnabledLabel = "Base-Call Check Enabled";
         private const string BaseCallCheckEnabledTooltip =
             "Show Inspector warnings when MessageAwareComponent overrides omit base.RegisterMessageHandlers().";
-        private const string UseConsoleBridgeLabel = "Use Console Bridge";
+        private const string UseConsoleBridgeLabel = "Include Compiler Warnings";
         private const string UseConsoleBridgeTooltip =
-            "Also harvest compiler/analyzer warnings from Unity's console in addition to the IL scanner.";
+            "Add base-call warnings from compilations observed in this Editor session.";
         private const string BaseCallIgnoredTypesLabel = "Ignored Base-Call Types";
         private const string BaseCallIgnoredTypesTooltip =
             "Fully-qualified MessageAwareComponent type names excluded from the Inspector overlay and base-call analyzer.";
@@ -455,6 +455,7 @@ namespace DxMessaging.Editor.Settings
                         InspectorChecksSectionTitle,
                         BaseCallCheckEnabledLabel,
                         UseConsoleBridgeLabel,
+                        "Use Console Bridge",
                         BaseCallIgnoredTypesLabel,
                         "Wallstop",
                         "Wallstop Studios",

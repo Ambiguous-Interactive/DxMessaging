@@ -212,9 +212,8 @@ namespace DxMessaging.Editor.Settings
         }
 
         /// <summary>
-        /// Opt-in toggle for the legacy console-scrape bridge that augments the IL-reflection
-        /// scanner's snapshot with warnings harvested from <c>UnityEditor.LogEntries</c> and from
-        /// <c>CompilationPipeline.assemblyCompilationFinished</c>.
+        /// Adds base-call warnings from <c>CompilationPipeline.assemblyCompilationFinished</c>
+        /// to the IL scanner's snapshot when enabled.
         /// </summary>
         /// <remarks>
         /// <para>
@@ -225,10 +224,8 @@ namespace DxMessaging.Editor.Settings
         /// Unity 2021 cache hits, incremental compiles, and arbitrary domain-reload sequences.
         /// </para>
         /// <para>
-        /// The legacy bridge predates the IL scanner and was the source of the intermittent
-        /// "missing warnings" bug on Unity 2021. Enable it ONLY if you want the union of both
-        /// data sources -- for example, to surface a regression in the IL byte-walker that is
-        /// already correctly captured by the compile-time analyzer's console output.
+        /// Unity sends the warnings for compilations observed in this Editor session.
+        /// The property and serialized setting retain their original names for compatibility.
         /// </para>
         /// <para>
         /// Toggling this property is observable via a deferred

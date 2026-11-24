@@ -19,7 +19,9 @@ the package editor tools.
 
 ## Run It
 
-1. Import **Diagnostics Tooling Exerciser** from the Package Manager Samples tab.
+For a UPM install, use **DxMessaging > Samples** in Package Manager to import **Diagnostics Tooling Exerciser**.
+For a classic asset package, find the scene under `Assets/WallstopStudios/DxMessaging/Samples`.
+
 1. Open `DiagnosticsToolingExerciser.unity`.
 1. Follow the **DxMessaging Guided Tour** window that opens with the scene. It
    starts Play Mode, emits deterministic traffic, opens Message Monitor and Flow

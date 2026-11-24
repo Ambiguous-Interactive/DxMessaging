@@ -1,8 +1,10 @@
 # Compatibility
 
-DxMessaging is render-pipeline agnostic (pure C#) and targets Unity 2021.3+. The matrix below summarizes support by Unity version and Render Pipeline.
+DxMessaging supports Unity 2021.3 or later with the Built-In Render Pipeline,
+Universal Render Pipeline (URP), or High Definition Render Pipeline (HDRP).
+The messaging runtime and Editor diagnostics use Unity APIs shared by these pipelines.
 
-Unity Version vs Render Pipeline
+## Unity versions and render pipelines
 
 | Unity      | Built-In RP | URP        | HDRP       |
 | ---------- | ----------- | ---------- | ---------- |
@@ -13,7 +15,11 @@ Unity Version vs Render Pipeline
 
 Notes
 
-- RP-agnostic: DxMessaging does not depend on rendering APIs; it works equally across Built-In, URP, and HDRP.
+- The package has no dependency on a render pipeline package. Mini Combat and UI Buttons +
+  Inspector draw their controls using Unity's `OnGUI`. The samples ship without pipeline-specific
+  shaders or materials.
+- Native CI covers selected Unity versions and test scopes. Separate native sample rendering
+  checks in URP and HDRP remain pending.
 - Minimum version is governed by the package manifest (`unity`: 2021.3). Newer LTS versions are expected to work.
 - Unity 6 migrates object identity to `EntityId` and deprecates `Object.GetInstanceID()` (it becomes a compile error in Unity 6.5). DxMessaging handles this internally: on Unity 6.4+ the dispatch key reads the non-deprecated `EntityId.ToULong(...)` accessor (keeping the same 32-bit value), and older Unity keeps `GetInstanceID()`. The package keeps building across the supported range, including Unity 6.5+ where the old API is removed.
 

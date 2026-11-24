@@ -22,7 +22,7 @@ Unity Package Manager -> Add package from git URL:
 https://github.com/Ambiguous-Interactive/DxMessaging.git
 ```
 
-**Requirements:** Unity 2021.3+ | .NET Standard 2.1 | All render pipelines supported
+**Requirements:** Unity 2021.3+ | .NET Standard 2.1 | Built-In Render Pipeline, URP, or HDRP
 
 ---
 

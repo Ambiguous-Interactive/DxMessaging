@@ -163,9 +163,10 @@ function buildChecklist({ mode, pkg, tag, packageName, unitypackageName, changel
 1. Open a clean project in an editor version supported by the installed official UPM publishing tool.
 1. In \`Window > Package Manager\`, choose \`Add package from tarball...\` and select \`${packageName}\` from this artifact.
 1. Open \`Window > Tools > Asset Store > Validator\`, select the UPM validation type, and validate the installed package.
-1. Open \`Window > Tools > Asset Store > Uploader\`, select the \`UPM Packages\` tab, select ${pkg.name} ${pkg.version}, and upload it.
-1. After Unity publishes the version, use a clean project where it is not installed. In Package Manager Version History, expand this version and confirm its notes match \`EXPECTED-UPM-FIELDS.json\`.
-1. If supported Unity tooling exposes the version manifest, compare its field values with \`EXPECTED-UPM-FIELDS.json\`. Do not query undocumented endpoints.`;
+1. Open \`Window > Tools > Asset Store > Uploader\`, select the \`UPM Packages\` tab, select ${pkg.name} ${pkg.version}, and upload it.`;
+  const upmPublicationChecks = isClassic ? "" : `
+1. In a clean project where the package is absent, expand this version in Package Manager Version History. Confirm its notes match \`EXPECTED-UPM-FIELDS.json\`.
+1. If supported Unity tooling exposes the version manifest, compare its field values with \`EXPECTED-UPM-FIELDS.json\`.`;
   return `${heading}
 
 Package: ${pkg.displayName || pkg.name} (${pkg.name})
@@ -188,7 +189,11 @@ ${uploadSteps}
 1. Read all listing copy, including the AI disclosure, and confirm it describes the submitted content accurately.
 1. Paste the release notes from the changelog excerpt below.
 1. Submit for Unity review.
-1. Verify the live listing's version, free price, disclosure, links, screenshots, and downloadable package.
+
+## After Publication
+
+1. Verify the live listing's version, free price, disclosure, links, screenshots, and downloadable package.${upmPublicationChecks}
+1. Install the published package in a clean project and confirm the reported version and a clean import.
 
 ## Changelog Excerpt
 

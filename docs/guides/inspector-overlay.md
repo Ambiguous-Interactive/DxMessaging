@@ -180,8 +180,8 @@ fully-qualified type name is currently in the project ignore list.
 When the component is **not** ignored, you see two buttons:
 
 - **Open Script** -- opens the offending component's source file at the
-  top; when the legacy console bridge is enabled and a line number is
-  available, the file opens at that line.
+  line reported by the compiler when available. Otherwise it opens at
+  the top of the file.
 - **Ignore this type** -- appends the component's fully-qualified type
   name to the ignore list in `Assets/Editor/DxMessagingSettings.asset`;
   the generated sidecar is refreshed for the analyzer. The next
@@ -294,8 +294,8 @@ split into three sections:
   overlay. When `false`, the overlay is silenced; the underlying
   analyzer still emits the Console warning unless `.editorconfig`
   says otherwise.
-- **Use Console Bridge** -- opt-in legacy bridge that unions Unity
-  Console / compiler-message warnings into the IL-reflection scan.
+- **Include Compiler Warnings** -- adds base-call warnings from
+  compilations observed during this Editor session to the IL scan.
   Default off.
 - **Ignored Base-Call Types** -- fully-qualified
   `MessageAwareComponent` type names excluded from the overlay and

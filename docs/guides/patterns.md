@@ -745,7 +745,8 @@ Record subscriber fan-out and callback work alongside the message rate:
 
 Compare results within the scope recorded by the
 [performance benchmarks](../architecture/performance.md). Use the
-[measurement methodology](../runbooks/perf-benchmark-methodology.md) when collecting new results.
+[measurement methodology](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/docs/runbooks/perf-benchmark-methodology.md)
+when collecting new results.
 
 <a id="real-world-production-example-battle-royale-game"></a>
 

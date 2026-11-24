@@ -92,6 +92,14 @@ class UnityPackageWriterTests(unittest.TestCase):
                 manifest = json.dumps(archived_package).encode()
                 (packed / "package.json").write_bytes(manifest)
                 (packed / "Samples~" / "Example.cs").write_text("class Example {}\n")
+                sample_doc = packed / "Samples~" / "Local Guide.md"
+                sample_doc.write_bytes(b"# Try it\r\n")
+                original_readme = (
+                    b"[Walkthrough](Samples~/Local%20Guide.md#try-it)\r\n"
+                    b"[Online](https://example.com/Samples~/Local%20Guide.md)\r\n"
+                    b"The UPM folder is `Samples~/`.\r\n"
+                )
+                (packed / "README.md").write_bytes(original_readme)
                 tarball = root / "release.tgz"
                 with tarfile.open(tarball, "w:gz") as archive:
                     archive.add(packed, arcname="package")
@@ -102,6 +110,20 @@ class UnityPackageWriterTests(unittest.TestCase):
                         staged = MODULE.stage_packed_payload(root, scratch, tarball)
                         self.assertEqual((staged / "package.json").read_bytes(), manifest)
                         self.assertTrue((staged / "Samples" / "Example.cs").is_file())
+                        self.assertEqual(
+                            (staged / "Samples" / sample_doc.name).read_bytes(),
+                            sample_doc.read_bytes(),
+                        )
+                        self.assertEqual(
+                            (staged / "README.md").read_bytes(),
+                            b"[Walkthrough](Samples/Local%20Guide.md#try-it)\r\n"
+                            b"[Online](https://example.com/Samples~/Local%20Guide.md)\r\n"
+                            b"The UPM folder is `Samples~/`.\r\n",
+                        )
+                        with tarfile.open(tarball, "r:gz") as archive:
+                            archived_readme = archive.extractfile("package/README.md")
+                            assert archived_readme is not None
+                            self.assertEqual(archived_readme.read(), original_readme)
                     else:
                         with self.assertRaisesRegex(ValueError, "name or version"):
                             MODULE.stage_packed_payload(root, scratch, tarball)

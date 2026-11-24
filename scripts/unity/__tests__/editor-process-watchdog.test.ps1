@@ -55,6 +55,52 @@ try {
         }
     }
 
+    # Fault injection: the host stalls while forwarding the last line from an
+    # exited child. Its EOFs must win over the observer's expired deadline.
+    $forwardingScript = Join-Path $fixture 'slow-forwarding.ps1'
+    $forwardingLog = Join-Path $fixture 'slow-forwarding.log'
+    [IO.File]::WriteAllText($forwardingScript, @"
+[Console]::Error.WriteLine('forwarding stderr retained')
+[Console]::Out.WriteLine('$terminal')
+[Console]::Out.WriteLine('forwarding stdout retained')
+exit 7
+"@)
+    & {
+        $forwarding = @{ ChildId = 0; ExitConfirmed = $false }
+        function Write-Host {
+            param([Parameter(Position = 0, ValueFromRemainingArguments = $true)][object[]]$Object)
+            $line = $Object -join ' '
+            if ($line -match '^::notice::slow forwarding process settings: pid=(\d+),') {
+                $forwarding.ChildId = [int]$Matches[1]
+            }
+            if ($line -ceq 'forwarding stdout retained') {
+                if ($forwarding.ChildId -le 0) { throw 'Slow forwarding lost the process ID.' }
+                $child = Get-Process -Id $forwarding.ChildId -ErrorAction SilentlyContinue
+                if ($child) {
+                    try {
+                        if (-not $child.WaitForExit(3000)) { throw 'Slow forwarding child did not exit.' }
+                    } finally { $child.Dispose() }
+                }
+                $forwarding.ExitConfirmed = $true
+                $blockedOutput = [Threading.ManualResetEventSlim]::new($false)
+                try { [void]$blockedOutput.Wait(1250) } finally { $blockedOutput.Dispose() }
+            }
+            Microsoft.PowerShell.Utility\Write-Host $line
+        }
+
+        $details = $null
+        $result = Invoke-UnityEditor -EditorPath $pwsh `
+            -Arguments @('-NoLogo', '-NoProfile', '-File', $forwardingScript) `
+            -Label 'slow forwarding' -LogPath $forwardingLog -TimeoutSeconds 15 -ShutdownTimeoutSeconds 1 `
+            -ProcessResultRef ([ref]$details)
+        $text = Get-Content -LiteralPath $forwardingLog -Raw
+        if (-not $forwarding.ExitConfirmed -or $result -ne 7 -or $details.ExitCode -ne 7 -or
+            $details.TimedOut -or -not $details.CompletionObserved -or
+            $text -notmatch 'forwarding stdout retained' -or $text -notmatch 'forwarding stderr retained') {
+            throw "Slow forwarding lost a completed child or its output: $($details | ConvertTo-Json -Compress)"
+        }
+    }
+
     $childScript = Join-Path $fixture 'child-tree.ps1'
     $treePidPath = Join-Path $fixture 'tree-child.pid'
     [System.IO.File]::WriteAllText($childScript, @'
@@ -89,7 +135,8 @@ Wait-Event -Timeout 30 | Out-Null
         $childProcess = Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue
         if ($childProcess) {
             try {
-                if (-not $childProcess.HasExited) { throw 'Shutdown left its child process alive.' }
+                # Wait for the asynchronous tree termination before emergency cleanup can intervene.
+                if (-not $childProcess.WaitForExit(5000)) { throw 'Shutdown left its child process alive.' }
             } finally { $childProcess.Dispose() }
         }
     } finally {

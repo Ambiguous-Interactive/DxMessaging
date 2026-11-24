@@ -26,7 +26,7 @@ The pinned set is:
   (`Apache-2.0`), using its Roslyn 3.8 payload. Native qualification is required when
   changing this pin.
 - [Microsoft.Unity.Analyzers 1.22.0](https://www.nuget.org/packages/Microsoft.Unity.Analyzers/1.22.0)
-  (`MIT`), the newest tested release that loads in Unity 2021's Roslyn 3.8 host.
+  (`MIT`), the pinned release for the Unity 2021 analyzer lane.
 - [SonarAnalyzer.CSharp 10.35.0.4138](https://www.nuget.org/packages/SonarAnalyzer.CSharp/10.35.0.4138)
   (`Sonar Source-Available License v1.0`).
 - [Microsoft.CodeAnalysis.NetAnalyzers 7.0.4](https://www.nuget.org/packages/Microsoft.CodeAnalysis.NetAnalyzers/7.0.4)
@@ -39,7 +39,9 @@ Code-fix and Workspaces assemblies are excluded because Unity's compiler host
 does not need them. `manifest.json` is the text-only lock file for package URLs,
 versions, licenses, exact archive entries, hashes, and Unity metadata GUIDs.
 
-The current package screen retains the Unity and .NET analyzer pins because their
-newest binaries reference Roslyn 3.11, while Unity 2021 provides Roslyn 3.8. The
-newer ErrorProne prerelease references Roslyn 4.13 and Immutable 8. These pins must
-remain until supported-host qualification establishes a compatible replacement.
+The newer Unity and .NET analyzer packages in the upgrade screen reference
+Roslyn 3.11. The repository targets the
+Roslyn 3.8 API. The Linux Unity 2021.3.45f1 archive contains a Roslyn 3.9 script
+compiler and separate Roslyn 3.7 binaries for Mono/MSBuild. The newer ErrorProne
+prerelease references Roslyn 4.13 and Immutable 8. Keep these pins until
+supported-host qualification establishes a compatible replacement.

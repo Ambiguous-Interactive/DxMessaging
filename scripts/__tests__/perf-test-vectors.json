@@ -1829,6 +1829,15 @@
     "FilteredPostProcess": 0.99,
     "StructNoBox": 1
   },
+  "comparisonRatioCases": [
+    ["100000000.000", {}, "111.1%"],
+    ["30000000.000", {}, "33.3%"],
+    ["30000000.000", null, "N/A"],
+    ["30000000.000", { "commit": "different" }, "N/A"],
+    ["30000000.000", { "platform": "other" }, "N/A"],
+    ["30000000.000", { "emitsPerSecond": "0" }, "N/A"],
+    ["30000000.000", { "emitsPerSecond": "not a rate" }, "N/A"]
+  ],
   "scopeCases": [
     ["Standalone IL2CPP x64 Release (WindowsPlayer; Unity 6000.3.16f1)", "Standalone"],
     ["Editor PlayMode Mono x64 Release (WindowsEditor; Unity 6000.3.16f1)", "PlayMode"],

@@ -62,46 +62,25 @@ export const DEFAULTS = Object.freeze({
 export const FALLBACK_PORTS = Object.freeze([9020, 9003]);
 // Docker Desktop and same-host defaults; discovery also checks WSL and Linux gateways.
 export const FALLBACK_HOSTS = Object.freeze(["host.docker.internal", "127.0.0.1"]);
-const OPTION_NAMES = new Set([
-  "bind",
-  "host",
-  "client-host",
-  "port",
-  "path",
-  "project",
-  "relay",
-  "backend",
-  "cli",
-  "request-timeout",
-  "session-timeout",
-  "timeout",
-  "connect-timeout",
-  "max-sessions",
-  "protocol-version",
-  "log-level",
-  "token",
-  "no-discover",
-  "offline"
-]);
 const FLAG_NAMES = new Set(["no-discover", "offline"]);
 const ENV_KEYS = Object.freeze({
-  bindHost: "UNITY_MCP_BIND_HOST",
+  bind: "UNITY_MCP_BIND_HOST",
   host: "UNITY_MCP_BRIDGE_HOST",
-  clientHost: "UNITY_MCP_CLIENT_HOST",
+  "client-host": "UNITY_MCP_CLIENT_HOST",
   port: "UNITY_MCP_BRIDGE_PORT",
-  endpointPath: "UNITY_MCP_BRIDGE_PATH",
-  projectPath: "UNITY_PROJECT_PATH",
-  relayPath: "UNITY_MCP_RELAY_PATH",
+  path: "UNITY_MCP_BRIDGE_PATH",
+  project: "UNITY_PROJECT_PATH",
+  relay: "UNITY_MCP_RELAY_PATH",
   backend: "UNITY_MCP_BACKEND",
-  cliPath: "UNITY_CLI_PATH",
-  requestTimeout: "UNITY_MCP_REQUEST_TIMEOUT",
-  sessionTimeout: "UNITY_MCP_SESSION_TIMEOUT",
+  cli: "UNITY_CLI_PATH",
+  "request-timeout": "UNITY_MCP_REQUEST_TIMEOUT",
+  "session-timeout": "UNITY_MCP_SESSION_TIMEOUT",
   timeout: "UNITY_MCP_PROBE_TIMEOUT",
-  connectTimeout: "UNITY_MCP_CONNECT_TIMEOUT",
-  maxSessions: "UNITY_MCP_MAX_SESSIONS",
-  protocolVersion: "UNITY_MCP_PROTOCOL_VERSION",
-  logLevel: "UNITY_MCP_LOG_LEVEL",
-  bearerToken: "UNITY_MCP_BEARER_TOKEN"
+  "connect-timeout": "UNITY_MCP_CONNECT_TIMEOUT",
+  "max-sessions": "UNITY_MCP_MAX_SESSIONS",
+  "protocol-version": "UNITY_MCP_PROTOCOL_VERSION",
+  "log-level": "UNITY_MCP_LOG_LEVEL",
+  token: "UNITY_MCP_BEARER_TOKEN"
 });
 function fail(message) {
   throw new Error(message);
@@ -120,7 +99,7 @@ export function parseArgs(argv) {
     }
     const separator = token.indexOf("=");
     const name = token.slice(2, separator === -1 ? undefined : separator);
-    if (!OPTION_NAMES.has(name)) fail(`Unknown option: --${name}`);
+    if (!FLAG_NAMES.has(name) && !Object.hasOwn(ENV_KEYS, name)) fail(`Unknown option: --${name}`);
     if (FLAG_NAMES.has(name)) {
       if (separator !== -1) fail(`--${name} does not take a value`);
       result[name] = true;
@@ -247,48 +226,45 @@ export function defaultEndpointHost(
 // Host project paths are validated only by bridge; they do not exist in the container.
 export function resolveOptions(args, environment = process.env, localValues, repoRoot = REPO_ROOT) {
   const local = localValues ?? readLocalEnv(repoRoot);
-  const get = (argName, key, fallback) =>
-    first(args[argName], environment[ENV_KEYS[key]], local[ENV_KEYS[key]], fallback);
-
+  const enabled = first(environment.UNITY_MCP_ENABLED, local.UNITY_MCP_ENABLED, "true");
+  if (!["true", "false"].includes(enabled)) fail("UNITY_MCP_ENABLED must be true or false");
+  const useUnity = enabled === "true" || !["configure", "probe"].includes(args.command);
+  const get = (arg, fallback) =>
+    useUnity
+      ? first(args[arg], environment[ENV_KEYS[arg]], local[ENV_KEYS[arg]], fallback)
+      : fallback;
   const number = (arg, key, max, fallback = DEFAULTS[key]) => {
     const label = arg[0].toUpperCase() + arg.slice(1).replaceAll("-", " ");
-    return integer(get(arg, key, fallback), label, 1, max);
+    return integer(get(arg, fallback), label, 1, max);
   };
-  const explicitHost = first(args.host, environment[ENV_KEYS.host], local[ENV_KEYS.host]);
-  const explicitPort = first(args.port, environment[ENV_KEYS.port], local[ENV_KEYS.port]);
-  const projectPath = first(
-    args.project,
-    environment[ENV_KEYS.projectPath],
-    local[ENV_KEYS.projectPath]
-  );
-
+  const explicitHost = get("host");
+  const explicitPort = get("port");
+  const projectPath = get("project");
   const options = {
     repoRoot,
-    bindHost: validateHost(get("bind", "bindHost", DEFAULTS.bindHost), "Bind host"),
+    unityEnabled: enabled === "true",
+    bindHost: validateHost(get("bind", DEFAULTS.bindHost), "Bind host"),
     host: validateHost(explicitHost ?? defaultEndpointHost()),
-    clientHost:
-      get("client-host", "clientHost") === undefined
-        ? undefined
-        : validateHost(get("client-host", "clientHost")),
+    clientHost: get("client-host") === undefined ? undefined : validateHost(get("client-host")),
     explicitHost: explicitHost === undefined ? undefined : validateHost(explicitHost),
     port: integer(explicitPort ?? DEFAULTS.port, "Port", 1, 65_535),
     explicitPort: explicitPort === undefined ? undefined : integer(explicitPort, "Port", 1, 65_535),
-    endpointPath: validateEndpointPath(get("path", "endpointPath", DEFAULTS.endpointPath)),
+    endpointPath: validateEndpointPath(get("path", DEFAULTS.endpointPath)),
     projectPath: projectPath === undefined ? undefined : path.resolve(projectPath),
-    backend: get("backend", "backend", "cli"),
-    cliPath: get("cli", "cliPath", "unity"),
-    relayPath: first(args.relay, environment[ENV_KEYS.relayPath], local[ENV_KEYS.relayPath]),
+    backend: get("backend", "cli"),
+    cliPath: get("cli", "unity"),
+    relayPath: get("relay"),
     requestTimeout: number("request-timeout", "requestTimeout", 86_400_000),
     sessionTimeout: number("session-timeout", "sessionTimeout", 86_400_000),
     timeout: number("timeout", "timeout", 300_000, DEFAULTS.probeTimeout),
     connectTimeout: number("connect-timeout", "connectTimeout", 60_000),
     maxSessions: number("max-sessions", "maxSessions", 1_024),
     protocolVersion: validateText(
-      get("protocol-version", "protocolVersion", DEFAULTS.protocolVersion),
+      get("protocol-version", DEFAULTS.protocolVersion),
       "Protocol version"
     ),
-    logLevel: get("log-level", "logLevel", "info"),
-    bearerToken: validateToken(get("token", "bearerToken", undefined)),
+    logLevel: get("log-level", "info"),
+    bearerToken: validateToken(get("token", undefined)),
     githubToken: githubToken(environment, local),
     zaiToken: first(
       environment.Z_AI_API_KEY,
@@ -299,22 +275,19 @@ export function resolveOptions(args, environment = process.env, localValues, rep
     offline: args.offline === true,
     discover: args["no-discover"] !== true
   };
-
   if (!["cli", "relay"].includes(options.backend)) fail("Backend must be cli or relay");
   if (options.zaiToken) validateText(options.zaiToken, "Z.AI key");
   if (options.relayPath) options.relayPath = path.resolve(options.repoRoot, options.relayPath);
-  if (!/^(?:debug|info|none)$/.test(options.logLevel)) {
+  if (!/^(?:debug|info|none)$/.test(options.logLevel))
     fail("Log level must be debug, info, or none");
-  }
-  if (options.protocolVersion !== DEFAULTS.protocolVersion) {
+  if (options.protocolVersion !== DEFAULTS.protocolVersion)
     fail(`Protocol version must be ${DEFAULTS.protocolVersion}`);
-  }
   return options;
 }
 
 export function requireProjectPath(options) {
   if (!options.projectPath) {
-    fail(`Unity project path is required. Pass --project or set ${ENV_KEYS.projectPath}.`);
+    fail(`Unity project path is required. Pass --project or set ${ENV_KEYS.project}.`);
   }
   if (!fs.existsSync(options.projectPath) || !fs.statSync(options.projectPath).isDirectory()) {
     fail(`Unity project directory does not exist: ${options.projectPath}`);
@@ -726,13 +699,13 @@ export function transactionalWrite(writes, beforeCommit = () => {}) {
 
 function ensureBearerToken(options) {
   if (options.bearerToken) return options;
-  const saved = readLocalEnv(options.repoRoot)[ENV_KEYS.bearerToken];
+  const saved = readLocalEnv(options.repoRoot)[ENV_KEYS.token];
   if (saved) return { ...options, bearerToken: validateToken(saved) };
   const bearerToken = randomBytes(32).toString("hex");
   const envPath = path.join(options.repoRoot, ".env.local");
   const current = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
   const prefix = current && !current.endsWith("\n") ? "\n" : "";
-  atomicWrite(envPath, `${current}${prefix}${ENV_KEYS.bearerToken}=${bearerToken}\n`);
+  atomicWrite(envPath, `${current}${prefix}${ENV_KEYS.token}=${bearerToken}\n`);
   return { ...options, bearerToken };
 }
 
@@ -819,7 +792,7 @@ const ZAI_SERVERS = ["web-search-prime", "web-reader", "zread", "zai-mcp-server"
 // One catalog, rendered in each client's documented schema.
 function clientServers(kind, options, url) {
   const catalog = {
-    "unity-mcp": { url, token: options.bearerToken },
+    ...(url && { "unity-mcp": { url, token: options.bearerToken } }),
     github: { url: GITHUB_MCP_URL, token: options.githubToken },
     git: { command: "mcp-server-git", args: ["--repository", options.repoRoot] },
     fetch: { command: "mcp-server-fetch", args: [] }
@@ -879,10 +852,14 @@ function clientServers(kind, options, url) {
   );
 }
 export function configure(inputOptions, endpoint, beforeCommit) {
-  const options = ensureBearerToken(inputOptions);
-  const url = endpointUrl({ ...endpoint, host: options.clientHost ?? endpoint.host });
+  const disabled = inputOptions.unityEnabled === false;
+  const options = disabled ? inputOptions : ensureBearerToken(inputOptions);
+  const url = disabled
+    ? null
+    : endpointUrl({ ...endpoint, host: options.clientHost ?? endpoint.host });
   const paths = clientConfigPaths(options.repoRoot);
-  const removed = options.zaiToken ? [] : ZAI_SERVERS;
+  const removed = options.zaiToken ? [] : [...ZAI_SERVERS];
+  if (disabled) removed.push("unity-mcp");
   const writes = Object.entries(paths).map(([kind, file]) => {
     const servers = clientServers(kind, options, url);
     if (kind === "codex") {
@@ -1382,6 +1359,8 @@ async function resolveEndpoint(options, runtime = {}) {
 }
 
 export async function runProbe(options, runtime = {}) {
+  if (options.unityEnabled === false)
+    fail("Unity MCP is disabled. Set UNITY_MCP_ENABLED=true and reconfigure to probe the host.");
   const { found, attempts } = await resolveEndpoint(options, { ...runtime, readiness: "editor" });
   if (!found) {
     fail(
@@ -1396,23 +1375,24 @@ export async function runProbe(options, runtime = {}) {
 }
 
 export async function runConfigure(options, runtime = {}) {
-  const { endpoint, attempts, found } = options.offline
+  const skipDiscovery = options.offline || options.unityEnabled === false;
+  const { endpoint, attempts, found } = skipDiscovery
     ? { endpoint: options, attempts: [] }
     : await resolveEndpoint(options, runtime);
   // Never mint a replacement token when a running bridge rejected the current one.
   const unauthorized = found ? undefined : attempts.find((a) => a.status === "unauthorized");
   if (unauthorized) {
     fail(
-      `Unity MCP at ${unauthorized.url} rejected the bearer token (${unauthorized.detail}). Nothing was written and no token was generated: copy ${ENV_KEYS.bearerToken} from the host's .env.local into ${path.join(options.repoRoot, ".env.local")}, or pass --token, then re-run configure.`
+      `Unity MCP at ${unauthorized.url} rejected the bearer token (${unauthorized.detail}). Nothing was written and no token was generated: copy ${ENV_KEYS.token} from the host's .env.local into ${path.join(options.repoRoot, ".env.local")}, or pass --token, then re-run configure.`
     );
   }
-  if (!found && !options.offline && attempts.some((attempt) => attempt.status !== "unreachable")) {
+  if (!found && !skipDiscovery && attempts.some((attempt) => attempt.status !== "unreachable")) {
     fail(
       `A listener did not complete Unity MCP initialization. Nothing was written. Check the host bridge and port forwards, or use --offline to configure explicitly. Attempts:\n${describeAttempts(attempts)}`
     );
   }
   const target = endpoint ?? options;
-  if (!found && !options.offline) {
+  if (!found && !skipDiscovery) {
     console.warn(
       `No Unity MCP endpoint completed initialization; configuring ${endpointUrl(target)} anyway. Attempts:\n${describeAttempts(attempts)}`
     );
@@ -1420,7 +1400,9 @@ export async function runConfigure(options, runtime = {}) {
   const { url, written } = configure(options, target);
   const summary =
     written.map((filePath) => path.relative(options.repoRoot, filePath)).join(", ") || "no changes";
-  console.log(`Configured agent MCP servers; Unity endpoint ${url} (${summary}).`);
+  console.log(
+    `Configured agent MCP servers; ${url ? `Unity endpoint ${url}` : "Unity MCP disabled"} (${summary}).`
+  );
   if (!options.zaiToken)
     console.log("Z.AI servers need Z_AI_API_KEY or ZAI_API_KEY in .env.local.");
   return url;
@@ -1474,6 +1456,7 @@ function usage() {
     "  --client-host HOST          Address written to client configs (independent of discovery)",
     "  --port PORT                 Endpoint port; the only port discovery probes",
     "  --path PATH                 Streamable HTTP path (default: /mcp)",
+    "  UNITY_MCP_ENABLED=false    Omit Unity from client configs and disable host probes",
     "  --offline                   Write configs without network access (configure only)",
     "  --no-discover               Probe only the configured host/port, not the fallbacks",
     "  --bind HOST                 Bridge bind interface (default: 0.0.0.0)",
@@ -1510,7 +1493,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (args._.length) {
     fail(`Unexpected argument: ${args._[0]}`);
   }
-  const options = resolveOptions(args);
+  const options = resolveOptions({ ...args, command });
   if (options.offline && command !== "configure") fail("--offline is only valid for configure");
   await commands[command](options);
 }

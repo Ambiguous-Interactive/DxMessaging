@@ -3379,7 +3379,11 @@ namespace DxMessaging.Editor.Windows
             Vector2 viewportSize = Vector2.zero;
             void ApplyTransform()
             {
-                graphContent.style.translate = new Translate(canvasState.Pan.x, canvasState.Pan.y);
+                graphContent.style.translate = new Translate(
+                    canvasState.Pan.x,
+                    canvasState.Pan.y,
+                    0f
+                );
                 graphContent.style.scale = new Scale(
                     new Vector3(canvasState.Zoom, canvasState.Zoom, 1f)
                 );

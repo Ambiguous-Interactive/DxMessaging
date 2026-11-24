@@ -29,9 +29,10 @@ These examples require VContainer. DxMessaging's integration assembly uses
 from these framework-specific examples. If your application needs conditional code,
 configure [Version Defines on its own assembly](https://docs.unity3d.com/2021.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#define-symbols).
 
-For a custom application asmdef, reference `WallstopStudios.DxMessaging`,
-`WallstopStudios.DxMessaging.Attributes`, `WallstopStudios.DxMessaging.VContainer`, `VContainer`, and `VContainer.Unity` for
-these examples.
+With VContainer 1.19.0, add these references to your custom application asmdef:
+`WallstopStudios.DxMessaging`, `WallstopStudios.DxMessaging.Attributes`,
+`WallstopStudios.DxMessaging.VContainer`, and `VContainer`. The `VContainer` assembly
+contains the `VContainer.Unity` namespace.
 
 ### 1. Create a LifetimeScope with DxMessaging
 

@@ -76,5 +76,5 @@ If a message does not arrive:
 1. Check that every overridden lifecycle method calls its base implementation.
 1. Enable diagnostics and inspect Message Monitor or Flow Graph.
 
-See [Listening Patterns](../../docs/concepts/listening-patterns.md) for across-all listeners
+See [Listening Patterns](https://ambiguous-interactive.github.io/DxMessaging/concepts/listening-patterns/) for across-all listeners
 and post-processors.

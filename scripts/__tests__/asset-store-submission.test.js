@@ -45,11 +45,14 @@ test("stageAssetStoreSubmission creates a verified operator artifact", (t) => {
   assert.equal(listing.priceUsd, 0);
   assert.equal(listing.aiDescription, sourceListing.aiDescription);
   assert.ok(listing.aiDescription.trim().length > 0);
+  assert.match(upm, /Submit for Unity review\.\n\n## After Publication[\s\S]*Package Manager Version History[\s\S]*compare its field values[\s\S]*Install the published package/);
   for (const checklist of [classic, upm]) {
     assert.match(checklist, /Set the price to Free \(USD 0\)/);
     assert.match(checklist, /AI description.*aiDescription/);
-    assert.match(checklist, /Verify the live listing.*free price.*disclosure/);
+    assert.match(checklist, /Submit for Unity review\.\n\n## After Publication\n\n1\. Verify the live listing.*free price.*disclosure/);
+    assert.match(checklist, /Install the published package in a clean project/);
   }
+  assert.doesNotMatch(classic, /Package Manager Version History/);
   for (const screenshot of listing.screenshots) {
     assert.ok(fs.existsSync(path.join(output, screenshot.file)), screenshot.file); assert.equal("source" in screenshot, false, screenshot.file);
   }

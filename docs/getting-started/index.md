@@ -116,7 +116,9 @@ flowchart TD
 
 ### Unity Samples (Importable!)
 
-**Located in `Samples~/` directory** - Import via Unity Package Manager!
+For a UPM install, use the **Samples** tab on the DxMessaging package. For a classic asset
+package, open `Assets/WallstopStudios/DxMessaging/Samples`.
+See [installation instructions](install.md#from-releases) for both formats.
 
 - **[Mini Combat](https://github.com/Ambiguous-Interactive/DxMessaging/blob/master/Samples~/Mini%20Combat/README.md)** - Interactive combat demo with Heal/Damage messages
   - Perfect first example to understand message flow
