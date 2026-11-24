@@ -401,6 +401,12 @@ field, but `[DxOptionalParameter(7.0)]` cannot. The latter is a `double` constan
 Use constants such as `float.NaN`, `double.PositiveInfinity`, and `double.NegativeInfinity`
 as attribute arguments when these values are appropriate defaults. Signed zero keeps its sign.
 
+Use well-formed UTF-16 for string defaults in IL2CPP builds. The Unity 6000.5.2f1 Windows x64
+converter stored an isolated surrogate in a string literal as the replacement character
+(`U+FFFD`). Both handwritten and generated constructor calls supplied the same replacement
+value. The tested supplementary string pair and isolated `char` values were preserved in
+the converter output. [Conversion evidence](https://github.com/Ambiguous-Interactive/DxMessaging/issues/765#issuecomment-7141499685).
+
 Constructor parameters retain nullable field annotations, including nullable array and list elements.
 Fields declared with nullable annotations disabled retain that caller contract.
 Parameters from enabled contexts keep their nullable or nonnullable checks.
