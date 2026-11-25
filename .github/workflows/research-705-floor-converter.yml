@@ -1,0 +1,731 @@
+name: Unity 2021.3 converter experiment
+on:
+  push:
+    branches: ["research/705-floor-converter-x64"]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  converter:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Prepare exact inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dxm-705/evidence"
+          cd "$RUNNER_TEMP/dxm-705"
+          cat > evidence/closure.sha256 <<'CLOSURE'
+          2be44c4260acdc1d142d1bf2402e3f52b55a1f135a82c436f09ad1f0ceca8027  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Accessibility.dll
+          3cfe82ba0213e8dc8c7ed6411ad5273f84cd576af9fc402339f4a51d265c6424  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/Microsoft.Win32.Primitives.dll
+          61d11de2898968bb1e9aca873c62418a56211161409d41518995056c3101fe25  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/Microsoft.Win32.Registry.AccessControl.dll
+          fed0cb1fa8edd2678c90b98408af0e1bb4ffae8c9e421a4ccc730f19823de0f8  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/Microsoft.Win32.Registry.dll
+          6a41b9af4747e707e17c38e904a19d2d21e97a6467c117d985e2286348bd9b7c  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.AppContext.dll
+          762f8fdbe975e05b76be5fe996c53ce7c75e4a2830f2f50b02a5948ef6ba0aeb  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Buffers.dll
+          769616a5ef53c303bc331771a22d52d8df39b3df5e0eba7b57cbd460568bfe9f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Collections.Concurrent.dll
+          616a25cf2a6f417247af193cdd076ac3a43561e72194b56ddee963831f326408  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Collections.NonGeneric.dll
+          a688c611fb7dda8c2dd10b9789fce446141454fa32778b8e4dc8f7c02b7fd118  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Collections.Specialized.dll
+          1a023f24ad01eac32ebf9279c8dcdd74e5c4db40754959c00ca0ca46fa776e86  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Collections.dll
+          77357a44be285c75f40780b6c8482effbd9ee537d27f5b8128a812954cbc2f6f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ComponentModel.Annotations.dll
+          492a2ef373697815caba4970f169cce476f9fba8d40aec6e0cae280cd687d9c2  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ComponentModel.EventBasedAsync.dll
+          19e748c6a5849922eb4f69f3870dcf719eb66064abb9732639bc6295735e19ef  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ComponentModel.Primitives.dll
+          45a3474dea36a74a15104acea6dd5be5e715401cbca05b13037ed9bc585f057e  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ComponentModel.TypeConverter.dll
+          c701b469603b6c3c497a2ed39abdd9970eda5ed939027ed3a77469742f062f10  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ComponentModel.dll
+          e1824a8e64552768a03a343e4341a1bb8408dbbe457a5bc8c1f98f7e2c6b82d0  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Console.dll
+          63055b680f4e1823eba5150b91d4dbcc8b98b13ac72bf48d3cb093c4a03af6a8  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Data.Common.dll
+          7c2a0cb8175f5f1649e596d0419baf59ae4de68270e5f3366acbf759f98b88a6  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Data.SqlClient.dll
+          56beb848b5971c330d50b17dbdffcdbebf83b54b9903caf710d8a3685f70d2f9  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Diagnostics.Contracts.dll
+          b22d3a7d47d8f9553d40dff709d00cd985a397ad695f5d69cb35f9cdacc3f390  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Diagnostics.Debug.dll
+          b5bbb4c098492ad7b2c6d7f589038e3afe94e331776aac72d3fe288a3d683589  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Diagnostics.FileVersionInfo.dll
+          f59ac4aaeacc601aa5c7cd6d8e52deb40a89da10a047fdffba532e53846861cb  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Diagnostics.Process.dll
+          44a50cfa336b8a7f3c9ffa4393489e7325b59c6787d6a72e1ff7a04fa4bcf8b6  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Diagnostics.StackTrace.dll
+          45d8ad6b9573e96ac37012fb0d27a9673de3c945e4b7458cfd0e8bb2aa906868  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Diagnostics.TextWriterTraceListener.dll
+          69ce442bfe77a2b90bf56171b0ded1fa1bf1fa1ddbe52f41af8ca2c20d8818cf  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Diagnostics.Tools.dll
+          9daee10dc8a27cba122bf8aabdb53974dc307129385097852fe2e37768509098  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Diagnostics.TraceEvent.dll
+          7c2765b3cc8b23560288dd9b0c3649d9c6db5d6bbd984d92294f1c59bb963c75  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Diagnostics.TraceSource.dll
+          2291c2edca81f64aa4d28e23b547ce9e566f5b387b42ebcb543defd64b4d7f4a  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Diagnostics.Tracing.dll
+          bb490fe1d97715ed0ef960778b6798fd7290d43409e93ffbc0d2f3968135cae1  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Drawing.Primitives.dll
+          f6b3a6443bb8a04abfb72a1a42a58a951346640ba413f5a8bb32431e7766a301  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Dynamic.Runtime.dll
+          cb4321f023ba003492d1b70733818a01c30f6ff08d81f72b53c090f6ec38667f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Globalization.Calendars.dll
+          51a195c742cba46e14487c40b9d022e1d6f160545b8642c2b54b0199de28c0d3  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Globalization.Extensions.dll
+          b9963da3727bed3be9256b2c231460dd704fa3ae09292fda88afbc7cc69a1fd6  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Globalization.dll
+          60e84454c50ca150ace32ef4cc8c8b491f5c1440b79b9d72861963dbad236335  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.IO.Compression.ZipFile.dll
+          a3409a8770b46c865467a53aa9fb50b610e996f04e57227c00ed660b1c90e9d5  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.IO.FileSystem.AccessControl.dll
+          46ec1a946f9973765a39f4a28435752176797823085bfe5759d1dfe8bbae964d  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.IO.FileSystem.DriveInfo.dll
+          e49c0997f7b8b357496788067ec61e0a05254172203b96ba5a172990db7b6f15  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.IO.FileSystem.Primitives.dll
+          2cc4e4aef8152f3e8bef10a26f6b76d85518edb0a8ba42a450fb2ae89e216960  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.IO.FileSystem.Watcher.dll
+          5055d2643b0463e186846f156a4a8d13b17eb0a02088a3d822fdc842e41d5ece  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.IO.FileSystem.dll
+          ab061e5a72586acc9ceceb20c663433ab480f5104e01b10ac7cc1a2725f5eaaf  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.IO.IsolatedStorage.dll
+          14b929a9db9934fec7ff1606bd4259871c7a896fc29c10b5fda752d6685b5802  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.IO.MemoryMappedFiles.dll
+          00e5af78fbaa9931f9adb972e020673dd29e6bfd6536e7ebab064d6ed0cffddc  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.IO.Pipes.dll
+          02df7cb2f268227b113477e25a7aee5282a2b9af96d1c93988483d6090b343d4  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.IO.UnmanagedMemoryStream.dll
+          dffdcb541108cd81e48342e711c4ab436e4b64885657cdcff83e3cb89e2fbd05  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.IO.dll
+          8adae8be9c6cd12d90c3b506965ccdf0700228906c29a27f2e6a1cc2ee6acbc0  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Linq.Expressions.dll
+          3b994497a616d9cccf70f31dc2bd86bdc4c7118ca5ea1e5dbb3d7f9c133f86d8  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Linq.Parallel.dll
+          f6773d6cc43be9d59a2c3a06e1371bb7ace0dc787d71c35ed3e636356b8b9fe3  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Linq.Queryable.dll
+          318d7f2b164ffa57178afbd8ad1d5d611b9874cad12083b69cdeb301dd2258ed  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Linq.dll
+          c4f030a2cba7da7cdcf493257c24560e203d355904aee490d645a935842f834a  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Memory.dll
+          8ff4247670d9b12bbc548867897cda8e881ccbcb56b0b1ce509e3f6c57e1e63d  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.AuthenticationManager.dll
+          ed02309263dcb96f76791848fc12a87d141b3fd3edd51d836bd4f270f19d2545  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.Cache.dll
+          481f5541b846a2cc6049659a389fd8b63b6a5344fd64c38afbba29c29fbfcc9b  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.HttpListener.dll
+          0855ff9f70efd8ed38f06cc1e2aab57372ead600076e773a6fe6225efe447c3b  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.Mail.dll
+          5dc6db5c6b80cd4b260a0f7b196b9e5cf43fcf373c1ea4ba1aa7da60978783ff  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.NameResolution.dll
+          b1aa6f9b86f8730ad0377b7820c3d6edc8d9e89ffd75fb6eef84f62d10ee1a16  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.NetworkInformation.dll
+          86cbb0df6318b989c2c49ade93721f7a118bef63f5ba646c4cbd987f5b7931f0  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.Ping.dll
+          0aa8a927a945d514a4f214c8b39841d56c3ca338cb49c1bb0f9c5a8b90423ca5  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.Primitives.dll
+          4f73bd486a73bc5eb804b248e3a09e4e22eb0326f453c773aee04b0da71399b7  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.Requests.dll
+          cded1bd95e337fad665b9c977c3f1bd39d5de605111580db9314dbf2ed45622e  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.Security.dll
+          755cb054366098ca7b66037bcf23a865a546d32fc4dfa0de17b5a501b3e6a62d  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.ServicePoint.dll
+          757f4266ea66b5cb2fb6df1600ddfc44515fd1954a011d1eb13c4651c7730d31  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.Sockets.dll
+          4219a19d1552068551b2f30a8c19f614938c3d211dd6a1ac9aa2e31728804b30  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.Utilities.dll
+          295e2f67fd435a9db793b3df0fd76e3a08549fecbf5226c1a0fd94dcb619258b  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.WebHeaderCollection.dll
+          d374586efe4ba0938c3ddc40c432ca8e7a36aa969230fb5552b9c005a8dd8dec  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.WebSockets.Client.dll
+          20e62c01ab585e8032b96cb3aaed31ccb93a68bac3d356fa33c4824989a2798f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Net.WebSockets.dll
+          0c6900f90005d29e42908cbcbe97ffb791dddabc8a74285a16ceea73c870375f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ObjectModel.dll
+          e2a97603dfdb00e6fa9bd083227ebf4c0b5062c97b6e8859fa6e0ac01bf9bfcf  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Reflection.DispatchProxy.dll
+          9e3df31f91136ff74f10515f0ac2c4fb21c75d91b5b6d001decc006039737727  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Reflection.Emit.ILGeneration.dll
+          203b470536e67e45a018c2c0c2d6118bf7582a87ec34747037d270ca5c286ced  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Reflection.Emit.Lightweight.dll
+          df34bbce14e68fd8ec293ea5f9f3ccc238f75d309768142678a4fa487e0cb6e5  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Reflection.Emit.dll
+          3180c4dd011804efa92fcf53fd1dbc495bfa93da79530941c233fa2ec0a983f4  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Reflection.Extensions.dll
+          01c69393c23a9be0b561e4761d70d06d395a82b3c683bf33d34c75f7daf8c322  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Reflection.Primitives.dll
+          93cb3778ea52c41b50449ef4d6120d73189661cd4582ee57493717d0fff254c3  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Reflection.TypeExtensions.dll
+          4bc9d930c9cc6c113cc9ea72ea93685f8d20153f62084871bb38c1fe34914dbe  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Reflection.dll
+          b2e5377e0e36c5719b1eafa91ef8184374d0f59b8f5527bb0e04e37cf4248dfe  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Resources.Reader.dll
+          e43236f015207e3cfa51a5f45fa58dac798f4d47b3ec487ee2c60c2731dae476  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Resources.ReaderWriter.dll
+          860eb9604fef0d7ed0ba9defc58bd197aaa728a46ca81dbcbe916414f6d256c3  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Resources.ResourceManager.dll
+          556fd8c27370b732bf27819b092ae116b7bc14c74349cb56167e1574314de824  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Resources.Writer.dll
+          59a57386668f735857dfd521783b9bea9f9ef349fd62b3cce4756935a5d68b03  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.CompilerServices.VisualC.dll
+          cf4d2802d181b41a8eed59b4482bdcd8b6c51ad2fcae04ce122678fa60be2dbe  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.Extensions.dll
+          0c702b5cac915298b6cb6fa7c18ebe29866bd589eb0f786f22e06906b8a59a72  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.Handles.dll
+          f3a3228d060343322613ec4762d5c05ea408ec136a041d2489b16a837a5a409c  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.InteropServices.RuntimeInformation.dll
+          35ca5d210a81b163a4ad88b742a3d9a98ac84a6537336231088028f4047aa263  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.InteropServices.WindowsRuntime.dll
+          1e6eaf0bf7e1ad86542f4a93eabfb979caf062a6faa349788a0e64de6426e046  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.InteropServices.dll
+          2e48e582e14c9492f58eb9db2299da1d3e58eea81c598ab26802de9fabfd4868  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.Loader.dll
+          f72d264a77f70de7d0f10ba381101e48194e09b43123265ed9731d58a1bcdfa2  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.Numerics.dll
+          fee524a6f3ff10c1597e84b18da167c4fe80ddd008ed7f2cd2b4cebfa0412dfa  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.Serialization.Formatters.dll
+          5a256083d86fd427cfec81cd31595f58924a02758e94dad3021183003f9a94ca  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.Serialization.Json.dll
+          35785c7c16ac53ab8749a241ef48d47090e61ecc6a2a8653971e17a1786bc688  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.Serialization.Primitives.dll
+          5a18d80382ff13084b47e21b6e049030c5a6752f6b5eb07258367fd3d337eba3  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.Serialization.Xml.dll
+          5bec25513cb88617f7e4f4c586aa9fbb98ba8749a7f52b9f8d278d41daa90148  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Runtime.dll
+          31fc9abecc62070c8990836b98698db06db31e83e62bceba8d75b871f1cffc1f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.AccessControl.dll
+          6e7fb569b1413da23f31b683ce9c17c515fcc099ba8b5ba645586d278e6bf9a8  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Claims.dll
+          3bd1af63bea0ff618c6c7d815453b851024531ed8ccd1d0502956b063e55df20  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Algorithms.dll
+          7b044976218297a0234f6ebea4b59e2bc0a7fb684a7ab379cb2b03f23f659b2a  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Cng.dll
+          a5b7ecd47f52cae1eeebfc5baa073130dcd82b5759a3b9746564213f5bcf798a  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Csp.dll
+          19346882f79a36f720b3ffe827ae054a38c89bef699f66b17b4dc19957dd8db0  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.DeriveBytes.dll
+          16a9f631b9a64286a84f7f700be2d42b13b6350e0dbdc5fc515f2fbec8d5358a  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Encoding.dll
+          2617052180fcf20b2074457d79215efc588a6f5acdfab932ddf6c999a02aad1f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Encryption.Aes.dll
+          07a5a9e9b89a8734f678bc3c18a4fecbd72d2646def2687ac3443c8758951d5f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Encryption.ECDiffieHellman.dll
+          69551e12cccc481de49389f2c514b9ede971927afd41b42e2c0aa12c75bc7b74  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Encryption.ECDsa.dll
+          453488f135ec67cb32eb6af3d35613cec2171700d7e3566c7df38762825844bf  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Encryption.dll
+          a1eddba7043fe14df22f31d7daa0b1a36325d960b86e18694930ef1e418567d8  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Hashing.Algorithms.dll
+          d7e766b1f2c33c22138ae869d16c41f34ee999eff63679aa28ea6fec7233fca3  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Hashing.dll
+          161596fe550ef89b847d22e2e3dd68dd8363cd146885c145e389d1633a3cc5bb  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.OpenSsl.dll
+          6c6a85318dcab99d967fcf6a62d47800b7fb60fdaec367893afae291519e89c7  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Pkcs.dll
+          3851abe65dbd1652c38a34d275a2dd08bdf6e8c9fbafac262c1baa1f2464ca4c  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.Primitives.dll
+          f1890fc4b6d747c0b2ab73076180287a7ccf2ccc5dd85843d21752b1335d0c10  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.ProtectedData.dll
+          1f85491baadc1ed267f76b7f196e8d9c0884eb4e586a46041ca124078cce78be  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.RSA.dll
+          7fcc8462fd16f61980c3fc72cc6b6809ab8e6eb6f31f41f0fa00dd17268ed697  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.RandomNumberGenerator.dll
+          2825aa8bf9c9e14807be64e4ffb99d0cb669e8ead5818e06521bba44d6bf86bb  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Cryptography.X509Certificates.dll
+          f36ac775086d1591c335bcd4e9522e30224ca94dab8507df4348cfb02805a87c  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Principal.Windows.dll
+          4347360c91d3464450a0b0bfe00b1a5ebca68adc640e19d9b84ea75610cf962d  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.Principal.dll
+          f97515b7b6a7afc1be3c24d337bc6b55424b51b9dc75b63d508f3810c3631e1b  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Security.SecureString.dll
+          7221f195b65eb0b1731342181ab6359734e9fbce721d662c880ad550d65c1820  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ServiceModel.Duplex.dll
+          cdbb330d3eb0474104a17f471eea0a17f5b731630e138886d195d681aa30107c  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ServiceModel.Http.dll
+          dc9482e76e5602c278a61328aea4b8a46a10631519a063d466f2bed305a6faf4  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ServiceModel.NetTcp.dll
+          809d6f94e22659b84d50789d3a00ab3f2ffb5ab6886ea6ff599ab13f6798559d  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ServiceModel.Primitives.dll
+          b05b20e34444719c5e7c7171b6c808c4f811b29104f89ffcf77e1b997fb87217  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ServiceModel.Security.dll
+          85cb010be2a6097a6c57d562e43894e8554f8ad7b25092b5f56853fd842640ee  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ServiceProcess.ServiceController.dll
+          2e9f73eb1df946cfb78582fc4be3026b6bfc8bdeffcfd754f33168805e1ad73c  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Text.Encoding.CodePages.dll
+          a0e44d0ea4104eb68186cbd6a6aa3051b082c66e01f76f4ebd89af07578a8426  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Text.Encoding.Extensions.dll
+          ed4a4fbed6779fb8dd380af181d01902fd378d1bf3c6dc2d0068c715021aaed2  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Text.Encoding.dll
+          da3ff194a8fafd06c84b306cfd05811a1fdb3dd8d51184badb2b3b0d3472818f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Text.RegularExpressions.dll
+          378ca73e50ab3f8fbe2a789761beb0aa537a4fe8e176fc9d00a0eab4157fe7a8  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Threading.AccessControl.dll
+          682c921eb070c9ea83af1bc6dca84c34e8eb5e129aed8ad954e20be2b7c8cf05  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Threading.Overlapped.dll
+          96150abdca5df4446b376560e069d59b3550212deda8cbdd316272f6b834f597  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Threading.Tasks.Extensions.dll
+          7acca6cc2232e3e0257e3652d0797b394f82ea1bcf474b86725ebebb20edd211  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Threading.Tasks.Parallel.dll
+          61884b41319fe1e0e5fa2e4a5aad8226169c454a324c759aac780bbedd09d21d  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Threading.Tasks.dll
+          4898e38702d98866b4d4ecb0dc1627e11cc11e4a333c8c29ad6e1d9e9b6acd46  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Threading.Thread.dll
+          d1d3e55d0cc6877e2bd7fe6c5ffa4c720af85762dd579a05d3f594c676eadfbe  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Threading.ThreadPool.dll
+          e422e02b2845b6e48d3f951f309fd15c1ffea23c84c5cabc2d77a7a0de509709  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Threading.Timer.dll
+          267db362972e5474e9e056a807e1535acb6a99552d2eb10b291819e7b40282db  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Threading.dll
+          f341fdcd30bfe1615b8cdcb0da0fb8c60dfae0b7aaf9238fe1cd5b721df16eb1  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.ValueTuple.dll
+          dec4b86253ab64dd6f4820f8b223941cdae7dcbca3152db75b2e4304a5353a09  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Xml.ReaderWriter.dll
+          2b907971af649f41a321af6c52e380d2213e5761a752836dff51692716e6ab92  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Xml.XDocument.dll
+          5ceda8827e635556fa6dab78af7fa4b86226bc2f08174eb0c919d50f5eb6dc31  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Xml.XPath.XDocument.dll
+          fac183ae065e726f9ca9624c753e9c24a11517e92c8d219d3385f26e26183267  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Xml.XPath.XmlDocument.dll
+          ad7a40f49d2a5184ba53dd47410cc325f2b206eb554b7e1a886d4ebbddd8a1ee  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Xml.XPath.dll
+          3a03721687be08fd728c2e9ee0961e47b180e21f35f850d6564ecfa0a9b2de59  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Xml.XmlDocument.dll
+          82e6bcb6c34843f98130f7b115bf5e464c9dbaf09aee101178c3c8f3659dba09  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Xml.XmlSerializer.dll
+          756f8505893979c2cb2ce5c6c4b7cc2506acfd5368f5459c794c31d2dd17ea9f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/System.Xml.Xsl.Primitives.dll
+          6c69dfd6ea1fbcb40490ea04a53291a5d9fce292b12ac306622592a284f8c811  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Facades/netstandard.dll
+          35f828850453ae9f9d8f77d5a25b4b83e814288ed8da2daaf840f96ebaa963f2  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/I18N.CJK.dll
+          2ed4648ba76e795e091caeef3efbb96b1e9b5fc0f7a64e8dc470cab2a82d3c6d  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/I18N.MidEast.dll
+          c150cd6353c08c78cd2db6d978aea6ede2f0b661f1061377f3f0f4100c9b4acb  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/I18N.Other.dll
+          39382dd8c53bde5afb7a95ff3754c25e0d6945c65e9e26e5058c0e676628a590  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/I18N.Rare.dll
+          b6cff571409df83c76a303aed339457fb3b1c32f3a7636c85e72297967c138c2  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/I18N.West.dll
+          914482d7dba700182016504177574fd568b2de107a42f82a3e4a4c67e0809f8d  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/I18N.dll
+          d8922d1166be1ee4d8bfa96a00aebcd0c2f20745ed2e303fbaf8791032a17327  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Microsoft.CSharp.dll
+          91fa8ad4f269d968219878a2b0a0cf944fdf46618d250b21f8af97947d2abbc4  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Mono.Data.Sqlite.dll
+          c7e0405b042a1a007639ee793af5d9a99b9332bcca6bd9868ea43b13da06b424  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Mono.Data.Tds.dll
+          5b0adb1af95496f4dc9022e4d56f6ba36f0305b850bd4ef9498b202f0d84359b  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/Mono.Security.dll
+          e6203a0549ac5eaa0cb105ce16bb90d1a17c4c950b137da1d8e3378eca6af6a2  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.ComponentModel.Composition.dll
+          2ef83ec62ac445c2335c2e1fc786db1d85e220876d8020b43566137c908e05e1  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.ComponentModel.DataAnnotations.dll
+          c0ff0e480e0fb9d974aea2ecf8de1ead05c1018a5f4cfddb79da6a4a68ed1160  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Configuration.Install.dll
+          e1bf8c48eb8e3003e4e67df9e77eece3bb2b3a0bea5093063eb82de035c42872  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Configuration.dll
+          37e01e9913de5994f551862d9bdb0d93cf73d0ecbe23102a06dc5187f1ae27c7  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Core.dll
+          44d11bc213fb563fc92836b201b0f458481f232a61b1d5682666aa3c96dca929  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Data.DataSetExtensions.dll
+          a850e3c82b31b98d455997dda8507c75a3f8fe327c75061943215c6b57aeae36  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Data.Entity.dll
+          cb8a183407c2ac96e21457245a378bc1018fb15eae8fbb9192073a2900246572  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Data.Linq.dll
+          c0b36d31012036a2681b0f3ae448c199ebd3da14dc45a369be8160f463981efe  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Data.OracleClient.dll
+          fb8a241edade31f206ca363dc712cd646db4817a437421ef1dfea7fad17965c1  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Data.Services.Client.dll
+          8f5d589787bac7cf743be0a8b732749d680f9b0782d16667375f66349be88c07  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Data.Services.dll
+          8704bc410c247e981591b6583c6f843fe94302ec9c8fe10747a33fae684cc777  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Data.dll
+          592b6513d1c91252d85b0d7859c3fd1fa242a993fe2e954c95f0295bb072b1a4  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Design.dll
+          2ea75044de63dec5e22e24252dd09b42f13d4bb6a23ce2d2b6accd95d7185fdf  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.DirectoryServices.Protocols.dll
+          26d916ff0270e5da9894387a5002cea4e8c3fe8ce3766d5c0cb2ef8658138a00  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.DirectoryServices.dll
+          9f1db84449f7a0a89a1f107904b9879370c3876ba3e8f6d24904cad505dbbdc0  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Drawing.Design.dll
+          daf9bbf8b05eb94e5f33f3de1e88cf519477ad990e8421e6eafb2232a3d3da0a  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Drawing.dll
+          6b098cf00e29bd81aa4c7ff7d1540254854bfc2373536e04967157f593d44f7f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.EnterpriseServices.dll
+          db87cf4fe4fc2915bd937e4e96d47e7ac17f85d4ff51b67360c6eb82a93a6211  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.IO.Compression.FileSystem.dll
+          48c25ac734c1175c34414206b17c3999774b199427b173d9da8b33848ca48b2b  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.IO.Compression.dll
+          b15f3ad338ac4d2a197ad859e3581892c7739a6bea3ea6595856ab911f83b7e2  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.IdentityModel.Selectors.dll
+          db67f5231a5758ad3ac7f0f96c00ceeda4e2ce70c68e785dfae31c655f7590a2  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.IdentityModel.dll
+          a9a3c9629c98276bb30fef4f8fec3fac18c9d4df966c97d8b708fa2ae82693fa  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Json.dll
+          510643c5f23b3ada65496f642b0d0c4052418cb3886b13fbc3f2d66f1dde07ec  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Management.dll
+          5a30b223fb973ad38eda9fb10cd599e4fc4513ad88c02e46c6c5cb80a04df0ff  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Messaging.dll
+          a1e1d7e5d00919442b92c95b004838eaf7100e249c5e2e06ca1c6b9571f85166  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Net.Http.WebRequest.dll
+          b78732448db26cb6001ffed6d32ea1ef723184aaa909637b2053cec67fa2e76b  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Net.Http.dll
+          586dd539f604678d8e5cacc6d397ea16fe46d3be97e4dfe794c774c562654a14  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Net.dll
+          ef8483daaa1bf188c8c0f69b86ae3359803aaa2133e266acafe6a532d24ef611  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Numerics.Vectors.dll
+          2396d1243e7e144c6cc15ff0c8a6068d8eb59c64e89d9844303440a613cf67ed  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Numerics.dll
+          0b28557019c2e89f4163a778fd55d29c5db6bcc6d56f46c20dbd61b58d31f596  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Reflection.Context.dll
+          59278e45ea48f80b5104d39be6931b9b02eb75d0787152edc61473cf70734909  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Runtime.Caching.dll
+          572ea195dfef0d7481fbbcf9741d6507d2fb83d853c511da479e062114a477de  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Runtime.DurableInstancing.dll
+          3684d45c224667b7b403524b20530cc2c450bc7b2570af0beeaf0200672b9eaf  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Runtime.Remoting.dll
+          c352e70293d35ff5514f106528ea64398c5a95b854470651db29e55ef5874ac5  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Runtime.Serialization.Formatters.Soap.dll
+          495036125e814a6482236c09157130cb23fbea4785a29662df3be0cb4861e568  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Runtime.Serialization.dll
+          2b378e516b218ff2274cf72957c6e422621ac211670bef88acac29c40da48f2b  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Security.dll
+          e4ef61c38ce068be81a8ff0cb5ebd73a1806cdd6a928d3e95699fe0b977dfabc  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.ServiceModel.Activation.dll
+          97594157ea651adb5c146625b7a9ace4cfadc56ef784b70fa0791c56fb2bc2ab  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.ServiceModel.Discovery.dll
+          f54057b0a43db782670717064d109edafcc0ef16fda1028a4e6796d664de485f  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.ServiceModel.Internals.dll
+          880d234e56928f685b073dd8ec06f43303f55a1ea01010443213ebca36e09f4a  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.ServiceModel.Routing.dll
+          3d496a4c9199dd26535796f57171e606e1c1bac272266b79de48d691acacb305  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.ServiceModel.Web.dll
+          0a81e47919f10f1683673c0e7587971dc5d16056626d0ff9f91c342e1aa8fb17  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.ServiceModel.dll
+          abf95721b65a3321f5e282c6919253735dded7f5dc444dab403d8bf6a8a4429a  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.ServiceProcess.dll
+          43eff97c9289b658ecf7fb05337a4e0e2374c6d92c8dbf6623a2eb540500d278  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Transactions.dll
+          f2af51dc7a26c31b2dfd0e37d4e2494e8c3299fc14e73ac33c3bdb18cb7f2954  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Web.ApplicationServices.dll
+          01c86c91d0d507c825875196c77238fe8307a8ea23ee56736885ec12216ee430  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Web.DynamicData.dll
+          62c13793378beafbb9e657ff518e18c1bf2378d4afe61395218986f3a088d617  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Web.Extensions.Design.dll
+          68d3417681210330ca9af37285338a8ec78e8de34456b25f633ff0955222985c  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Web.Extensions.dll
+          f08d94c62e8fb56f19f44a2f741d405e5b3cedd79064f4b80c265944d59cbc42  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Web.RegularExpressions.dll
+          c82a438423ffbccdb6c60fb052b86796c56ef140738cda35426a8ff7e0d98bb8  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Web.Services.dll
+          deeb280c9c96a80f318f17954db1452115675ab5616b3e62b527db20200ec78d  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Web.dll
+          c7581d3831c5e2ca7cf0fdea26f5c8191178269335ea87e27526e84e4cc59f8e  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Windows.Forms.DataVisualization.dll
+          5f891f734c1a39744f9db9150f5566e6514714255ce30eafddbf5b027ccbdecb  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Windows.Forms.dll
+          5967816d67d2194e0519854dc0f50ecfcf2bb735b7263b4839b4ca0687627f9b  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Windows.dll
+          9db258338f3278d62ba8282cff60961299ea1c4627aad4f0096184ba84239491  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Xaml.dll
+          69c0abcd0d59a8bfeda54e6e27c509558b368a15d87772f82599ac3a8d89c1f0  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Xml.Linq.dll
+          4a7a1e02d8bdc568726d2dfd6d8e3b1a360c7dee575ea741a7cb71436ea7c65c  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Xml.Serialization.dll
+          d6cf027b3011fea5f47e1a8afe213946acee8e86372a544a31c78c83b4bf7f6d  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.Xml.dll
+          3ee0a5d3e167f18a924f846eae118acea55e920ac38580ac8ef9c3732f579884  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/System.dll
+          da0423f9fba3685ccd90a32e29b483a5fd01add06214ef6ed986e55f1335a452  Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/mscorlib.dll
+          a5d7304cc97436602be5fe765a3d8790585b150a45e62982ac94c0f6ac69d370  Editor/Data/il2cpp/build/deploy/Analytics
+          52a9f0392ce6531067d3c4d2cae690b7c4010a2edd15e9d788ad5276fd659c9a  Editor/Data/il2cpp/build/deploy/Analytics.Api.Output.dll
+          0780704eaa57dbaf4fe9abfe31dfc988de94295b041caf94187cea26605b485c  Editor/Data/il2cpp/build/deploy/Analytics.Api.Output.pdb
+          601f791ef87ebc627d8a4206474b44fc567376747f51437244e3ec6ba510b83f  Editor/Data/il2cpp/build/deploy/Analytics.Api.Output.xml
+          dcca02f086e79370651b2cb36ceeea600fc8928a48aaf78202cdd252f64d98b9  Editor/Data/il2cpp/build/deploy/Analytics.deps.json
+          a927f981c1db246396e19c4b2cbd9f3fef70aec244033be1066009377211bb21  Editor/Data/il2cpp/build/deploy/Analytics.dll
+          0de869f51a7875831e373cb93df49a343a9768973c93bccd8461959c22993460  Editor/Data/il2cpp/build/deploy/Analytics.pdb
+          f000925eed769e1c8c41b3e8624d0c5891a406e5259e3d6ec1d3dd13e1ed34f8  Editor/Data/il2cpp/build/deploy/Analytics.runtimeconfig.json
+          465e0b75aeb44b3d60c7b40c416a879017ddf6c5e0cf9ceff26617854b2ba88b  Editor/Data/il2cpp/build/deploy/Bee.BeeDriver.dll
+          1bcf99037ed4797b4067237c11ce3200a2c1159bd322988f65386315a341c90b  Editor/Data/il2cpp/build/deploy/Bee.BeeDriver.pdb
+          dad92f74e488c9efb6a9072be5629594c3e5dafc8267569ac956e68de9b5a94d  Editor/Data/il2cpp/build/deploy/Bee.BeeDriver.xml
+          0d96bd68d4bb2600793e6c880c3836ef65fbca16a338b731f414876778901611  Editor/Data/il2cpp/build/deploy/Bee.CSharpSupport.dll
+          e7b04533a6e9ee1d444054fe3cebd86fc71a5ccafb5ece88dddb0581efd5e18f  Editor/Data/il2cpp/build/deploy/Bee.CSharpSupport.pdb
+          cdc24d1a0b128efc5fe8539953db1b323c1cfaeb5a367b11bf8c71af78eb6475  Editor/Data/il2cpp/build/deploy/Bee.Core.dll
+          35afb4cfc7462ec0bb58448e3759b07226f71aa1f701342abb8a8e10d7f95b26  Editor/Data/il2cpp/build/deploy/Bee.Core.pdb
+          ef5ed07c05fcb0e086c6546fcce38745fb7843d4f6fea992a3a9c4a4ec1c3799  Editor/Data/il2cpp/build/deploy/Bee.Core.xml
+          ead72b0f10bd80b1df5cc7a6bf9f21425fda85e18af7941d9273df7493a4818d  Editor/Data/il2cpp/build/deploy/Bee.DotNet.dll
+          9ca3088f1cbc0609f0658b41710133e967af11959b01a1c91e28d463c25c1a63  Editor/Data/il2cpp/build/deploy/Bee.DotNet.pdb
+          65cda4d8d2ea7b35795a756465d884dc61560dc1034f86c9eda0a034896da15e  Editor/Data/il2cpp/build/deploy/Bee.NativeProgramSupport.dll
+          7f137065aa615f0a5d78c402cad17e77b68c647c20a07e6d45a19ff5ce3665cb  Editor/Data/il2cpp/build/deploy/Bee.NativeProgramSupport.pdb
+          2d1fbbb92784ac4021b7f7906f8228568d4c0466270fecdf421359abc3af970a  Editor/Data/il2cpp/build/deploy/Bee.Stevedore.Program.exe
+          512bbb3a29042cf6d13cb57ed5a0ce45dbe0e23ea078255f874f8d9fac9767ea  Editor/Data/il2cpp/build/deploy/Bee.Stevedore.Program.exe.config
+          cceab82067b45910a33e18cb6e726145687936c056ff431cd37f7a4fc26fd578  Editor/Data/il2cpp/build/deploy/Bee.Stevedore.Program.pdb
+          93a760f050959a9f835d4baaf80ff901e27af655d99eed0bdd1bfba33ba39017  Editor/Data/il2cpp/build/deploy/Bee.TinyProfiler2.dll
+          a7129e6e8f8574bd494928518f027a0d8f5f43f48a06757700aa4c5d2959491b  Editor/Data/il2cpp/build/deploy/Bee.TinyProfiler2.pdb
+          5fb5491f28d3935d48fa66d97edcad86022fdf2cedca50a66823ac60b2e5a453  Editor/Data/il2cpp/build/deploy/Bee.TinyProfiler2.xml
+          80f652649941890a6bcf843698d63e9274b66d032fce50933603d9f6d211abcd  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.Android.dll
+          eb84df100c35c3d5a6cd0fca67f61d57580576470b3fde8703409c350d162557  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.Android.pdb
+          546e05156536693e9641f61ade2ff20d7c7c38f44ef2c59e1238b077f9fa47df  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.Emscripten.dll
+          661b943cbb73a794dbb46e95f3952ec7cf698176ac63c5e3b731d084a870c207  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.Emscripten.pdb
+          98c71a37e2485810eaec39737f641b5d2cb11588064b151cae3383b2f59e8dbc  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.GNU.dll
+          6b28598ac76fadf80311ae8d6e13a10732666b74ba936639035d82c8bafdd28d  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.GNU.pdb
+          b1df2a8008643b8749499a090c7d464d1803a88c34433f357662d7834c6dc90a  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.LLVM.dll
+          e13511cceff98d1f6d3c5b12d501d400f875ede63fb64de960c441d477994a4c  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.LLVM.pdb
+          b20850370725031b56e225bd745e1bfed7c15a4065a16d7542fb6ca8bf02cf43  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.Linux.dll
+          002635909725b0d637118d5c86a07ac6f2697cbac44eafd0c63cfb99b7792d30  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.Linux.pdb
+          8e6210a2118d0a093ff093457cb07ba6652311c21c89cd1a09f64114dbf99805  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.MacOS.dll
+          1460651ce0a60fdf608c1106ca7e86c70d71cdb1c605919622bb9ff9ed7f30db  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.MacOS.pdb
+          735a1e70342ad93daa179785e9d3cc155350c23f0744aa231dcff897d6928e69  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.VisualStudio.dll
+          427c8628e7ef0ec1420f9d2562f001ea869dbee82ec36144001e7789a4602da6  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.VisualStudio.pdb
+          922580f9166e193875f1ac3774ec6470bff3ff96903ae799db075f6866fe2354  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.Windows.dll
+          b9bdf1306ec8ab4a4eacc71108fa59b46ca35f52bc264fd6d074ea99c824e10e  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.Windows.pdb
+          e858d6cea2db6a050b9e669d2a9e91042be36d5c97450db109d20461c80c3fce  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.Xcode.dll
+          9a489f3828ef30c7e25d51d28176e86a86c49f80c0acf641c3ad46083b8b8d53  Editor/Data/il2cpp/build/deploy/Bee.Toolchain.Xcode.pdb
+          073afd9608da31b393d322a4718f216698865f6dfd9f625fd5c7985113b44c2e  Editor/Data/il2cpp/build/deploy/Bee.Tools.dll
+          f81b62229bf47007e9247eb2b67691c0360b02ff9024968623bec2137b3a7836  Editor/Data/il2cpp/build/deploy/Bee.Tools.pdb
+          a3eb159cc34679c5a668eb3f039abf9ee9d2f28119aa89c61a87894b5dc3f1c7  Editor/Data/il2cpp/build/deploy/Bee.TundraBackend.dll
+          5215d870358479c1bc5bb89b037dd2f53ee4753ec13853439321fb2af3ad2e69  Editor/Data/il2cpp/build/deploy/Bee.TundraBackend.pdb
+          64f0a417407e4cd342e9875ed64d4dffb4dc5255748bf3cc425b3c2ced0c2a2b  Editor/Data/il2cpp/build/deploy/Bee.VisualStudioSolution.dll
+          3c59f2987354d1ec06eba208e624c97072aa311ada5090822778757b34ef8b88  Editor/Data/il2cpp/build/deploy/Bee.VisualStudioSolution.pdb
+          2d53209dc6f3f8329e7ded1dc3feaa42fe33e0431b65f117e3841d87e895c874  Editor/Data/il2cpp/build/deploy/JetBrains.Profiler.Api.dll
+          cb9f8ef871353cd8129f44f03e8de11f862386ec25b52de060892b4930f640eb  Editor/Data/il2cpp/build/deploy/Microsoft.Bcl.HashCode.dll
+          6eb773e44240af86daef796aa392fc674e82d1db89394730c640268d6cc583cf  Editor/Data/il2cpp/build/deploy/Microsoft.CSharp.dll
+          8c051fb389fcacbd247a6c6c8c1c8bcc33273ee77774763ff723d513c2f6db26  Editor/Data/il2cpp/build/deploy/Microsoft.VisualBasic.Core.dll
+          9a018f473e70463388fbe30ace8a69d9e5c1ca140a893695fd9300357320d1db  Editor/Data/il2cpp/build/deploy/Microsoft.VisualBasic.dll
+          e43dcb6452e597a7ca2f792149260119a40858eed84600c41fcd35fa45525812  Editor/Data/il2cpp/build/deploy/Microsoft.Win32.Primitives.dll
+          bb522d39dbf1bb3191d6ab4909047ee568006216a4a4e657f01ef0e071b1adc2  Editor/Data/il2cpp/build/deploy/Microsoft.Win32.Registry.dll
+          09f8ce7c98412fb209633e2fc03d1184511d524b3af5d101fc9ef6a8eecff8b7  Editor/Data/il2cpp/build/deploy/MiniProfiler.dll
+          51b0b719566da2be2f70bb2e16b442b5918bda2365250e66d8aa7372feed054e  Editor/Data/il2cpp/build/deploy/MiniProfiler.pdb
+          0e9e5fd266cb5138def88eb99fd5dce786436e05b956ed23cabdb815fe50fcd6  Editor/Data/il2cpp/build/deploy/Mono.Cecil.Mdb.dll
+          ee2d09ec92c70c111e9c48f0a349c4bedac957cd66f33b3abf6f53f42eef165a  Editor/Data/il2cpp/build/deploy/Mono.Cecil.Pdb.dll
+          1ac15f18e4b9e6203bf449de158af9dcd3c9e133248ebc7eb3033c0a51e95736  Editor/Data/il2cpp/build/deploy/Mono.Cecil.Rocks.dll
+          5fadca7fb67852210af3064e1ec2e4d41878a40702dd0e5f2dfbb4b67641d2f9  Editor/Data/il2cpp/build/deploy/Mono.Cecil.dll
+          72cf291d4bab0edd08a9b07c6173e1e7ad1abb7ab727fd7044bf6305d7515661  Editor/Data/il2cpp/build/deploy/Newtonsoft.Json.dll
+          9936b6ececd648e81ccf5b1042797106fbefdb195bba5ab30d0fe44d332d625b  Editor/Data/il2cpp/build/deploy/NiceIO.dll
+          bea2b77339468286065f626b13673b67897bfc0508f6ca1767f285bde3db0d6a  Editor/Data/il2cpp/build/deploy/NiceIO.pdb
+          236e2c2ed820a690b8074c4380c2f1be5dc77a97a5120da83227a504cd58b3cc  Editor/Data/il2cpp/build/deploy/NiceIO.xml
+          651b5a614f77986b83ffe9d439c990eaa95715d332cb351d7badbc9673700604  Editor/Data/il2cpp/build/deploy/SharpYaml.dll
+          18487183210f66924db7fe4a39845fcd19317703e0b6bb9712b646a508f24c6e  Editor/Data/il2cpp/build/deploy/System.AppContext.dll
+          611aa414247c9b8ca0f805370e1c19f6e15bd4f51e0de455ed59dff356e76f6e  Editor/Data/il2cpp/build/deploy/System.Buffers.dll
+          feecd8c8805ed1c0167790be3106e85ebed7864cd906489113893f009c20a06f  Editor/Data/il2cpp/build/deploy/System.Collections.Concurrent.dll
+          853f9d021ef4e4b1f70cf20f6df23b13597b948ad8a326c50c509812af1a23d5  Editor/Data/il2cpp/build/deploy/System.Collections.Immutable.dll
+          c67746db5af55c40fe586c7830a2e427c50287c51353f7fdf3e425622029db56  Editor/Data/il2cpp/build/deploy/System.Collections.NonGeneric.dll
+          e5768f42cb1d5b37618105cae51efc729cb55e2be38f20c5af8022da4fbde1d3  Editor/Data/il2cpp/build/deploy/System.Collections.Specialized.dll
+          0e3e64eb042bde1f1e6aa8e937e4f312994c4a927c225a4495a8edaba96cd921  Editor/Data/il2cpp/build/deploy/System.Collections.dll
+          f9bdfe7bfad69db0c6c16cce5000a658deb038dc7981ff3f3619c173c2732d66  Editor/Data/il2cpp/build/deploy/System.ComponentModel.Annotations.dll
+          6e2b689bba4dc2959a45e000a6ea81bc8fd67e2827f3b077f4e90264a498bea2  Editor/Data/il2cpp/build/deploy/System.ComponentModel.DataAnnotations.dll
+          fb41e442f8bfe8616174745bab59750ba08d9f79cd33d3498d2b4ee819ebcce3  Editor/Data/il2cpp/build/deploy/System.ComponentModel.EventBasedAsync.dll
+          a214a66805cb6f5d7e59adfafe2c96cb5060795e5925a37680c19831f2e0fb56  Editor/Data/il2cpp/build/deploy/System.ComponentModel.Primitives.dll
+          62c3cff7f79fedff87ffbd4ec22238c8f421f77ad98f1b81ac0ad959e7193150  Editor/Data/il2cpp/build/deploy/System.ComponentModel.TypeConverter.dll
+          f393ec01b31ef0d7fda4fd6ad7e475f346f01d2531acadc654b79b65a4a49c90  Editor/Data/il2cpp/build/deploy/System.ComponentModel.dll
+          55d07cc77088486c5e9d0740fcfd46ae21bbad37ab9b781214d9969a13ab563d  Editor/Data/il2cpp/build/deploy/System.Configuration.dll
+          9ebbc0e25854ba210a6fbd2a86ddf0fd6d96235516a1151bd3499f5d097ecadd  Editor/Data/il2cpp/build/deploy/System.Console.dll
+          de2d05f5b2091b92a8ad24852809572ba0dbbefc6e50c4064426463354b429cb  Editor/Data/il2cpp/build/deploy/System.Core.dll
+          58998c6f55863b2890319d5c8a84e89e01f8a10e12bc69e0acc474d61aa2786e  Editor/Data/il2cpp/build/deploy/System.Data.Common.dll
+          c0dd8da65fa49a1fa736e822af849726d1ac3a562b45d2fbd8792be06aabc383  Editor/Data/il2cpp/build/deploy/System.Data.DataSetExtensions.dll
+          4e524c912f9ac26bd215317bf7d064e515960e36ac96ea150248c34dff0d4d1d  Editor/Data/il2cpp/build/deploy/System.Data.dll
+          99b6590a31073177f03fbe651368842218d16e57a923ca9787d3bfe69dc8bdf1  Editor/Data/il2cpp/build/deploy/System.Diagnostics.Contracts.dll
+          638208b553134d7c3cc6ae3852aa052b9a0da4b543d9683f334072f20e658c1f  Editor/Data/il2cpp/build/deploy/System.Diagnostics.Debug.dll
+          64be66709142a873e46105e8061c117bf3498b80251b0d38244fc95840920698  Editor/Data/il2cpp/build/deploy/System.Diagnostics.DiagnosticSource.dll
+          c52604ea6cf70eb618051235c2b225602fb0b995fb5f6e1b7ae78334e91dc28c  Editor/Data/il2cpp/build/deploy/System.Diagnostics.FileVersionInfo.dll
+          6630658267bba33ff366e20e55940ab7389048221fb8819cda04dec7d2123875  Editor/Data/il2cpp/build/deploy/System.Diagnostics.Process.dll
+          ed5731b4ba39400731569fdb55f951feec76dd70ffd94d9b366f32f463501dfd  Editor/Data/il2cpp/build/deploy/System.Diagnostics.StackTrace.dll
+          53f9051b295baf484c713bd55e3a86847e590d543acf01f6b6b58ff9347c006a  Editor/Data/il2cpp/build/deploy/System.Diagnostics.TextWriterTraceListener.dll
+          35713e5a2cc6faa273f8bfe01163e487fb597c8e8f0a0a54a16c0c329f633731  Editor/Data/il2cpp/build/deploy/System.Diagnostics.Tools.dll
+          8a491e17615ce4cb125834bf2ba1e8f8659d340675786d65d8697ea49d9885b2  Editor/Data/il2cpp/build/deploy/System.Diagnostics.TraceSource.dll
+          daa19d90230c5ddb952a48a49265d3e62518ee6c04fd3149099a210a65f24c3f  Editor/Data/il2cpp/build/deploy/System.Diagnostics.Tracing.dll
+          ccc5755618c7d317245a608c08fc48d6f26a6f00d9d1e1539757e3b06a2cfd8f  Editor/Data/il2cpp/build/deploy/System.Drawing.Primitives.dll
+          b9f728251c90e832eb9654d545360bd33436756649d405b92809ef2a3cb02052  Editor/Data/il2cpp/build/deploy/System.Drawing.dll
+          885ed8c77cda211e5569342736f6f788befcd4d2f87458df6bee307f8f85f9b1  Editor/Data/il2cpp/build/deploy/System.Dynamic.Runtime.dll
+          0208c170c6bd00930e8b0bd5aad8da685cd6d2ab84731df3b2172b2b7dcc5219  Editor/Data/il2cpp/build/deploy/System.Formats.Asn1.dll
+          7720c33459698aa8ee0509e514ff7db8d755a98023b1cc6bdb66a307d1e1e08a  Editor/Data/il2cpp/build/deploy/System.Globalization.Calendars.dll
+          40668bdf99586878076b7abcea192b89cc1ded953e9a01f49b406d570872dc89  Editor/Data/il2cpp/build/deploy/System.Globalization.Extensions.dll
+          2f68ebb592c3a4f04c0313eb5f0b48bb6d92499c01ce689ef28a15d6c1430b1d  Editor/Data/il2cpp/build/deploy/System.Globalization.dll
+          bf6d08602bd873749f5c7a7203a465388d230548111ec6291b8b9162e0eb442c  Editor/Data/il2cpp/build/deploy/System.IO.Compression.Brotli.dll
+          40cb8dea6b25d61b7e60c9f494edea1011c9cbf6a0e5b7324dc7051342364ddb  Editor/Data/il2cpp/build/deploy/System.IO.Compression.FileSystem.dll
+          2b3f6c094be5f5af0b2a8c1dbf2c043b5c6d22943c7bd85bd92745ab4bca0601  Editor/Data/il2cpp/build/deploy/System.IO.Compression.ZipFile.dll
+          1a07bef650102ac9e74395fe6fb446a846d605686d255d86560877f5375c9601  Editor/Data/il2cpp/build/deploy/System.IO.Compression.dll
+          04893604f65b956161e10b045a1ae29307ea37ddc2a11e22f8fc9255156ebf79  Editor/Data/il2cpp/build/deploy/System.IO.FileSystem.AccessControl.dll
+          b59368b6391a77fb0cc24fbe24d931c50877864a49fd4d0a5948913363e82cbf  Editor/Data/il2cpp/build/deploy/System.IO.FileSystem.DriveInfo.dll
+          a77a7e13a4073e0250d0cf35ab7866608c71dbd676dda8f92afbf18a90ed5298  Editor/Data/il2cpp/build/deploy/System.IO.FileSystem.Primitives.dll
+          826c875034d16b5f0139fb8c7c7e73249e6b70021db42cd2dffb76f1988a20a3  Editor/Data/il2cpp/build/deploy/System.IO.FileSystem.Watcher.dll
+          a9da774dca87a41e57eb4527dc7fc249bf4924a498aaab4655c993deab6ee244  Editor/Data/il2cpp/build/deploy/System.IO.FileSystem.dll
+          17ffb4955a7579bf379c91447765ddfebf9e2fd2ca2041cdda3140b5d79bb3cc  Editor/Data/il2cpp/build/deploy/System.IO.IsolatedStorage.dll
+          c3a0479820ddea7dda2100f71e6f485f6c0a44744abc5e8cfff1fabb32f8d788  Editor/Data/il2cpp/build/deploy/System.IO.MemoryMappedFiles.dll
+          aafe49a85e028744673141f0a9bdbc2748ea3f79e742f8b9cab8c2c7b0b678fb  Editor/Data/il2cpp/build/deploy/System.IO.Pipes.AccessControl.dll
+          75bce2272e1ea994f66497f3198b838b7079e253e8d5d2bcbce01952e8a2f496  Editor/Data/il2cpp/build/deploy/System.IO.Pipes.dll
+          3c0d9defb9f1fc86a4046bad2bd9a1b4fb6d58cf02fbd651ed8a40596c2a17a4  Editor/Data/il2cpp/build/deploy/System.IO.UnmanagedMemoryStream.dll
+          e6cfdf5359894e59273bd1ea08b3aae308790593e2e678ddba33470cdeefce5b  Editor/Data/il2cpp/build/deploy/System.IO.dll
+          b3e7e16643eda0c9f9fe229a12d0fad7e0bcc9c415d4cb437ecba5cea2a4eb2d  Editor/Data/il2cpp/build/deploy/System.Linq.Expressions.dll
+          a3b981bce834e86115baec0f1deb3187ee877460fdef5f0814014c21258e1523  Editor/Data/il2cpp/build/deploy/System.Linq.Parallel.dll
+          bc809424581302acfe43c20d5e45be680b511786ded21dbb68072dc97a0957c8  Editor/Data/il2cpp/build/deploy/System.Linq.Queryable.dll
+          af57576b222f35e21dbd8fe39ae9d0dd68a6c22177e08d0da3eb19344cfa2f97  Editor/Data/il2cpp/build/deploy/System.Linq.dll
+          14a32de4757645c023fc3b32e69dd1ee2e93e194ced087c93a387ba540ad9270  Editor/Data/il2cpp/build/deploy/System.Memory.dll
+          dc40b004f1c4ba40a9f5f9bdac7804ec7388f7574f6cec99ac67b0e103eb4daf  Editor/Data/il2cpp/build/deploy/System.Net.Http.Json.dll
+          a92add1e5a2132033173b3dbfb9914dbcc92020847a7b246bf543c724b34cb58  Editor/Data/il2cpp/build/deploy/System.Net.Http.dll
+          aeccff8f7ccdd05ee879b78e56338a79ba8043efa4c8c62b1dfe7f9fb63a484b  Editor/Data/il2cpp/build/deploy/System.Net.HttpListener.dll
+          2bfe1c1c07e1151a490feb4b86dc63eec2dafa5af62f8bd2acc0e09eff49eb53  Editor/Data/il2cpp/build/deploy/System.Net.Mail.dll
+          e654ce54605e4c4a301ae9dabc82f34a7de2d4e12c243f479da2edad7b1bf6f0  Editor/Data/il2cpp/build/deploy/System.Net.NameResolution.dll
+          71f61dfd86b4ccf37e514c2da068e57182382cc8587f2b3eed3cc4a6e90b5c05  Editor/Data/il2cpp/build/deploy/System.Net.NetworkInformation.dll
+          88f24f58576fdb4237790651b9aa2e96c33a2ffbd4d8e030a81cf36eec722c6a  Editor/Data/il2cpp/build/deploy/System.Net.Ping.dll
+          ce5f387dc2719e942efd0b6da6ed2e44d69cbb277582e0ae22b9373d155a2f4e  Editor/Data/il2cpp/build/deploy/System.Net.Primitives.dll
+          5dd650cb1f8059e4313ceb40ace4df24bdb2e6a040c75ca27926453bc44acd67  Editor/Data/il2cpp/build/deploy/System.Net.Requests.dll
+          6a956d79c6dbc69b0cff80c3599c6261314850659a85e12d43e2ae200dad5818  Editor/Data/il2cpp/build/deploy/System.Net.Security.dll
+          c3bdef7667b4f0d1be0f7aefb29710f341342ea674b94bb6bdcb6fe3d6af882b  Editor/Data/il2cpp/build/deploy/System.Net.ServicePoint.dll
+          a82b5d701b22c5f9d02b522c34359d71466116c2c21cc4d7767581d63b187f2e  Editor/Data/il2cpp/build/deploy/System.Net.Sockets.dll
+          58e628f1c8779a834e41b50f91ec704cfbaaf95f791c270731e3fc7df071c01d  Editor/Data/il2cpp/build/deploy/System.Net.WebClient.dll
+          03104b063b97f7b8a51e21c86452c1c586beff808955261132f1cbf1f114963a  Editor/Data/il2cpp/build/deploy/System.Net.WebHeaderCollection.dll
+          b4a540f84382b188ee66077499d18e75a82075c2af2506b4eea338cdaf154bfb  Editor/Data/il2cpp/build/deploy/System.Net.WebProxy.dll
+          244a8d1c6abc5699647eda84f2b1aabf174d09c909a44230a526845d74836abe  Editor/Data/il2cpp/build/deploy/System.Net.WebSockets.Client.dll
+          81b6dc95c9d6c46c31c19e765aead273127e2cc6a31cb2b473cb89b3c34be93d  Editor/Data/il2cpp/build/deploy/System.Net.WebSockets.dll
+          28a054728663f003b2416a53fbe5d4c710eccd404bd0363bc8fc490743d2d439  Editor/Data/il2cpp/build/deploy/System.Net.dll
+          b545aae0357dc63f8466b0bb5f9b8d5feac98f97770f1618461c9b377e50156e  Editor/Data/il2cpp/build/deploy/System.Numerics.Vectors.dll
+          fdf1f8ab43447813d592076409737f5bf65cfe15b7e18693a7289ef83d3b762b  Editor/Data/il2cpp/build/deploy/System.Numerics.dll
+          70b9400e1e7ff14aaa1a03d1f8ac59dccb9332fba4738d3587c5423d15d7f8a4  Editor/Data/il2cpp/build/deploy/System.ObjectModel.dll
+          df9ec1ef6533f076da213e975324589babc9597587d2aaea0dd173772434a9fd  Editor/Data/il2cpp/build/deploy/System.Private.CoreLib.dll
+          a7e1eff6b0a577e66946ed9938689a536f5952a569480f46ebe49d098c1f3e14  Editor/Data/il2cpp/build/deploy/System.Private.DataContractSerialization.dll
+          7829c7d9cbda72864287af8ef4959b5796528efc69240487bf3dd101ef383d08  Editor/Data/il2cpp/build/deploy/System.Private.Uri.dll
+          da56a3bd1dd88751a67d59110c06fe2360450e4f1468438c5232012ef85e3ad8  Editor/Data/il2cpp/build/deploy/System.Private.Xml.Linq.dll
+          1c8a445a0a83295121f0ca8e8d4ff64da0ee6e2254527ad0e9d45d529f615276  Editor/Data/il2cpp/build/deploy/System.Private.Xml.dll
+          6b922c173b89ffb38909a22a389ea89a87f1442b7a3dcc317fb6d0dafd63ed98  Editor/Data/il2cpp/build/deploy/System.Reflection.DispatchProxy.dll
+          f60aadc79722688b713234c64225c7bc355ac2feceb020de8f9559d3c6a7638a  Editor/Data/il2cpp/build/deploy/System.Reflection.Emit.ILGeneration.dll
+          cc12548b64f8d97478a320ea10d5622866a09f1b93573cfb1ec687d3846b86c3  Editor/Data/il2cpp/build/deploy/System.Reflection.Emit.Lightweight.dll
+          8542fcb7c18f984869d25b19c18f16596fc7385703a439d41ff9304a4a1aa12a  Editor/Data/il2cpp/build/deploy/System.Reflection.Emit.dll
+          767f65fbd19c44edb149a7c58521c429031eb19cc661ae3f8f8e7be78ea23287  Editor/Data/il2cpp/build/deploy/System.Reflection.Extensions.dll
+          113126adfe6b7f01341cab8cc840b2012d3e24937ce4fde2f7ac6dce97eca571  Editor/Data/il2cpp/build/deploy/System.Reflection.Metadata.dll
+          2a66f43c881aebab8ea7e5a92d3a5658ac21c721475266abca59fdf5d4fa5718  Editor/Data/il2cpp/build/deploy/System.Reflection.Primitives.dll
+          1169892e7c134a87541529ae08d7fe7300fbc5de60eaf71161a2b156d4fdf20e  Editor/Data/il2cpp/build/deploy/System.Reflection.TypeExtensions.dll
+          1beb44fa546d408dc645d1a994e964738e7588398166153a58ab77458aa65616  Editor/Data/il2cpp/build/deploy/System.Reflection.dll
+          77e8db3f43afb9150f66bad8b51286886333e398fe93f2a4cce0179edb0ddfef  Editor/Data/il2cpp/build/deploy/System.Resources.Reader.dll
+          a36abbc6ceb752f648cd370d36ebee062cf6a8ce21bca6e7e8eda0ac270578f9  Editor/Data/il2cpp/build/deploy/System.Resources.ResourceManager.dll
+          ffc9067dae8f742e72a80795431f55c7bae22a762f4b8d0d86244567471ea972  Editor/Data/il2cpp/build/deploy/System.Resources.Writer.dll
+          8beb27fbdf9ad8bcedb29b7e7330e5897f05015bff334c0d28910ef0b86e5a42  Editor/Data/il2cpp/build/deploy/System.Runtime.CompilerServices.Unsafe.dll
+          471e9a1543c2e3399e852ccd980558ac60d3360d3d3d9e78436d622dcb2e8953  Editor/Data/il2cpp/build/deploy/System.Runtime.CompilerServices.VisualC.dll
+          5d882500def2b2f0dc10886e87e36fb1bcb1101116bd1953855e0ec72afd6257  Editor/Data/il2cpp/build/deploy/System.Runtime.Extensions.dll
+          f001821fa2fca2baee1c0197d2182d2756ab348c6aec1c30ecfa2b0bcaf21d82  Editor/Data/il2cpp/build/deploy/System.Runtime.Handles.dll
+          016340a4ee12abe9663ebc19a718a2d6ea149d8a13143484afb468f5e1e75d72  Editor/Data/il2cpp/build/deploy/System.Runtime.InteropServices.RuntimeInformation.dll
+          460e7672793ea1db444e35c15b2db873fc09bc2b376e3c36de2947923b1856a1  Editor/Data/il2cpp/build/deploy/System.Runtime.InteropServices.dll
+          8368df526a14b4c6393eb117fc76f27abb305ab126c608124149e6376ffda3b5  Editor/Data/il2cpp/build/deploy/System.Runtime.Intrinsics.dll
+          4e993b5c2ab7e7518bd9521916d32db12837617e459f3dc92c00ec456f655db5  Editor/Data/il2cpp/build/deploy/System.Runtime.Loader.dll
+          12136d37aa6d78585eec7528d21a585d36548ffc39e2bf0a9dd93bf5aead14c3  Editor/Data/il2cpp/build/deploy/System.Runtime.Numerics.dll
+          ae2cef566307a4ffa63e2b92d70aec54d3241b74e5cc0bee50f2e25101b7971a  Editor/Data/il2cpp/build/deploy/System.Runtime.Serialization.Formatters.dll
+          d1f011415ab9ba64175f120dbd74e7269e3e6584bd60ae809d0aa515c2048f20  Editor/Data/il2cpp/build/deploy/System.Runtime.Serialization.Json.dll
+          b227be777e63002188c21398e8006254c2c1b2d26d00a88a13fb8763dba69aed  Editor/Data/il2cpp/build/deploy/System.Runtime.Serialization.Primitives.dll
+          f169d593a4ac04a223ff224f34e0f471285ab294ba823576266846250f3d96bc  Editor/Data/il2cpp/build/deploy/System.Runtime.Serialization.Xml.dll
+          dcf44578f82d64b5f33e0d8ea4421d16e81278e6c13aa0087a7e1ebdc2c9fb44  Editor/Data/il2cpp/build/deploy/System.Runtime.Serialization.dll
+          889f0e5c09048b9ee1ce33547086f31506a025b6511cb926695bef2e53ce71cc  Editor/Data/il2cpp/build/deploy/System.Runtime.dll
+          67055966baed8e87451f6dd53e332f5df2ffe751c201a8283e5d77741254a4d7  Editor/Data/il2cpp/build/deploy/System.Security.AccessControl.dll
+          290c769981d032775fe359d4f10f166585f5477f007d4e17f85ab8e471b735e5  Editor/Data/il2cpp/build/deploy/System.Security.Claims.dll
+          642b7df67554e7e17a34787717503094590ee85f44428802a2427bcf56535f20  Editor/Data/il2cpp/build/deploy/System.Security.Cryptography.Algorithms.dll
+          21d6a9062497ff83de4a530cb186ed2bd623054ae3cb577929e09aac2cd33292  Editor/Data/il2cpp/build/deploy/System.Security.Cryptography.Cng.dll
+          57a15cf34d4d448f85e6724b51a1f2a3522e6e50af11c4635a8661c81f44fb19  Editor/Data/il2cpp/build/deploy/System.Security.Cryptography.Csp.dll
+          7e7ee311ea3a9c3014df9fb1c25203bb80c5f3d2771def637534578fcb79b5aa  Editor/Data/il2cpp/build/deploy/System.Security.Cryptography.Encoding.dll
+          fa1f750b600923d1c0725393a72de4d93befad87359eae69b8157a433862d36a  Editor/Data/il2cpp/build/deploy/System.Security.Cryptography.OpenSsl.dll
+          4159372a33e361e52748e64fff426ae4a4595fe61938d84636750068c39b7f98  Editor/Data/il2cpp/build/deploy/System.Security.Cryptography.Primitives.dll
+          9c62540505ffdd7dff28923a8896627caddbae0303bbb8961b6c176d051faaf2  Editor/Data/il2cpp/build/deploy/System.Security.Cryptography.X509Certificates.dll
+          954e83da58207b81962540fddb29efe6d96b5e6de5caaaa172482eb4ab31fe3e  Editor/Data/il2cpp/build/deploy/System.Security.Principal.Windows.dll
+          7211bc0c0b6fe24400447c70303849356ba11c66f1ede5ca58ea2a31cc51a8e3  Editor/Data/il2cpp/build/deploy/System.Security.Principal.dll
+          93368d15b6e0c59faba35521d3ecf6585c5e679a98dcfc41e4b37c7d99949e02  Editor/Data/il2cpp/build/deploy/System.Security.SecureString.dll
+          486b87eaaa4ffcae445bf8de5bbfb3c6d0b871ea1a2bda26519ab86ef01bd5ba  Editor/Data/il2cpp/build/deploy/System.Security.dll
+          371f65e49203b5c454bf83d7df839bd097df8f07f6107a9fb2df03eb733b44b2  Editor/Data/il2cpp/build/deploy/System.ServiceModel.Web.dll
+          1bed10b8d9abb0399e8975f4da2c58f06030a510be0b1242ae956168c05e69f7  Editor/Data/il2cpp/build/deploy/System.ServiceProcess.dll
+          f4aabca1600928b27513d1e7fe20930d1ee1c6837a03f2493131404b374428f3  Editor/Data/il2cpp/build/deploy/System.Text.Encoding.CodePages.dll
+          75960fcdd58623cbeec6be7956bdb329a3a85f5cf590bf2652424e17ea1ef3d9  Editor/Data/il2cpp/build/deploy/System.Text.Encoding.Extensions.dll
+          796b8746106863fad20893af8d03ce392e397d70a662842c5d97d824000681f7  Editor/Data/il2cpp/build/deploy/System.Text.Encoding.dll
+          48449b2df034af9ad3596d1309b3bbff6d26cb1ddb495b890c39b02bbfa889c9  Editor/Data/il2cpp/build/deploy/System.Text.Encodings.Web.dll
+          451019030d5d18d4eeb153b33f2c56feacccaf632311d56fa16bc55c9b6b4eff  Editor/Data/il2cpp/build/deploy/System.Text.Json.dll
+          ae7fc23349d001f7125d7786ec811628d14af834550a91ab36ed8eb8ef586c3f  Editor/Data/il2cpp/build/deploy/System.Text.RegularExpressions.dll
+          ac011124f6dce66a5f73bc750bc474e9eb3701dc1ec3370f0330e95a08f731f1  Editor/Data/il2cpp/build/deploy/System.Threading.Channels.dll
+          aebde82e16e909d5d23199fef7fec5de6612f9ac409c7289e1d0f183b1298bc4  Editor/Data/il2cpp/build/deploy/System.Threading.Overlapped.dll
+          fd38e460bd2f675492b6241d7e4d8ac6e661667ce4e414e84c6c556edd4fa8da  Editor/Data/il2cpp/build/deploy/System.Threading.Tasks.Dataflow.dll
+          1e43a1e7c69f3341c423b336fcbb0ad5ef8a42bfc1f71b629cfac7abc61e52d3  Editor/Data/il2cpp/build/deploy/System.Threading.Tasks.Extensions.dll
+          e887da9f92ae25e3a2f917d35851ffdf0f1398a5ab52443b754f192edf5b7081  Editor/Data/il2cpp/build/deploy/System.Threading.Tasks.Parallel.dll
+          d4f76b3c00ddecf3a3b8c63800eb94eb9fd8144d57c78c5af7207a77fe1a6d90  Editor/Data/il2cpp/build/deploy/System.Threading.Tasks.dll
+          5324a5a5b1ae01956450e6e6cfeb2062d3826124c1fbfd462be7d4be699d2ef0  Editor/Data/il2cpp/build/deploy/System.Threading.Thread.dll
+          71bb1e5169a4c1144dc593b2b2442af7fc187d6678793c2eec374491740837b1  Editor/Data/il2cpp/build/deploy/System.Threading.ThreadPool.dll
+          b7c147500252b352971970112e90152cc6e43cc3f21b769a826d3a5bf6a8be7c  Editor/Data/il2cpp/build/deploy/System.Threading.Timer.dll
+          59a5fc597277d444ee64d0da8759aa3747ec172648a79ddf1d0c77b5d34b2676  Editor/Data/il2cpp/build/deploy/System.Threading.dll
+          2b877ac66407f96ab3e4fe0c81f89576fe613bc4a842349335f3c8c0bc769121  Editor/Data/il2cpp/build/deploy/System.Transactions.Local.dll
+          042349d78ba5dd0aba4ccf3da445c17cd9896107d22166d9b4cfba560224a333  Editor/Data/il2cpp/build/deploy/System.Transactions.dll
+          904c34f022370893faa6d1517ca3bea13e1e0f30931b38941891feecbdfa1555  Editor/Data/il2cpp/build/deploy/System.ValueTuple.dll
+          dda9a1cff5adeebcc810093493b76db565809785c4705cf090daa664ca187a94  Editor/Data/il2cpp/build/deploy/System.Web.HttpUtility.dll
+          4ff58eb6ec761c4288413d895d724d59b37420aa0fc02b67dac5a3af54d2bae2  Editor/Data/il2cpp/build/deploy/System.Web.dll
+          ae25f1f6b6859ae9b1cd7c91ecc00c54804231ef17f2b995b3e767d7c4441f0e  Editor/Data/il2cpp/build/deploy/System.Windows.dll
+          c2acc0c9cddc38cb3164f61a6ea7f8de311881f8d77d034259da704377ccb566  Editor/Data/il2cpp/build/deploy/System.Xml.Linq.dll
+          e9ef99d708f859ea1a96c884a97839b0cee26efc9870039f0e3aac8dafd483cb  Editor/Data/il2cpp/build/deploy/System.Xml.ReaderWriter.dll
+          bbad38d340dc683718e8fec86a9081bf00f7d6ba108906ba6fbe32e05c73b7e1  Editor/Data/il2cpp/build/deploy/System.Xml.Serialization.dll
+          c3a8e619636b4d9bb5a0a9bbb20badbd9ca67f2c91bfacd49557cda276473f24  Editor/Data/il2cpp/build/deploy/System.Xml.XDocument.dll
+          ee0b0f8d527326a6d3d7c7b35a03124e5486e8f3a8608bcecf42f7695a987cc6  Editor/Data/il2cpp/build/deploy/System.Xml.XPath.XDocument.dll
+          d4939aa8c48ee32400c3cef9e97e192289efb90afdb74a531caf1ae3e036702a  Editor/Data/il2cpp/build/deploy/System.Xml.XPath.dll
+          e8d946c061018d960129def84ab5c5ca67e65a8a375035da0a6ce1b76b49a39a  Editor/Data/il2cpp/build/deploy/System.Xml.XmlDocument.dll
+          24f3998c37115b800a72ec567fd924ab4942e152605a3a11e85544e39530f441  Editor/Data/il2cpp/build/deploy/System.Xml.XmlSerializer.dll
+          4ebf24fca166e633d608df5c2f6d400b864f5b245b11949abe0d3c5d62f27c8d  Editor/Data/il2cpp/build/deploy/System.Xml.dll
+          cec292aa420a75f62ac60cc01a531daa552fb1d425991e5d190708c6aa90c990  Editor/Data/il2cpp/build/deploy/System.dll
+          f35d564201518d1805972b0b2ae21ca44d9c5737e6b2837277c579c4fc1737f1  Editor/Data/il2cpp/build/deploy/Unity.Api.Attributes.dll
+          a33f81e36c540b56b89875486c8ddd8d7d05cb8a479941cf795dcff0e93592ec  Editor/Data/il2cpp/build/deploy/Unity.Api.Attributes.pdb
+          5a0ddaf696d6c6d56cddd63ef38166a45d00ab32ab11bccba9ae31b5378842ce  Editor/Data/il2cpp/build/deploy/Unity.Cecil.Awesome.dll
+          23b4264e92cc2e983e56669d33efc9d7b523c5510ab84b9ecd98bddb1d9f4bf3  Editor/Data/il2cpp/build/deploy/Unity.Cecil.Awesome.pdb
+          2162165d358f9f9b13c71b172bc5631e541cdb888ba96e37250e14aeff77e174  Editor/Data/il2cpp/build/deploy/Unity.Cecil.Visitor.dll
+          7b6a9dd1f183b2af6dc988da355db05fea23ed1987e88569a393ae64d3488f09  Editor/Data/il2cpp/build/deploy/Unity.Cecil.Visitor.pdb
+          894234838718521a79fe2b5f9902e3a3d8c726bad43450eab9cff10162d6169e  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Api.Output.dll
+          561b583d99e9f320735f37b465524650106f0b7947cf269865e12faaa47f53ee  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Api.Output.pdb
+          42d8bb7dde6d8859b2f0fb8590b72acf76b7bbd532aa0a91f331c5d7a3b47856  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Api.Output.xml
+          5fd14a711afe5b9f5dcd4880de0b2084463cdc6b9ce014b151a4277d31167f7c  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Api.dll
+          2056a01e059f2b8fb43065636f5bbc60b1ec7d8f4a39597f0197e7cbdeed5848  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Api.pdb
+          75f3c9b2748c75ba9b12235640310db1872c08b92231602819afe3f9c43e0215  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.Android.dll
+          f46a4d276d872a8556a327c8278dc78196cb84f82eb15242570b49eb18a3499b  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.Android.pdb
+          b94261df2ef0bd8a3462f9c1deeaaf354c50ddde79116a0984acc224812ffe4c  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.Linux.dll
+          46e56ab46beb8c09640845a4abb446c18247a3b1644923a0ef916a16f2505b01  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.Linux.pdb
+          400e523946270ab483e4fd532513bdcf9d24df9fe8c8805dc357241a2413caca  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.MacOSX.dll
+          da28211821b6b3a098ae0b6a273feb23b82016cf25b41d5e7ab89aaf19c0735c  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.MacOSX.pdb
+          eb3bdfd5f92de65f2b5473216ad8d91878ce8d0d149bafb06f764a5e5a0eadc2  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.WebGL.dll
+          77aab76b12327c17f5cc63c6a3523f2c955e93a59d6ae938b1a9814e2b7935ab  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.WebGL.pdb
+          7850f5883c8e211bb6b7a40f7011e33073d9dd61fe5ea5932026491c820404f0  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.WindowsDesktop.dll
+          4e8e80e068e54e8bddb4e1d98c64fc1badb025a5ff65da751fd187e48143e036  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.WindowsDesktop.pdb
+          482618eac5e9f4db89472f405cf4d44d9808ef9d86cb03cdf09812c5142b967b  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.dll
+          4edaf2c5553b89059c4cd5c027e2970de7695f85a82e83df8af8beeac991b3f3  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.BuildLogic.pdb
+          e3c7bb9f0f924e565650a85fe474a2a426e3b239facf3643131add9451ec6434  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.IL2CPPExeCompileCppBuildProgram.Data.dll
+          f6d23a9688e561bfe5f6f65410eb5f0d412212d9da8ff2238d137cf7b1f1a7aa  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.IL2CPPExeCompileCppBuildProgram.Data.pdb
+          b3049be3f6b2201d79e82bc39a3bf7e864101b371aebcbe1acabb056d0cd05d2  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.IL2CPPExeCompileCppBuildProgram.dll
+          52d8968c2907446857264492cffe7fb9845b7a3c19eac9fb5e6e691a54ff823c  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.IL2CPPExeCompileCppBuildProgram.pdb
+          0db5c28083aeb5f8835f602d5e3644a6d4c62eecfbef6176841d66a3b2d5f389  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.PinnedToolChains.dll
+          a6e7b167e58708986acb79332272a09e60e7844dba887f083178abb27e9fe40f  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Bee.PinnedToolChains.pdb
+          21b9b039c023ef30a8c0be03ecb09d9e0c0ac033b5a2f6047b6f99b7934445ab  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Building.dll
+          8249c515b6c16b65b5b25d35877ede9fda88801f25e009fc481ae484e00d3f6e  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Building.pdb
+          ff67e06872949415e01e9f32fb7872bd34b3170284fdfda8338163c4ecf12497  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Common.dll
+          e7e63e2941eca11506a9f74c131ae559b432f10be1600f42751d72d34060d0ad  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Common.pdb
+          24ae00033536b5b69f6fc85eb38abe359d0fe9ccaa312a2ac5595591d784401a  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Common35.dll
+          1db4b0c3b772683513c5755d1447f7718114ad93a387e4606e9c7843d133fc3f  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Common35.pdb
+          5f817e2260e230d02e469c60a54af308aded550fcb389da0879c37e02d5a049a  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.DataModel.dll
+          7cb825f0190970f72979251ed4254a12fc3e910c44b3414ba33b05c562f81eba  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.DataModel.pdb
+          b7001f119b69fda362a19669854663f100c58a1b74f4723970cb93dc88a46109  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.RuntimeServices.dll
+          5fb4e3ad23a8318fee688984ce047e8bd3b90921b8241a1cdaad6f5425f713f1  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.RuntimeServices.pdb
+          1f9013e12a3f6fcb62eb3b63a5a46011a3f18470bddce8121adf052568e81587  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Shell.dll
+          10a0c3688d64335c9cf0f2e9d861d8cade44b3f2ad66f7c2133825f21979a22d  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.Shell.pdb
+          b322a871a65485642f95872748edf91e0e054f3481f541a3d5a81a8961809a9d  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.dll
+          c89693084202db1c6766fd7e8003fdc3b6876667ab583e21d7cf2cdd545bbb6b  Editor/Data/il2cpp/build/deploy/Unity.IL2CPP.pdb
+          ecf7c0048308278833e257ebc480015e1dc6d9d18ed17af7f8407609ee7213d8  Editor/Data/il2cpp/build/deploy/Unity.Linker.Api.Output.dll
+          de63c1c80a0d6732147fc3dd8c61e6e32858e3c8b3fe7f7bd1631fedcfe91cea  Editor/Data/il2cpp/build/deploy/Unity.Linker.Api.Output.pdb
+          810a8a91c344d2278785fbdc886121d357bd1c329977c07b1e3dc550a50091d7  Editor/Data/il2cpp/build/deploy/Unity.Linker.Api.Output.xml
+          809c68858b8de686f0f2ba24218d57033812858af846aeadd3351f68510a191c  Editor/Data/il2cpp/build/deploy/Unity.Linker.Api.dll
+          007caf0950d25656e2283c1ee870fd5d4c24daf95c68b8caf9220c03c8fcedf7  Editor/Data/il2cpp/build/deploy/Unity.Linker.Api.pdb
+          9c0952a30d8906c93397d96d231aa5e87431586c681c9a2b2e649fb1e94fc24f  Editor/Data/il2cpp/build/deploy/Unity.Options.dll
+          1ae174c351daf6ecd3404c33fd0b32aadaba45b6d8dfda49b3835ba6524d5b95  Editor/Data/il2cpp/build/deploy/Unity.Options.pdb
+          84dc4c3d9d145123669a0a61385c55c84b0344eb6b420d8263c37ab675166f1f  Editor/Data/il2cpp/build/deploy/UnityLinker
+          8cb2cfd11faf1f067f1f8988e1d0d3feff45965a7eade3e97cb64712a5f3deb8  Editor/Data/il2cpp/build/deploy/UnityLinker.deps.json
+          72d2df3cc1707db7e292e6f9364a4c9c955b9192191306bc5d53f602480205e2  Editor/Data/il2cpp/build/deploy/UnityLinker.dll
+          d3f8279fa3ce144818034833b1cdc322f45e8fa1190a1d726be7f1d4a1f3cc7e  Editor/Data/il2cpp/build/deploy/UnityLinker.dll.config
+          fe9a847fbbd579e58e95864a31912029d8983f0ec42875b8d7746c685e3c56f4  Editor/Data/il2cpp/build/deploy/UnityLinker.pdb
+          c8d00e7573e0ddac4b54a171bfe0556bc08f2c46e240502a175054c071b16476  Editor/Data/il2cpp/build/deploy/UnityLinker.runtimeconfig.json
+          4539098a85eb2a39df618430870b85695c5e5ebdf1871f5db04da9abfbd2a721  Editor/Data/il2cpp/build/deploy/WindowsBase.dll
+          8561ed19e6d35e1e947b450dd528867e7c43c9fe43b5cce9086b58d3cad4fa67  Editor/Data/il2cpp/build/deploy/bee_backend/linux-x64/bee_backend
+          1e901824be48bf5512912b1dfa82c92ee18f73ba0aac70a4a60f1669ae3db424  Editor/Data/il2cpp/build/deploy/createdump
+          201f7202bcb217079dd218fa01dda4786fc5f122bcd1af8fc922c97e81e7315a  Editor/Data/il2cpp/build/deploy/il2cpp
+          cc1d3f4719e83fa969230495c88831273a4cb437792ef111883d22b98dd7d271  Editor/Data/il2cpp/build/deploy/il2cpp.deps.json
+          2721eea913311180e7a0bd90c0df2087521d5f21764043ecf7a14cb5a4bc84a4  Editor/Data/il2cpp/build/deploy/il2cpp.dll
+          05f62593ee1b9ff51a2605292e838e14b637abe77a7303f0474abe3ee17c7ff1  Editor/Data/il2cpp/build/deploy/il2cpp.dll.config
+          c598553884b06c7e7be589066ab03ee184474ca8d3f7dbbd48e823bd8c4c9a59  Editor/Data/il2cpp/build/deploy/il2cpp.pdb
+          c894eebe81c4fa904fa19fad52804f84c3a13fd4fcb0aeed5f4e7dd66a356ba9  Editor/Data/il2cpp/build/deploy/il2cpp.runtimeconfig.json
+          23f0793128a9647800387a7c06a30b6ba5a803908012903330f94728df080754  Editor/Data/il2cpp/build/deploy/libSystem.IO.Compression.Native.a
+          122d09ef55ad376f652edc1189d66440d804ee33f7ee2656bd5b6e18cc157751  Editor/Data/il2cpp/build/deploy/libSystem.IO.Compression.Native.so
+          197a0994f42a1fc9f11c17e15ebf676a800c254ca45419f6de2e43297a76f536  Editor/Data/il2cpp/build/deploy/libSystem.Native.a
+          d920ce2d5e882901c515ef3a1c593da906519637d12b142e9d7405e7b212fd45  Editor/Data/il2cpp/build/deploy/libSystem.Native.so
+          8da5eae70eeec39d3c1304e1ef834c3820a357ee447bb925c08763af135e5f83  Editor/Data/il2cpp/build/deploy/libSystem.Net.Security.Native.a
+          ba4b1db8ec7dbbcc94ded746d09131e353f71702937a37a0ba6d5a5a493b2ffe  Editor/Data/il2cpp/build/deploy/libSystem.Net.Security.Native.so
+          cafb125c58bdef1ba1675a0bd5f67162eebd7fc089cc5f456de4e7185a8adcb4  Editor/Data/il2cpp/build/deploy/libSystem.Security.Cryptography.Native.OpenSsl.a
+          c9c5335d35282d18cd24d512e4941f0b2af07bcb540ba681d2fafa8feeace6c0  Editor/Data/il2cpp/build/deploy/libSystem.Security.Cryptography.Native.OpenSsl.so
+          96b8ac82c26912f3087bb8409c61ddaf0ce81d94a1ca71638b30b2b7e3339952  Editor/Data/il2cpp/build/deploy/libclrjit.so
+          97d3278d9abaa5d2a2b3d9794c5057e764b9a50707af0fd5ba3d3c9587c26de9  Editor/Data/il2cpp/build/deploy/libcoreclr.so
+          0b8c99da2560a004d6a6092d26d01a2df33534aa242277a9444c4ac3ca08c233  Editor/Data/il2cpp/build/deploy/libcoreclrtraceptprovider.so
+          aefe67e0cfccd61a2a53399ffa72b54160b520fc8e234784f3897e63590e4ea5  Editor/Data/il2cpp/build/deploy/libdbgshim.so
+          ee6e69f0bbdf72b046d267ca90cb8c22f7d9a05f827f75a744d5424a9a5ee2da  Editor/Data/il2cpp/build/deploy/libhostfxr.so
+          97b088abd0026a031a10f93b629d48266085cbe755cd5d5f633a152278440249  Editor/Data/il2cpp/build/deploy/libhostpolicy.so
+          6dba41e7866e26e3d238fabfb4b35d72b1a76907ad8e606d3062fdfea715cdcc  Editor/Data/il2cpp/build/deploy/libmscordaccore.so
+          c88cc45c181576a659a293666e841ec466f159bfaa10279733b7ff8c95325d78  Editor/Data/il2cpp/build/deploy/libmscordbi.so
+          39b5c2f36b363a7aab2b6f5df8d026c60bd0495688cffd5f26dfaa9206c850b5  Editor/Data/il2cpp/build/deploy/monolinker.dll
+          12bd3a9144e0f165e22651e70a14a9bca6ced9d990cf0a8d41490c0102ef5f00  Editor/Data/il2cpp/build/deploy/monolinker.pdb
+          98119e9ce0ec4dfaf080f0f746842607795cfe7f70f0049efcc88df84b84be49  Editor/Data/il2cpp/build/deploy/mscorlib.dll
+          bbf6131972a8e45f9554b0240d6596dcb713ebf716ff3fea878d8ba663c53073  Editor/Data/il2cpp/build/deploy/netstandard.dll
+          CLOSURE
+          cat > integer.b64 <<'DLL'
+          TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAgAAAAA4fug4AtAnNIbgBTM0hVGhpcyBwcm9ncmFtIGNhbm5vdCBiZSBydW4gaW4gRE9TIG1v
+          ZGUuDQ0KJAAAAAAAAABQRQAATAECALvzHNEAAAAAAAAAAOAAIiALATAAAAYAAAACAAAAAAAA9iUA
+          AAAgAAAAQAAAAAAAEAAgAAAAAgAABAAAAAAAAAAEAAAAAAAAAABgAAAAAgAAAAAAAAMAQIUAABAA
+          ABAAAAAAEAAAEAAAAAAAABAAAAAAAAAAAAAAAKQlAABPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAEAAAAwAAACIJQAAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAIAAACAAAAAAAAAAAAAAACCAAAEgAAAAAAAAAAAAAAC50ZXh0AAAA/AUAAAAgAAAABgAAAAIA
+          AAAAAAAAAAAAAAAAACAAAGAucmVsb2MAAAwAAAAAQAAAAAIAAAAIAAAAAAAAAAAAAAAAAABAAABC
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADY
+          JQAAAAAAAEgAAAACAAUAiCAAAAAFAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAACICA30BAAAEKgoCKhMwAwAfAAAAAQAAEReNAQAAGwoGFheN
+          DAAAAaIGcwEAAAZ7AQAABBT+AyoAQlNKQgEAAQAAAAAADAAAAHY0LjAuMzAzMTkAAAAABQBsAAAA
+          kAEAACN+AAD8AQAA2AEAACNTdHJpbmdzAAAAANQDAAAEAAAAI1VTANgDAAAQAAAAI0dVSUQAAADo
+          AwAAGAEAACNCbG9iAAAAAAAAAAIAAAFXVQIICQAAAAD6ATMAFgAAAQAAAAwAAAADAAAAAQAAAAMA
+          AAADAAAABgAAAAcAAAABAAAAAQAAAAEAAAABAAAAAQAAAAAA5wABAAAAAAAGAIkASwEGAL0ASwEG
+          AE0AGQEPAGsBAAAGAP0AegEGAG0AegEGADMAvQEGAKkASwEGAB4A9gAGAK8B9gAGAGEALAEGAAEA
+          9gAAAAAABwAAAAAAAQABAAkBEAC2AZYBJQABAAEAgQEQAAwBlgEpAAIAAgAmANsAyABQIAAAAACG
+          GBMBzQABAFkgAAAAAJEAzQHUAAIAXCAAAAAAlgAZAN0ABAAAAAEA2wAAAAAAAAABAAEA4QAJABMB
+          AQARABMBBgAZABMBCgAxABMBEAA5ABMBBgBBABMBBgAnACsAEgEuAAsA4QAuABMA6gAuABsACQFD
+          ADMAEgFEADMAEgFkADMAEgEIAAYAKAAWABwABIAAAAAAAAAAAAAAAAAAAAAAKAAAAAQAAAAAAAAA
+          AAAAAB8AEAAAAAAAAAAAAABJbnQzMgA8TW9kdWxlPgBtc2NvcmxpYgBSZWFkAFZhbHVlVHlwZQBK
+          YWdnZWRDYXNlAFVudmVyaWZpYWJsZUNvZGVBdHRyaWJ1dGUARGVidWdnYWJsZUF0dHJpYnV0ZQBJ
+          bkF0dHJpYnV0ZQBTZWN1cml0eVBlcm1pc3Npb25BdHRyaWJ1dGUAQ29tcGlsYXRpb25SZWxheGF0
+          aW9uc0F0dHJpYnV0ZQBJc1JlYWRPbmx5QXR0cmlidXRlAFJ1bnRpbWVDb21wYXRpYmlsaXR5QXR0
+          cmlidXRlAFZhbHVlAHZhbHVlAEphZ2dlZENhc2UuZGxsAFN5c3RlbQBTZWN1cml0eUFjdGlvbgBD
+          YWxsZXIALmN0b3IAU3lzdGVtLkRpYWdub3N0aWNzAFN5c3RlbS5SdW50aW1lLkludGVyb3BTZXJ2
+          aWNlcwBTeXN0ZW0uUnVudGltZS5Db21waWxlclNlcnZpY2VzAERlYnVnZ2luZ01vZGVzAFN5c3Rl
+          bS5TZWN1cml0eS5QZXJtaXNzaW9ucwBGdW5jdGlvblBvaW50ZXJNb2RpZmllcnMAT2JqZWN0AFBh
+          Y2tldABTeXN0ZW0uU2VjdXJpdHkASWRlbnRpdHkAAAAAAAAA4/WPmjkp80eouosZQfB5eAAEIAEB
+          CAMgAAEFIAEBEREFIAEBERUFBwEdHQgCHQgIt3pcVhk04ImAni4BgIRTeXN0ZW0uU2VjdXJpdHku
+          UGVybWlzc2lvbnMuU2VjdXJpdHlQZXJtaXNzaW9uQXR0cmlidXRlLCBtc2NvcmxpYiwgVmVyc2lv
+          bj00LjAuMC4wLCBDdWx0dXJlPW5ldXRyYWwsIFB1YmxpY0tleVRva2VuPWI3N2E1YzU2MTkzNGUw
+          ODkVAVQCEFNraXBWZXJpZmljYXRpb24BBAYdHQgGIAEBHR0ICAABHy0QCBAIAwAAAggBAAgAAAAA
+          AB4BAAEAVAIWV3JhcE5vbkV4Y2VwdGlvblRocm93cwEIAQACAAAAAAAEAQAAAAAAAAAAAAAAAAAA
+          AAAQAAAAAAAAAAAAAAAAAAAAzCUAAAAAAAAAAAAA5iUAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          ANglAAAAAAAAAAAAAAAAX0NvckRsbE1haW4AbXNjb3JlZS5kbGwAAAAAAP8lACAAEAAAAAAAIAAA
+          DAAAAPg1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+          DLL
+          printf '%s  %s\n' 'a8c6ede3924ebe6b751ebb85db003226db97c787ae804f112806a0664a77430a' 'JaggedCase.dll' > integer.sha256
+          cat > original.b64 <<'DLL'
+          TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAgAAAAA4fug4AtAnNIbgBTM0hVGhpcyBwcm9ncmFtIGNhbm5vdCBiZSBydW4gaW4gRE9TIG1v
+          ZGUuDQ0KJAAAAAAAAABQRQAATAECAKvly4gAAAAAAAAAAOAAIiALATAAAAgAAAACAAAAAAAAHiYA
+          AAAgAAAAQAAAAAAAEAAgAAAAAgAABAAAAAAAAAAEAAAAAAAAAABgAAAAAgAAAAAAAAMAQIUAABAA
+          ABAAAAAAEAAAEAAAAAAAABAAAAAAAAAAAAAAAMwlAABPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAEAAAAwAAACwJQAAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAIAAACAAAAAAAAAAAAAAACCAAAEgAAAAAAAAAAAAAAC50ZXh0AAAAJAYAAAAgAAAACAAAAAIA
+          AAAAAAAAAAAAAAAAACAAAGAucmVsb2MAAAwAAAAAQAAAAAIAAAAKAAAAAAAAAAAAAAAAAABAAABC
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          JgAAAAAAAEgAAAACAAUAiCAAACgFAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAACICA30BAAAEKgoCKhMwAwAfAAAAAQAAEReNAQAAGwoGFheN
+          AgAAG6IGcwEAAAZ7AQAABBT+AyoAQlNKQgEAAQAAAAAADAAAAHY0LjAuMzAzMTkAAAAABQBsAAAA
+          jAEAACN+AAD4AQAA0AEAACNTdHJpbmdzAAAAAMgDAAAEAAAAI1VTAMwDAAAQAAAAI0dVSUQAAADc
+          AwAATAEAACNCbG9iAAAAAAAAAAIAAAFXVQIICQAAAAD6ATMAFgAAAQAAAAsAAAADAAAAAQAAAAMA
+          AAADAAAABgAAAAcAAAABAAAAAQAAAAIAAAABAAAAAQAAAAAA4QABAAAAAAAGAIMARQEGALcARQEG
+          AEcAEwEPAGUBAAAGAPcAdAEGAGcAdAEGAC0AtwEGAKMARQEGABgA8AAGAFsAJgEGAKkB8AAAAAAA
+          AQAAAAAAAQABAAkBEACwAZABJQABAAEAgQEQAAYBkAEtAAIAAgAmANUA6ABQIAAAAACGGA0B9wAB
+          AFkgAAAAAJEAxwEIAQIAXCAAAAAAlgATABEBBAAAAAEA1QAAAAAAAAABAAEA2wAJAA0BAQARAA0B
+          BgAZAA0BCgAxAA0BEAA5AA0BBgBBAA0BBgAnACsARgEuAAsAFQEuABMAHgEuABsAPQFDADMARgFE
+          ADMARgFkADMARgEIAAYASAAWACYAMwAEgAAAAAAAAAAAAAAAAAAAAAAiAAAABAAAAAAAAAAAAAAA
+          PwAKAAAAAAAAAAAAADxNb2R1bGU+AG1zY29ybGliAFJlYWQAVmFsdWVUeXBlAEphZ2dlZENhc2UA
+          VW52ZXJpZmlhYmxlQ29kZUF0dHJpYnV0ZQBEZWJ1Z2dhYmxlQXR0cmlidXRlAEluQXR0cmlidXRl
+          AFNlY3VyaXR5UGVybWlzc2lvbkF0dHJpYnV0ZQBDb21waWxhdGlvblJlbGF4YXRpb25zQXR0cmli
+          dXRlAElzUmVhZE9ubHlBdHRyaWJ1dGUAUnVudGltZUNvbXBhdGliaWxpdHlBdHRyaWJ1dGUAVmFs
+          dWUAdmFsdWUASmFnZ2VkQ2FzZS5kbGwAU3lzdGVtAFNlY3VyaXR5QWN0aW9uAENhbGxlcgAuY3Rv
+          cgBTeXN0ZW0uRGlhZ25vc3RpY3MAU3lzdGVtLlJ1bnRpbWUuSW50ZXJvcFNlcnZpY2VzAFN5c3Rl
+          bS5SdW50aW1lLkNvbXBpbGVyU2VydmljZXMARGVidWdnaW5nTW9kZXMAU3lzdGVtLlNlY3VyaXR5
+          LlBlcm1pc3Npb25zAEZ1bmN0aW9uUG9pbnRlck1vZGlmaWVycwBPYmplY3QAUGFja2V0AFN5c3Rl
+          bS5TZWN1cml0eQBJZGVudGl0eQAAAAAAa6rEu+4X9k643ayRYyE4eAAEIAEBCAMgAAEFIAEBEREF
+          IAEBERUPBwEdHRsAAR8pEAgfKRAIDB0bAAEfKRAIHykQCAsbAAEfKRAIHykQCAi3elxWGTTgiYCe
+          LgGAhFN5c3RlbS5TZWN1cml0eS5QZXJtaXNzaW9ucy5TZWN1cml0eVBlcm1pc3Npb25BdHRyaWJ1
+          dGUsIG1zY29ybGliLCBWZXJzaW9uPTQuMC4wLjAsIEN1bHR1cmU9bmV1dHJhbCwgUHVibGljS2V5
+          VG9rZW49Yjc3YTVjNTYxOTM0ZTA4ORUBVAIQU2tpcFZlcmlmaWNhdGlvbgEOBh0dGwABHykQCB8p
+          EAgQIAEBHR0bAAEfKRAIHykQCAgAAR8pEAgQCAMAAAIIAQAIAAAAAAAeAQABAFQCFldyYXBOb25F
+          eGNlcHRpb25UaHJvd3MBCAEAAgAAAAAABAEAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAA
+          APQlAAAAAAAAAAAAAA4mAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJgAAAAAAAAAAAAAAAF9D
+          b3JEbGxNYWluAG1zY29yZWUuZGxsAAAAAAD/JQAgABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAM
+          AAAAIDYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          DLL
+          printf '%s  %s\n' '28f407cbd67b9040cdcaf9093b6da1252904480c2ab76901e401495d30b22d37' 'JaggedCase.dll' > original.sha256
+      - name: Convert integer control and pointer fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          cd "$RUNNER_TEMP/dxm-705"
+          {
+            uname -m
+            cat /etc/os-release
+            printf '%s\n' "$GITHUB_SHA"
+          } > evidence/environment.log
+          curl --fail --show-error --silent --location --retry 2 \
+            https://download.unity3d.com/download_unity/0da89fac8e79/LinuxEditorInstaller/Unity-2021.3.45f1.tar.xz \
+            --output unity.tar.xz
+          echo 'bb5be9cc5faee3b05aac2aa19caaaa9b62d373f6fc06964db286897d7e4efa5c  unity.tar.xz' | sha256sum --check | tee evidence/archive.log
+          tar -xJf unity.tar.xz --wildcards --no-same-owner \
+            'Editor/Data/il2cpp/build/deploy/*' \
+            'Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/*'
+          sha256sum --check evidence/closure.sha256 > evidence/closure.log
+          root="$PWD"
+          converter="$root/Editor/Data/il2cpp/build/deploy/il2cpp"
+          chmod u+x "$converter"
+          "$converter" --help > evidence/converter-help.log 2>&1
+
+          convert() (
+            arm="$1"
+            result="$root/evidence/$arm"
+            mkdir -p "$result" "$root/$arm"/{cpp,data,symbols}
+            cd "$root/$arm"
+            base64 --decode "$root/$arm.b64" > JaggedCase.dll
+            sha256sum --check "$root/$arm.sha256" > "$result/input.log"
+            printf '%s\n' --convert-to-cpp "--assembly=$PWD/JaggedCase.dll" \
+              "--assembly=$root/Editor/Data/MonoBleedingEdge/lib/mono/unityaot-linux/mscorlib.dll" \
+              "--generatedcppdir=$PWD/cpp" "--data-folder=$PWD/data" "--symbols-folder=$PWD/symbols" \
+              --dotnetprofile=unityaot-linux --emit-null-checks --enable-array-bounds-check --jobs=2 \
+              > "$result/invocation.rsp"
+            code=0
+            "$converter" "@$result/invocation.rsp" > "$result/stdout.log" 2> "$result/stderr.log" || code=$?
+            printf '%s\n' "$code" > "$result/exit.txt"
+            if test "$code" != 0; then
+              tail -n 40 "$result/stdout.log" "$result/stderr.log"
+              return "$code"
+            fi
+            python3 - "$result" <<'PYTHON'
+          from pathlib import Path
+          import hashlib
+          import json
+          import re
+          import sys
+
+          result = Path(sys.argv[1])
+          cpp = Path("cpp/JaggedCase.cpp")
+          body = cpp.read_text()
+          caller = re.search(r"(?m)^[^\n]*\bCaller_Read_m[0-9A-F]+ *\([^;\n]*\) *\n\{.*?^\}", body, re.S)
+          assert caller, "Caller.Read body missing"
+          snippet = caller[0].split("\n", 1)[1]
+          assert snippet.count("SZArrayNew(") == 2, "Expected two array allocations"
+          assert re.search(r"\bSetAt(?:Unchecked)?\(|il2cpp_array_setref\s*\(", snippet), "Expected reference store"
+          paths = sorted(Path("data").rglob("global-metadata.dat"))
+          assert len(paths) == 1, "Expected one metadata file"
+          metadata = paths[0].read_bytes()
+          assert metadata[:4] == bytes.fromhex("af1bb1fa") and len(metadata) > 8, "Invalid metadata"
+          (result / "caller.cpp.txt").write_text(snippet + "\n")
+          (result / "outputs.json").write_text(json.dumps({
+              "cppSha256": hashlib.sha256(cpp.read_bytes()).hexdigest(),
+              "metadataSha256": hashlib.sha256(metadata).hexdigest(),
+              "metadataBytes": len(metadata),
+          }, indent=2) + "\n")
+          PYTHON
+          )
+
+          convert integer
+          convert original
+      - name: Retain experiment receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: floor-converter-x64
+          path: ${{ runner.temp }}/dxm-705/evidence/
+          if-no-files-found: error
+          retention-days: 14
