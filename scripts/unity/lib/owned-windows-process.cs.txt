@@ -1,0 +1,294 @@
+using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+using Microsoft.Win32.SafeHandles;
+
+namespace DxMessaging.Ci
+{
+    // Prototype. Creation must enroll the process atomically, before it can spawn.
+    public sealed class OwnedWindowsProcess : IDisposable
+    {
+        private const int ExtendedLimits = 9;
+        private const int BasicAccounting = 1;
+        private const uint KillOnJobClose = 0x2000;
+        private const uint CreateSuspended = 0x00000004;
+        private const uint ExtendedStartupInfo = 0x00080000;
+        private const uint CreateNoWindow = 0x08000000;
+        private const uint UseStdHandles = 0x00000100;
+        private const int HandleListAttribute = 0x00020002;
+        private const int JobListAttribute = 0x0002000D;
+        private readonly SafeFileHandle job;
+        private readonly SafeFileHandle nativeProcess;
+        private readonly SafeFileHandle mainThread;
+
+        private OwnedWindowsProcess(
+            SafeFileHandle job, SafeFileHandle process, SafeFileHandle thread,
+            uint pid, SafeFileHandle output, SafeFileHandle error)
+        {
+            this.job = job;
+            nativeProcess = process;
+            mainThread = thread;
+            Root = Process.GetProcessById(checked((int)pid));
+            try
+            {
+                StandardOutput = Reader(output);
+                StandardError = Reader(error);
+            }
+            catch
+            {
+                if (StandardOutput != null) { StandardOutput.Dispose(); }
+                Root.Dispose();
+                throw;
+            }
+        }
+
+        public Process Root { get; private set; }
+        public StreamReader StandardOutput { get; private set; }
+        public StreamReader StandardError { get; private set; }
+
+        public static OwnedWindowsProcess StartSuspended(string executable, string arguments, string workingDirectory)
+        {
+            if (Environment.OSVersion.Platform != PlatformID.Win32NT)
+                throw new PlatformNotSupportedException("Owned Windows process launch requires Windows.");
+
+            SafeFileHandle job = CreateJobObjectW(IntPtr.Zero, null);
+            SafeFileHandle inputRead = null, inputWrite = null;
+            SafeFileHandle outputRead = null, outputWrite = null;
+            SafeFileHandle errorRead = null, errorWrite = null;
+            SafeFileHandle process = null, thread = null;
+            bool transferred = false;
+            try
+            {
+                Check(!job.IsInvalid, "Create the process job");
+                var limits = new JobLimits();
+                limits.Basic.Flags = KillOnJobClose;
+                Check(SetInformationJobObject(job, ExtendedLimits, ref limits, SizeOf<JobLimits>()),
+                    "Set the process job lifetime");
+
+                NewPipe(true, out inputRead, out inputWrite);
+                // The unattended child receives EOF on stdin.
+                inputWrite.Dispose();
+                NewPipe(false, out outputRead, out outputWrite);
+                NewPipe(false, out errorRead, out errorWrite);
+
+                var receipt = Launch(executable, arguments, workingDirectory, job, inputRead, outputWrite, errorWrite);
+                process = new SafeFileHandle(receipt.Process, true);
+                thread = new SafeFileHandle(receipt.Thread, true);
+                var owner = new OwnedWindowsProcess(job, process, thread, receipt.Pid, outputRead, errorRead);
+                transferred = true;
+                return owner;
+            }
+            finally
+            {
+                if (inputRead != null) { inputRead.Dispose(); }
+                if (inputWrite != null) { inputWrite.Dispose(); }
+                if (outputWrite != null) { outputWrite.Dispose(); }
+                if (errorWrite != null) { errorWrite.Dispose(); }
+                if (!transferred)
+                {
+                    job.Dispose();
+                    if (process != null) { process.Dispose(); }
+                    if (thread != null) { thread.Dispose(); }
+                    if (outputRead != null) { outputRead.Dispose(); }
+                    if (errorRead != null) { errorRead.Dispose(); }
+                }
+            }
+        }
+
+        private static StreamReader Reader(SafeFileHandle pipe)
+        {
+            return new StreamReader(new FileStream(pipe, FileAccess.Read), Console.OutputEncoding, true);
+        }
+
+        public void Resume()
+        {
+            Check(ResumeThread(mainThread) == 1, "Resume the owned root");
+            mainThread.Dispose();
+        }
+
+        public int GetExitCode()
+        {
+            uint status;
+            Check(GetExitCodeProcess(nativeProcess, out status), "Read the owned root exit code");
+            return unchecked((int)status);
+        }
+
+        public bool TerminateAndConfirm(int milliseconds)
+        {
+            if (ActiveCount() == 0) { return true; }
+            Check(TerminateJobObject(job, 124), "Stop the owned processes");
+            var deadline = Stopwatch.StartNew();
+            while (ActiveCount() != 0)
+            {
+                if (deadline.ElapsedMilliseconds >= milliseconds) { return false; }
+                Thread.Sleep(10);
+            }
+            return true;
+        }
+
+        public void Dispose()
+        {
+            // The job handle is not inherited even when a controller is killed.
+            job.Dispose();
+            StandardOutput.Dispose();
+            StandardError.Dispose();
+            Root.Dispose();
+            mainThread.Dispose();
+            nativeProcess.Dispose();
+        }
+
+        private uint ActiveCount()
+        {
+            JobAccounting accounting;
+            Check(QueryInformationJobObject(job, BasicAccounting, out accounting,
+                SizeOf<JobAccounting>(), IntPtr.Zero), "Read owned process count");
+            return accounting.ActiveProcesses;
+        }
+
+        private static ProcessReceipt Launch(string executable, string arguments, string workingDirectory,
+            SafeFileHandle job, SafeFileHandle input, SafeFileHandle output, SafeFileHandle error)
+        {
+            var size = UIntPtr.Zero;
+            // The initial call reports the required unmanaged buffer size.
+            InitializeProcThreadAttributeList(IntPtr.Zero, 2, 0, ref size);
+            Check(size != UIntPtr.Zero, "Size the process startup attributes");
+            var attributes = Marshal.AllocHGlobal(checked((int)size.ToUInt64()));
+            var initialized = false;
+            IntPtr handles = IntPtr.Zero;
+            IntPtr jobHandle = IntPtr.Zero;
+            try
+            {
+                Check(InitializeProcThreadAttributeList(attributes, 2, 0, ref size),
+                    "Initialize the process startup attributes");
+                initialized = true;
+                handles = Marshal.AllocHGlobal(3 * IntPtr.Size);
+                jobHandle = Marshal.AllocHGlobal(IntPtr.Size);
+                Marshal.WriteIntPtr(handles, input.DangerousGetHandle());
+                Marshal.WriteIntPtr(handles, IntPtr.Size, output.DangerousGetHandle());
+                Marshal.WriteIntPtr(handles, 2 * IntPtr.Size, error.DangerousGetHandle());
+                Marshal.WriteIntPtr(jobHandle, job.DangerousGetHandle());
+                Check(UpdateProcThreadAttribute(attributes, 0, new UIntPtr(HandleListAttribute), handles,
+                    new UIntPtr((uint)(3 * IntPtr.Size)), IntPtr.Zero, IntPtr.Zero), "Set the child streams");
+                Check(UpdateProcThreadAttribute(attributes, 0, new UIntPtr(JobListAttribute), jobHandle,
+                    new UIntPtr((uint)IntPtr.Size), IntPtr.Zero, IntPtr.Zero), "Enroll the process at creation");
+
+                var startup = new StartupInfoEx();
+                startup.Basic.Size = SizeOf<StartupInfoEx>();
+                startup.Basic.Flags = UseStdHandles;
+                startup.Basic.Input = input.DangerousGetHandle();
+                startup.Basic.Output = output.DangerousGetHandle();
+                startup.Basic.Error = error.DangerousGetHandle();
+                startup.Attributes = attributes;
+                var command = new StringBuilder("\"" + executable + "\" " + arguments);
+                ProcessReceipt receipt;
+                Check(CreateProcessW(executable, command, IntPtr.Zero, IntPtr.Zero, true,
+                    CreateSuspended | ExtendedStartupInfo | CreateNoWindow, IntPtr.Zero,
+                    string.IsNullOrEmpty(workingDirectory) ? null : workingDirectory,
+                    ref startup, out receipt), "Start the owned process");
+                GC.KeepAlive(job);
+                GC.KeepAlive(input);
+                GC.KeepAlive(output);
+                GC.KeepAlive(error);
+                return receipt;
+            }
+            finally
+            {
+                if (initialized) { DeleteProcThreadAttributeList(attributes); }
+                Marshal.FreeHGlobal(jobHandle);
+                Marshal.FreeHGlobal(handles);
+                Marshal.FreeHGlobal(attributes);
+            }
+        }
+
+        private static void NewPipe(bool childReads, out SafeFileHandle reader, out SafeFileHandle writer)
+        {
+            var attributes = new PipeAttributes { Size = SizeOf<PipeAttributes>(), Inherit = true };
+            Check(CreatePipe(out reader, out writer, ref attributes, 0), "Create a child stream");
+            Check(SetHandleInformation(childReads ? writer : reader, 1, 0),
+                "Keep the controller's stream endpoint private");
+        }
+
+        private static uint SizeOf<T>() { return checked((uint)Marshal.SizeOf(typeof(T))); }
+
+        private static void Check(bool success, string operation)
+        {
+            if (!success) { throw new Win32Exception(Marshal.GetLastWin32Error(), operation); }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PipeAttributes { public uint Size; public IntPtr Descriptor; public bool Inherit; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct StartupInfo
+        {
+            public uint Size;
+            public IntPtr Reserved, Desktop, Title;
+            public uint X, Y, Width, Height, Columns, Rows, FillAttribute, Flags;
+            public ushort ShowWindow, ReservedSize;
+            public IntPtr ReservedBytes, Input, Output, Error;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct StartupInfoEx { public StartupInfo Basic; public IntPtr Attributes; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ProcessReceipt { public IntPtr Process, Thread; public uint Pid, ThreadId; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BasicLimits
+        {
+            public long ProcessTime, JobTime;
+            public uint Flags;
+            public UIntPtr MinWorkingSet, MaxWorkingSet;
+            public uint ActiveProcessLimit;
+            public UIntPtr Affinity;
+            public uint Priority, Scheduling;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JobLimits
+        {
+            public BasicLimits Basic;
+            public ulong ReadOperations, WriteOperations, OtherOperations, ReadBytes, WriteBytes, OtherBytes;
+            public UIntPtr ProcessMemory, JobMemory, PeakProcessMemory, PeakJobMemory;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JobAccounting
+        {
+            public long UserTime, KernelTime, PeriodUser, PeriodKernel;
+            public uint PageFaults, TotalProcesses, ActiveProcesses, TerminatedProcesses;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        private static extern SafeFileHandle CreateJobObjectW(IntPtr attributes, string name);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetInformationJobObject(SafeFileHandle job, int kind, ref JobLimits info, uint bytes);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool QueryInformationJobObject(SafeFileHandle job, int kind, out JobAccounting info, uint bytes, IntPtr returned);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool TerminateJobObject(SafeFileHandle job, uint exitCode);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CreatePipe(out SafeFileHandle reader, out SafeFileHandle writer, ref PipeAttributes attributes, uint bytes);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetHandleInformation(SafeFileHandle handle, uint mask, uint flags);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, uint flags, ref UIntPtr bytes);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool UpdateProcThreadAttribute(IntPtr list, uint flags, UIntPtr attribute, IntPtr value, UIntPtr size, IntPtr previous, IntPtr returned);
+        [DllImport("kernel32.dll")]
+        private static extern void DeleteProcThreadAttributeList(IntPtr list);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        private static extern bool CreateProcessW(string application, StringBuilder command,
+            IntPtr processAttributes, IntPtr threadAttributes, bool inheritHandles, uint flags, IntPtr environment,
+            string currentDirectory, ref StartupInfoEx startup, out ProcessReceipt receipt);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetExitCodeProcess(SafeFileHandle process, out uint exitCode);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint ResumeThread(SafeFileHandle thread);
+    }
+}

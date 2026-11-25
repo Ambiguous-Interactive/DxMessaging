@@ -185,6 +185,7 @@ $ProjectOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unity ci ephe
 $CacheOwnershipMarkerName = '.dxmessaging-ci-cache'
 $CacheOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unity ci cache'
 $script:UnityCacheRoot = ''
+$script:WindowsProcessOwnerSource = Join-Path $PSScriptRoot 'lib/owned-windows-process.cs.txt'
 
 function Write-CiError {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -5246,16 +5247,11 @@ function ConvertTo-ProcessArgumentLine {
 }
 
 function Invoke-ProcessWithTreeKillTimeout {
-    # GENERALIZED hard tree-kill watchdog, STRUCTURALLY IDENTICAL to
-    # scripts/unity/ensure-editor.ps1 Invoke-UnityCliCaptureWithTimeout (the proven
-    # resilience core). It launches $FilePath with $Arguments via
-    # System.Diagnostics.Process + ProcessStartInfo, drains BOTH stdout and stderr
-    # from a MAIN-THREAD ReadLineAsync poll loop (live echo via Write-Host + Tee to
-    # $LogPath), enforces an absolute UTC deadline, and on a breach $proc.Kill($true)
-    # requests termination of the process tree (Unity builds spawn IL2CPP/bee).
-    # A parent that already exited cannot own a reparented descendant: fail closed
-    # in that case instead of treating a passing result as proof of safe cleanup.
-    # The try/finally also requests termination on exceptions before reap.
+    # Windows enrolls the root in an owned job before resuming it. Confirm
+    # that the job is empty before reporting completion, even if all output
+    # streams have already closed. Other hosts retain the existing tree watchdog.
+    # Drain both redirected streams on the main thread and preserve the root
+    # exit code, independent of any cleanup after the root exits.
     #
     # WHY a Process and NOT `& <exe>`: the call operator cannot be interrupted -- a
     # hung child runs until the whole job is killed. WHY the main-thread poll loop:
@@ -5315,6 +5311,7 @@ function Invoke-ProcessWithTreeKillTimeout {
     }
 
     $proc = $null
+    $owner = $null
     $exit = -1
     $timedOut = $false
     $terminationUnconfirmed = $false
@@ -5337,10 +5334,19 @@ function Invoke-ProcessWithTreeKillTimeout {
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
 
-        $proc = New-Object System.Diagnostics.Process
-        $proc.StartInfo = $psi
-
-        [void]$proc.Start()
+        if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+            if (-not ('DxMessaging.Ci.OwnedWindowsProcess' -as [type])) {
+                Add-Type -TypeDefinition ([IO.File]::ReadAllText($script:WindowsProcessOwnerSource))
+            }
+            $owner = [DxMessaging.Ci.OwnedWindowsProcess]::StartSuspended(
+                $psi.FileName, $psi.Arguments, $psi.WorkingDirectory
+            )
+            $proc = $owner.Root
+        } else {
+            $proc = New-Object System.Diagnostics.Process
+            $proc.StartInfo = $psi
+            [void]$proc.Start()
+        }
         $processId = $proc.Id
         if ($ProcessorAffinityMask -gt 0) {
             $availableAffinityMask = $proc.ProcessorAffinity.ToInt64()
@@ -5383,8 +5389,14 @@ function Invoke-ProcessWithTreeKillTimeout {
             "::notice::$Label process settings: pid=$processId, affinity=$observedProcessorAffinityMask, priority=$observedProcessorPriorityClass"
         )
 
-        $outReader = $proc.StandardOutput
-        $errReader = $proc.StandardError
+        if ($owner) {
+            $owner.Resume()
+            $outReader = $owner.StandardOutput
+            $errReader = $owner.StandardError
+        } else {
+            $outReader = $proc.StandardOutput
+            $errReader = $proc.StandardError
+        }
         $oTask = $outReader.ReadLineAsync()
         $eTask = $errReader.ReadLineAsync()
 
@@ -5462,11 +5474,16 @@ function Invoke-ProcessWithTreeKillTimeout {
                 if ($completionObserved -and $shutdownDeadline -le $deadline) {
                     Write-Host "::warning::$Label did not close its process/output streams within $ShutdownTimeoutSeconds seconds of its terminal message; requesting process-tree termination. Results can be accepted only after confirmed cleanup."
                 }
-                try {
-                    $proc.Kill($true)
-                } catch {
+                if ($owner) {
                     $terminationUnconfirmed = $true
-                    try { $proc.Kill() } catch { }
+                    $terminationUnconfirmed = -not $owner.TerminateAndConfirm(5000)
+                } else {
+                    try {
+                        $proc.Kill($true)
+                    } catch {
+                        $terminationUnconfirmed = $true
+                        try { $proc.Kill() } catch { }
+                    }
                 }
                 break
             }
@@ -5510,7 +5527,7 @@ function Invoke-ProcessWithTreeKillTimeout {
         if ($timedOut) {
             $exit = $timeoutExitCode
         } elseif ($reaped -and $proc.HasExited) {
-            $exit = $proc.ExitCode
+            $exit = if ($owner) { $owner.GetExitCode() } else { $proc.ExitCode }
         } else {
             $exit = $timeoutExitCode
             $timedOut = $true
@@ -5526,15 +5543,26 @@ function Invoke-ProcessWithTreeKillTimeout {
     } finally {
         # Bound exception-path cleanup too. A failed tree request or reap must not
         # be hidden by a valid results file or start another UPM attempt.
-        if ($proc -and $null -ne $processId -and -not $proc.HasExited) {
+        if ($owner) {
             try {
-                $proc.Kill($true)
-                if (-not $proc.WaitForExit(5000)) { $terminationUnconfirmed = $true }
+                if (-not $owner.TerminateAndConfirm(5000)) { $terminationUnconfirmed = $true }
             } catch {
                 $terminationUnconfirmed = $true
+                $buffer.Add("Owned process cleanup failed: $($_.Exception.Message)")
+            } finally {
+                $owner.Dispose()
             }
+        } else {
+            if ($proc -and $null -ne $processId -and -not $proc.HasExited) {
+                try {
+                    $proc.Kill($true)
+                    if (-not $proc.WaitForExit(5000)) { $terminationUnconfirmed = $true }
+                } catch {
+                    $terminationUnconfirmed = $true
+                }
+            }
+            if ($proc) { $proc.Dispose() }
         }
-        if ($proc) { $proc.Dispose() }
     }
 
     Write-Host "::endgroup::"
