@@ -2,17 +2,19 @@
 # shellcheck shell=bash
 
 # Refresh the user-scoped agent CLIs. The image provides a build-time copy, so an
-# offline launch keeps working while an online launch moves each CLI to npm's
-# current latest tag without requiring sudo.
+# offline launch keeps working while an online launch refreshes each CLI
+# from npm without requiring sudo.
 
 set -euo pipefail
 
 readonly NPM_PREFIX="${NPM_CONFIG_PREFIX:-${HOME}/.local}"
 readonly LOG_PREFIX="[agent-clis]"
+readonly OPENCODE_PACKAGE="@opencode/cli"
+readonly OPENCODE_VERSION_PATTERN='^2\.[0-9]+\.[0-9]+$'
 readonly PACKAGES=(
     "@openai/codex"
     "@anthropic-ai/claude-code"
-    "opencode-ai"
+    "${OPENCODE_PACKAGE}"
     "@nanocollective/nanocoder"
 )
 readonly COMMANDS=(
@@ -37,6 +39,7 @@ fi
 
 mkdir -p "${NPM_PREFIX}/bin" "${NPM_PREFIX}/lib"
 export PATH="${NPM_PREFIX}/bin:${PATH}"
+export NPM_CONFIG_PREFIX="${NPM_PREFIX}"
 
 # Several VS Code lifecycle hooks can overlap during a rebuild. One updater is
 # enough; the image-provided commands remain available to the other callers.
@@ -54,11 +57,27 @@ command_version() {
     case "${command_name}" in
         codex) output="$(timeout 10 codex --version 2>/dev/null || true)" ;;
         claude) output="$(timeout 10 claude --version 2>/dev/null || true)" ;;
-        opencode) output="$(timeout 10 opencode --version 2>/dev/null || true)" ;;
+        opencode) output="$(timeout 10 "${NPM_PREFIX}/bin/opencode" --version 2>/dev/null)" || return 1 ;;
         nanocoder) output="$(timeout 10 nanocoder --version 2>/dev/null || true)" ;;
         *) return 1 ;;
     esac
     grep -Eo '[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?' <<< "${output}" | head -n 1
+}
+
+latest_version() {
+    local package_name="$1"
+    if [[ "${package_name}" == "${OPENCODE_PACKAGE}" ]]; then
+        # npm view returns a scalar for one match and an array for multiple matches.
+        timeout 20 npm view "${package_name}@2" version --json 2>/dev/null |
+            node -e '
+                const versions = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+                const numericOrder = new Intl.Collator("en", { numeric: true });
+                const latest = Array.isArray(versions) ? versions.sort(numericOrder.compare).at(-1) : versions;
+                if (typeof latest === "string") process.stdout.write(latest);
+            ' 2>/dev/null
+    else
+        timeout 20 npm view "${package_name}@latest" version 2>/dev/null | tr -d '[:space:]'
+    fi
 }
 
 failures=0
@@ -66,10 +85,13 @@ for index in "${!PACKAGES[@]}"; do
     package_name="${PACKAGES[$index]}"
     command_name="${COMMANDS[$index]}"
     installed="$(command_version "${command_name}" || true)"
-    latest="$(timeout 20 npm view "${package_name}@latest" version 2>/dev/null | tr -d '[:space:]' || true)"
+    latest="$(latest_version "${package_name}")" || latest=""
 
     if [[ -z "${latest}" ]]; then
-        if command -v "${command_name}" >/dev/null 2>&1; then
+        if [[ "${package_name}" == "${OPENCODE_PACKAGE}" && ! "${installed}" =~ ${OPENCODE_VERSION_PATTERN} ]]; then
+            warn "registry unavailable and ${package_name} is not installed. Expected a working OpenCode v2 in ${NPM_PREFIX}/bin."
+            ((failures += 1))
+        elif command -v "${command_name}" >/dev/null 2>&1; then
             log "registry unavailable; keeping ${package_name}@${installed:-unknown}."
         else
             warn "registry unavailable and ${package_name} is not installed."
@@ -78,22 +100,34 @@ for index in "${!PACKAGES[@]}"; do
         continue
     fi
 
+    if [[ ! "${latest}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]] ||
+        [[ "${package_name}" == "${OPENCODE_PACKAGE}" && ! "${latest}" =~ ${OPENCODE_VERSION_PATTERN} ]]; then
+        warn "Registry returned an invalid version for ${package_name}."
+        ((failures += 1))
+        continue
+    fi
+
     if [[ "${installed}" == "${latest}" ]]; then
         log "${package_name}@${installed} is current."
         continue
     fi
 
-    if [[ ! "${latest}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
-        warn "Registry returned an invalid version for ${package_name}."
-        ((failures += 1))
-        continue
+    # Both npm packages claim the opencode link. Remove only a recognized user v1 install.
+    if [[ "${package_name}" == "${OPENCODE_PACKAGE}" ]] &&
+        legacy_link="$(readlink "${NPM_PREFIX}/bin/opencode" 2>/dev/null)" &&
+        [[ "${legacy_link%.exe}" == "../lib/node_modules/opencode-ai/bin/opencode" ]]; then
+        if ! timeout 180 npm uninstall -g opencode-ai; then
+            warn "Could not remove the legacy OpenCode v1 npm package from ${NPM_PREFIX}."
+            ((failures += 1))
+            continue
+        fi
     fi
 
     log "installing ${package_name}@${latest} (current: ${installed:-missing})..."
     installed_ok=false
     install_options=(--silent --no-fund --no-audit)
     case "${package_name}" in
-        opencode-ai|@anthropic-ai/claude-code) install_options+=("--allow-scripts=${package_name}") ;;
+        "${OPENCODE_PACKAGE}"|@anthropic-ai/claude-code) install_options+=("--allow-scripts=${package_name}") ;;
     esac
     for attempt in 1 2 3; do
         if timeout 180 npm install -g "${package_name}@${latest}" "${install_options[@]}"; then
