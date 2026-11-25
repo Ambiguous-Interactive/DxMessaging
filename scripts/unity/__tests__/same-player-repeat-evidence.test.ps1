@@ -10,6 +10,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $runnerPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'run-ci-tests.ps1'
+. (Join-Path (Split-Path -Parent $runnerPath) 'lib/process-argument-line.ps1')
 $script:WindowsProcessOwnerSource = Join-Path (Split-Path -Parent $runnerPath) 'lib/owned-windows-process.cs.txt'
 $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 $workflowPath = Join-Path $repoRoot '.github/workflows/perf-numbers.yml'
@@ -41,7 +42,6 @@ foreach ($name in @(
     'Get-StandalonePlayerManifest',
     'Test-StandalonePilotHostTelemetry',
     'Write-JsonArtifact',
-    'ConvertTo-ProcessArgumentLine',
     'Invoke-ProcessWithTreeKillTimeout'
 )) {
     $definition = $functionDefinitions[$name]
