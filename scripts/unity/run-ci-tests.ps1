@@ -186,6 +186,7 @@ $CacheOwnershipMarkerName = '.dxmessaging-ci-cache'
 $CacheOwnershipMarkerContent = 'com.wallstop-studios.dxmessaging unity ci cache'
 $script:UnityCacheRoot = ''
 $script:WindowsProcessOwnerSource = Join-Path $PSScriptRoot 'lib/owned-windows-process.cs.txt'
+. (Join-Path $PSScriptRoot 'lib/process-argument-line.ps1')
 
 function Write-CiError {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -5186,64 +5187,6 @@ function Write-JsonArtifact {
     $json = $Value | ConvertTo-Json -Depth 10
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($Path, $json + "`n", $utf8NoBom)
-}
-
-function ConvertTo-ProcessArgumentLine {
-    # MIRROR of scripts/unity/ensure-editor.ps1 ConvertTo-ProcessArgumentLine
-    # (run-ci-tests.ps1 does not import that script, so the helper is copied here
-    # verbatim). Builds a single Windows command-line argument string from an array,
-    # quoting any argument containing whitespace or a quote and escaping embedded
-    # backslashes/quotes per the CommandLineToArgvW rules. Used by
-    # Invoke-ProcessWithTreeKillTimeout (it assigns ProcessStartInfo.Arguments, the
-    # single command-line string form, NOT the per-element argument-list property
-    # the contract forbids).
-    param([string[]]$Arguments)
-
-    $quoted = foreach ($arg in @($Arguments)) {
-        if ($null -eq $arg) {
-            '""'
-            continue
-        }
-
-        $value = [string]$arg
-        if ($value.Length -gt 0 -and $value -notmatch '[\s"]') {
-            $value
-            continue
-        }
-
-        $builder = New-Object System.Text.StringBuilder
-        [void]$builder.Append('"')
-        $backslashes = 0
-        foreach ($ch in $value.ToCharArray()) {
-            if ($ch -eq '\') {
-                $backslashes++
-                continue
-            }
-
-            if ($ch -eq '"') {
-                if ($backslashes -gt 0) {
-                    [void]$builder.Append('\' * ($backslashes * 2))
-                }
-                [void]$builder.Append('\"')
-                $backslashes = 0
-                continue
-            }
-
-            if ($backslashes -gt 0) {
-                [void]$builder.Append('\' * $backslashes)
-                $backslashes = 0
-            }
-            [void]$builder.Append($ch)
-        }
-
-        if ($backslashes -gt 0) {
-            [void]$builder.Append('\' * ($backslashes * 2))
-        }
-        [void]$builder.Append('"')
-        $builder.ToString()
-    }
-
-    return ($quoted -join ' ')
 }
 
 function Invoke-ProcessWithTreeKillTimeout {

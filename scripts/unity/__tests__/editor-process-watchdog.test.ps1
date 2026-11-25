@@ -4,6 +4,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $runner = Join-Path (Split-Path -Parent $PSScriptRoot) 'run-ci-tests.ps1'
+. (Join-Path (Split-Path -Parent $runner) 'lib/process-argument-line.ps1')
 $tokens = $null
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($runner, [ref]$tokens, [ref]$errors)
@@ -210,6 +211,31 @@ exit 0
 
     if ($IsWindows) {
         $node = (Get-Command node -ErrorAction Stop).Source
+        $exporter = Join-Path (Split-Path -Parent $runner) 'export-unitypackage.ps1'
+        $runExporter = Join-Path $fixture 'run-exporter.ps1'
+        [IO.File]::WriteAllText($runExporter, @'
+param($Exporter, $Node, $Driver, $Worker, $State, $Project, $Mode)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$unityScripts = Split-Path -Parent $Exporter
+. (Join-Path $unityScripts 'lib/process-argument-line.ps1')
+$script:WindowsProcessOwnerSource = Join-Path $unityScripts 'lib/owned-windows-process.cs.txt'
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($Exporter, [ref]$tokens, [ref]$errors)
+if (@($errors).Count) { throw ($errors.Message -join '; ') }
+$requiredDefinitions = @(
+    'Clear-NonFatalNativeExitCode', 'Test-IsWindowsHost', 'Invoke-OwnedWindowsUnityEditor', 'Invoke-UnityEditor'
+)
+foreach ($definition in $ast.EndBlock.Statements) {
+    if ($definition -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $definition.Name -in $requiredDefinitions) {
+        Invoke-Expression $definition.Extent.Text
+    }
+}
+Invoke-UnityEditor -EditorPath $Node -Arguments @($Driver, $Worker, $State, $Project, $Mode) `
+    -Label "export workspace $Mode" -LogPath (Join-Path $State 'runner.log')
+'@)
         $driver = Join-Path $fixture 'owned-project.cjs'
         $worker = Join-Path $fixture 'hold-project.cjs'
         [IO.File]::WriteAllText($worker, @'
@@ -242,6 +268,7 @@ const pending = setInterval(() => {
         clearInterval(pending);
         if (Number(fs.readFileSync(ready, "utf8")) !== child.pid) process.exit(8);
         console.log("owned child ready");
+        console.error("owned child stderr");
         if (mode === "timeout") {
             console.log("work-complete");
             setTimeout(() => process.exit(9), 30000);
@@ -265,22 +292,33 @@ const pending = setInterval(() => {
         $start.CreateNoWindow = $true
         $sibling = [Diagnostics.Process]::Start($start)
         try {
-            foreach ($shape in @('0', '7', 'timeout')) {
-                $state = Join-Path $fixture "owned-$shape"
+            foreach ($case in @('watchdog-0', 'watchdog-7', 'watchdog-timeout', 'export-0', 'export-7')) {
+                $route, $shape = $case -split '-', 2
+                $state = Join-Path $fixture "owned-$case"
                 $project = Join-Path $state 'project'
                 $null = New-Item -ItemType Directory -Path $project -Force
                 [IO.File]::WriteAllText((Join-Path $project 'fixture.txt'), 'preserve exact bytes')
                 try {
                     $logPath = Join-Path $state 'runner.log'
-                    $result = Invoke-ProcessWithTreeKillTimeout -FilePath $node `
-                        -Arguments @($driver, $worker, $state, $project, $shape) `
-                        -TimeoutSeconds 15 -CompletionPattern '^work-complete$' -ShutdownTimeoutSeconds 1 `
-                        -Label "owned workspace $shape" -LogPath $logPath
-                    $expectedExit = if ($shape -eq 'timeout') { 124 } else { [int]$shape }
-                    if ($result.ExitCode -ne $expectedExit -or $result.TimedOut -ne ($shape -eq 'timeout') -or
-                        -not $result.ProcessSettingsVerified -or
-                        (Get-Content -LiteralPath $logPath -Raw) -notmatch 'owned child ready') {
-                        throw "Owned workspace lost its root or child evidence: $($result | ConvertTo-Json -Compress)"
+                    if ($route -eq 'export') {
+                        $exit = & $runExporter $exporter $node $driver $worker $state $project $shape
+                        if ($exit -isnot [int] -or $exit -ne [int]$shape) {
+                            throw "The exporter lost its root exit status in $case."
+                        }
+                    } else {
+                        $result = Invoke-ProcessWithTreeKillTimeout -FilePath $node `
+                            -Arguments @($driver, $worker, $state, $project, $shape) `
+                            -TimeoutSeconds 15 -CompletionPattern '^work-complete$' -ShutdownTimeoutSeconds 1 `
+                            -Label "owned workspace $shape" -LogPath $logPath
+                        $expectedExit = if ($shape -eq 'timeout') { 124 } else { [int]$shape }
+                        if ($result.ExitCode -ne $expectedExit -or $result.TimedOut -ne ($shape -eq 'timeout') -or
+                            -not $result.ProcessSettingsVerified) {
+                            throw "The watchdog lost its root exit status: $($result | ConvertTo-Json -Compress)"
+                        }
+                    }
+                    $output = Get-Content -LiteralPath $logPath -Raw
+                    if ($output -notmatch 'owned child ready' -or $output -notmatch 'owned child stderr') {
+                        throw "The $route did not preserve both output streams in $case."
                     }
                     $childId = [int][IO.File]::ReadAllText((Join-Path $state 'ready'))
                     if (Get-Process -Id $childId -ErrorAction SilentlyContinue) {
@@ -299,12 +337,13 @@ const pending = setInterval(() => {
                     [IO.File]::WriteAllText((Join-Path $state 'release'), 'release fixture')
                 }
             }
-            $cancelState = Join-Path $fixture 'cancelled-controller'
-            $cancelProject = Join-Path $cancelState 'project'
-            $null = New-Item -ItemType Directory -Path $cancelProject -Force
-            [IO.File]::WriteAllText((Join-Path $cancelProject 'fixture.txt'), 'keep cancelled project')
-            $controller = Join-Path $fixture 'cancel-controller.ps1'
-            [IO.File]::WriteAllText($controller, @'
+            foreach ($route in @('watchdog', 'export')) {
+                $cancelState = Join-Path $fixture "cancelled-$route"
+                $cancelProject = Join-Path $cancelState 'project'
+                $null = New-Item -ItemType Directory -Path $cancelProject -Force
+                [IO.File]::WriteAllText((Join-Path $cancelProject 'fixture.txt'), 'keep cancelled project')
+                $controller = Join-Path $fixture 'cancel-controller.ps1'
+                [IO.File]::WriteAllText($controller, @'
 param($Adapter, $Node, $Worker, $State, $Project)
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition ([IO.File]::ReadAllText($Adapter))
@@ -314,47 +353,52 @@ $owned.Resume()
 # The harness stops this controller after the child publishes readiness.
 try { Wait-Event -Timeout 30 | Out-Null } finally { $owned.Dispose() }
 '@)
-            $start = [Diagnostics.ProcessStartInfo]::new()
-            $start.FileName = $pwsh
-            $start.Arguments = ConvertTo-ProcessArgumentLine -Arguments @(
-                '-NoLogo', '-NoProfile', '-File', $controller, $script:WindowsProcessOwnerSource,
-                $node, $worker, $cancelState, $cancelProject
-            )
-            $start.UseShellExecute = $false
-            $start.CreateNoWindow = $true
-            $ownerController = [Diagnostics.Process]::Start($start)
-            try {
-                $readyPath = Join-Path $cancelState 'ready'
-                $clock = [Diagnostics.Stopwatch]::StartNew()
-                while (-not (Test-Path -LiteralPath $readyPath)) {
-                    if ($ownerController.HasExited -or $clock.ElapsedMilliseconds -gt 15000) {
-                        throw 'The cancellation fixture did not establish owned child readiness.'
-                    }
-                    Start-Sleep -Milliseconds 20
+                $start = [Diagnostics.ProcessStartInfo]::new()
+                $start.FileName = $pwsh
+                $launchArguments = if ($route -eq 'export') {
+                    '-NoLogo', '-NoProfile', '-File', $runExporter,
+                    $exporter, $node, $driver, $worker, $cancelState, $cancelProject, 'timeout'
+                } else {
+                    '-NoLogo', '-NoProfile', '-File', $controller, $script:WindowsProcessOwnerSource,
+                    $node, $worker, $cancelState, $cancelProject
                 }
-                $ownedId = [int][IO.File]::ReadAllText($readyPath)
-                $ownedChild = Get-Process -Id $ownedId -ErrorAction Stop
+                $start.Arguments = ConvertTo-ProcessArgumentLine -Arguments $launchArguments
+                $start.UseShellExecute = $false
+                $start.CreateNoWindow = $true
+                $ownerController = [Diagnostics.Process]::Start($start)
                 try {
-                    # Stop the controller only. The operating system owns child termination.
-                    $ownerController.Kill()
-                    if (-not $ownerController.WaitForExit(5000) -or -not $ownedChild.WaitForExit(5000)) {
-                        throw 'Abrupt controller exit did not release the owned child.'
+                    $readyPath = Join-Path $cancelState 'ready'
+                    $clock = [Diagnostics.Stopwatch]::StartNew()
+                    while (-not (Test-Path -LiteralPath $readyPath)) {
+                        if ($ownerController.HasExited -or $clock.ElapsedMilliseconds -gt 15000) {
+                            throw 'The cancellation fixture did not establish owned child readiness.'
+                        }
+                        Start-Sleep -Milliseconds 20
                     }
-                } finally { $ownedChild.Dispose() }
-                $cancelMoved = Join-Path $cancelState 'moved-project'
-                [IO.Directory]::Move($cancelProject, $cancelMoved)
-                if ([IO.File]::ReadAllText((Join-Path $cancelMoved 'fixture.txt')) -cne 'keep cancelled project' -or
-                    $sibling.HasExited) {
-                    throw 'Cancellation did not preserve the released project and independent sibling.'
-                }
-            } finally {
-                [IO.File]::WriteAllText((Join-Path $cancelState 'release'), 'release fixture')
-                try {
-                    if (-not $ownerController.HasExited) {
+                    $ownedId = [int][IO.File]::ReadAllText($readyPath)
+                    $ownedChild = Get-Process -Id $ownedId -ErrorAction Stop
+                    try {
+                        # Stop the controller only. The operating system owns child termination.
                         $ownerController.Kill()
-                        if (-not $ownerController.WaitForExit(5000)) { throw 'Fixture controller cleanup did not exit.' }
+                        if (-not $ownerController.WaitForExit(5000) -or -not $ownedChild.WaitForExit(5000)) {
+                            throw 'Abrupt controller exit did not release the owned child.'
+                        }
+                    } finally { $ownedChild.Dispose() }
+                    $cancelMoved = Join-Path $cancelState 'moved-project'
+                    [IO.Directory]::Move($cancelProject, $cancelMoved)
+                    if ([IO.File]::ReadAllText((Join-Path $cancelMoved 'fixture.txt')) -cne 'keep cancelled project' -or
+                        $sibling.HasExited) {
+                        throw 'Cancellation did not preserve the released project and independent sibling.'
                     }
-                } finally { $ownerController.Dispose() }
+                } finally {
+                    [IO.File]::WriteAllText((Join-Path $cancelState 'release'), 'release fixture')
+                    try {
+                        if (-not $ownerController.HasExited) {
+                            $ownerController.Kill()
+                            if (-not $ownerController.WaitForExit(5000)) { throw 'Fixture controller cleanup did not exit.' }
+                        }
+                    } finally { $ownerController.Dispose() }
+                }
             }
         } finally {
             [IO.File]::WriteAllText((Join-Path $siblingState 'release'), 'release fixture')

@@ -63,6 +63,8 @@ $ErrorActionPreference = 'Stop'
 # Mirrors run-ci-tests.ps1: keep $LASTEXITCODE-based native-exit handling
 # authoritative on every PowerShell host/version.
 $PSNativeCommandUseErrorActionPreference = $false
+$script:WindowsProcessOwnerSource = Join-Path $PSScriptRoot 'lib/owned-windows-process.cs.txt'
+. (Join-Path $PSScriptRoot 'lib/process-argument-line.ps1')
 
 $PackageName = 'com.wallstop-studios.dxmessaging'
 $ExportRootRelative = 'Assets/WallstopStudios/DxMessaging'
@@ -408,10 +410,83 @@ function Resolve-NpmPackCommand {
     return $command.Source
 }
 
+function Invoke-OwnedWindowsUnityEditor {
+    param(
+        [Parameter(Mandatory = $true)][string]$EditorPath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$LogPath
+    )
+
+    if (-not ('DxMessaging.Ci.OwnedWindowsProcess' -as [type])) {
+        Add-Type -TypeDefinition ([IO.File]::ReadAllText($script:WindowsProcessOwnerSource))
+    }
+    $argumentLine = ConvertTo-ProcessArgumentLine -Arguments $Arguments
+    $executable = (Resolve-Path -LiteralPath $EditorPath).ProviderPath
+    $workingDirectory = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.ProviderPath
+    $log = [IO.StreamWriter]::new($LogPath, $false)
+    $owner = $null
+    try {
+        $log.AutoFlush = $true
+        $owner = [DxMessaging.Ci.OwnedWindowsProcess]::StartSuspended($executable, $argumentLine, $workingDirectory)
+        $owner.Resume()
+        $streams = foreach ($reader in @($owner.StandardOutput, $owner.StandardError)) {
+            @{ Reader = $reader; Read = $reader.ReadLineAsync(); Open = $true }
+        }
+        $released = $false
+        $remainingStreams = $streams.Count
+        $exitCode = $null
+        $drainIdle = [Diagnostics.Stopwatch]::new()
+        # Root exit authorizes workspace release. Drain any buffered output after
+        # that release so inherited streams cannot keep the workspace alive.
+        while (-not $released -or $remainingStreams -gt 0) {
+            if (-not $released -and $owner.Root.HasExited) {
+                $exitCode = $owner.GetExitCode()
+                if (-not $owner.TerminateAndConfirm(5000)) {
+                    throw 'Could not confirm release of the generated Unity project processes.'
+                }
+                $released = $true
+                $drainIdle.Start()
+            }
+
+            $progress = $false
+            foreach ($stream in $streams) {
+                if (-not $stream.Open -or -not $stream.Read.IsCompleted) { continue }
+                $line = $stream.Read.GetAwaiter().GetResult()
+                if ($null -eq $line) {
+                    $stream.Open = $false
+                    $remainingStreams--
+                } else {
+                    $log.WriteLine($line)
+                    Write-Host $line
+                    $stream.Read = $stream.Reader.ReadLineAsync()
+                }
+                $progress = $true
+            }
+            if ($progress) {
+                if ($released) { $drainIdle.Restart() }
+            } elseif ($remainingStreams -gt 0) {
+                if ($drainIdle.ElapsedMilliseconds -ge 5000) {
+                    throw 'Unity Editor output did not close after project processes were released.'
+                }
+                [Threading.Tasks.Task[]]$pending = foreach ($stream in $streams) {
+                    if ($stream.Open) { $stream.Read }
+                }
+                [void][Threading.Tasks.Task]::WaitAny($pending, 50)
+            } elseif (-not $released) {
+                [void]$owner.Root.WaitForExit(50)
+            }
+        }
+        return $exitCode
+    } finally {
+        try {
+            if ($owner) { $owner.Dispose() }
+        } finally {
+            $log.Dispose()
+        }
+    }
+}
+
 function Invoke-UnityEditor {
-    # Mirrors run-ci-tests.ps1 Invoke-UnityEditor: `-logFile -` + Tee-Object so
-    # PowerShell waits for the GUI-subsystem Unity.exe and $LASTEXITCODE is set;
-    # RETURNS the exit code (the durable artifact is the source of truth).
     param(
         [Parameter(Mandatory = $true)][string]$EditorPath,
         [Parameter(Mandatory = $true)][string[]]$Arguments,
@@ -426,11 +501,19 @@ function Invoke-UnityEditor {
 
     Write-Host "::group::$Label"
     Write-Host "`"$EditorPath`" $($Arguments -join ' ')"
-    & $EditorPath @Arguments 2>&1 | Tee-Object -FilePath $LogPath | Out-Host
-    $exitCode = $LASTEXITCODE
-    Clear-NonFatalNativeExitCode -Context $Label
-    Write-Host "::endgroup::"
-    return $exitCode
+    try {
+        if (Test-IsWindowsHost) {
+            $exitCode = Invoke-OwnedWindowsUnityEditor -EditorPath $EditorPath -Arguments $Arguments -LogPath $LogPath
+            Clear-NonFatalNativeExitCode -Context $Label
+        } else {
+            & $EditorPath @Arguments 2>&1 | Tee-Object -FilePath $LogPath | Out-Host
+            $exitCode = $LASTEXITCODE
+            Clear-NonFatalNativeExitCode -Context $Label
+        }
+        return $exitCode
+    } finally {
+        Write-Host "::endgroup::"
+    }
 }
 
 function Invoke-UnityLicenseActivate {
