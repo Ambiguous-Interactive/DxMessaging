@@ -2,19 +2,19 @@
   "packages": [
     ["@openai/codex", "codex"],
     ["@anthropic-ai/claude-code", "claude"],
-    ["opencode-ai", "opencode"],
+    ["@opencode/cli", "opencode"],
     ["@nanocollective/nanocoder", "nanocoder"]
   ],
   "installerCases": [
     {
       "name": "fresh container with a reachable registry",
       "setup": {
-        "latest": "1.2.3"
+        "latest": "2.2.3"
       },
       "status": 0,
       "stdout": [
-        "installing {package}@1\\.2\\.3 \\(current: missing\\)",
-        "{package}@1\\.2\\.3 is ready\\."
+        "installing {package}@2\\.2\\.3 \\(current: missing\\)",
+        "{package}@2\\.2\\.3 is ready\\."
       ],
       "stderr": [],
       "installsPerPackage": 1,
@@ -23,11 +23,11 @@
     {
       "name": "every CLI already at the latest version",
       "setup": {
-        "latest": "4.5.6",
-        "installed": "4.5.6"
+        "latest": "2.5.6",
+        "installed": "2.5.6"
       },
       "status": 0,
-      "stdout": ["{package}@4\\.5\\.6 is current\\."],
+      "stdout": ["{package}@2\\.5\\.6 is current\\."],
       "stderr": [],
       "installsPerPackage": 0,
       "commandsPresent": true
@@ -35,11 +35,11 @@
     {
       "name": "unreachable registry with the CLI already installed",
       "setup": {
-        "installed": "7.8.9",
+        "installed": "2.8.9",
         "viewFails": true
       },
       "status": 0,
-      "stdout": ["registry unavailable; keeping {package}@7\\.8\\.9\\."],
+      "stdout": ["registry unavailable; keeping {package}@2\\.8\\.9\\."],
       "stderr": [],
       "installsPerPackage": 0,
       "commandsPresent": true
@@ -106,7 +106,7 @@
     ["Dockerfile", "npm install --global"],
     ["Dockerfile", "@openai/codex@latest"],
     ["Dockerfile", "@anthropic-ai/claude-code@latest"],
-    ["Dockerfile", "opencode-ai@latest"],
+    ["Dockerfile", "@opencode/cli@2"],
     ["Dockerfile", "@nanocollective/nanocoder@latest"],
     ["post-create.sh", "ai-backends.sh"],
     ["Dockerfile", "NPM_CONFIG_PREFIX=\"/home/vscode/.local\""],

@@ -380,15 +380,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # refresh them without sudo while keeping these copies as the offline fallback.
 RUN npm install --global --prefix /usr/local \
         @openai/codex@latest \
-        opencode-ai@latest \
-        --allow-scripts=opencode-ai \
         @nanocollective/nanocoder@latest \
         @z_ai/mcp-server@latest \
         mcp-remote@0.16.6 \
         --no-fund \
         --no-audit \
     && codex --version \
-    && opencode --version \
     && nanocoder --version
 
 # MCP configuration must work before the workspace's volume has dependencies.
@@ -600,3 +597,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm -rf /tmp/dxm-backend-npm \
     && claude --version
 USER vscode
+
+# Keep the binary and its npm registration in the prefix used by opencode upgrade.
+RUN npm install --global '@opencode/cli@2' --allow-scripts=@opencode/cli --no-fund --no-audit \
+    && test "$(command -v opencode)" = "$NPM_CONFIG_PREFIX/bin/opencode" \
+    && test -w "$(readlink -f "$(command -v opencode)")" \
+    && version="$(opencode --version)" \
+    && printf '%s\n' "$version" | grep -Ex '(opencode v)?2\.[0-9]+\.[0-9]+'

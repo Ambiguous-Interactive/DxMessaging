@@ -1,5 +1,4 @@
 "use strict";
-// Execute the installer against a hermetic npm/CLI fixture.
 // cspell:ignore mcps
 const assert = require("node:assert/strict");
 const childProcess = require("node:child_process");
@@ -12,7 +11,21 @@ const CAN_RUN_SHELL = process.platform !== "win32";
 const ROOT = path.resolve(__dirname, "..", "..");
 
 // Expose only these system tools so image-provided CLIs cannot satisfy the fixture.
-const SYSTEM_TOOLS = ["bash", "sh", "mkdir", "grep", "head", "tr", "cat", "rm", "chmod", "flock"];
+const SYSTEM_TOOLS = [
+  "bash",
+  "sh",
+  "mkdir",
+  "grep",
+  "head",
+  "tr",
+  "cat",
+  "rm",
+  "chmod",
+  "flock",
+  "node",
+  "readlink"
+];
+const LEGACY_OPENCODE_LINK = "../lib/node_modules/opencode-ai/bin/opencode.exe";
 
 function resolveTool(name) {
   const found = childProcess.spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" });
@@ -21,30 +34,7 @@ function resolveTool(name) {
 const dev = (name) => path.join(ROOT, ".devcontainer", name);
 const read = (name) => fs.readFileSync(dev(name), "utf8");
 
-const NPM_STUB = `#!/usr/bin/env bash
-printf '%s\\n' "$*" >>"\${NPM_CALL_LOG}"
-case "$1" in
-    view)
-        if [[ -n "\${NPM_VIEW_FAILS}" ]]; then exit 1; fi
-        printf '%s\\n' "\${NPM_LATEST}"
-        ;;
-    install)
-        if [[ -n "\${NPM_INSTALL_FAILS}" ]]; then exit 1; fi
-        if [[ -n "\${NPM_INSTALL_NOOP}" ]]; then exit 0; fi
-        spec="$3"
-        case "\${spec%@*}" in
-            @openai/codex) shim="codex" ;;
-            @anthropic-ai/claude-code) [[ " $* " == *" --allow-scripts=@anthropic-ai/claude-code "* ]] || exit 1; shim="claude" ;;
-            opencode-ai) [[ " $* " == *" --allow-scripts=opencode-ai "* ]] || exit 1; shim="opencode" ;;
-            @nanocollective/nanocoder) shim="nanocoder" ;;
-            *) exit 1 ;;
-        esac
-        target="\${NPM_CONFIG_PREFIX}/bin/\${shim}"
-        printf '#!/usr/bin/env bash\\necho %s\\n' "\${spec##*@}" >"\${target}"
-        chmod +x "\${target}"
-        ;;
-esac
-`;
+const fixture = dev("test-agent-clis-fixture.sh");
 
 function writeExecutable(file, contents) {
   fs.writeFileSync(file, contents);
@@ -60,7 +50,7 @@ function runInstaller(t, setup) {
   const stubBin = path.join(temp, "stub-bin");
   fs.mkdirSync(prefixBin, { recursive: true });
   fs.mkdirSync(stubBin, { recursive: true });
-  writeExecutable(path.join(stubBin, "npm"), NPM_STUB);
+  writeExecutable(path.join(stubBin, "npm"), fs.readFileSync(fixture, "utf8"));
   writeExecutable(path.join(stubBin, "sleep"), "#!/usr/bin/env bash\nexit 0\n");
   // macOS lacks timeout; emulate it without adding latency to fixture retries.
   writeExecutable(path.join(stubBin, "timeout"), '#!/usr/bin/env bash\nshift\nexec "$@"\n');
@@ -71,6 +61,18 @@ function runInstaller(t, setup) {
         `#!/usr/bin/env bash\necho ${setup.installed}\n`
       );
     }
+  }
+  const opencode = path.join(prefixBin, "opencode");
+  if (setup.legacySystem) {
+    fs.unlinkSync(opencode);
+    writeExecutable(path.join(stubBin, "opencode"), "#!/usr/bin/env bash\necho 1.19.6\n");
+  }
+  if (setup.legacyUser) {
+    const legacy = path.join(prefixBin, LEGACY_OPENCODE_LINK);
+    fs.mkdirSync(path.dirname(legacy), { recursive: true });
+    writeExecutable(legacy, "#!/usr/bin/env bash\necho 1.19.6\n");
+    fs.unlinkSync(opencode);
+    fs.symlinkSync(LEGACY_OPENCODE_LINK, opencode);
   }
   const systemBin = path.join(temp, "system-bin");
   fs.mkdirSync(systemBin, { recursive: true });
@@ -104,6 +106,7 @@ function runInstaller(t, setup) {
       NPM_CONFIG_PREFIX: path.join(temp, "prefix"),
       NPM_CALL_LOG: callLog,
       NPM_LATEST: setup.latest || "",
+      NPM_OPENCODE_VERSIONS: JSON.stringify(setup.opencodeVersions || setup.latest || ""),
       NPM_VIEW_FAILS: setup.viewFails ? "1" : "",
       NPM_INSTALL_FAILS: setup.installFails ? "1" : "",
       NPM_INSTALL_NOOP: setup.installNoop ? "1" : ""
@@ -143,7 +146,42 @@ for (const testCase of CASES) {
   });
 }
 
-// Lifecycle hooks share a lock because each can create the shared bearer token.
+for (const legacy of ["legacySystem", "legacyUser"]) {
+  test(`migrates ${legacy} OpenCode to the newest stable v2`, { skip: !CAN_RUN_SHELL }, (t) => {
+    const { result, prefixBin, calls } = runInstaller(t, {
+      installed: "2.4.1",
+      latest: "2.4.1",
+      opencodeVersions: ["2.4.0", "2.4.1"],
+      [legacy]: true
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.ok(calls.includes("view @opencode/cli@2 version --json"));
+    const install = calls.findIndex((call) => call.startsWith("install -g @opencode/cli@2.4.1 "));
+    assert.notEqual(install, -1, calls.join("\n"));
+    const uninstall = calls.indexOf("uninstall -g opencode-ai");
+    if (legacy === "legacyUser") {
+      assert.ok(uninstall >= 0 && uninstall < install, calls.join("\n"));
+    } else {
+      assert.equal(uninstall, -1, calls.join("\n"));
+    }
+    assert.match(fs.readFileSync(path.join(prefixBin, "opencode"), "utf8"), /echo 2\.4\.1/);
+  });
+}
+
+test("OpenCode-only v1 fallback is reported when offline", { skip: !CAN_RUN_SHELL }, (t) => {
+  const { result, calls } = runInstaller(t, {
+    installed: "2.4.1",
+    legacySystem: true,
+    viewFails: true
+  });
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /registry unavailable.*OpenCode v2/);
+  assert.ok(
+    calls.every((call) => call.startsWith("view ")),
+    calls.join("\n")
+  );
+});
+
 for (const name of ["post-create.sh", "post-start.sh"]) {
   test(`${name} serializes MCP configuration`, () => {
     const source = read(name);
@@ -179,22 +217,7 @@ test("launch does not block on Git LFS downloads", () => {
 test("post-create owns its CLI refresh", { skip: !CAN_RUN_SHELL }, (t) => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "dxm-bootstrap-order-"));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
-  const script = `source "$1"
-    for stub in fix_volume_permissions ensure_path_line dotnet configure_agent_mcps git pre-commit ensure_pinned_sdk validate_dotnet validate_workspace print_summary; do
-      eval "$stub() { :; }"
-    done
-    ensure_pinned_sdk() { printf '%s\\n' sdk >>"$TMPDIR/sdk-order"; }
-    dotnet() { if [[ "$*" == "tool restore" ]]; then printf '%s\\n' restore >>"$TMPDIR/sdk-order"; fi; }
-    install_agent_clis() { printf '%s' "$BASH_SUBSHELL" >"$TMPDIR/refresh-scope"; }
-    npm() {
-      if [[ "$*" == "config get prefix" ]]; then echo "$HOME/.local";
-      elif [[ "$1" == install ]]; then printf '%s' "$BASH_SUBSHELL" >"$TMPDIR/npm-scope"; fi
-    }
-    main
-    wait
-    cmp "$TMPDIR/refresh-scope" "$TMPDIR/npm-scope"
-    [[ "$(cat "$TMPDIR/sdk-order")" == $'sdk\\nrestore' ]]`;
-  const result = childProcess.spawnSync("bash", ["-c", script, "bash", dev("post-create.sh")], {
+  const result = childProcess.spawnSync("bash", [fixture, "post-create", dev("post-create.sh")], {
     encoding: "utf8",
     env: { ...process.env, HOME: temp, TMPDIR: temp }
   });
@@ -221,15 +244,9 @@ for (const [label, mode, foreign, repair, expected] of [
       const target = repair === "directory" ? path.dirname(file) : file;
       if (foreign) childProcess.execFileSync("sudo", ["-n", "chown", "-R", "0:0", target]);
     }
-    const script = `source "$1"
-      if [[ "$REPAIR" == directory ]]; then cache_contract_repair_directory "$WORKSPACE_FOLDER" "$(id -u)" "$(id -g)"; exit; fi
-      cache_contract_repair_directory() { :; }
-      sudo() { case "$2" in chown) case "$3" in -h) :;; *) return 99;; esac;; *) return 99;; esac
-        case "$REPAIR" in real) command sudo "$@";; noop) return 0;; *) return 1;; esac; }
-      cache_contract_repair_permissions`;
     const result = childProcess.spawnSync(
       "bash",
-      ["-c", script, "bash", dev("cache-contract.sh")],
+      [fixture, "cache-permissions", dev("cache-contract.sh")],
       {
         encoding: "utf8",
         env: { ...process.env, HOME: temp, WORKSPACE_FOLDER: temp, REPAIR: repair }
@@ -258,24 +275,7 @@ for (const [mode, expected] of [
     );
     const result = childProcess.spawnSync(
       "bash",
-      [
-        "-c",
-        `
-      set -euo pipefail
-      source "$1"
-      flock() { return 0; }
-      dotnet() { if [[ -f "$TMPDIR/ready" ]]; then echo 10.0.404; else echo 10.0.401; fi; }
-      curl() { [[ "$MODE" != download-fails ]]; }
-      sudo() {
-        [[ "$MODE" != install-fails ]] || return 1
-        if [[ "$MODE" != install-noop ]]; then touch "$TMPDIR/ready"; fi
-      }
-      if [[ "$MODE" == ready ]]; then touch "$TMPDIR/ready"; fi
-      ensure_pinned_sdk "$TMPDIR"
-    `,
-        "bash",
-        dev("lib/pinned-sdk.sh")
-      ],
+      [fixture, "pinned-sdk", dev("lib/pinned-sdk.sh")],
       {
         encoding: "utf8",
         env: { ...process.env, TMPDIR: temp, MODE: mode }

@@ -5,21 +5,29 @@ tools:
 
 - `@openai/codex`
 - `@anthropic-ai/claude-code`
-- `opencode-ai`
 - `@nanocollective/nanocoder`
 - `@z_ai/mcp-server`
 
-The image build installs the tools as global npm packages under `/usr/local`.
-Container creation and every subsequent start resolve the same
-`latest` tags again and update only tools whose installed versions differ. The
-npm global prefix must stay writable by the current user; the refresh never
-invokes `sudo`.
+The image installs these tools under `/usr/local`. Container creation and
+each start refresh Codex, Claude Code, Nanocoder, and OpenCode in the
+user-owned npm prefix, `~/.local`, without sudo.
 
-Run the refresh manually with:
+OpenCode uses the newest stable v2 release of `@opencode/cli`. The image
+installs it in `~/.local` for offline use and for native updates:
+
+```bash
+opencode upgrade
+```
+
+Run the refresh manually or migrate a running v1 container with:
 
 ```bash
 bash .devcontainer/install-agent-clis.sh
+hash -r
+opencode --version
 ```
+
+Rebuild the devcontainer once to replace the legacy v1 image installation.
 
 ## Native, Z.ai, and OpenRouter backends
 
