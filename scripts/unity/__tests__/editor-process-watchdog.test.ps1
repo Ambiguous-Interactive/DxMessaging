@@ -12,6 +12,7 @@ foreach ($definition in $ast.EndBlock.Statements) {
         Invoke-Expression $definition.Extent.Text
     }
 }
+$script:WindowsProcessOwnerSource = Join-Path (Split-Path -Parent $runner) 'lib/owned-windows-process.cs.txt'
 # These fixtures contain no compiler diagnostics or native crash codes.
 $script:CatastrophicPatterns = @()
 $script:NativeExitCodeDescriptions = @{}
@@ -200,11 +201,170 @@ exit 0
             throw "Inherited-pipe failure lost its nonretryable classification: $safetyFailure"
         }
         if (-not (Test-Path -LiteralPath $orphanLog)) { throw 'Inherited-pipe failure lost its diagnostic log.' }
-    } elseif (-not $IsWindows -or $orphanExit -ne 0) {
+    } elseif (-not $IsWindows -or $orphanExit -notin @(0, 124)) {
         throw 'Inherited-pipe orphan was accepted as confirmed tree cleanup.'
     }
     # Windows may create independent console handles instead of inheriting the
     # parent's redirected pipes, as in the existing provisioning heartbeat fixture.
+
+    if ($IsWindows) {
+        $node = (Get-Command node -ErrorAction Stop).Source
+        $driver = Join-Path $fixture 'owned-project.cjs'
+        $worker = Join-Path $fixture 'hold-project.cjs'
+        [IO.File]::WriteAllText($worker, @'
+const fs = require("node:fs");
+const path = require("node:path");
+const state = process.argv[2];
+const file = fs.openSync("fixture.txt", "r");
+const receipt = path.join(state, "ready");
+fs.writeFileSync(receipt + ".tmp", String(process.pid));
+fs.renameSync(receipt + ".tmp", receipt);
+const expiry = performance.now() + 60000;
+const timer = setInterval(() => {
+    if (fs.existsSync(path.join(state, "release")) || performance.now() > expiry) {
+        clearInterval(timer);
+        fs.closeSync(file);
+    }
+}, 10);
+'@)
+        [IO.File]::WriteAllText($driver, @'
+const fs = require("node:fs");
+const path = require("node:path");
+const { spawn } = require("node:child_process");
+const [worker, state, project, mode] = process.argv.slice(2);
+const child = spawn(process.execPath, [worker, state], { cwd: project, stdio: "ignore" });
+child.unref();
+const expiry = performance.now() + 5000;
+const pending = setInterval(() => {
+    const ready = path.join(state, "ready");
+    if (fs.existsSync(ready)) {
+        clearInterval(pending);
+        if (Number(fs.readFileSync(ready, "utf8")) !== child.pid) process.exit(8);
+        console.log("owned child ready");
+        if (mode === "timeout") {
+            console.log("work-complete");
+            setTimeout(() => process.exit(9), 30000);
+        } else {
+            process.exitCode = Number(mode);
+        }
+    } else if (performance.now() > expiry) {
+        clearInterval(pending);
+        process.exitCode = 8;
+    }
+}, 10);
+'@)
+        $siblingState = Join-Path $fixture 'independent-sibling'
+        $null = New-Item -ItemType Directory -Path $siblingState
+        [IO.File]::WriteAllText((Join-Path $siblingState 'fixture.txt'), 'keep sibling')
+        $start = [Diagnostics.ProcessStartInfo]::new()
+        $start.FileName = $node
+        $start.Arguments = ConvertTo-ProcessArgumentLine -Arguments @($worker, $siblingState)
+        $start.WorkingDirectory = $siblingState
+        $start.UseShellExecute = $false
+        $start.CreateNoWindow = $true
+        $sibling = [Diagnostics.Process]::Start($start)
+        try {
+            foreach ($shape in @('0', '7', 'timeout')) {
+                $state = Join-Path $fixture "owned-$shape"
+                $project = Join-Path $state 'project'
+                $null = New-Item -ItemType Directory -Path $project -Force
+                [IO.File]::WriteAllText((Join-Path $project 'fixture.txt'), 'preserve exact bytes')
+                try {
+                    $logPath = Join-Path $state 'runner.log'
+                    $result = Invoke-ProcessWithTreeKillTimeout -FilePath $node `
+                        -Arguments @($driver, $worker, $state, $project, $shape) `
+                        -TimeoutSeconds 15 -CompletionPattern '^work-complete$' -ShutdownTimeoutSeconds 1 `
+                        -Label "owned workspace $shape" -LogPath $logPath
+                    $expectedExit = if ($shape -eq 'timeout') { 124 } else { [int]$shape }
+                    if ($result.ExitCode -ne $expectedExit -or $result.TimedOut -ne ($shape -eq 'timeout') -or
+                        -not $result.ProcessSettingsVerified -or
+                        (Get-Content -LiteralPath $logPath -Raw) -notmatch 'owned child ready') {
+                        throw "Owned workspace lost its root or child evidence: $($result | ConvertTo-Json -Compress)"
+                    }
+                    $childId = [int][IO.File]::ReadAllText((Join-Path $state 'ready'))
+                    if (Get-Process -Id $childId -ErrorAction SilentlyContinue) {
+                        throw 'The owned child kept running after the watchdog returned.'
+                    }
+                    $moved = Join-Path $state 'moved-project'
+                    [IO.Directory]::Move($project, $moved)
+                    if ([IO.File]::ReadAllText((Join-Path $moved 'fixture.txt')) -cne 'preserve exact bytes') {
+                        throw 'Moving the released project changed its evidence.'
+                    }
+                    if ($sibling.HasExited -or -not (Test-Path -LiteralPath (Join-Path $siblingState 'ready')) -or
+                        [IO.File]::ReadAllText((Join-Path $siblingState 'fixture.txt')) -cne 'keep sibling') {
+                        throw 'Owned cleanup did not preserve the independent sibling.'
+                    }
+                } finally {
+                    [IO.File]::WriteAllText((Join-Path $state 'release'), 'release fixture')
+                }
+            }
+            $cancelState = Join-Path $fixture 'cancelled-controller'
+            $cancelProject = Join-Path $cancelState 'project'
+            $null = New-Item -ItemType Directory -Path $cancelProject -Force
+            [IO.File]::WriteAllText((Join-Path $cancelProject 'fixture.txt'), 'keep cancelled project')
+            $controller = Join-Path $fixture 'cancel-controller.ps1'
+            [IO.File]::WriteAllText($controller, @'
+param($Adapter, $Node, $Driver, $Worker, $State, $Project)
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition ([IO.File]::ReadAllText($Adapter))
+$argsLine = '"{0}" "{1}" "{2}" "{3}" 0' -f $Driver, $Worker, $State, $Project
+$owned = [DxMessaging.Ci.OwnedWindowsProcess]::StartSuspended($Node, $argsLine)
+$owned.Resume()
+# The harness stops this controller after the child publishes readiness.
+try { Wait-Event -Timeout 30 | Out-Null } finally { $owned.Dispose() }
+'@)
+            $start = [Diagnostics.ProcessStartInfo]::new()
+            $start.FileName = $pwsh
+            $start.Arguments = ConvertTo-ProcessArgumentLine -Arguments @(
+                '-NoLogo', '-NoProfile', '-File', $controller, $script:WindowsProcessOwnerSource,
+                $node, $driver, $worker, $cancelState, $cancelProject
+            )
+            $start.UseShellExecute = $false
+            $start.CreateNoWindow = $true
+            $ownerController = [Diagnostics.Process]::Start($start)
+            try {
+                $readyPath = Join-Path $cancelState 'ready'
+                $clock = [Diagnostics.Stopwatch]::StartNew()
+                while (-not (Test-Path -LiteralPath $readyPath)) {
+                    if ($ownerController.HasExited -or $clock.ElapsedMilliseconds -gt 15000) {
+                        throw 'The cancellation fixture did not establish owned child readiness.'
+                    }
+                    Start-Sleep -Milliseconds 20
+                }
+                $ownedId = [int][IO.File]::ReadAllText($readyPath)
+                $ownedChild = Get-Process -Id $ownedId -ErrorAction Stop
+                try {
+                    # Stop the controller only. The operating system owns child termination.
+                    $ownerController.Kill()
+                    if (-not $ownerController.WaitForExit(5000) -or -not $ownedChild.WaitForExit(5000)) {
+                        throw 'Abrupt controller exit did not release the owned child.'
+                    }
+                } finally { $ownedChild.Dispose() }
+                $cancelMoved = Join-Path $cancelState 'moved-project'
+                [IO.Directory]::Move($cancelProject, $cancelMoved)
+                if ([IO.File]::ReadAllText((Join-Path $cancelMoved 'fixture.txt')) -cne 'keep cancelled project' -or
+                    $sibling.HasExited) {
+                    throw 'Cancellation did not preserve the released project and independent sibling.'
+                }
+            } finally {
+                [IO.File]::WriteAllText((Join-Path $cancelState 'release'), 'release fixture')
+                try {
+                    if (-not $ownerController.HasExited) {
+                        $ownerController.Kill()
+                        if (-not $ownerController.WaitForExit(5000)) { throw 'Fixture controller cleanup did not exit.' }
+                    }
+                } finally { $ownerController.Dispose() }
+            }
+        } finally {
+            [IO.File]::WriteAllText((Join-Path $siblingState 'release'), 'release fixture')
+            try {
+                if (-not $sibling.WaitForExit(5000)) {
+                    $sibling.Kill()
+                    if (-not $sibling.WaitForExit(5000)) { throw 'The independent fixture could not exit.' }
+                }
+            } finally { $sibling.Dispose() }
+        }
+    }
 
     # EOF is independent of process exit. Close both OS descriptors and continue
     # past the old five-second reap window; the total deadline still owns the run.
