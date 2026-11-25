@@ -1,4 +1,5 @@
 #!/usr/bin/env pwsh
+# cspell:ignore unref
 # Exercise the maintained process owner with real portable child executables.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -304,11 +305,11 @@ const pending = setInterval(() => {
             [IO.File]::WriteAllText((Join-Path $cancelProject 'fixture.txt'), 'keep cancelled project')
             $controller = Join-Path $fixture 'cancel-controller.ps1'
             [IO.File]::WriteAllText($controller, @'
-param($Adapter, $Node, $Driver, $Worker, $State, $Project)
+param($Adapter, $Node, $Worker, $State, $Project)
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition ([IO.File]::ReadAllText($Adapter))
-$argsLine = '"{0}" "{1}" "{2}" "{3}" 0' -f $Driver, $Worker, $State, $Project
-$owned = [DxMessaging.Ci.OwnedWindowsProcess]::StartSuspended($Node, $argsLine)
+$argsLine = '"{0}" "{1}"' -f $Worker, $State
+$owned = [DxMessaging.Ci.OwnedWindowsProcess]::StartSuspended($Node, $argsLine, $Project)
 $owned.Resume()
 # The harness stops this controller after the child publishes readiness.
 try { Wait-Event -Timeout 30 | Out-Null } finally { $owned.Dispose() }
@@ -317,7 +318,7 @@ try { Wait-Event -Timeout 30 | Out-Null } finally { $owned.Dispose() }
             $start.FileName = $pwsh
             $start.Arguments = ConvertTo-ProcessArgumentLine -Arguments @(
                 '-NoLogo', '-NoProfile', '-File', $controller, $script:WindowsProcessOwnerSource,
-                $node, $driver, $worker, $cancelState, $cancelProject
+                $node, $worker, $cancelState, $cancelProject
             )
             $start.UseShellExecute = $false
             $start.CreateNoWindow = $true

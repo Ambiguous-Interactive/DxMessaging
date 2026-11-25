@@ -5338,7 +5338,9 @@ function Invoke-ProcessWithTreeKillTimeout {
             if (-not ('DxMessaging.Ci.OwnedWindowsProcess' -as [type])) {
                 Add-Type -TypeDefinition ([IO.File]::ReadAllText($script:WindowsProcessOwnerSource))
             }
-            $owner = [DxMessaging.Ci.OwnedWindowsProcess]::StartSuspended($FilePath, $psi.Arguments)
+            $owner = [DxMessaging.Ci.OwnedWindowsProcess]::StartSuspended(
+                $psi.FileName, $psi.Arguments, $psi.WorkingDirectory
+            )
             $proc = $owner.Root
         } else {
             $proc = New-Object System.Diagnostics.Process
@@ -5525,7 +5527,7 @@ function Invoke-ProcessWithTreeKillTimeout {
         if ($timedOut) {
             $exit = $timeoutExitCode
         } elseif ($reaped -and $proc.HasExited) {
-            $exit = $proc.ExitCode
+            $exit = if ($owner) { $owner.GetExitCode() } else { $proc.ExitCode }
         } else {
             $exit = $timeoutExitCode
             $timedOut = $true

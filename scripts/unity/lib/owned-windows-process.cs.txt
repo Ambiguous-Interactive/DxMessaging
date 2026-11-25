@@ -50,7 +50,7 @@ namespace DxMessaging.Ci
         public StreamReader StandardOutput { get; private set; }
         public StreamReader StandardError { get; private set; }
 
-        public static OwnedWindowsProcess StartSuspended(string executable, string arguments)
+        public static OwnedWindowsProcess StartSuspended(string executable, string arguments, string workingDirectory)
         {
             if (Environment.OSVersion.Platform != PlatformID.Win32NT)
                 throw new PlatformNotSupportedException("Owned Windows process launch requires Windows.");
@@ -75,7 +75,7 @@ namespace DxMessaging.Ci
                 NewPipe(false, out outputRead, out outputWrite);
                 NewPipe(false, out errorRead, out errorWrite);
 
-                var receipt = Launch(executable, arguments, job, inputRead, outputWrite, errorWrite);
+                var receipt = Launch(executable, arguments, workingDirectory, job, inputRead, outputWrite, errorWrite);
                 process = new SafeFileHandle(receipt.Process, true);
                 thread = new SafeFileHandle(receipt.Thread, true);
                 var owner = new OwnedWindowsProcess(job, process, thread, receipt.Pid, outputRead, errorRead);
@@ -110,6 +110,13 @@ namespace DxMessaging.Ci
             mainThread.Dispose();
         }
 
+        public int GetExitCode()
+        {
+            uint status;
+            Check(GetExitCodeProcess(nativeProcess, out status), "Read the owned root exit code");
+            return unchecked((int)status);
+        }
+
         public bool TerminateAndConfirm(int milliseconds)
         {
             if (ActiveCount() == 0) { return true; }
@@ -142,7 +149,7 @@ namespace DxMessaging.Ci
             return accounting.ActiveProcesses;
         }
 
-        private static ProcessReceipt Launch(string executable, string arguments,
+        private static ProcessReceipt Launch(string executable, string arguments, string workingDirectory,
             SafeFileHandle job, SafeFileHandle input, SafeFileHandle output, SafeFileHandle error)
         {
             var size = UIntPtr.Zero;
@@ -180,7 +187,8 @@ namespace DxMessaging.Ci
                 ProcessReceipt receipt;
                 Check(CreateProcessW(executable, command, IntPtr.Zero, IntPtr.Zero, true,
                     CreateSuspended | ExtendedStartupInfo | CreateNoWindow, IntPtr.Zero,
-                    null, ref startup, out receipt), "Start the owned process");
+                    string.IsNullOrEmpty(workingDirectory) ? null : workingDirectory,
+                    ref startup, out receipt), "Start the owned process");
                 GC.KeepAlive(job);
                 GC.KeepAlive(input);
                 GC.KeepAlive(output);
@@ -278,6 +286,8 @@ namespace DxMessaging.Ci
         private static extern bool CreateProcessW(string application, StringBuilder command,
             IntPtr processAttributes, IntPtr threadAttributes, bool inheritHandles, uint flags, IntPtr environment,
             string currentDirectory, ref StartupInfoEx startup, out ProcessReceipt receipt);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetExitCodeProcess(SafeFileHandle process, out uint exitCode);
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern uint ResumeThread(SafeFileHandle thread);
     }
