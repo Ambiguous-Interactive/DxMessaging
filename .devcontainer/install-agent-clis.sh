@@ -113,8 +113,9 @@ for index in "${!PACKAGES[@]}"; do
     fi
 
     # Both npm packages claim the opencode link. Remove only a recognized user v1 install.
-    if [[ "${package_name}" == "${OPENCODE_PACKAGE}" &&
-        "$(readlink "${NPM_PREFIX}/bin/opencode" 2>/dev/null)" == ../lib/node_modules/opencode-ai/bin/opencode?(.exe) ]]; then
+    if [[ "${package_name}" == "${OPENCODE_PACKAGE}" ]] &&
+        legacy_link="$(readlink "${NPM_PREFIX}/bin/opencode" 2>/dev/null)" &&
+        [[ "${legacy_link%.exe}" == "../lib/node_modules/opencode-ai/bin/opencode" ]]; then
         if ! timeout 180 npm uninstall -g opencode-ai; then
             warn "Could not remove the legacy OpenCode v1 npm package from ${NPM_PREFIX}."
             ((failures += 1))
