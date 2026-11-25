@@ -185,6 +185,17 @@ the 40 updates. Reaching seven minutes in a comparable window requires shorter w
 licensed runner. Five of those 17 waits overlapped a repository manual or nightly-dispatched
 licensed workflow. Overlap alone does not identify the job occupying a runner.
 
+The November 23-25 sample had 40 updates across 25 PRs: 24 in the Unity lane, five in the Unity
+plus devcontainer lane, and 11 in the companion gate. The sample had 33 green and seven failed
+updates, with three cancelled runs and one retry. Median time to the last verdict was 5m24.5s
+and p95 was 28m24s. Twenty-five updates finished under seven minutes, including 21 of the 33
+green updates. The Unity lane had a 6m24s median and 31m1s p95, with 12 of 24 under seven
+minutes. The companion gate had a 3m54s median and 4m39s p95, with all 11 under seven minutes.
+In 18 observable native starts, six had more than seven minutes between preflight completion
+and runner setup; that interval had a 25m27s p95 and a 37m27s maximum. The p95 target remains
+unmet, and the dominant cost is still runner assignment rather than test execution. The sample
+is descriptive and does not establish a cause for any individual wait.
+
 Exact job records confirm 39 runner assignments and one cancellation before assignment.
 The 39 assigned jobs had a 1,459-second p95 from creation to start. From start through
 completion, their p95 was 682 seconds, and 15 jobs took at least 420 seconds.
