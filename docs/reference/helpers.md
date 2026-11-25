@@ -298,6 +298,11 @@ defaults from a generated constructor with optional parameters. Pass at least on
 argument, including a named argument, to select that constructor. A required field
 also makes this choice explicit at the call site.
 
+> **IL2CPP string defaults:** Unity IL2CPP replaces unpaired surrogate code units in
+> string literals with U+FFFD. Generated and handwritten optional defaults are C#
+> parameter defaults, so they are literals. If an unpaired surrogate must survive,
+> construct the string from a `char[]` at runtime and pass it explicitly.
+
 #### Supported Default Value Types
 
 The attribute provides constructor overloads for all common primitive types:
