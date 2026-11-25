@@ -603,4 +603,4 @@ RUN npm install --global '@opencode/cli@2' --allow-scripts=@opencode/cli --no-fu
     && test "$(command -v opencode)" = "$NPM_CONFIG_PREFIX/bin/opencode" \
     && test -w "$(readlink -f "$(command -v opencode)")" \
     && version="$(opencode --version)" \
-    && printf '%s\n' "$version" | grep -Ex '(opencode v)?2\.[0-9]+\.[0-9]+'
+    && bash -c '[[ "$1" =~ ^(opencode\ v)?2\.[0-9]+\.[0-9]+$ ]]' _ "$version"

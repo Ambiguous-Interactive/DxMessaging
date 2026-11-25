@@ -25,7 +25,7 @@ const SYSTEM_TOOLS = [
   "node",
   "readlink"
 ];
-const LEGACY_OPENCODE_LINK = "../lib/node_modules/opencode-ai/bin/opencode.exe";
+const LEGACY_OPENCODE_LINK = "../lib/node_modules/opencode-ai/bin/opencode";
 
 function resolveTool(name) {
   const found = childProcess.spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" });
@@ -67,12 +67,13 @@ function runInstaller(t, setup) {
     fs.unlinkSync(opencode);
     writeExecutable(path.join(stubBin, "opencode"), "#!/usr/bin/env bash\necho 1.19.6\n");
   }
-  if (setup.legacyUser) {
-    const legacy = path.join(prefixBin, LEGACY_OPENCODE_LINK);
+  if (setup.legacyUser || setup.legacyUserOld) {
+    const link = setup.legacyUserOld ? LEGACY_OPENCODE_LINK : `${LEGACY_OPENCODE_LINK}.exe`;
+    const legacy = path.join(prefixBin, link);
     fs.mkdirSync(path.dirname(legacy), { recursive: true });
     writeExecutable(legacy, "#!/usr/bin/env bash\necho 1.19.6\n");
     fs.unlinkSync(opencode);
-    fs.symlinkSync(LEGACY_OPENCODE_LINK, opencode);
+    fs.symlinkSync(link, opencode);
   }
   const systemBin = path.join(temp, "system-bin");
   fs.mkdirSync(systemBin, { recursive: true });
@@ -85,7 +86,6 @@ function runInstaller(t, setup) {
   const sandboxPath = `${prefixBin}:${stubBin}:${systemBin}`;
   if (!setup.installed) {
     for (const [, command] of PACKAGES) {
-      // Resolve the shell first; assert non-success (bash returns 1, dash 127).
       assert.notEqual(
         childProcess.spawnSync("sh", ["-c", `PATH="${sandboxPath}" command -v ${command}`], {
           encoding: "utf8"
@@ -146,12 +146,12 @@ for (const testCase of CASES) {
   });
 }
 
-for (const legacy of ["legacySystem", "legacyUser"]) {
+for (const legacy of ["legacySystem", "legacyUser", "legacyUserOld"]) {
   test(`migrates ${legacy} OpenCode to the newest stable v2`, { skip: !CAN_RUN_SHELL }, (t) => {
     const { result, prefixBin, calls } = runInstaller(t, {
       installed: "2.4.1",
       latest: "2.4.1",
-      opencodeVersions: ["2.4.0", "2.4.1"],
+      opencodeVersions: ["2.4.1", "2.3.9"],
       [legacy]: true
     });
     assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -159,7 +159,7 @@ for (const legacy of ["legacySystem", "legacyUser"]) {
     const install = calls.findIndex((call) => call.startsWith("install -g @opencode/cli@2.4.1 "));
     assert.notEqual(install, -1, calls.join("\n"));
     const uninstall = calls.indexOf("uninstall -g opencode-ai");
-    if (legacy === "legacyUser") {
+    if (legacy !== "legacySystem") {
       assert.ok(uninstall >= 0 && uninstall < install, calls.join("\n"));
     } else {
       assert.equal(uninstall, -1, calls.join("\n"));

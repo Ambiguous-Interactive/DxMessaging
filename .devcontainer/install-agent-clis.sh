@@ -67,11 +67,12 @@ command_version() {
 latest_version() {
     local package_name="$1"
     if [[ "${package_name}" == "${OPENCODE_PACKAGE}" ]]; then
-        # npm view returns a scalar for one match and a semver-ordered array for multiple matches.
+        # npm view returns a scalar for one match and an array for multiple matches.
         timeout 20 npm view "${package_name}@2" version --json 2>/dev/null |
             node -e '
                 const versions = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
-                const latest = Array.isArray(versions) ? versions.at(-1) : versions;
+                const numericOrder = new Intl.Collator("en", { numeric: true });
+                const latest = Array.isArray(versions) ? versions.sort(numericOrder.compare).at(-1) : versions;
                 if (typeof latest === "string") process.stdout.write(latest);
             ' 2>/dev/null
     else
@@ -113,7 +114,7 @@ for index in "${!PACKAGES[@]}"; do
 
     # Both npm packages claim the opencode link. Remove only a recognized user v1 install.
     if [[ "${package_name}" == "${OPENCODE_PACKAGE}" &&
-        "$(readlink "${NPM_PREFIX}/bin/opencode" 2>/dev/null)" == "../lib/node_modules/opencode-ai/bin/opencode.exe" ]]; then
+        "$(readlink "${NPM_PREFIX}/bin/opencode" 2>/dev/null)" == ../lib/node_modules/opencode-ai/bin/opencode?(.exe) ]]; then
         if ! timeout 180 npm uninstall -g opencode-ai; then
             warn "Could not remove the legacy OpenCode v1 npm package from ${NPM_PREFIX}."
             ((failures += 1))

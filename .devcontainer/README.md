@@ -19,6 +19,12 @@ installs it in `~/.local` for offline use and for native updates:
 opencode upgrade
 ```
 
+Before your first v2 session, review your OpenCode configuration. V2 allows
+access outside the project by default. To keep the v1 approval prompt, add
+`{ "action": "external_directory", "resource": "*", "effect": "ask" }` to your
+`permissions` array. V1 plugins require a v2 port.
+See the [OpenCode v1 migration guide](https://opencode.ai/docs/migrate-v1/).
+
 Run the refresh manually or migrate a running v1 container with:
 
 ```bash
