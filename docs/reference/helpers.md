@@ -183,7 +183,12 @@ accessible or write the constructor and properties explicitly with suitable acce
 > for pointer parameters, preserve `void*` syntax, and accept valid `null` pointer
 > defaults. The consumer assembly must enable unsafe compilation. Function-pointer
 > signatures also need support from your Unity version and scripting backend; the
-> generator does not add that support.
+> generator does not add that support. Unity 2021.3.45f1 and 6000.5.2f1 IL2CPP
+> converters failed on the function-pointer array shapes tested here. On
+> 2021.3.45f1, single-dimensional and jagged function-pointer arrays failed,
+> while `int[][]`, `int*[][]`, and a scalar function-pointer field converted in
+> the same profile. Keep function-pointer arrays out of IL2CPP builds unless
+> your Unity version converts them.
 
 **Fixed in v4.0.0:** Constructor and property generation skip fixed-size buffers.
 Initialize buffer elements before reading them.
