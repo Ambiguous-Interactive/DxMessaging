@@ -130,6 +130,38 @@ def pages(path, field=None, **params):
         url = next_page.group(1) if next_page else None
 
 
+def jobs_by_attempt(root, run):
+    path = f"{root}/actions/runs/{run['id']}"
+    attempts = range(1, run["run_attempt"] + 1)
+    if run["run_attempt"] > 1:
+        grouped = defaultdict(list)
+        seen = set()
+        for job in pages(f"{path}/jobs", "jobs", filter="all"):
+            attempt = job.get("run_attempt")
+            job_id = job.get("id")
+            if (
+                type(attempt) is not int
+                or attempt < 1
+                or type(job_id) is not int
+                or job_id in seen
+                or job.get("run_id") != run["id"]
+                or job.get("head_sha") != run["head_sha"]
+            ):
+                break
+            seen.add(job_id)
+            # A rerun can start after the workflow listing was read.
+            if attempt in attempts:
+                grouped[attempt].append(job)
+        else:
+            if set(grouped) == set(attempts):
+                return grouped
+
+    return {
+        attempt: list(pages(f"{path}/attempts/{attempt}/jobs", "jobs"))
+        for attempt in attempts
+    }
+
+
 def collect(repo, count, through=None):
     root = f"repos/{repo}"
 
@@ -243,20 +275,13 @@ def collect(repo, count, through=None):
                 start = max(candidates)
         jobs, native, gates, history = [], [], defaultdict(list), {}
         for r in group:
-            latest = list(
-                pages(
-                    f"{root}/actions/runs/{r['id']}/attempts/{r['run_attempt']}/jobs",
-                    "jobs",
-                )
-            )
+            attempts = jobs_by_attempt(root, r)
+            latest = attempts[r["run_attempt"]]
             jobs.extend(latest)
             native.extend(native_receipts(latest))
             for attempt in range(1, r["run_attempt"]):
-                previous = pages(
-                    f"{root}/actions/runs/{r['id']}/attempts/{attempt}/jobs", "jobs"
-                )
                 history[f"{r['id']}/{attempt}"] = [
-                    [j["name"], j["conclusion"], j["completed_at"]] for j in previous
+                    [j["name"], j["conclusion"], j["completed_at"]] for j in attempts[attempt]
                 ]
             for j in latest:
                 if j["name"] in GATES:

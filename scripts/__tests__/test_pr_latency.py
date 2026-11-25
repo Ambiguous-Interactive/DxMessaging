@@ -71,10 +71,30 @@ class LatencyTests(unittest.TestCase):
             responses[f"{root}/actions/runs/{run_id}/attempts/1/jobs"] = responses[
                 f"{root}/actions/runs/{run_id}/jobs"
             ]
+        run_one_jobs = f"{root}/actions/runs/1/jobs"
+        responses[run_one_jobs] = [
+            {**receipt, "run_id": 1, "head_sha": "abc", "run_attempt": attempt}
+            for attempt, receipt in (
+                (3, responses[run_one_jobs][0]),
+                (2, responses[f"{root}/actions/runs/1/attempts/2/jobs"][0]),
+                (1, responses[f"{root}/actions/runs/1/attempts/1/jobs"][0]),
+            )
+        ]
         with patch.object(
             report, "pages", side_effect=lambda path, *a, **kw: iter(responses[path])
-        ):
+        ) as requests:
             (row,) = report.collect("owner/repo", 40)
+        history_requests = [
+            call for call in requests.call_args_list
+            if call.args[0].startswith(f"{root}/actions/runs/1/")
+        ]
+        self.assertEqual(1, len(history_requests))
+        self.assertEqual((run_one_jobs, "jobs"), history_requests[0].args)
+        self.assertEqual({"filter": "all"}, history_requests[0].kwargs)
+        self.assertEqual(
+            {"1/1": [["CI Success", "failure", failed]]}, row["previous_attempts"]
+        )
+        self.assertEqual([(10, "success", finish)], row["gates"]["CI Success"])
         # GitHub drops embedded PR links after a source branch is deleted.
         for wf in report.WORKFLOWS:
             for item in responses[f"{root}/actions/workflows/{wf}/runs"]:
@@ -121,6 +141,36 @@ class LatencyTests(unittest.TestCase):
             (row["outcome"], row["seconds"], row["first_failed_gate_seconds"]),
         )
         self.assertEqual(0, report.summarize([row])["under_420s"])
+
+    def test_incomplete_or_inconsistent_history_uses_exact_attempts(self):
+        root = "repos/owner/repo"
+        path = f"{root}/actions/runs/1"
+        run = {"id": 1, "head_sha": "abc", "run_attempt": 2}
+        first = {"id": 9, "run_id": 1, "head_sha": "abc", "run_attempt": 1}
+        latest = {**first, "id": 10, "run_attempt": 2}
+        explicit = {
+            f"{path}/attempts/1/jobs": [first],
+            f"{path}/attempts/2/jobs": [latest],
+        }
+
+        for bulk in (
+            [latest],
+            [first, {**latest, "head_sha": "different"}],
+            [first, {**latest, "run_id": 2}],
+            [first, {**latest, "run_attempt": None}],
+            [first, {**latest, "id": first["id"]}],
+        ):
+            with self.subTest(bulk=bulk):
+                responses = {**explicit, f"{path}/jobs": bulk}
+                with patch.object(
+                    report, "pages", side_effect=lambda path, *a, **kw: iter(responses[path])
+                ) as requests:
+                    grouped = report.jobs_by_attempt(root, run)
+                self.assertEqual({1: [first], 2: [latest]}, grouped)
+                self.assertEqual(
+                    [f"{path}/jobs", *explicit],
+                    [call.args[0] for call in requests.call_args_list],
+                )
 
     def test_shared_branch_and_commit_distinguish_forks(self):
         root = "repos/owner/repo"
