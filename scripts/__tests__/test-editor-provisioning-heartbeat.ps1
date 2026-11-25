@@ -5,8 +5,10 @@
 
 .DESCRIPTION
     Extracts the real timeout runner from ensure-editor.ps1 without executing
-    the script's provisioning flow. Child pwsh processes model the four
-    liveness states that CI must distinguish:
+    the script's provisioning flow. Child processes model the four liveness
+    states that CI must distinguish. The repeated-progress control uses a fast
+    Node child so shell startup does not consume its short stall window; the
+    other controls use pwsh to exercise the process tree:
 
     - repeated, byte-identical progress remains alive and completes;
     - a silent child is killed by the heartbeat sentinel;
@@ -267,32 +269,47 @@ $savedStallSeconds = $env:DXM_ENSURE_EDITOR_PROGRESS_STALL_SECONDS
 try {
     $env:DXM_ENSURE_EDITOR_PROGRESS_NOTICE_INTERVAL_SECONDS = '1'
 
+    # The repeated-progress control must not include shell startup in its short stall window.
+    # A pwsh child can take longer than three seconds to start on a loaded runner, so use a
+    # fast Node child for this control. The silent, closed-pipe, and process-tree controls
+    # continue to use pwsh.
     $noisyFinite = @'
-function Publish-Timestamp {
-    param([string]$Name)
-    $timestamp = [Diagnostics.Stopwatch]::GetTimestamp()
-    $path = Join-Path $env:DXM_TEST_HEARTBEAT_TIMING_DIR $Name
-    [IO.File]::WriteAllText("$path.tmp", [string]$timestamp)
-    [IO.File]::Move("$path.tmp", $path)
-}
-Publish-Timestamp 'entered'
-1..7 | ForEach-Object {
-    $line = '{"type":"progress","pct":50,"msg":"Installing Unity...","phase":"install"}'
-    if ($_ -eq 1) {
-        Publish-Timestamp 'before-first-write'
+const fs = require("node:fs");
+const path = require("node:path");
+const { hrtime } = require("node:process");
+const line = '{"type":"progress","pct":50,"msg":"Installing Unity...","phase":"install"}';
+function mark(name) {
+    const directory = process.env.DXM_TEST_HEARTBEAT_TIMING_DIR;
+    if (!directory) {
+        return;
     }
-    if ($_ % 2 -eq 0) {
-        [Console]::Error.WriteLine($line)
+    const target = path.join(directory, name);
+    fs.writeFileSync(target + ".tmp", hrtime.bigint().toString());
+    fs.renameSync(target + ".tmp", target);
+}
+mark("entered");
+let index = 0;
+const timer = setInterval(() => {
+    if (index === 0) {
+        mark("before-first-write");
+    }
+    if (index % 2 === 0) {
+        process.stdout.write(line + "\n");
     } else {
-        Write-Output $line
+        process.stderr.write(line + "\n");
     }
-    if ($_ -eq 1) {
-        [Console]::Out.Flush()
-        Publish-Timestamp 'first-flushed'
+    if (index === 0) {
+        mark("first-flushed");
     }
-    Start-Sleep -Milliseconds 500
-}
+    index += 1;
+    if (index === 7) {
+        clearInterval(timer);
+    }
+}, 600);
 '@
+    $noisyFinitePath = Join-Path ([IO.Path]::GetTempPath()) "dxm-heartbeat-finite-$PID.js"
+    Set-Content -LiteralPath $noisyFinitePath -Value $noisyFinite -Encoding utf8
+    $savedUnityCliPath = $script:UnityCliPath
     $script:noisyFiniteResult = $null
     $parentTiming = [ordered]@{}
     $childTiming = [ordered]@{}
@@ -300,9 +317,10 @@ Publish-Timestamp 'entered'
     $savedTimingDirectory = $env:DXM_TEST_HEARTBEAT_TIMING_DIR
     try {
         $env:DXM_TEST_HEARTBEAT_TIMING_DIR = $timingDirectory.FullName
+        $script:UnityCliPath = (Get-Command node -ErrorAction Stop).Source
         $noticeOutput = @(& {
             $script:noisyFiniteResult = Invoke-UnityCliCaptureWithTimeout `
-                -Arguments @('-NoLogo', '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $noisyFinite)) `
+                -Arguments @($noisyFinitePath) `
                 -TimeoutSeconds 10 `
                 -StallSeconds 3 `
                 -HeartbeatTiming $parentTiming
@@ -316,8 +334,10 @@ Publish-Timestamp 'entered'
             }
         }
     } finally {
+        $script:UnityCliPath = $savedUnityCliPath
         $env:DXM_TEST_HEARTBEAT_TIMING_DIR = $savedTimingDirectory
         $timingDirectory.Delete($true)
+        Remove-Item -LiteralPath $noisyFinitePath -Force -ErrorAction SilentlyContinue
     }
     $result = $script:noisyFiniteResult
     $noticeText = (@($noticeOutput | ForEach-Object { [string]$_ }) -join "`n")
@@ -336,7 +356,7 @@ Publish-Timestamp 'entered'
         # independent child markers when diagnosing startup silence or delayed capture.
         Write-Host '::group::Finite heartbeat control evidence'
         Write-Host "PowerShell $($PSVersionTable.PSVersion); $([Runtime.InteropServices.RuntimeInformation]::FrameworkDescription); logical processors $([Environment]::ProcessorCount)"
-        Write-Host (@{ Parent = $parentTiming; Child = $childTiming } | ConvertTo-Json -Depth 4)
+        Write-Host (@{ Parent = $parentTiming; ChildClock = 'node hrtime nanoseconds'; Child = $childTiming } | ConvertTo-Json -Depth 4)
         Write-Host ($result | ConvertTo-Json -Depth 4)
         Write-Host $noticeText
         Write-Host '::endgroup::'
