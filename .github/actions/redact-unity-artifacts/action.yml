@@ -124,7 +124,6 @@ runs:
                   }
                   $relativeScopePaths.Add($relativeRoot)
                 }
-                break
               }
             }
           }

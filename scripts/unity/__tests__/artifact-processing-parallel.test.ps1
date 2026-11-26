@@ -142,6 +142,13 @@ try {
     [System.IO.File]::WriteAllText((Join-Path $sensitiveShippingRoot 'shipping-matrix-evidence.json'), "{`"cells`":1}`n")
     [System.IO.File]::WriteAllText((Join-Path $sensitiveCell 'unity.log'), "cell output`n")
     Invoke-Action -Paths @($sensitiveArtifactRoot) -ExpectedFailure 'must not contain sensitive data'
+    $overlapBroad = Join-Path $fixtureRoot 'overlap-broad'
+    $overlapNarrow = Join-Path $overlapBroad 'SC-FAKE-FAKE-FAKE-FAKE-FAKE-shipping'
+    $overlapCell = Join-Path $overlapNarrow 'medium-semantic-18'
+    New-Item -ItemType Directory -Path $overlapCell -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $overlapNarrow 'shipping-matrix-evidence.json'), "{`"cells`":1}`n")
+    [System.IO.File]::WriteAllText((Join-Path $overlapCell 'unity.log'), "cell output`n")
+    Invoke-Action -Paths @($overlapNarrow, $overlapBroad) -ExpectedFailure 'must not contain sensitive data'
     $markers = @($roots | ForEach-Object {
         $directory = Join-Path $_ 'native-build-inputs'
         New-Item -ItemType Directory -Path $directory | Out-Null
