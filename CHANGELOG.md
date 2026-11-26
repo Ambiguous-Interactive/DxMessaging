@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0]
+
 ### Added
 
 - Add explicit sticky publication, latest-state lookup and token replay for late untargeted listeners,
@@ -26,9 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#740](https://github.com/Ambiguous-Interactive/DxMessaging/issues/740)).
 - Add `DxAotMessage` assembly selections so closed generic messages can dispatch untyped first on IL2CPP
   ([#734](https://github.com/Ambiguous-Interactive/DxMessaging/issues/734)).
-- Add replayable native Editor settings cache evidence, retaining stopped measurements,
-  descriptive counters, native test results, and cleanup/source provenance
-  ([#613](https://github.com/Ambiguous-Interactive/DxMessaging/issues/613)).
 - Add **Tools / Wallstop Studios / DxMessaging / Upgrade 3.x Fast Handlers to 4.0** to preview and
   update consumer callbacks under `Assets`. The command preserves source encoding and line endings,
   upgrades matching `base` forwarding calls, and attempts to restore earlier writes if the batch
@@ -51,8 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** Remove the test-only `DxMessagingRuntimeSettingsProvider.Override` API. Configure
   the runtime settings resource asset for application behavior and keep fixture configuration in
   test assemblies; see the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400).
-- Reduce recurring Unity correctness setup by installing only the locked Node.js runtime
-  dependencies used to redact and seal test artifacts ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Add disabled, missing-token, destroyed-receiver, stale-selection, and separate-bus visibility
   exercises to the Diagnostics Tooling Exerciser guided tour ([#573](https://github.com/Ambiguous-Interactive/DxMessaging/issues/573)).
 - **BREAKING:** Stop `MessageAwareComponent` from registering three demo string handlers by
@@ -94,8 +91,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name and one assembly's report changes ([#803](https://github.com/Ambiguous-Interactive/DxMessaging/issues/803)).
 - Fix arithmetic overflow when a token receives a handle it does not own in projects with checked arithmetic enabled
   ([#738](https://github.com/Ambiguous-Interactive/DxMessaging/issues/738)).
-- Accept npm 12 package metadata when validating packages and exporting `.unitypackage` files.
-  ([#742](https://github.com/Ambiguous-Interactive/DxMessaging/issues/742)).
 - Keep empty listener storage eligible for later cleanup when ordinary trim runs during dispatch
   ([#715](https://github.com/Ambiguous-Interactive/DxMessaging/issues/715)).
 - Release unrelated interceptor targets when resetting the default bus while an old registration
@@ -231,9 +226,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix provider fallback selection in registration builders, components, dependency-injection
   adapters, and emission helpers, including destroyed Unity-backed providers, deferred per-build
   resolution, scoped container fallbacks, and live serialized-handle fallbacks
-  ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
-- Execute the already-compiled Zenject, VContainer, and Reflex integration test suites in the
-  EditMode correctness matrix instead of reporting three permanently skipped shim sentinels
   ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
 - Make `MessagingComponentInstaller` honor its documented explicit-bus precedence when both an
   explicit bus and provider are assigned ([#572](https://github.com/Ambiguous-Interactive/DxMessaging/issues/572)).
