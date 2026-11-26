@@ -2304,7 +2304,9 @@ def run_maintenance_push_loop(
     advance_before_run: bool = False,
     push_fails_without_advance: bool = False,
     quiet_other: bool = False,
-) -> tuple[int, dict[str, str]]:
+    advance_generated: str = "",
+    frozen_clock: bool = False,
+) -> tuple[int, dict[str, str], int, int]:
     """Execute the push loop against a real local remote; return exit + pushed files.
 
     The loop is the only place in this repository where generator failure,
@@ -2316,6 +2318,9 @@ def run_maintenance_push_loop(
 
     `failing_pushes` forces the concurrent-merge retry: each failed push also
     advances the remote, which is what makes the loop regenerate on a new head.
+    `advance_generated` makes that competing commit retain the current generated
+    file, so a clock-derived marker can make the next write byte-identical.
+    `frozen_clock` installs a constant date stub for the same control.
     """
     bin_dir, origin, work, other = (root / n for n in ("bin", "origin.git", "work", "other"))
     bin_dir.mkdir()
@@ -2343,11 +2348,25 @@ def run_maintenance_push_loop(
     subprocess.run(["git", "-C", str(work), "branch", "-M", "master"], check=True)
     subprocess.run(["git", "-C", str(work), "push", "-q", "origin", "master"], check=True)
 
-    calls, pushes = root / "check-calls", root / "push-calls"
+    calls, pushes, writes = root / "check-calls", root / "push-calls", root / "write-calls"
     calls.write_text("0", encoding="utf-8")
     pushes.write_text("0", encoding="utf-8")
+    writes.write_text("0", encoding="utf-8")
     check_counter = shlex.quote(str(calls))
     push_counter = shlex.quote(str(pushes))
+    write_counter = shlex.quote(str(writes))
+    if frozen_clock:
+        date = bin_dir / "date"
+        date.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "+%s%N" ]; then\n'
+            "  printf '%s\\n' '1700000000N'\n"
+            "  exit 0\n"
+            "fi\n"
+            'exec /usr/bin/date "$@"\n',
+            encoding="utf-8",
+        )
+        date.chmod(0o755)
     npm = bin_dir / "npm"
     # Whichever generator is under test counts its own calls and fails the first
     # `failing_check_calls` of them; the other always converges. Both branches of
@@ -2360,11 +2379,16 @@ def run_maintenance_push_loop(
     # dropped undetected.
     flaky = "check:llms-txt" if failing == "llms" else "check:issue-template-versions"
     steady = "check:issue-template-versions" if failing == "llms" else "check:llms-txt"
+    # Fake outputs are deterministic and advance on every requested write. A
+    # clock-derived marker can repeat across retries and make a refreshed file
+    # byte-identical to the competing commit it must replace.
     writes_template = "exit 0" if quiet_other else (
-        'echo "GEN-$(date +%s%N)" > .github/ISSUE_TEMPLATE/bug_report.yml; exit 0'
+        f'f={write_counter}; n=$(cat "$f"); n=$((n+1)); echo $n > "$f"; '
+        'echo "GEN-issue-template-$n" > .github/ISSUE_TEMPLATE/bug_report.yml; exit 0'
     )
     writes_llms = "exit 0" if (quiet_other and failing != "llms") else (
-        'echo "GEN-$(date +%s%N)" > llms.txt; exit 0'
+        f'f={write_counter}; n=$(cat "$f"); n=$((n+1)); echo $n > "$f"; '
+        'echo "GEN-llms-$n" > llms.txt; exit 0'
     )
     npm.write_text(
         "#!/bin/bash\n"
@@ -2388,8 +2412,21 @@ def run_maintenance_push_loop(
     if push_fails_without_advance:
         on_push_failure = "      exit 1\n"
     else:
+        retain_generated = ""
+        if advance_generated:
+            retained_path = (
+                "llms.txt"
+                if advance_generated == "llms"
+                else ".github/ISSUE_TEMPLATE/bug_report.yml"
+            )
+            retain_generated = (
+                f"mkdir -p $(dirname {shlex.quote(str(other / retained_path))}); "
+                f"cp {shlex.quote(str(work / retained_path))} "
+                f"{shlex.quote(str(other / retained_path))}; "
+            )
         on_push_failure = (
-            f"      (cd {shlex.quote(str(other))} && /usr/bin/git pull -q --rebase; echo $n > z$n.txt; "
+            f"      (cd {shlex.quote(str(other))} && /usr/bin/git pull -q --rebase; "
+            f"{retain_generated}echo $n > z$n.txt; "
             "/usr/bin/git add -A; /usr/bin/git commit -qm concurrent; "
             "/usr/bin/git push -q origin master) > /dev/null 2>&1\n"
             "      exit 1\n"
@@ -2456,7 +2493,12 @@ def run_maintenance_push_loop(
             check=False,
         )
         pushed[path] = shown.stdout if shown.returncode == 0 else ""
-    return code, pushed
+    return (
+        code,
+        pushed,
+        int(pushes.read_text(encoding="utf-8")),
+        int(calls.read_text(encoding="utf-8")),
+    )
 
 
 def run_maintenance_gate(script: str, llms: str, issue_template: str) -> int:
@@ -3287,7 +3329,7 @@ def validate_post_merge_push_loop() -> None:
     # A head that advanced BEFORE the commit step forces the top-of-loop
     # regeneration; a generator that fails there must still fail the job.
     with tempfile.TemporaryDirectory() as directory:
-        code, pushed = run_maintenance_push_loop(
+        code, pushed, push_calls, check_calls = run_maintenance_push_loop(
             script, Path(directory), 99, 0, "issue-template", advance_before_run=True
         )
     require(
@@ -3295,8 +3337,9 @@ def validate_post_merge_push_loop() -> None:
         f"post-merge push loop stale head: a generator failing on the refreshed head "
         f"must fail the job, got exit {code}",
     )
+    require(push_calls == 1, f"post-merge push loop stale head: expected 1 push, got {push_calls}")
     with tempfile.TemporaryDirectory() as directory:
-        code, pushed = run_maintenance_push_loop(
+        code, pushed, push_calls, check_calls = run_maintenance_push_loop(
             script, Path(directory), 0, 0, "issue-template", advance_before_run=True
         )
     require(
@@ -3304,6 +3347,7 @@ def validate_post_merge_push_loop() -> None:
         f"post-merge push loop stale head: a clean regeneration on the refreshed head "
         f"must succeed, got exit {code}",
     )
+    require(push_calls == 1, f"post-merge push loop stale head: expected 1 push, got {push_calls}")
 
     # The "already current" early exit must also carry the regenerate verdict.
     # A failing llms generator reverts its own file, which removes the only
@@ -3312,13 +3356,17 @@ def validate_post_merge_push_loop() -> None:
     # undetected, reinstating the always-green bug 764540b1 claims to have fixed.
     # A custom TMPDIR can contain spaces. Exercise the fixture's shell operands here.
     with tempfile.TemporaryDirectory(prefix="dxm post merge ") as directory:
-        code, pushed = run_maintenance_push_loop(
+        code, pushed, push_calls, check_calls = run_maintenance_push_loop(
             script, Path(directory), 99, 1, "llms", quiet_other=True
         )
     require(
         code == 1,
         f"post-merge push loop nothing-to-commit exit: a failed generator that "
         f"leaves no change must still fail the job, got exit {code}",
+    )
+    require(
+        push_calls == 1,
+        f"post-merge push loop nothing-to-commit exit: expected 1 push, got {push_calls}",
     )
 
     # The attempt-3 give-up is the FOURTH `exit "${regenerate_failed}"` site, and
@@ -3330,13 +3378,17 @@ def validate_post_merge_push_loop() -> None:
         # NOT `quiet_other`: the other generator must keep producing a change, or
         # the failing one's revert empties the tree and the loop leaves through
         # the "already current" branch before attempt 3 is ever reached.
-        code, pushed = run_maintenance_push_loop(
+        code, pushed, push_calls, check_calls = run_maintenance_push_loop(
             script, Path(directory), 99, 3, "llms"
         )
     require(
         code == 1,
         f"post-merge push loop attempt-cap exit: a generator that never converged "
         f"must still fail the job when the loop gives up, got exit {code}",
+    )
+    require(
+        push_calls == 3,
+        f"post-merge push loop attempt-cap exit: expected 3 pushes, got {push_calls}",
     )
 
     # A push rejected while master stood still is a genuine failure with no
@@ -3346,7 +3398,7 @@ def validate_post_merge_push_loop() -> None:
     # could be replaced with `exit 0`: a job reporting green having pushed
     # nothing at all.
     with tempfile.TemporaryDirectory() as directory:
-        code, pushed = run_maintenance_push_loop(
+        code, pushed, push_calls, check_calls = run_maintenance_push_loop(
             script, Path(directory), 0, 1, "issue-template", push_fails_without_advance=True
         )
     require(
@@ -3355,17 +3407,55 @@ def validate_post_merge_push_loop() -> None:
         f"must fail the job, got exit {code}",
     )
     require(
+        push_calls == 1,
+        f"post-merge push loop rejected push: expected 1 push, got {push_calls}",
+    )
+    require(
         "GEN-" not in pushed["llms.txt"],
         "post-merge push loop rejected push: reported a push that never landed\n"
         + repr(pushed["llms.txt"]),
     )
 
-    for name, failing_checks, failing_pushes, failing, expected in (
-        ("a clean run exits 0", 0, 0, "issue-template", 0),
-        ("a straight retry with no generator failure exits 0", 0, 2, "issue-template", 0),
-        ("an issue-template generator that never converges fails the job", 99, 1, "issue-template", 1),
-        ("an llms.txt generator that never converges fails the job", 99, 1, "llms", 1),
-        ("a transient issue-template failure that later converges exits 0", 1, 2, "issue-template", 0),
+    # A clock-derived marker repeats across retries. The competing commit keeps
+    # the first generated byte, so a frozen clock would make the refreshed file
+    # byte-identical and skip the convergence push. The deterministic generator
+    # must write a new value and reach the second push with both checks green.
+    with tempfile.TemporaryDirectory() as directory:
+        code, pushed, push_calls, check_calls = run_maintenance_push_loop(
+            script,
+            Path(directory),
+            0,
+            1,
+            "llms",
+            advance_before_run=True,
+            advance_generated="llms",
+            frozen_clock=True,
+            quiet_other=True,
+        )
+    require(
+        code == 0,
+        f"post-merge push loop frozen clock convergence: expected exit 0, got {code}",
+    )
+    require(
+        push_calls == 2,
+        f"post-merge push loop frozen clock convergence: expected 2 pushes, got {push_calls}",
+    )
+    require(
+        check_calls == 2,
+        f"post-merge push loop frozen clock convergence: expected 2 checks, got {check_calls}",
+    )
+    require(
+        pushed["llms.txt"] == "GEN-llms-2\n",
+        "post-merge push loop frozen clock convergence: expected the second write, got "
+        + repr(pushed["llms.txt"]),
+    )
+
+    for name, failing_checks, failing_pushes, failing, expected, expected_pushes in (
+        ("a clean run exits 0", 0, 0, "issue-template", 0, 1),
+        ("a straight retry with no generator failure exits 0", 0, 2, "issue-template", 0, 3),
+        ("an issue-template generator that never converges fails the job", 99, 1, "issue-template", 1, 2),
+        ("an llms.txt generator that never converges fails the job", 99, 1, "llms", 1, 2),
+        ("a transient issue-template failure that later converges exits 0", 1, 2, "issue-template", 0, 3),
         # No transient-llms row on purpose. llms.txt carries the only change in
         # these fixtures, so reverting it on failure leaves nothing to commit and
         # the loop exits at the "already current" branch before a second
@@ -3374,10 +3464,14 @@ def validate_post_merge_push_loop() -> None:
         # cannot reach would only look like coverage.
     ):
         with tempfile.TemporaryDirectory() as directory:
-            code, pushed = run_maintenance_push_loop(
+            code, pushed, push_calls, check_calls = run_maintenance_push_loop(
                 script, Path(directory), failing_checks, failing_pushes, failing
             )
         require(code == expected, f"post-merge push loop {name}: expected exit {expected}, got {code}")
+        require(
+            push_calls == expected_pushes,
+            f"post-merge push loop {name}: expected {expected_pushes} pushes, got {push_calls}",
+        )
         # A generator whose checker rejected its output must have that output
         # REVERTED, so the marker its update step wrote can never reach master.
         # Only the FAILING generator's file is checked; the other one converged
