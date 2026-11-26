@@ -18,9 +18,18 @@ function Assert-That {
 }
 
 function Invoke-Action {
-    param([string[]]$Paths, [string]$Parallel, [string]$ExpectedFailure = '')
+    param(
+        [string[]]$Paths,
+        [string]$Parallel = '',
+        [string[]]$ParallelPaths = @(),
+        [string]$ExpectedFailure = ''
+    )
     $env:DXM_REDACT_PATHS = $Paths -join "`n"
-    $env:DXM_REDACT_PARALLEL_PATHS = if ($Parallel -eq 'true') { $Paths -join "`n" } else { '' }
+    $env:DXM_REDACT_PARALLEL_PATHS = if ($Parallel -eq 'true') {
+        $Paths -join "`n"
+    } elseif ($ParallelPaths.Count -ne 0) {
+        $ParallelPaths -join "`n"
+    } else { '' }
     try {
         & $actionBody
     } catch {
@@ -41,13 +50,14 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not load production action and workflow.' }
     $actionBody = [scriptblock]::Create($definition.action.runs.steps[0].run)
     Assert-That 'the default stays sequential' ($definition.action.inputs['parallel-paths'].default -eq '')
+    Assert-That 'the action exposes no separate child-scope input' (-not $definition.action.inputs.ContainsKey('parallel-child-paths'))
     $processingStep = @($definition.steps | Where-Object { $_.ContainsKey('id') -and $_.id -eq 'redact_tests' })[0]
     Assert-That 'the existing two-minute cap stays in force' ($processingStep['timeout-minutes'] -eq 2)
     Assert-That 'sequential shipping and consumer paths stay broad' ($processingStep.with.paths.Trim() -eq '.artifacts/unity')
     $concurrent = @($processingStep.with['parallel-paths'] -split "`n" | Where-Object { $_.Trim() })
     Assert-That 'exactly three ordinary roots are declared' ($concurrent.Count -eq 3)
     foreach ($mode in @('editmode', 'playmode', 'standalone')) {
-        $expected = '${{ !inputs.shipping_fidelity && !inputs.consumer_install_validation && format(''.artifacts/unity/{0}-' + $mode + ''', matrix.unity-version) || '''' }}'
+        $expected = '${{ !inputs.shipping_fidelity && !inputs.consumer_install_validation && format(''@@PATH@@'', matrix.unity-version) || '''' }}'.Replace('@@PATH@@', ".artifacts/unity/{0}-$mode")
         Assert-That "ordinary path expression and special-mode guard: $mode" ($concurrent -contains $expected)
         $upload = @($definition.steps | Where-Object { $_.ContainsKey('uses') -and $_.uses.StartsWith('actions/upload-artifact@') -and $_.with.path.EndsWith("-$mode") })
         Assert-That "the ordinary root is uploaded exactly once: $mode" ($upload.Count -eq 1)
@@ -79,6 +89,66 @@ try {
         Invoke-Action -Paths $case.Paths -Parallel 'true' -ExpectedFailure 'must not overlap'
     }
 
+    $artifactRoot = Join-Path $fixtureRoot 'artifacts-unity'
+    $shippingRoot = Join-Path $artifactRoot '2021.3.45f1-shipping'
+    $ordinaryRoot = Join-Path $artifactRoot '2021.3.45f1-editmode'
+    $shippingCells = @(
+        foreach ($profile in @('minimal', 'low', 'medium', 'high')) {
+            foreach ($topology in @('semantic-18', 'cardinality-1', 'cardinality-16', 'cardinality-256', 'cardinality-1000')) {
+                "$profile-$topology"
+            }
+        }
+    )
+    New-Item -ItemType Directory -Path $shippingRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $ordinaryRoot -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $shippingRoot 'shipping-matrix-evidence.json'), "{`"cells`":20}`n")
+    [System.IO.File]::WriteAllText((Join-Path $shippingRoot 'shipping-summary.log'), "serial SC-FAKE-FAKE-FAKE-FAKE-FAKE`n")
+    [System.IO.File]::WriteAllText((Join-Path $ordinaryRoot 'unity.log'), "ordinary serial SC-FAKE-FAKE-FAKE-FAKE-FAKE`n")
+    foreach ($cell in $shippingCells) {
+        $cellRoot = Join-Path $shippingRoot $cell
+        New-Item -ItemType Directory -Path $cellRoot | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $cellRoot 'unity.log'), "cell $cell serial SC-FAKE-FAKE-FAKE-FAKE-FAKE`n")
+    }
+    Assert-That 'the shipping fixture has the full 20-cell shape' ($shippingCells.Count -eq 20)
+    $elapsed = Measure-Command {
+        Invoke-Action -Paths @($artifactRoot)
+    }
+    Assert-That 'the shipping-shaped action stays under the unchanged cap' ($elapsed.TotalSeconds -lt 120)
+    Assert-That 'the shipping parent summary is scrubbed' (-not [System.IO.File]::ReadAllText((Join-Path $shippingRoot 'shipping-summary.log')).Contains('SC-FAKE'))
+    Assert-That 'the shipping marker remains valid after redaction' ((Get-Content -LiteralPath (Join-Path $shippingRoot 'shipping-matrix-evidence.json') -Raw | ConvertFrom-Json).cells -eq 20)
+    foreach ($cell in $shippingCells) {
+        $contents = [System.IO.File]::ReadAllText((Join-Path (Join-Path $shippingRoot $cell) 'unity.log'))
+        Assert-That "shipping cell is scrubbed: $cell" (-not $contents.Contains('SC-FAKE'))
+    }
+    Assert-That 'the auto-discovered ordinary root is scrubbed' (-not [System.IO.File]::ReadAllText((Join-Path $ordinaryRoot 'unity.log')).Contains('SC-FAKE'))
+
+    $mixedSequential = Join-Path $fixtureRoot 'mixed-sequential'
+    $mixedParallel = Join-Path $fixtureRoot 'mixed-parallel'
+    New-Item -ItemType Directory -Path $mixedSequential | Out-Null
+    New-Item -ItemType Directory -Path $mixedParallel | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $mixedSequential 'unity.log'), "serial SC-FAKE-FAKE-FAKE-FAKE-FAKE`n")
+    [System.IO.File]::WriteAllText((Join-Path $mixedParallel 'unity.log'), "serial SC-FAKE-FAKE-FAKE-FAKE-FAKE`n")
+    $mixedFailure = Join-Path $fixtureRoot 'mixed-failure.log'
+    [System.IO.File]::WriteAllText($mixedFailure, 'not a directory')
+    Invoke-Action -Paths @($mixedSequential) -ParallelPaths @($mixedFailure) -ExpectedFailure 'failed in one or more workers'
+    Assert-That 'the sequential residual completes after a parallel failure' (-not [System.IO.File]::ReadAllText((Join-Path $mixedSequential 'unity.log')).Contains('SC-FAKE'))
+    [System.IO.File]::WriteAllText((Join-Path $mixedSequential 'unity.log'), "serial SC-FAKE-FAKE-FAKE-FAKE-FAKE`n")
+    Invoke-Action -Paths @($mixedFailure) -ParallelPaths @($mixedParallel) -ExpectedFailure 'failed with exit code'
+    Assert-That 'the parallel scope completes before a sequential failure' (-not [System.IO.File]::ReadAllText((Join-Path $mixedParallel 'unity.log')).Contains('SC-FAKE'))
+    $sensitiveArtifactRoot = Join-Path $fixtureRoot 'artifacts-sensitive'
+    $sensitiveShippingRoot = Join-Path $sensitiveArtifactRoot '2021.3.45f1-shipping'
+    $sensitiveCell = Join-Path $sensitiveShippingRoot 'SC-FAKE-FAKE-FAKE-FAKE-FAKE-shipping'
+    New-Item -ItemType Directory -Path $sensitiveCell -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $sensitiveShippingRoot 'shipping-matrix-evidence.json'), "{`"cells`":1}`n")
+    [System.IO.File]::WriteAllText((Join-Path $sensitiveCell 'unity.log'), "cell output`n")
+    Invoke-Action -Paths @($sensitiveArtifactRoot) -ExpectedFailure 'must not contain sensitive data'
+    $overlapBroad = Join-Path $fixtureRoot 'overlap-broad'
+    $overlapNarrow = Join-Path $overlapBroad 'SC-FAKE-FAKE-FAKE-FAKE-FAKE-shipping'
+    $overlapCell = Join-Path $overlapNarrow 'medium-semantic-18'
+    New-Item -ItemType Directory -Path $overlapCell -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $overlapNarrow 'shipping-matrix-evidence.json'), "{`"cells`":1}`n")
+    [System.IO.File]::WriteAllText((Join-Path $overlapCell 'unity.log'), "cell output`n")
+    Invoke-Action -Paths @($overlapNarrow, $overlapBroad) -ExpectedFailure 'must not contain sensitive data'
     $markers = @($roots | ForEach-Object {
         $directory = Join-Path $_ 'native-build-inputs'
         New-Item -ItemType Directory -Path $directory | Out-Null
