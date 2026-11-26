@@ -20,6 +20,10 @@ function fail(message) {
 function toPosixPath(value) {
   return value.split(path.sep).join("/");
 }
+function isSameOrDescendant(candidate, parent) {
+  const relative = path.relative(parent, candidate);
+  return relative === "" || (relative.split(path.sep)[0] !== ".." && !path.isAbsolute(relative));
+}
 function safeDisplayPath(value) {
   const source = String(value);
   if (/[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u.test(source) || source.startsWith("::"))
@@ -29,10 +33,11 @@ function safeDisplayPath(value) {
     ? "[redacted:encoded-sensitive-data]"
     : redacted;
 }
-function listFiles(root) {
+function listFiles(root, excludedRoots = []) {
   const found = [];
   let inventoryError;
   const walk = (directory) => {
+    if (excludedRoots.some((excluded) => isSameOrDescendant(directory, excluded))) return;
     let entries;
     try {
       entries = fs.readdirSync(directory, { withFileTypes: true });
@@ -59,8 +64,6 @@ function listFiles(root) {
       }
     }
   };
-  // Finish reachable siblings so an unsafe entry cannot preserve an earlier
-  // acceptance manifest. Never follow links to finish that invalidation.
   walk(root);
   if (inventoryError) throw inventoryError;
   return found.sort();
@@ -88,11 +91,8 @@ function isOversizedOpaqueFile(absolute) {
     let decoder;
     for (;;) {
       let count = fs.readSync(fd, buffer, 0, buffer.length, null);
-      if (!decoder && count === 1)
-        count += fs.readSync(fd, buffer, 1, buffer.length - 1, null);
+      if (!decoder && count === 1) count += fs.readSync(fd, buffer, 1, buffer.length - 1, null);
       decoder ??= strictTextDecoder(buffer.subarray(0, count));
-      // Streaming preserves partial Unicode sequences at chunk boundaries.
-      // Decode failure proves opacity under the existing unreviewed-file policy.
       try {
         decoder.decode(buffer.subarray(0, count), { stream: count !== 0 });
       } catch {
@@ -109,7 +109,7 @@ function retainNativeFile(nativeFiles, absolute, bytes) {
   const retainedSha256 = createHash("sha256").update(bytes).digest("hex");
   nativeFiles.set(absolute, { retainedLength: bytes.length, retainedSha256 });
 }
-function redactDirectory(root) {
+function redactDirectory(root, options = {}) {
   if (!isDirectDirectory(root)) {
     fail("Artifact root is not a directory.");
   }
@@ -118,7 +118,7 @@ function redactDirectory(root) {
   const totals = new Map();
   const nativeFiles = new Map();
   let binaryCount = 0;
-  const files = listFiles(root);
+  const files = listFiles(root, options.excludedRoots ?? []);
   for (const absolute of files) {
     const relative = toPosixPath(path.relative(root, absolute));
     const pathFindings = findSensitiveData(relative);
@@ -301,7 +301,6 @@ function formatSummary(root, result) {
       lines.push(`  ${safeDisplayPath(file.path)}: ${file.counts.join(", ")}`);
     }
   }
-  // Report opaque files so "nothing found" cannot be mistaken for "nothing looked at."
   if (result.binaryCount > 0) {
     lines.push(`  ${result.binaryCount} opaque or binary file(s) were not scanned.`);
   }
@@ -314,7 +313,7 @@ function formatSummary(root, result) {
   return `${lines.join("\n")}\n`;
 }
 function usage() {
-  return `Usage: node scripts/unity/redact-unity-artifacts.js <directory> [<directory>...]
+  return `Usage: node scripts/unity/redact-unity-artifacts.js [--exclude <directory>]... <directory> [<directory>...]
 Rewrites credential and private identifier values in every text file under each directory before
 the tree is uploaded as a CI artifact. Missing directories are skipped so one call can cover every
 test mode of a run.
@@ -322,24 +321,28 @@ test mode of a run.
 }
 function parseArgs(argv) {
   const roots = [];
+  const excludedRoots = [];
   for (let index = 2; index < argv.length; index++) {
     const argument = argv[index];
     if (argument === "--help" || argument === "-h") {
       return { roots, help: true };
     }
-    if (argument.startsWith("-")) {
+    if (argument === "--exclude") {
+      if (++index >= argv.length) fail("--exclude requires a directory.");
+      excludedRoots.push(argv[index]);
+    } else if (argument.startsWith("-")) {
       fail(`Unknown option ${argument}.`);
-    }
-    roots.push(argument);
+    } else roots.push(argument);
   }
-  return { roots, help: false };
+  return excludedRoots.length ? { roots, excludedRoots, help: false } : { roots, help: false };
 }
 function runCli(argv, write = (text) => process.stdout.write(text)) {
-  const { roots, help } = parseArgs(argv);
+  const { roots, excludedRoots = [], help } = parseArgs(argv);
   if (help || roots.length === 0) {
     write(usage());
     return help ? 0 : 1;
   }
+  const resolvedExcludedRoots = excludedRoots.map((root) => path.resolve(root));
   const blocked = [];
   for (const root of roots) {
     const resolved = path.resolve(root);
@@ -352,7 +355,8 @@ function runCli(argv, write = (text) => process.stdout.write(text)) {
       }
       throw error;
     }
-    const result = redactDirectory(resolved);
+    const rootExcludedRoots = resolvedExcludedRoots.filter((entry) => isSameOrDescendant(entry, resolved));
+    const result = redactDirectory(resolved, { excludedRoots: rootExcludedRoots });
     write(formatSummary(root, result));
     blocked.push(...result.skipped.map((file) => safeDisplayPath(path.join(root, file.path))));
   }

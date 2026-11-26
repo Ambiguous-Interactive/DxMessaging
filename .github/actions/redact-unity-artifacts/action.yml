@@ -29,35 +29,128 @@ runs:
         DXM_REDACT_PARALLEL_PATHS: ${{ inputs.parallel-paths }}
       run: |
         $ErrorActionPreference = 'Stop'
-        $paths = @(
-          $env:DXM_REDACT_PATHS -split "`n" |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { $_ }
-        )
-        if ($paths.Count -eq 0) {
+        function Split-ArtifactPaths {
+          param([string]$Value)
+          return @(
+            $Value -split "`n" |
+              ForEach-Object { $_.Trim() } |
+              Where-Object { $_ }
+          )
+        }
+        function Get-NormalizedRoot {
+          param([string]$Path)
+          return [System.IO.Path]::TrimEndingDirectorySeparator([System.IO.Path]::GetFullPath($Path))
+        }
+        $paths = @(Split-ArtifactPaths $env:DXM_REDACT_PATHS)
+        $parallelPaths = @(Split-ArtifactPaths $env:DXM_REDACT_PARALLEL_PATHS)
+        if ($paths.Count + $parallelPaths.Count -eq 0) {
           throw 'The redact-unity-artifacts action requires at least one path.'
         }
         Write-Host "::group::Redacting sensitive data from Unity artifacts"
         try {
-          $parallelPaths = @(
-            $env:DXM_REDACT_PARALLEL_PATHS -split "`n" |
-              ForEach-Object { $_.Trim() } |
-              Where-Object { $_ }
-          )
-          if ($parallelPaths.Count -ne 0) {
-            $roots = @($parallelPaths | ForEach-Object {
-              [System.IO.Path]::TrimEndingDirectorySeparator([System.IO.Path]::GetFullPath($_))
-            })
-            $comparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
-            for ($i = 0; $i -lt $roots.Count; $i++) {
-              for ($j = 0; $j -lt $i; $j++) {
-                $left = $roots[$i].TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
-                $right = $roots[$j].TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
-                if ($left.StartsWith($right, $comparison) -or $right.StartsWith($left, $comparison)) {
-                  throw 'Parallel artifact paths must not overlap.'
+          $comparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+          function Test-SameOrDescendant {
+            param([string]$Candidate, [string]$Parent)
+            if ($Candidate.Equals($Parent, $comparison)) {
+              return $true
+            }
+            $left = $Candidate.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+            $right = $Parent.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+            return $left.StartsWith($right, $comparison)
+          }
+          $normalizedPaths = @($paths | ForEach-Object { Get-NormalizedRoot $_ })
+          $roots = [System.Collections.Generic.List[string]]::new()
+          foreach ($parallelPath in $parallelPaths) {
+            $roots.Add((Get-NormalizedRoot $parallelPath))
+          }
+          function Add-AutoRoot {
+            param([string]$Candidate)
+            $normalized = Get-NormalizedRoot $Candidate
+            foreach ($existing in $roots) {
+              if (
+                (Test-SameOrDescendant $normalized $existing) -or
+                (Test-SameOrDescendant $existing $normalized)
+              ) {
+                return
+              }
+            }
+            $roots.Add($normalized)
+          }
+          foreach ($artifactPath in @($paths | ForEach-Object { Get-NormalizedRoot $_ })) {
+            if (-not (Test-Path -LiteralPath $artifactPath -PathType Container)) {
+              continue
+            }
+            if (Test-Path -LiteralPath (Join-Path $artifactPath 'shipping-matrix-evidence.json') -PathType Leaf) {
+              foreach ($cell in Get-ChildItem -LiteralPath $artifactPath -Directory -Force) {
+                Add-AutoRoot $cell.FullName
+              }
+              continue
+            }
+            foreach ($child in Get-ChildItem -LiteralPath $artifactPath -Directory -Force) {
+              if ($child.Name -match '-(editmode|playmode|standalone)$') {
+                Add-AutoRoot $child.FullName
+                continue
+              }
+              if (
+                $child.Name -match '-shipping$' -or
+                (Test-Path -LiteralPath (Join-Path $child.FullName 'shipping-matrix-evidence.json') -PathType Leaf)
+              ) {
+                foreach ($cell in Get-ChildItem -LiteralPath $child.FullName -Directory -Force) {
+                  Add-AutoRoot $cell.FullName
                 }
               }
             }
+          }
+          for ($i = 0; $i -lt $roots.Count; $i++) {
+            for ($j = 0; $j -lt $i; $j++) {
+              if (
+                (Test-SameOrDescendant $roots[$i] $roots[$j]) -or
+                (Test-SameOrDescendant $roots[$j] $roots[$i])
+              ) {
+                throw 'Parallel artifact paths must not overlap.'
+              }
+            }
+          }
+          $relativeScopePaths = [System.Collections.Generic.List[string]]::new()
+          foreach ($root in $roots) {
+            foreach ($artifactPath in $normalizedPaths) {
+              if (Test-SameOrDescendant $root $artifactPath) {
+                $relativeRoot = [System.IO.Path]::GetRelativePath($artifactPath, $root)
+                if ($relativeRoot -ne '.') {
+                  foreach ($segment in $relativeRoot.Split([System.IO.Path]::DirectorySeparatorChar)) {
+                    if ($segment -match '^\s|\s$') {
+                      throw "Artifact scope names must not have leading or trailing whitespace: $relativeRoot"
+                    }
+                  }
+                  $relativeScopePaths.Add($relativeRoot)
+                }
+                break
+              }
+            }
+          }
+          if ($relativeScopePaths.Count -ne 0) {
+            $sensitiveNameCheck = 'const {findSensitiveData}=require("./scripts/unity/credential-patterns.js"); ' +
+              'for (const p of process.argv.slice(1)) if (findSensitiveData(p).length || /\p{Cf}/u.test(p)) { ' +
+              'console.error("Sensitive artifact scope name."); process.exit(2); }'
+            node -e $sensitiveNameCheck -- @relativeScopePaths
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Artifact scope names below the requested root must not contain sensitive data.'
+            }
+          }
+          $normalizedPaths = @(
+            $normalizedPaths | Where-Object {
+              $normalizedPath = $_
+              @($roots | Where-Object { Test-SameOrDescendant $normalizedPath $_ }).Count -eq 0
+            }
+          )
+          $excludedRoots = @(
+            $roots | Where-Object {
+              $root = $_
+              @($normalizedPaths | Where-Object { Test-SameOrDescendant $root $_ }).Count -ne 0
+            } | Sort-Object -Unique
+          )
+          $failedParallel = $false
+          if ($roots.Count -ne 0) {
             $processor = (Resolve-Path -LiteralPath 'scripts/unity/redact-unity-artifacts.js').Path
             $outcomes = @($roots | ForEach-Object -Parallel {
               $ErrorActionPreference = 'Stop'
@@ -71,13 +164,29 @@ runs:
             } -ThrottleLimit 4)
             $failed = @($outcomes | Where-Object { -not $_.Succeeded })
             if ($outcomes.Count -ne $roots.Count -or $failed.Count -ne 0) {
-              throw 'Sensitive-data redaction failed in one or more workers.'
+              $failedParallel = $true
             }
-          } else {
-            node scripts/unity/redact-unity-artifacts.js @paths
+          }
+          $failedSequential = $false
+          $sequentialExitCode = 0
+          if ($normalizedPaths.Count -ne 0) {
+            $processorArguments = @()
+            foreach ($excludedRoot in $excludedRoots) {
+              $processorArguments += @('--exclude', $excludedRoot)
+            }
+            $processorArguments += $normalizedPaths
+            node scripts/unity/redact-unity-artifacts.js @processorArguments
             if ($LASTEXITCODE -ne 0) {
-              throw "Sensitive-data redaction failed with exit code $LASTEXITCODE."
+              $failedSequential = $true
+              $sequentialExitCode = $LASTEXITCODE
+              Write-Host "Sensitive-data redaction failed with exit code $LASTEXITCODE."
             }
+          }
+          if ($failedParallel) {
+            throw 'Sensitive-data redaction failed in one or more workers.'
+          }
+          if ($failedSequential) {
+            throw "Sensitive-data redaction failed with exit code $sequentialExitCode."
           }
         } finally {
           Write-Host '::endgroup::'
