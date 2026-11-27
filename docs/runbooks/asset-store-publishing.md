@@ -56,6 +56,13 @@ It cannot inspect the package until an enrolled owner installs it, and it must
 not upload, store publisher credentials, call undocumented endpoints, or
 harvest Unity ID browser sessions.
 
+## Release hold
+
+Do not submit to the Asset Store while any open issue in the 4.0.0 milestone remains, or while
+the #575 technical or human gates are incomplete. Close #575 last. The npm/GitHub Release and
+Asset Store submission share the same exact-candidate approval; do not submit a different
+candidate or destination.
+
 ## What the release pipeline stages for you
 
 Every tagged release runs the `publish` job in

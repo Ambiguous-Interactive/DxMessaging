@@ -63,6 +63,12 @@ for changes that weaken controls or grant publishing authority. For the 4.0.0 re
 tag, manual dispatch, registry publication and Store submission, follow the
 [release approval procedure](../../../docs/ops/npm-release-publishing.md#release-approval).
 
+**4.0.0 release hold:** do not merge the release PR, tag, dispatch, publish or submit while any
+open issue in the 4.0.0 milestone remains, or while #575's technical or human gates are
+incomplete. Close #575 last. `release-prepare.yml`, `release-tag.yml` and `release.yml` fail
+closed on any open milestone issue; never bypass, disable or weaken that gate to make a
+release possible.
+
 For the first ten sessions using this authorization, record start/end time, overruns, blockers, merged PRs,
 issues opened/closed/reopened, time from green and reviewed to merge, CI retries, reverts
 and post-merge findings. Use GitHub timestamps and existing session records. Mark missing

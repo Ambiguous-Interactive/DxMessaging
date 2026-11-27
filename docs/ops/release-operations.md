@@ -73,6 +73,11 @@ define release acceptance. Obtain [4.0.0 launch approval](./npm-release-publishi
 before merging the release PR. The pipeline runs prepare dispatch, PR, tag,
 exact-revision qualification, release dispatch and publication:
 
+**Release hold:** do not merge the release PR, tag, dispatch, publish or submit while any open
+issue in the 4.0.0 milestone remains, or while #575's technical or human gates are incomplete.
+Close #575 last. `release-prepare.yml`, `release-tag.yml` and `release.yml` fail closed on any
+open milestone issue.
+
 1. An operator dispatches `.github/workflows/release-prepare.yml` from the
    default branch with a bump kind (`patch`/`minor`/`major`) or an explicit
    version. It runs `scripts/release/prepare-release.js` (package.json bump
@@ -132,6 +137,8 @@ describe the managed and native release requirements.
 
 The release workflow performs these gates:
 
+1. Require zero open issues in the 4.0.0 milestone, including #575. The release-tag workflow
+   applies the same check before creating the tag.
 1. Verify the semver tag, the package version, and the changelog heading.
 1. Require successful manual compatibility, shipping, consumer-install and
    performance runs for the exact tag commit. The qualification job checks

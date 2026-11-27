@@ -54,6 +54,11 @@ Confirm the merged tree matches before dispatch. Obtain a new decision if the ca
 changes. This decision also applies to manual tagging, registry publication and Asset Store
 submission. An agent operating through wallstop's account cannot supply human approval.
 
+**Release hold:** do not merge the release PR, tag, dispatch, publish or submit while any open
+issue in the 4.0.0 milestone remains, or while #575's technical or human gates are incomplete.
+Close #575 last. `release-prepare.yml`, `release-tag.yml` and `release.yml` fail closed on any
+open milestone issue; do not bypass, disable or weaken those checks to make a release possible.
+
 ## Release Trigger
 
 The normal path never creates the tag by hand:
@@ -95,6 +100,8 @@ Before tagging, `package.json.version` must be `3.0.2`. The workflow rejects:
 
 The workflow runs these checks before publishing:
 
+- Zero open issues in the 4.0.0 milestone, including #575, checked before a real release
+  prepare, again before the tag is created, and again before release dispatch
 - Successful compatibility, shipping, consumer-install, and performance
   runs and retained artifacts for the exact tag commit
 - `npm test`

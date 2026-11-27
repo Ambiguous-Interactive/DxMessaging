@@ -10,6 +10,7 @@ concurrency:
 permissions:
   actions: read
   contents: read
+  issues: read
 
 jobs:
   verify-tag:
@@ -25,6 +26,18 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Require zero open milestone issues
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count="$(gh api "repos/${GITHUB_REPOSITORY}/issues?state=open&milestone=1&per_page=100" --jq 'length')"
+          if [ "${count}" -ne 0 ]; then
+            echo "::error::Release blocked: ${count} open 4.0.0 milestone issue(s) remain. Close every milestone issue and complete #575's technical and human gates before release."
+            exit 1
+          fi
 
       - name: Verify semver tag matches package.json
         id: verify

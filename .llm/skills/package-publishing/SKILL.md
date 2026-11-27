@@ -23,6 +23,13 @@ where the `RoslynAnalyzer`-labeled DLLs sit inside it.
 
 ## Rules
 
+### Release hold
+
+- Do not publish this package while any open issue in the 4.0.0 milestone remains or while
+  #575's technical/human gates are incomplete. Close #575 last. `release-prepare.yml`,
+  `release-tag.yml` and `release.yml` fail closed on any open milestone issue; never bypass
+  those checks.
+
 ### files versus .npmignore
 
 - `package.json` `"files"` is a pure ALLOWLIST of what to include. `.npmignore` is an

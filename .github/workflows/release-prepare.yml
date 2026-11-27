@@ -41,6 +41,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: read
 
 jobs:
   prepare:
@@ -55,6 +56,22 @@ jobs:
           set -euo pipefail
           if [ "${GITHUB_REF}" != "refs/heads/${DEFAULT_BRANCH}" ]; then
             echo "::error::Release Prepare must be dispatched from the default branch (${DEFAULT_BRANCH}); got ${GITHUB_REF}. Release PRs always branch off the default branch."
+            exit 1
+          fi
+
+      - name: Require zero open milestone issues
+        if: ${{ !inputs.dry-run }}
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          count="$(gh api "repos/${GITHUB_REPOSITORY}/issues?state=open&milestone=1&per_page=100" --jq 'length')"
+          if [ "${count}" -ne 0 ]; then
+            message="Refusing to prepare a release PR: ${count} open 4.0.0 milestone issue(s) remain. "
+            message+="Close every milestone issue and complete #575's technical and human gates before preparing the release. "
+            message+="A dry-run is still allowed for planning."
+            echo "::error::${message}"
             exit 1
           fi
 

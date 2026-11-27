@@ -30,6 +30,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: read
 
 jobs:
   auto-tag:
@@ -99,6 +100,19 @@ jobs:
             echo "version=${version}"
             echo "tag=${tag}"
           } >> "${GITHUB_OUTPUT}"
+
+      - name: Require zero open milestone issues
+        if: ${{ steps.detect.outputs.proceed == 'true' }}
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          count="$(gh api "repos/${GITHUB_REPOSITORY}/issues?state=open&milestone=1&per_page=100" --jq 'length')"
+          if [ "${count}" -ne 0 ]; then
+            echo "::error::Refusing to create the release tag: ${count} open 4.0.0 milestone issue(s) remain. Close every milestone issue and complete #575's technical and human gates before tagging."
+            exit 1
+          fi
 
       - name: Check for the auto-commit GitHub App credentials
         id: check-autocommit-app

@@ -40,6 +40,11 @@
   for explicit human wallstop approval of the candidate and destinations in
   [readiness issue #575](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575).
   Close it last. Local `GOAL.md` adds release criteria when present.
+- **4.0.0 release hold:** do not merge the release PR, tag, dispatch, publish or submit the
+  4.0.0 release while any open issue in the 4.0.0 milestone remains, or while #575's technical
+  or human gates are incomplete. Close #575 last. `release-prepare.yml`, `release-tag.yml` and
+  `release.yml` fail closed on any open milestone issue; do not bypass, disable or weaken
+  those checks.
 
 ## Tooling
 
