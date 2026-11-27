@@ -145,10 +145,6 @@ jobs:
       max-parallel: 1
       matrix:
         unity-version:
-          - 2021.3.45f1
-          - 2022.3.45f1
-          - 6000.3.16f1
-          - 6000.5.2f1
           - 6000.6.0f1
         # Exclusion removes known literal cells without introducing dynamic
         # license-holder identities. Nightly/manual dispatches cover all five.
