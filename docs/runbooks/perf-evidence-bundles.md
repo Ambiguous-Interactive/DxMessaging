@@ -1173,3 +1173,105 @@ file, and did not start verification or replay. Static CI run
 passed the reducer suites on Linux, macOS, and Windows at the verifier commit. This CI run tests
 the code on those operating systems; the independent archive restore was performed in a fresh
 Linux reviewer environment.
+
+### subunsub-observations-44979039839, revision 1
+
+Status: published and restored from GitHub on 2026-11-27. This is a descriptive Standalone
+IL2CPP x64 Release observation from performance run `44979039839`. It retains the complete player
+log and canonical comparison CSV; normalized output contains all eight SubUnsub library
+observations. Both allocation fields remain `-1`/unmeasured.
+
+| Identity                     | Value                                                                                                                                                                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Experiment                   | `subunsub-observations-44979039839`                                                                                                                                                                                           |
+| Revision                     | `1`                                                                                                                                                                                                                           |
+| Artifact class / reducer     | `allocation-subunsub-observations` / `allocation-subunsub-observations-v1`                                                                                                                                                    |
+| Measured source              | `7d3b64ad57b215c0fdc36dff79160006348d325a`                                                                                                                                                                                    |
+| Verifier commit / tag target | `fb7f88279462ac17c23707b3227243367dab96e5`                                                                                                                                                                                    |
+| Manifest SHA-256             | `65d7ad55bb7d30f160509c8f084b4a86ac250a793244473f4d6ff317a5bfe421`                                                                                                                                                            |
+| Archive SHA-256              | `f2087e3bae7196a57490af871df081872f588e9d23d743ee0b6d1b2768d88c29`                                                                                                                                                            |
+| Bundle digest                | `e9c225fc7e4906bf9d6693ff2f0b78fc9f599fe028f710d25de1b8aa9111dc90`                                                                                                                                                            |
+| Workflow source              | [Performance Numbers run 44979039839](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/44979039839)                                                                                                          |
+| Release                      | [Immutable SubUnsub evidence prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-subunsub-observations-44979039839-r1-65d7ad55)                                                       |
+| Release / asset IDs          | `460075064` / `798517637`                                                                                                                                                                                                     |
+| Exact asset                  | [subunsub-observations-44979039839-r1.tar.gz](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-subunsub-observations-44979039839-r1-65d7ad55/subunsub-observations-44979039839-r1.tar.gz) |
+| Asset bytes                  | `8337`                                                                                                                                                                                                                        |
+| Publication readback         | `draft=false`, `prerelease=true`, `immutable=true`; exact one-asset inventory and archive digest match                                                                                                                        |
+| Draft download               | Authenticated download matches the complete archive digest before publication                                                                                                                                                 |
+| Independent restore          | Fresh remote verifier clone at `fb7f8827`, pinned `npm ci --ignore-scripts`; anonymous published download; archive/manifest/inventory, source/revision/digest and tag match                                                   |
+| Verifier result              | `verify=0`, `replay=0`; clean checkout before and after                                                                                                                                                                       |
+| Denied access                | Actual asset API with invalid credentials returned HTTP `401`; no file or fallback                                                                                                                                            |
+
+These are descriptive points from one player process. This partial observation class supplies no
+independent-build interval, causal speedup, semantic parity, zero-allocation proof, full
+native-correctness qualification, or native binary/PDB privacy acceptance. The source and verifier
+commits differ; their bundle/helper code and pinned dependencies match, while the unrelated
+repository policy guard differs.
+
+### subunsub-observations-45317077173, revision 1
+
+Status: published and restored from GitHub on 2026-11-27. This is a descriptive Standalone
+IL2CPP x64 Release observation from performance run `45317077173`. It retains the complete player
+log and canonical comparison CSV; normalized output contains all eight SubUnsub library
+observations. Both allocation fields remain `-1`/unmeasured.
+
+| Identity                     | Value                                                                                                                                                                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Experiment                   | `subunsub-observations-45317077173`                                                                                                                                                                                           |
+| Revision                     | `1`                                                                                                                                                                                                                           |
+| Artifact class / reducer     | `allocation-subunsub-observations` / `allocation-subunsub-observations-v1`                                                                                                                                                    |
+| Measured source              | `ad0a6fe514cbe8f44844b6636a108260b6100aaf`                                                                                                                                                                                    |
+| Verifier commit / tag target | `fb7f88279462ac17c23707b3227243367dab96e5`                                                                                                                                                                                    |
+| Manifest SHA-256             | `548c51a16efb9896fc056cb65d59eed735307eb72be03858f28516595b58e323`                                                                                                                                                            |
+| Archive SHA-256              | `a6be5ba2ba2c0bf3d940de4477b5fbde97620db19977fd046899b23f6bc2dd03`                                                                                                                                                            |
+| Bundle digest                | `f1b16779fdca1c9e73199f90f5845d1a3db743e2f29d256ee5fb888a3adfeff8`                                                                                                                                                            |
+| Workflow source              | [Performance Numbers run 45317077173](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/45317077173)                                                                                                          |
+| Release                      | [Immutable SubUnsub evidence prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-subunsub-observations-45317077173-r1-548c51a1)                                                       |
+| Release / asset IDs          | `460075674` / `798520580`                                                                                                                                                                                                     |
+| Exact asset                  | [subunsub-observations-45317077173-r1.tar.gz](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-subunsub-observations-45317077173-r1-548c51a1/subunsub-observations-45317077173-r1.tar.gz) |
+| Asset bytes                  | `8013`                                                                                                                                                                                                                        |
+| Publication readback         | `draft=false`, `prerelease=true`, `immutable=true`; exact one-asset inventory and archive digest match                                                                                                                        |
+| Draft download               | Authenticated download matches the complete archive digest before publication                                                                                                                                                 |
+| Independent restore          | Fresh remote verifier clone at `fb7f8827`, pinned `npm ci --ignore-scripts`; anonymous published download; archive/manifest/inventory, source/revision/digest and tag match                                                   |
+| Verifier result              | `verify=0`, `replay=0`; clean checkout before and after                                                                                                                                                                       |
+| Denied access                | Actual asset API with invalid credentials returned HTTP `401`; no file or fallback                                                                                                                                            |
+
+These are descriptive points from one player process. This partial observation class supplies no
+independent-build interval, causal speedup, semantic parity, zero-allocation proof, full
+native-correctness qualification, or native binary/PDB privacy acceptance. The source and verifier
+commits differ; their bundle/helper code and pinned dependencies match, while the unrelated
+repository policy guard differs.
+
+### subunsub-observations-45537567670, revision 1
+
+Status: published and restored from GitHub on 2026-11-27. This is a descriptive Standalone
+IL2CPP x64 Release observation from the current nightly run `45537567670`. It retains the complete
+player log and canonical comparison CSV; normalized output contains all eight SubUnsub library
+observations. Both allocation fields remain `-1`/unmeasured.
+
+| Identity                     | Value                                                                                                                                                                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Experiment                   | `subunsub-observations-45537567670`                                                                                                                                                                                           |
+| Revision                     | `1`                                                                                                                                                                                                                           |
+| Artifact class / reducer     | `allocation-subunsub-observations` / `allocation-subunsub-observations-v1`                                                                                                                                                    |
+| Measured source              | `bd2c99c56e3cae294e16b8d8f3ed8e5fce73b183`                                                                                                                                                                                    |
+| Verifier commit / tag target | `fb7f88279462ac17c23707b3227243367dab96e5`                                                                                                                                                                                    |
+| Manifest SHA-256             | `5ac5aefa3860ffd06bf490e5368533e08f846d51cfa4aaddd0a43ba877941cab`                                                                                                                                                            |
+| Archive SHA-256              | `195ca382798f373f2d4d614745d6308f7c4f1593bca59e3345735766696d68be`                                                                                                                                                            |
+| Bundle digest                | `5f9a664188edb38a5c0ec1487d5b83038a6d458400068292a46f34fdb152bae5`                                                                                                                                                            |
+| Workflow source              | [Performance Numbers run 45537567670](https://github.com/Ambiguous-Interactive/DxMessaging/actions/runs/45537567670)                                                                                                          |
+| Release                      | [Immutable SubUnsub evidence prerelease](https://github.com/Ambiguous-Interactive/DxMessaging/releases/tag/perf-evidence-subunsub-observations-45537567670-r1-5ac5aefa)                                                       |
+| Release / asset IDs          | `460075746` / `798520761`                                                                                                                                                                                                     |
+| Exact asset                  | [subunsub-observations-45537567670-r1.tar.gz](https://github.com/Ambiguous-Interactive/DxMessaging/releases/download/perf-evidence-subunsub-observations-45537567670-r1-5ac5aefa/subunsub-observations-45537567670-r1.tar.gz) |
+| Asset bytes                  | `8033`                                                                                                                                                                                                                        |
+| Publication readback         | `draft=false`, `prerelease=true`, `immutable=true`; exact one-asset inventory and archive digest match                                                                                                                        |
+| Draft download               | Authenticated download matches the complete archive digest before publication                                                                                                                                                 |
+| Independent restore          | Fresh remote verifier clone at `fb7f8827`, pinned `npm ci --ignore-scripts`; anonymous published download; archive/manifest/inventory, source/revision/digest and tag match                                                   |
+| Verifier result              | `verify=0`, `replay=0`; clean checkout before and after                                                                                                                                                                       |
+| Denied access                | Actual asset API with invalid credentials returned HTTP `401`; no file or fallback                                                                                                                                            |
+
+These are descriptive points from one player process. This partial observation class supplies no
+independent-build interval, causal speedup, semantic parity, zero-allocation proof, full
+native-correctness qualification, or native binary/PDB privacy acceptance. The source and verifier
+commits differ; their bundle/helper code and pinned dependencies match, while the unrelated
+repository policy guard differs.
