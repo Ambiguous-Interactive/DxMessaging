@@ -56,16 +56,16 @@ namespace DxMessaging.Core.MessageBus
         /// </remarks>
         private sealed class StickyStore
         {
-            private static readonly StickyValueBase[] Empty = Array.Empty<StickyValueBase>();
+            private static readonly object[] Empty = Array.Empty<object>();
 
-            private StickyValueBase[] _values = Empty;
+            private object[] _values = Empty;
             private int _count;
 
             internal StickyValue<TMessage> GetOrAdd<TMessage>()
                 where TMessage : IUntargetedMessage
             {
                 int index = MessageHelperIndexer<TMessage>.SequentialId;
-                StickyValueBase[] values = _values;
+                object[] values = _values;
                 if (index < 0)
                 {
                     index = MessageHelperIndexer.TotalMessages;
@@ -148,9 +148,7 @@ namespace DxMessaging.Core.MessageBus
                 Array.Resize(ref _values, capacity);
             }
 
-            internal class StickyValueBase { }
-
-            internal sealed class StickyValue<TMessage> : StickyValueBase
+            internal sealed class StickyValue<TMessage>
                 where TMessage : IUntargetedMessage
             {
                 internal TMessage Value;
