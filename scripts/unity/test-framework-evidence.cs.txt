@@ -34,6 +34,15 @@ namespace DxMessaging.Ci
             }
         }
 
+        private static string LoadedAssemblyPath(Assembly assembly)
+        {
+#if UNITY_6000_6_OR_NEWER
+            return assembly.GetLoadedAssemblyPath();
+#else
+            return assembly.Location;
+#endif
+        }
+
         private static void Capture(string destination)
         {
             string snapshot = Path.Combine(destination, Guid.NewGuid().ToString("N"));
@@ -65,8 +74,9 @@ namespace DxMessaging.Ci
                 {
                     AssemblyName identity = assembly.GetName();
                     string relative = "assemblies/" + identity.Name + ".dll";
-                    CopyFile(assembly.Location, snapshot, relative, files);
-                    string symbols = Path.ChangeExtension(assembly.Location, ".pdb");
+                    string loadedPath = LoadedAssemblyPath(assembly);
+                    CopyFile(loadedPath, snapshot, relative, files);
+                    string symbols = Path.ChangeExtension(loadedPath, ".pdb");
                     string savedSymbols = null;
                     if (File.Exists(symbols))
                     {
@@ -92,8 +102,8 @@ namespace DxMessaging.Ci
                             Flags = (int)identity.Flags,
                             ContentType = identity.ContentType.ToString(),
                             ModuleVersionId = assembly.ManifestModule.ModuleVersionId.ToString(),
-                            LoadedFileName = Path.GetFileName(assembly.Location),
-                            LoadedPathSha256 = FingerprintPath(assembly.Location),
+                            LoadedFileName = Path.GetFileName(loadedPath),
+                            LoadedPathSha256 = FingerprintPath(loadedPath),
                             SavedPath = relative,
                             SymbolsPath = savedSymbols,
                         }

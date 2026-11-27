@@ -55,13 +55,17 @@ try {
     Assert-That 'the existing two-minute cap stays in force' ($processingStep['timeout-minutes'] -eq 2)
     Assert-That 'sequential shipping and consumer paths stay broad' ($processingStep.with.paths.Trim() -eq '.artifacts/unity')
     $concurrent = @($processingStep.with['parallel-paths'] -split "`n" | Where-Object { $_.Trim() })
-    Assert-That 'exactly three ordinary roots are declared' ($concurrent.Count -eq 3)
+    Assert-That 'three ordinary and one optional root are declared' ($concurrent.Count -eq 4)
     foreach ($mode in @('editmode', 'playmode', 'standalone')) {
         $expected = '${{ !inputs.shipping_fidelity && !inputs.consumer_install_validation && format(''@@PATH@@'', matrix.unity-version) || '''' }}'.Replace('@@PATH@@', ".artifacts/unity/{0}-$mode")
         Assert-That "ordinary path expression and special-mode guard: $mode" ($concurrent -contains $expected)
         $upload = @($definition.steps | Where-Object { $_.ContainsKey('uses') -and $_.uses.StartsWith('actions/upload-artifact@') -and $_.with.path.EndsWith("-$mode") })
         Assert-That "the ordinary root is uploaded exactly once: $mode" ($upload.Count -eq 1)
     }
+    $webglExpected = '${{ inputs.webgl_fidelity && contains(fromJSON(env.WEBGL_EDITORS), matrix.unity-version) && format(''@@PATH@@'', matrix.unity-version) || '''' }}'.Replace('@@PATH@@', '.artifacts/unity/{0}-webgl')
+    Assert-That 'WebGL path expression and editor guard' ($concurrent -contains $webglExpected)
+    $webglUpload = @($definition.steps | Where-Object { $_.ContainsKey('uses') -and $_.uses.StartsWith('actions/upload-artifact@') -and $_.with.path.EndsWith('-webgl') })
+    Assert-That 'the optional WebGL root is uploaded exactly once' ($webglUpload.Count -eq 1)
     $uploads = @($definition.steps | Where-Object { $_.ContainsKey('uses') -and $_.uses.StartsWith('actions/upload-artifact@') })
     foreach ($upload in $uploads) {
         Assert-That 'each upload waits for all successful workers' ($upload.if.Contains("steps.redact_tests.outcome == 'success'"))

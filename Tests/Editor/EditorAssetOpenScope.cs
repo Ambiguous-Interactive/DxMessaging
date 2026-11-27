@@ -2,7 +2,7 @@
 namespace DxMessaging.Tests.Editor
 {
     using System;
-    using DxMessaging.Core;
+    using System.Reflection;
     using UnityEditor;
     using UnityEditor.Callbacks;
 
@@ -10,7 +10,7 @@ namespace DxMessaging.Tests.Editor
     internal sealed class EditorAssetOpenScope : IDisposable
     {
         private static EditorAssetOpenScope _active;
-        private readonly int _scriptId;
+        private readonly string _scriptPath;
 
         internal EditorAssetOpenScope(MonoScript script)
         {
@@ -22,7 +22,11 @@ namespace DxMessaging.Tests.Editor
             {
                 throw new InvalidOperationException("A script-open observation is already owned.");
             }
-            _scriptId = InstanceId.StableId(script);
+            _scriptPath = AssetDatabase.GetAssetPath(script);
+            if (string.IsNullOrEmpty(_scriptPath))
+            {
+                throw new InvalidOperationException("The observed MonoScript has no asset path.");
+            }
             _active = this;
         }
 
@@ -33,13 +37,49 @@ namespace DxMessaging.Tests.Editor
         private static bool Observe(int instanceId, int line)
         {
             EditorAssetOpenScope active = _active;
-            if (active == null || instanceId != active._scriptId)
+            if (active == null)
+            {
+                return false;
+            }
+            UnityEngine.Object opened = ResolveInstance(instanceId);
+            if (opened == null)
+            {
+                return false;
+            }
+            if (
+                !string.Equals(
+                    AssetDatabase.GetAssetPath(opened),
+                    active._scriptPath,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 return false;
             }
             active.Calls++;
             active.Line = line;
             return true;
+        }
+
+        private static UnityEngine.Object ResolveInstance(int instanceId)
+        {
+#if UNITY_6000_6_OR_NEWER
+            // Unity 6.6 makes the int accessor a compile error but still provides
+            // it at runtime. Resolve it through reflection so this test observer
+            // can compare the opened asset path without using an obsolete API.
+            MethodInfo method = typeof(EditorUtility).GetMethod(
+                "InstanceIDToObject",
+                BindingFlags.Public | BindingFlags.Static,
+                null,
+                new[] { typeof(int) },
+                null
+            );
+            return method == null
+                ? null
+                : (UnityEngine.Object)method.Invoke(null, new object[] { instanceId });
+#else
+            return EditorUtility.InstanceIDToObject(instanceId);
+#endif
         }
 
         public void Dispose()
