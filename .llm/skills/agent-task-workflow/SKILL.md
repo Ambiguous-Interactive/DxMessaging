@@ -63,6 +63,15 @@ for changes that weaken controls or grant publishing authority. For the 4.0.0 re
 tag, manual dispatch, registry publication and Store submission, follow the
 [release approval procedure](../../../docs/ops/npm-release-publishing.md#release-approval).
 
+**4.0.0 release hold:** do not merge the release PR, tag, dispatch, publish or submit while any
+open issue in the 4.0.0 milestone remains, or while #575's technical or human gates are
+incomplete. Close #575 last, after wallstop records the exact-candidate approval marker on #575
+and before the release PR merges. `release-prepare.yml` may stage a release PR while #575 stays
+open; `release-tag.yml` and `release.yml` fail closed unless the milestone is empty, #575 is
+closed as completed, the marker matches the exact version, tree and package bytes, and wallstop
+approves the protected `release-tag`/`release` environment review. Manual tag creation is not an
+approved 4.0.0 path. Never bypass, disable or weaken that gate to make a release possible.
+
 For the first ten sessions using this authorization, record start/end time, overruns, blockers, merged PRs,
 issues opened/closed/reopened, time from green and reviewed to merge, CI retries, reverts
 and post-merge findings. Use GitHub timestamps and existing session records. Mark missing

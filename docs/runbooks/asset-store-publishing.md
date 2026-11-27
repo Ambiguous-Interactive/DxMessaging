@@ -56,6 +56,16 @@ It cannot inspect the package until an enrolled owner installs it, and it must
 not upload, store publisher credentials, call undocumented endpoints, or
 harvest Unity ID browser sessions.
 
+## Release hold
+
+Do not submit to the Asset Store while any open issue in the 4.0.0 milestone remains, or while
+the #575 technical or human gates are incomplete. Follow the
+[release hold order](../ops/npm-release-publishing.md#400-release-hold-and-order):
+record wallstop's approval marker on #575, close #575 as completed last, then merge, tag and
+publish. The Asset Store submission shares the exact-candidate approval; its marker must include
+`"asset-store"` in the destinations. Do not submit a different candidate, tree, package or
+destination.
+
 ## What the release pipeline stages for you
 
 Every tagged release runs the `publish` job in

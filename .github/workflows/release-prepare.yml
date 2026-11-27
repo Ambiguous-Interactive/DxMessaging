@@ -41,6 +41,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: read
 
 jobs:
   prepare:
@@ -134,6 +135,15 @@ jobs:
             args+=(--version "${EXPLICIT_VERSION}")
           fi
           node scripts/release/prepare-release.js "${args[@]}"
+
+      - name: Verify the release hold before preparing
+        if: ${{ !inputs.dry-run }}
+        timeout-minutes: 5
+        uses: ./.github/actions/verify-release-hold
+        with:
+          phase: prepare
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
 
       - name: Sync the version into generated files
         # The banner SVG and llms.txt both embed the package version, the

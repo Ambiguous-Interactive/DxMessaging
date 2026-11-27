@@ -69,10 +69,11 @@ organization password manager.
 ## Release Model
 
 The [release-readiness criteria](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575)
-define release acceptance. Obtain [4.0.0 launch approval](./npm-release-publishing.md#release-approval)
-before merging the release PR. The pipeline runs prepare dispatch, PR, tag,
-exact-revision qualification, release dispatch and publication:
+define release acceptance. The pipeline runs prepare, readiness approval and closure, PR merge,
+tag, exact-revision qualification, release dispatch and publication. Use the
+[release hold order](./npm-release-publishing.md#400-release-hold-and-order) exactly:
 
+1. Close every 4.0.0 milestone issue except #575.
 1. An operator dispatches `.github/workflows/release-prepare.yml` from the
    default branch with a bump kind (`patch`/`minor`/`major`) or an explicit
    version. It runs `scripts/release/prepare-release.js` (package.json bump
@@ -85,25 +86,39 @@ exact-revision qualification, release dispatch and publication:
    cannot push the release branch, the failed run uploads a
    `release-prepare-recovery-*` artifact containing a patch for the prepared
    release commit; fix the App installation/permissions or matching branch
-   rules, then rerun the workflow.
-1. A maintainer reviews the release PR and squash-merges it, keeping the
-   default `release: vX.Y.Z` title.
+   rules, then rerun the workflow. Preparation is staging only: it refuses
+   while any other milestone issue is open, but #575 may stay open so the
+   exact candidate can be reviewed and approved.
+1. Qualify the exact release-PR head, record wallstop's approval marker on #575
+   for that version, tree and package hash, then close #575 as completed. Do
+   not close #575 before the marker exists.
+1. A maintainer reviews the release PR. Re-run the `Release Merge Guard` check after #575
+   closes; it packs the exact PR head and applies the same hold. Squash-merge only when it
+   passes, keeping the default `release: vX.Y.Z` title.
 1. `.github/workflows/release-tag.yml` sees the release commit on the default
    branch (subject `release: vX.Y.Z`, package.json version `X.Y.Z`, exact
    `## [X.Y.Z]` changelog heading, tag absent) and pushes the annotated tag
-   `vX.Y.Z` with the App token. When the App secrets are absent it prints the
-   manual `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z`
-   commands as a warning instead. If the App token exists but cannot write the
-   tag ref, the job fails with the same manual fallback commands.
-1. Complete [tag qualification](#qualify-the-tag) and dispatch Release.
+   `vX.Y.Z` with the App token. The job runs in the protected `release-tag`
+   environment and waits for wallstop's review. It refuses while any milestone
+   issue is open or the approval marker does not match the merged tree. For
+   4.0.0, missing App credentials, a non-squash merge, or a failed App push
+   fails closed with no manual fallback: only this hold-checked workflow may
+   create the tag. Other versions retain the documented manual fallback when
+   the App is unavailable.
+1. Complete [tag qualification](#qualify-the-tag) and dispatch Release. The
+   workflow repeats the hold before qualification, rejects a 4.0.0 tag whose
+   tagger is not the auto-commit App, and rechecks the hold immediately before
+   npm publish. Wallstop approves the `release` environment review before
+   publication.
 
 The tag must exactly match `package.json.version` with a leading `v`. For
 example, package version `3.0.1` must be released from tag `v3.0.1`.
 
 `release.yml` is manual-dispatch only and must be dispatched from the reviewed
 strict-semver tag. A ref such as a branch, `3.0.1`, or `v3.0.1-rc.1` does not
-pass the release verifier. Pushing a valid tag by hand remains a supported
-fallback when the App is unavailable.
+pass the release verifier. Pushing a valid tag by hand is not an approved 4.0.0
+path; only `release-tag.yml` may create the 4.0.0 tag. Other versions may use
+the documented fallback when the App is unavailable.
 
 ## Qualify the Tag
 
@@ -132,6 +147,10 @@ describe the managed and native release requirements.
 
 The release workflow performs these gates:
 
+1. Apply the [4.0.0 release hold](./npm-release-publishing.md#400-release-hold-and-order):
+   every milestone issue is closed, #575 is closed as completed, and wallstop's approval marker
+   matches the version, source tree and packed tarball. `release-tag.yml` applies the same check
+   before creating the tag, and `release.yml` repeats it immediately before npm publish.
 1. Verify the semver tag, the package version, and the changelog heading.
 1. Require successful manual compatibility, shipping, consumer-install and
    performance runs for the exact tag commit. The qualification job checks

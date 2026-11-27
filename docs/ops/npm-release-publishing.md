@@ -41,18 +41,97 @@ Trusted Publishing support.
 
 ## Release Approval
 
-Configure the GitHub `release` environment with wallstop as the required reviewer, restrict
-it to release tags, and disable administrator bypass. Match the environment in the npm trusted
-publisher binding. Reserve release approval for human wallstop. Keep approval and bypass authority
-for this environment outside agent access. Verify these settings before publishing. The publish job
-checks the workflow run's environment review.
+Configure two protected GitHub environments:
 
-Before merging the 4.0.0 release PR, obtain a decision from human wallstop in
-[release readiness](https://github.com/Ambiguous-Interactive/DxMessaging/issues/575).
-Record the version, PR head and candidate tree, and authorized publication destinations.
-Confirm the merged tree matches before dispatch. Obtain a new decision if the candidate
-changes. This decision also applies to manual tagging, registry publication and Asset Store
-submission. An agent operating through wallstop's account cannot supply human approval.
+- `release-tag` with wallstop as the required reviewer, restricted to the default branch, with
+  administrator bypass disabled. `release-tag.yml` runs in this environment, waits for the
+  review, and verifies the run's approval before creating the tag.
+- `release` with wallstop as the required reviewer, restricted to release tags, with
+  administrator bypass disabled. Match it in the npm trusted publisher binding. The publish job
+  waits for this review and verifies it before publishing.
+
+Reserve both approvals for human wallstop. Keep approval and bypass authority for these
+environments outside agent access. The `#575` marker is the durable exact-candidate record; it is
+not the identity proof. GitHub's protected-environment review is the separately authenticated
+human approval, and the workflows require both.
+
+Require the `Release Merge Guard` status check on the default branch. It runs from the trusted
+base workflow for `release/v*` pull requests and for any PR whose candidate declares version
+4.0.0, checks out and packs the exact candidate without executing candidate scripts, and applies
+the same hold before merge. Guard checks and issue invalidation share one serialized
+concurrency group; any milestone issue change or an edit/delete of a #575 comment marks open
+release PR guard statuses `pending`, and the guard rechecks the milestone immediately before
+posting success. Re-run the guard with `workflow_dispatch` after the milestone settles. The status
+is valid only for the candidate tree, milestone state and approval comment at check time. The tag
+and publish gates always re-read the milestone and approval, so a stale merge-guard status cannot
+release the package.
+
+Configure a tag ruleset that allows only the auto-commit App to create `v*` tags. The tagger
+check is defense in depth against accidental manual tags, not identity proof; the ruleset and the
+protected environment reviews are the enforceable controls.
+
+### 4.0.0 release hold and order
+
+Do not merge the release PR, tag, dispatch, publish or submit while any open issue in the 4.0.0
+milestone remains, or while #575's technical or human gates are incomplete. Use this order:
+
+1. Finish and close every 4.0.0 milestone issue except #575.
+1. Prepare the release PR. Preparation is staging only: it may run while #575 stays open so the
+   exact candidate can be reviewed and approved.
+1. Qualify the exact release-PR head with full exact-source CI and package checks.
+1. Record wallstop's approval on #575 with the exact version, source tree, package SHA-256 and
+   destinations. Only human wallstop may post the marker. An agent operating through wallstop's
+   account must never create, edit or copy it.
+1. Close #575 as completed, last among the milestone issues, after the approval marker exists.
+1. Re-run the `Release Merge Guard` check on the release PR. It packs the exact PR head and
+   verifies the same hold; merge only when it passes. `release-tag.yml` then creates the tag only
+   after wallstop approves the `release-tag` environment review, every milestone issue is closed,
+   and #575's marker matches the release commit's tree.
+1. Dispatch `release.yml` from that tag. It repeats the hold before qualification, rejects a
+   4.0.0 tag whose tagger is not the auto-commit App, and rechecks the hold and exact tarball
+   immediately before npm publish. Wallstop approves the `release` environment review before
+   publication.
+
+Closing #575 before the tag does not skip final-revision qualification. The release-PR head is
+qualified as the final source tree, and the squash-merged release commit is tree-identical.
+`release.yml` still requires the exact-revision qualification artifacts at the tag and refuses to
+publish without them; if that post-closure verification fails, no publication occurs and #575 is
+reopened as a release blocker.
+
+For 4.0.0, `release.yml` also requires the annotated tag's tagger to be
+`github-actions[bot] <github-actions[bot]@users.noreply.github.com>` and a successful
+`release-tag.yml` run for the exact tag commit. That run waited on the protected `release-tag`
+environment review, so the run record and environment approval are the authenticated evidence;
+the tagger metadata is defense in depth. A hand-created tag is rejected even when it points at
+the approved tree.
+
+The approval is an HTML comment on #575, authored by wallstop:
+
+```text
+<!-- dxm-release-approval: {"version":"4.0.0","tree":"<40 hex>","package_sha256":"<64 hex>","destinations":["npm","github-release"]} -->
+```
+
+The marker must be posted before #575 closes. Add `"asset-store"` only when the Asset Store
+submission is separately approved for the same candidate. `release-prepare.yml` refuses a real
+prepare while any other milestone issue is open; `release-tag.yml` and `release.yml` refuse to
+tag or publish unless the milestone is empty, #575 is closed as completed, and the marker matches
+the exact version, tree and package bytes. Never bypass, disable or weaken these checks.
+
+Compute the marker fields from a clean checkout of the qualified release-PR head. The release
+workflow packs with the same pinned npm version, so the hash is reproducible:
+
+```bash
+git worktree add /tmp/dxm-release-candidate <release-pr-head>
+cd /tmp/dxm-release-candidate
+git rev-parse 'HEAD^{tree}'
+mkdir -p /tmp/dxm-release-candidate-package
+npx --yes --package=npm@12.2.2 npm pack --ignore-scripts --pack-destination /tmp/dxm-release-candidate-package
+sha256sum /tmp/dxm-release-candidate-package/com.wallstop-studios.dxmessaging-<version>.tgz
+```
+
+Confirm the merged tree matches the approved tree before dispatch. Obtain a new decision and a
+new marker if the candidate changes. This decision also applies to manual tagging, registry
+publication and Asset Store submission.
 
 ## Release Trigger
 
@@ -66,15 +145,29 @@ The normal path never creates the tag by hand:
    branch push or `v*` tag push.
 1. Squash-merge that PR with its default `release: vX.Y.Z` title.
 1. `.github/workflows/release-tag.yml` validates the merged commit and pushes
-   the annotated tag `vX.Y.Z` with the auto-commit GitHub App token.
+   the annotated tag `vX.Y.Z` with the auto-commit GitHub App token. It refuses to tag while any
+   4.0.0 milestone issue is open or #575's approval marker does not match the merged tree.
 1. Qualify the exact tag and dispatch Release after its required evidence
    is available. [Qualify the tag](./release-operations.md#qualify-the-tag)
 
-The tag-creation fallback (App unavailable, or recovering from a partial run)
-is pushing a strict semver tag that points at the reviewed release commit, then
-following the same qualification and release steps. Use a signed tag when signing
-is available, or the repository-approved annotated tag fallback when signing
-is not available:
+Before dispatching `release.yml`, check the hold directly; the workflow repeats it, but a dispatch
+should never start on a known-blocked milestone:
+
+```bash
+gh api "repos/Ambiguous-Interactive/DxMessaging/issues?state=open&milestone=1&per_page=100" \
+  --jq 'length'   # must print 0
+```
+
+Also confirm #575 is closed as completed and its approval marker names the tag's tree. The release
+workflow rechecks the milestone, the completed closure and the exact approval immediately before
+the irreversible npm publish, and verifies the packed tarball's SHA-256 against the marker.
+
+The tag-creation fallback below applies only to releases other than 4.0.0. 4.0.0 requires the
+hold-checked `release-tag.yml`: missing App credentials, a non-squash merge, or a failed App push
+fails closed, and manual tag creation is not an approved 4.0.0 path. If a 4.0.0 tag is pushed by
+hand anyway, `release.yml` still refuses to publish unless the hold is satisfied, and the tag must
+be deleted. Use a signed tag when signing is available, or the repository-approved annotated tag
+fallback when signing is not available:
 
 ```bash
 git checkout <reviewed-release-commit>
@@ -95,6 +188,11 @@ Before tagging, `package.json.version` must be `3.0.2`. The workflow rejects:
 
 The workflow runs these checks before publishing:
 
+- The 4.0.0 release hold: every milestone issue is closed, #575 is closed as completed, and its
+  approval marker matches the release version, source tree and packed tarball. Real release
+  preparation requires every milestone issue except #575 to be closed; preparation is staging only.
+  The full hold is checked before the tag is created, before release qualification, and again
+  immediately before npm publish
 - Successful compatibility, shipping, consumer-install, and performance
   runs and retained artifacts for the exact tag commit
 - `npm test`

@@ -3,12 +3,12 @@ name: Release Tag
 # Bridges the release PR to the controlled release dispatch. When a
 # release-prepare PR merges (squash, default title), the default branch gains
 # a commit whose subject is `release: vX.Y.Z` and whose package.json version
-# is X.Y.Z. This workflow notices that commit and pushes the annotated tag
-# vX.Y.Z at it with the GitHub App token. An operator then selects that exact
-# tag for qualification before dispatching release.yml.
+# is X.Y.Z. The detect job notices that commit; the auto-tag job then pushes
+# the annotated tag vX.Y.Z with the GitHub App token. An operator selects that
+# exact tag for qualification before dispatching release.yml.
 #
 # LOOP SAFETY: the trigger is a BRANCH push filtered to package.json; the tag
-# push this job performs is a tag ref and cannot re-trigger it. The
+# push this workflow performs is a tag ref and cannot re-trigger it. The
 # tag-already-exists check short-circuits FIRST, so routine package.json
 # pushes (dependency edits, metadata changes) carrying an already-tagged
 # version no-op silently, and a manual re-run after the tag exists is safe.
@@ -16,6 +16,12 @@ name: Release Tag
 # too, but emits a ::warning:: with the manual tag commands when CHANGELOG.md
 # documents the version (the shape of a release PR merged via merge-commit or
 # rebase instead of squash); ordinary work stays warning-free.
+#
+# 4.0.0 HOLD: the approve_tag job runs only for 4.0.0 and only after wallstop
+# approves the protected `release-tag` environment. Other versions keep the
+# existing automatic path. When the version is 4.0.0, a missing App
+# credential, a non-squash merge, or a failed App push fails closed with no
+# manual fallback. Manual tag creation is not an approved 4.0.0 path.
 on:
   push:
     branches:
@@ -32,10 +38,14 @@ permissions:
   contents: read
 
 jobs:
-  auto-tag:
-    name: Tag the release commit
+  detect:
+    name: Detect a release commit
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      proceed: ${{ steps.detect.outputs.proceed }}
+      version: ${{ steps.detect.outputs.version }}
+      tag: ${{ steps.detect.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -77,6 +87,10 @@ jobs:
             # tag commands instead of no-opping silently. Ordinary work (no
             # changelog heading for the version) stays warning-free.
             if grep -Fqx "## [${version}]" CHANGELOG.md; then
+              if [ "${version}" = "4.0.0" ]; then
+                echo "::error::4.0.0 must be merged with the expected 'release: v4.0.0' squash title so the hold-checked auto-tag job can create the tag. Manual tagging is not an approved 4.0.0 path."
+                exit 1
+              fi
               message="package.json version ${version} has no ${tag} tag and CHANGELOG.md documents '## [${version}]', "
               message+="but the head commit subject '${subject}' does not match '${expected}', so no tag was pushed. "
               message+="If this is the release merge (merged without squash), tag it manually: "
@@ -100,21 +114,104 @@ jobs:
             echo "tag=${tag}"
           } >> "${GITHUB_OUTPUT}"
 
+  approve_tag:
+    name: Approve the 4.0.0 tag
+    needs: detect
+    if: ${{ needs.detect.outputs.proceed == 'true' && needs.detect.outputs.version == '4.0.0' }}
+    environment: release-tag
+    runs-on: ubuntu-latest
+    # The environment review may wait for wallstop; leave room for the human
+    # approval before the short tag push.
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Verify human approval for 4.0.0 tag creation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The comment marker is a durable record; this environment review is
+          # the separately authenticated human approval. Fail closed when the
+          # release-tag environment is not protected or not approved.
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/approvals" |
+            jq -e 'any(.[]; .state == "approved" and .user.login == "wallstop" and
+              any(.environments[]; .name == "release-tag"))' >/dev/null || {
+              echo "::error::This run needs wallstop approval for the release-tag environment."
+              exit 1
+            }
+
+  auto-tag:
+    name: Tag the release commit
+    needs:
+      - detect
+      - approve_tag
+    if: >-
+      ${{
+        always() &&
+        needs.detect.outputs.proceed == 'true' &&
+        (needs.detect.outputs.version != '4.0.0' || needs.approve_tag.result == 'success')
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.13.1"
+
+      - name: Pack the exact release candidate
+        id: pack
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/release-tag
+          npx --yes --package=npm@12.2.2 npm pack --ignore-scripts --pack-destination .artifacts/release-tag
+          mapfile -t files < <(find .artifacts/release-tag -maxdepth 1 -type f -name '*.tgz' | sort)
+          if [ "${#files[@]}" -ne 1 ] || [ ! -s "${files[0]}" ]; then
+            echo "::error::npm pack must produce exactly one nonempty tarball for the approval check."
+            exit 1
+          fi
+          echo "package-file=${files[0]}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify the release hold before tagging
+        timeout-minutes: 5
+        uses: ./.github/actions/verify-release-hold
+        with:
+          phase: tag
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
+          version: ${{ needs.detect.outputs.version }}
+          package-file: ${{ steps.pack.outputs.package-file }}
+
       - name: Check for the auto-commit GitHub App credentials
         id: check-autocommit-app
-        if: ${{ steps.detect.outputs.proceed == 'true' }}
         # Mirrors the perf-numbers.yml probe. Without the App this degrades to
-        # a ::warning:: carrying the exact manual commands.
+        # a ::warning:: carrying the exact manual commands for non-4.0.0.
         env:
           AUTO_COMMIT_APP_ID: ${{ secrets.AUTO_COMMIT_APP_ID }}
           AUTO_COMMIT_APP_PRIVATE_KEY: ${{ secrets.AUTO_COMMIT_APP_PRIVATE_KEY }}
-          TAG: ${{ steps.detect.outputs.tag }}
+          TAG: ${{ needs.detect.outputs.tag }}
+          VERSION: ${{ needs.detect.outputs.version }}
         run: |
           set -euo pipefail
           if [ -n "${AUTO_COMMIT_APP_ID:-}" ] && [ -n "${AUTO_COMMIT_APP_PRIVATE_KEY:-}" ]; then
             echo "has-app=true" >> "${GITHUB_OUTPUT}"
           else
             echo "has-app=false" >> "${GITHUB_OUTPUT}"
+            if [ "${VERSION}" = "4.0.0" ]; then
+              echo "::error::AUTO_COMMIT_APP_* secrets are required for the 4.0.0 tag. Manual tagging is not an approved 4.0.0 path; provision the App and re-run this workflow."
+              exit 1
+            fi
             message="AUTO_COMMIT_APP_* secrets are not set; create the release tag manually: "
             message+="git fetch origin ${GITHUB_REF_NAME} && "
             message+="git tag -a ${TAG} -m \"Release ${TAG}\" ${GITHUB_SHA} && "
@@ -124,11 +221,7 @@ jobs:
 
       - name: Generate the auto-commit GitHub App token
         id: app-token
-        if: >-
-          ${{
-            steps.detect.outputs.proceed == 'true' &&
-            steps.check-autocommit-app.outputs.has-app == 'true'
-          }}
+        if: ${{ steps.check-autocommit-app.outputs.has-app == 'true' }}
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           app-id: ${{ secrets.AUTO_COMMIT_APP_ID }}
@@ -136,14 +229,11 @@ jobs:
           permission-contents: write
 
       - name: Create and push the annotated release tag
-        if: >-
-          ${{
-            steps.detect.outputs.proceed == 'true' &&
-            steps.check-autocommit-app.outputs.has-app == 'true'
-          }}
+        if: ${{ steps.check-autocommit-app.outputs.has-app == 'true' }}
         env:
           GH_PUSH_TOKEN: ${{ steps.app-token.outputs.token }}
-          TAG: ${{ steps.detect.outputs.tag }}
+          TAG: ${{ needs.detect.outputs.tag }}
+          VERSION: ${{ needs.detect.outputs.version }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -160,6 +250,10 @@ jobs:
             echo "::group::release tag push failure"
             cat "${push_log}" || true
             echo "::endgroup::"
+            if [ "${VERSION}" = "4.0.0" ]; then
+              echo "::error::Failed to push 4.0.0 with the auto-commit GitHub App token. Manual tagging is not an approved 4.0.0 path. Restore the App token and re-run this workflow."
+              exit "${push_status}"
+            fi
             message="Failed to push ${TAG} with the auto-commit GitHub App token. "
             message+="Confirm the App is installed on ${GITHUB_REPOSITORY}, has Contents: write, "
             message+="and is allowed by any ruleset that targets release tags. Manual fallback: "
