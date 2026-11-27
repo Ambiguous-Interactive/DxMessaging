@@ -17,6 +17,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# FullName is absolute; resolve a relative -BuildPath once so prefix removal
+# compares like with like for every inventory entry.
+$BuildPath = [System.IO.Path]::GetFullPath($BuildPath)
+
 $problems = New-Object System.Collections.Generic.List[string]
 $report = $null
 if (-not (Test-Path -LiteralPath $ReportPath -PathType Leaf)) {

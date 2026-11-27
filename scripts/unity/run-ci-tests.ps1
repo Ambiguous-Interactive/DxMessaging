@@ -9322,6 +9322,13 @@ try {
         $webGlReportPath = Join-Path $ArtifactsPath 'webgl-build.json'
         $webGlVerificationPath = Join-Path $ArtifactsPath 'webgl-build-verification.json'
         $webGlLogPath = Join-Path $ArtifactsPath 'webgl.log'
+        # A failed or killed rerun must not satisfy verification with a report
+        # or verification receipt from the previous invocation.
+        foreach ($stalePath in @($webGlReportPath, $webGlVerificationPath)) {
+            if (Test-Path -LiteralPath $stalePath -PathType Leaf) {
+                Remove-Item -LiteralPath $stalePath -Force
+            }
+        }
         $env:DXM_WEBGL_BUILD_PATH = $webGlBuildPath
         $env:DXM_WEBGL_BUILD_REPORT_PATH = $webGlReportPath
         try {

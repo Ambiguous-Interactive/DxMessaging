@@ -47,8 +47,8 @@ A `Full` module probe runs before the lock, and the build uses the same license
 activation and cleanup chain. 6000.3 and 6000.6 are excluded until the runner
 audit confirms WebGL support there. The lane compiles the package and samples and
 verifies the player inventory; it does not execute browser tests. Workflow
-cancellation or the 150-minute step timeout still aborts
-the group. The direct runner generates a package host project under
+cancellation, the 60-minute WebGL step timeout, or the 150-minute shipping-group timeout still
+aborts the group. The direct runner generates a package host project under
 `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>-<source-set-key>/`, imports the repo package with a
 `file:` dependency, and configures IL2CPP before either player build. Test hosts
 set `testables`; the shipping host omits test packages and `testables`. Dispatch
