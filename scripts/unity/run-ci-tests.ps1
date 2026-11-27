@@ -7,7 +7,7 @@ param(
     [string]$UnityVersion,
 
     [Parameter(Mandatory = $true)]
-    [ValidateSet('editmode', 'playmode', 'standalone', 'shipping')]
+    [ValidateSet('editmode', 'playmode', 'standalone', 'shipping', 'webgl')]
     [string]$TestMode,
 
     [Parameter(Mandatory = $true)]
@@ -1317,11 +1317,23 @@ function New-ManifestJson {
         [switch]$IncludeComparisons,
         [switch]$IncludeIntegrations,
         [switch]$ShippingFidelity,
+        [switch]$WebGlSmoke,
         [string]$RepoRoot
     )
 
     $packagePath = ConvertTo-UnityFileUriPath -Path $Root
-    if ($ShippingFidelity) {
+    if ($WebGlSmoke) {
+        if ($IncludeComparisons) {
+            throw 'A WebGL smoke project cannot include comparison packages.'
+        }
+        $dependencies = [ordered]@{
+            $PackageName = "file:$packagePath"
+            'com.unity.modules.imgui' = '1.0.0'
+        }
+        $manifest = [ordered]@{
+            dependencies = $dependencies
+        }
+    } elseif ($ShippingFidelity) {
         if ($IncludeComparisons -or $IncludeIntegrations) {
             throw 'A shipping-fidelity project cannot include comparison or integration test packages.'
         }
@@ -1815,6 +1827,13 @@ public static class DxmCiTestConfigurator
         WriteJson(path, evidence);
     }
 
+    private static System.Reflection.Assembly[] GetLoadedAssembliesForEvidence()
+    {
+#pragma warning disable UAC0005 // Unity 6.6 recommends CurrentAssemblies, which is editor-only; this helper also compiles in player assemblies.
+        return AppDomain.CurrentDomain.GetAssemblies();
+#pragma warning restore UAC0005
+    }
+
     public static void PrepareNativeSdkAdmission()
     {
         string output = Environment.GetEnvironmentVariable("DXM_NATIVE_SDK_FLOOR_EVIDENCE");
@@ -1823,7 +1842,7 @@ public static class DxmCiTestConfigurator
             return;
         }
         Type admissionType = null;
-        foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+        foreach (System.Reflection.Assembly assembly in GetLoadedAssembliesForEvidence())
         {
             Type candidate = assembly.GetType("DxMessaging.Tests.Runtime.NativeCollectionsResearch.NativeSdkFloorAdmission", false);
             if (candidate == null)
@@ -1988,7 +2007,9 @@ public static class DxmCiTestConfigurator
         evidence.values.developmentBuild = Has(options, BuildOptions.Development);
         evidence.values.allowDebugging = Has(options, BuildOptions.AllowDebugging);
         evidence.values.deepProfiling = Has(options, BuildOptions.EnableDeepProfilingSupport);
+#pragma warning disable CS0618 // Unity 6.6 deprecates this BuildOptions member; the evidence contract still reads it on 2021.3 through 6000.5.
         evidence.values.enableAssertions = Has(options, BuildOptions.ForceEnableAssertions);
+#pragma warning restore CS0618
         evidence.values.includeTestAssemblies = Has(options, BuildOptions.IncludeTestAssemblies);
         evidence.values.autoRunPlayer = Has(options, BuildOptions.AutoRunPlayer);
         evidence.values.connectToHost = Has(options, BuildOptions.ConnectToHost);
@@ -2097,7 +2118,9 @@ public sealed class DxmCiStandaloneBuildModifier : ITestPlayerBuildModifier, IPo
         playerOptions.options &= ~BuildOptions.ConnectWithProfiler;
         playerOptions.options &= ~BuildOptions.AllowDebugging;
         playerOptions.options &= ~BuildOptions.EnableDeepProfilingSupport;
+#pragma warning disable CS0618 // Unity 6.6 deprecates this BuildOptions member; the split-build clear path still requires it.
         playerOptions.options &= ~BuildOptions.ForceEnableAssertions;
+#pragma warning restore CS0618
         playerOptions.options |= BuildOptions.IncludeTestAssemblies;
         if (!string.IsNullOrEmpty("$CanonicalProfileId"))
         {
@@ -2316,6 +2339,13 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
         public NativeAllocationRecorders allocationRecorders;
     }
 
+    private static System.Reflection.Assembly[] GetLoadedAssembliesForEvidence()
+    {
+#pragma warning disable UAC0005 // Unity 6.6 recommends CurrentAssemblies, which is editor-only; this helper also compiles in player assemblies.
+        return AppDomain.CurrentDomain.GetAssemblies();
+#pragma warning restore UAC0005
+    }
+
     private static void WriteNativeSdkRuntimeEvidence()
     {
         string path = Environment.GetEnvironmentVariable("DXM_NATIVE_SDK_RUNTIME_EVIDENCE");
@@ -2335,7 +2365,7 @@ internal sealed class DxmCiStandaloneTestCallback : ITestRunCallback
             try
             {
                 System.Reflection.Assembly match = null;
-                foreach (System.Reflection.Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+                foreach (System.Reflection.Assembly assembly in GetLoadedAssembliesForEvidence())
                 {
                     if (assembly.GetName().Name != record.name)
                     {
@@ -3123,9 +3153,16 @@ public sealed partial class DxmShippingFidelityPlayer
         timings.dispatchLoopNsPerOp = loopMicroseconds * 1000.0 / DispatchLoopIterations;
     }
 
+    private static System.Reflection.Assembly[] GetLoadedAssembliesForEvidence()
+    {
+#pragma warning disable UAC0005 // Unity 6.6 recommends CurrentAssemblies, which is editor-only; this helper also compiles in player assemblies.
+        return AppDomain.CurrentDomain.GetAssemblies();
+#pragma warning restore UAC0005
+    }
+
     private static string[] GetLoadedAssemblyNames()
     {
-        System.Reflection.Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+        System.Reflection.Assembly[] assemblies = GetLoadedAssembliesForEvidence();
         List<string> names = new List<string>(assemblies.Length);
         for (int i = 0; i < assemblies.Length; i++)
         {
@@ -3526,6 +3563,138 @@ $($batchMethods.ToString())$($handlers.ToString())}
 "@
 }
 
+# WEBGL ONLY. A minimal runtime component that forces the WebGL player to link
+# the package's MessageBus type. It is never executed by this lane; the build
+# proves the runtime assembly compiles and survives the WebGL player build.
+function New-WebGlSmokeComponentSource {
+    @'
+using DxMessaging.Core.MessageBus;
+using UnityEngine;
+
+public sealed class DxmWebGlSmoke : MonoBehaviour
+{
+    private void Awake()
+    {
+        MessageBus bus = new MessageBus();
+        Debug.Log("DxMessaging WebGL smoke bus: " + bus.GetType().FullName);
+    }
+}
+'@
+}
+
+# WEBGL ONLY. Builds an empty scene that carries the smoke component, writes a
+# JSON report before checking the result, and lets the PowerShell caller validate
+# the complete output inventory. The report is written even on a failed build so
+# diagnostics retain the result and the files Unity produced.
+function New-WebGlBuildBuilderSource {
+    @'
+using System;
+using System.Collections.Generic;
+using System.IO;
+using UnityEditor;
+using UnityEditor.Build.Reporting;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+public static class DxmWebGlBuilder
+{
+    public static void Build()
+    {
+        string outputPath = Environment.GetEnvironmentVariable("DXM_WEBGL_BUILD_PATH");
+        string reportPath = Environment.GetEnvironmentVariable("DXM_WEBGL_BUILD_REPORT_PATH");
+        if (string.IsNullOrEmpty(outputPath))
+        {
+            throw new InvalidOperationException("DXM_WEBGL_BUILD_PATH is required.");
+        }
+        if (string.IsNullOrEmpty(reportPath))
+        {
+            throw new InvalidOperationException("DXM_WEBGL_BUILD_REPORT_PATH is required.");
+        }
+
+        Directory.CreateDirectory(outputPath);
+        string scenePath = "Assets/DxmWebGlSmoke.unity";
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        GameObject smoke = new GameObject("DxmWebGlSmoke");
+        smoke.AddComponent<DxmWebGlSmoke>();
+        if (!EditorSceneManager.SaveScene(scene, scenePath))
+        {
+            throw new InvalidOperationException("Could not save the WebGL smoke scene.");
+        }
+
+        BuildPlayerOptions options = new BuildPlayerOptions
+        {
+            scenes = new[] { scenePath },
+            locationPathName = outputPath,
+            target = BuildTarget.WebGL,
+            options = BuildOptions.DetailedBuildReport
+        };
+        BuildReport report = BuildPipeline.BuildPlayer(options);
+        string result = report.summary.result.ToString();
+        List<string> files = new List<string>();
+        if (Directory.Exists(outputPath))
+        {
+            foreach (string file in Directory.GetFiles(outputPath, "*", SearchOption.AllDirectories))
+            {
+                files.Add(
+                    file
+                        .Substring(outputPath.Length)
+                        .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        .Replace('\\', '/')
+                );
+            }
+        }
+        files.Sort(StringComparer.Ordinal);
+
+        using (StreamWriter writer = new StreamWriter(reportPath, false))
+        {
+            writer.Write("{\"schemaVersion\":1,\"unityVersion\":\"");
+            writer.Write(Application.unityVersion);
+            writer.Write("\",\"target\":\"WebGL\",\"result\":\"");
+            writer.Write(result);
+            writer.Write("\",\"totalSizeBytes\":");
+            writer.Write((long)report.summary.totalSize);
+            writer.Write(",\"files\":[");
+            for (int i = 0; i < files.Count; i++)
+            {
+                if (i > 0)
+                {
+                    writer.Write(',');
+                }
+                writer.Write('"');
+                writer.Write(files[i].Replace("\\", "\\\\").Replace("\"", "\\\""));
+                writer.Write('"');
+            }
+            writer.Write("]}");
+        }
+
+        if (report.summary.result != BuildResult.Succeeded)
+        {
+            throw new InvalidOperationException("WebGL build failed: " + result);
+        }
+    }
+}
+'@
+}
+
+# WEBGL ONLY. Validates the builder report through the maintained verifier.
+# Returns an empty string on success or a concise problem description.
+function Test-WebGlBuildReport {
+    param(
+        [Parameter(Mandatory = $true)][string]$ReportPath,
+        [Parameter(Mandatory = $true)][string]$BuildPath,
+        [Parameter(Mandatory = $true)][string]$UnityVersion,
+        [Parameter(Mandatory = $true)][string]$VerificationPath
+    )
+
+    $verifierPath = Join-Path $PSScriptRoot 'verify-webgl-build.ps1'
+    & $verifierPath -ReportPath $ReportPath -BuildPath $BuildPath -UnityVersion $UnityVersion -VerificationPath $VerificationPath
+    if ($LASTEXITCODE -ne 0) {
+        return "verify-webgl-build.ps1 exited $($LASTEXITCODE); see $VerificationPath."
+    }
+    return ''
+}
+
 # SHIPPING ONLY. Builds the Assembly-CSharp smoke consumer directly through
 # BuildPipeline, without -runTests, IncludeTestAssemblies, TestRunCallback, or
 # PlayerConnection. It records the exact final BuildOptions and the player
@@ -3654,7 +3823,9 @@ public static class DxmShippingFidelityBuilder
         options.options &= ~BuildOptions.Development;
         options.options &= ~BuildOptions.AllowDebugging;
         options.options &= ~BuildOptions.EnableDeepProfilingSupport;
+#pragma warning disable CS0618 // Unity 6.6 deprecates this BuildOptions member; the stripped player path still clears it.
         options.options &= ~BuildOptions.ForceEnableAssertions;
+#pragma warning restore CS0618
         options.options &= ~BuildOptions.IncludeTestAssemblies;
         options.options &= ~BuildOptions.AutoRunPlayer;
         options.options &= ~BuildOptions.ConnectToHost;
@@ -4106,7 +4277,7 @@ function Initialize-EphemeralProject {
             "with a DirectoryNotFoundException before any test ran. Shorten the project path (see issue #357).")
     }
 
-    $includeIntegrations = $Mode -eq 'editmode'
+    $includeIntegrations = $Mode -in @('editmode', 'webgl')
     $isShippingFidelity = $Mode -eq 'shipping'
     New-Item -ItemType Directory -Force -Path $project | Out-Null
     Write-ProjectOwnershipMarker -ProjectPath $project
@@ -4150,7 +4321,7 @@ function Initialize-EphemeralProject {
             $shippingProjectInputRelativePaths += 'Assets/DxmShippingCardinalityTopology.cs'
         }
     }
-    New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -IncludeIntegrations:$includeIntegrations -ShippingFidelity:$isShippingFidelity -RepoRoot $RepoRoot |
+    New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -IncludeIntegrations:$includeIntegrations -ShippingFidelity:$isShippingFidelity -WebGlSmoke:($Mode -eq 'webgl') -RepoRoot $RepoRoot |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Packages', 'manifest.json')) -Encoding UTF8
     "m_EditorVersion: $Version`n" |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'ProjectVersion.txt')) -Encoding UTF8
@@ -4191,7 +4362,7 @@ EditorSettings:
         }
         $cscOptions += "-define:$shippingDefine"
     }
-    if ($includeIntegrations -and -not $SkipCiAnalyzers) {
+    if ($includeIntegrations -and -not $SkipCiAnalyzers -and $Mode -ne 'webgl') {
         $ciAnalyzerInstallation = Install-CiAnalyzers -Root $Root -Project $project
         foreach ($ciAnalyzerPath in @($ciAnalyzerInstallation.AnalyzerPaths)) {
             $cscOptions += "-analyzer:`"$ciAnalyzerPath`""
@@ -4248,6 +4419,24 @@ EditorSettings:
         Write-Host "::group::DxMessaging standalone split-build helpers"
         Write-Host "Generated the standalone build modifier + player TestRunCallback under $project (file-based results; no PlayerConnection)."
         foreach ($file in $standaloneFiles) {
+            Write-Host "  $($file.Path)"
+        }
+        Write-Host "::endgroup::"
+    } elseif ($Mode -eq 'webgl') {
+        $webGlFiles = @(
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'DxmWebGlSmoke.cs')); Content = (New-WebGlSmokeComponentSource) },
+            @{ Path = ([System.IO.Path]::Combine($project, 'Assets', 'Editor', 'DxmWebGlBuilder.cs')); Content = (New-WebGlBuildBuilderSource) }
+        )
+        foreach ($file in $webGlFiles) {
+            $dir = Split-Path -Parent $file.Path
+            if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
+                New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            }
+            Set-EphemeralCompilerInput -Path $file.Path -Content $file.Content
+        }
+        Write-Host "::group::DxMessaging WebGL smoke helpers"
+        Write-Host "Generated the WebGL smoke component and build target under $project."
+        foreach ($file in $webGlFiles) {
             Write-Host "  $($file.Path)"
         }
         Write-Host "::endgroup::"
@@ -7867,6 +8056,7 @@ if (-not [string]::IsNullOrWhiteSpace($TestFilter) -and $TestMode -notin @('edit
 }
 
 $isShippingFidelity = $TestMode -eq 'shipping'
+$isWebGlSmoke = $TestMode -eq 'webgl'
 if ($isShippingFidelity) {
     if (-not [string]::IsNullOrWhiteSpace($AssemblyNames)) {
         throw 'AssemblyNames must be empty for a shipping-fidelity player.'
@@ -7897,6 +8087,25 @@ if ($isShippingFidelity) {
         ($ShippingTopology -cne 'semantic' -or $ShippingMessageTypeCount -ne 18)
     ) {
         throw 'The incremental shipping build factor is valid only for the semantic-18 topology.'
+    }
+} elseif ($isWebGlSmoke) {
+    if ($IncludeComparisons) {
+        throw 'IncludeComparisons is not valid for a WebGL smoke build.'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($TestCategory)) {
+        throw 'TestCategory is not valid for a WebGL smoke build.'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($TestFilter)) {
+        throw 'TestFilter is not valid for a WebGL smoke build.'
+    }
+    if ($StandaloneScriptingBackend -cne 'IL2CPP') {
+        throw 'A WebGL smoke build requires the IL2CPP scripting backend.'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($CanonicalProfilePath)) {
+        throw 'CanonicalProfilePath is not valid for a WebGL smoke build.'
+    }
+    if ($ShippingIncrementalBuild) {
+        throw 'ShippingIncrementalBuild is not valid for a WebGL smoke build.'
     }
 } elseif ([string]::IsNullOrWhiteSpace($AssemblyNames)) {
     throw "AssemblyNames must be non-empty for TestMode '$TestMode'."
@@ -8125,6 +8334,7 @@ $testPlatform = switch ($TestMode) {
     'playmode' { 'PlayMode' }
     'standalone' { 'StandaloneWindows64' }
     'shipping' { '' }
+    'webgl' { '' }
 }
 
 $categoryArgs = @()
@@ -9100,6 +9310,61 @@ try {
             }
             Write-CiNotice "Standalone same-player evidence captured $StandalonePlayerRunCount validated launches with an unchanged player directory manifest."
         }
+    } elseif ($isWebGlSmoke) {
+        # WEBGL SMOKE BUILD. This lane compiles the package for the WebGL target
+        # and builds a player; it deliberately does not run browser tests. The
+        # builder writes a report before checking the result, and the verifier
+        # below checks the complete output inventory.
+        $webGlBuildPath = [System.IO.Path]::Combine($ProjectPath, 'Build', 'WebGL')
+        if (Test-Path -LiteralPath $webGlBuildPath -PathType Container) {
+            Remove-Item -LiteralPath $webGlBuildPath -Recurse -Force
+        }
+        $webGlReportPath = Join-Path $ArtifactsPath 'webgl-build.json'
+        $webGlVerificationPath = Join-Path $ArtifactsPath 'webgl-build-verification.json'
+        $webGlLogPath = Join-Path $ArtifactsPath 'webgl.log'
+        # A failed or killed rerun must not satisfy verification with a report
+        # or verification receipt from the previous invocation.
+        foreach ($stalePath in @($webGlReportPath, $webGlVerificationPath)) {
+            if (Test-Path -LiteralPath $stalePath -PathType Leaf) {
+                Remove-Item -LiteralPath $stalePath -Force
+            }
+        }
+        $env:DXM_WEBGL_BUILD_PATH = $webGlBuildPath
+        $env:DXM_WEBGL_BUILD_REPORT_PATH = $webGlReportPath
+        try {
+            $webGlExit = Invoke-UnityEditor `
+                -EditorPath $UnityEditorPath `
+                -Arguments (@(
+                    '-quit', '-batchmode', '-nographics', '-projectPath', $ProjectPath,
+                    '-buildTarget', 'WebGL',
+                    '-executeMethod', 'DxmWebGlBuilder.Build',
+                    '-logFile', '-'
+                ) + $acceleratorArgs) `
+                -Label "Build Unity $UnityVersion WebGL smoke player" `
+                -TimeoutSeconds (Get-StandaloneBuildTimeoutSeconds) `
+                -LogPath $webGlLogPath
+        } finally {
+            Remove-Item -LiteralPath Env:\DXM_WEBGL_BUILD_PATH -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath Env:\DXM_WEBGL_BUILD_REPORT_PATH -ErrorAction SilentlyContinue
+        }
+        $webGlProblem = Test-WebGlBuildReport `
+            -ReportPath $webGlReportPath `
+            -BuildPath $webGlBuildPath `
+            -UnityVersion $UnityVersion `
+            -VerificationPath $webGlVerificationPath
+        if (-not [string]::IsNullOrWhiteSpace($webGlProblem)) {
+            Write-UnityRunFailureDiagnostics `
+                -Project $ProjectPath `
+                -LogPath $webGlLogPath `
+                -CscLabel 'WebGL smoke build' `
+                -DiagnosticsLabel "Unity $UnityVersion WebGL build"
+            throw "WebGL smoke build failed ($webGlProblem; Unity exit code $webGlExit / $(Get-NativeExitCodeDescription -ExitCode $webGlExit))."
+        }
+        if ($webGlExit -ne 0) {
+            Write-UnityBenignExitWarning -Label "Build Unity $UnityVersion WebGL smoke player" -ExitCode $webGlExit
+        }
+        $webGlVerification = Get-Content -LiteralPath $webGlVerificationPath -Raw | ConvertFrom-Json
+        Write-CiNotice "WebGL smoke build passed for Unity $UnityVersion with $($webGlVerification.actualFileCount) output files."
     } else {
         # Finish package-owned compiler inputs in a separate process. A delayed
         # csc.rsp import during tests can invalidate deferred Burst requests.
@@ -9211,6 +9476,8 @@ try {
         'DXM_POSTBUILD_CONFIG_PROFILE_PATH',
         'DXM_BUILD_OPTIONS_PROFILE_PATH',
         'DXM_PLAYER_BUILD_PATH',
+        'DXM_WEBGL_BUILD_PATH',
+        'DXM_WEBGL_BUILD_REPORT_PATH',
         'DXM_SHIPPING_BUILD_MARKER_PATH',
         'DXM_SHIPPING_ASSEMBLY_EVIDENCE_PATH',
         'DXM_SHIPPING_BUILD_REPORT_PATH',

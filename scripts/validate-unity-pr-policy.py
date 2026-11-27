@@ -2686,8 +2686,12 @@ def validate_grouped_unity_correctness() -> None:
         ),
         (
             "shipping runs on push",
-            "github.event_name == 'workflow_dispatch'",
-            "github.event_name == 'push'",
+            "            github.event_name == 'workflow_dispatch' &&\n"
+            "            inputs.shipping_fidelity &&\n"
+            "            (matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1')",
+            "            github.event_name == 'push' &&\n"
+            "            inputs.shipping_fidelity &&\n"
+            "            (matrix.unity-version == '2021.3.45f1' || matrix.unity-version == '6000.5.2f1')",
         ),
         ("manual shipping ignores opt-in", "&& inputs.shipping_fidelity", "&& true"),
         (
@@ -2924,8 +2928,10 @@ def validate_grouped_unity_correctness() -> None:
         and "if-no-files-found: error" in native_upload,
         "shipping native payload must remain manual, isolated, and fail when absent",
     )
+    direct_runner_invocations = job.count("./scripts/unity/run-ci-tests.ps1")
     require(
-        job.count("-LicenseReturnOwner Central") == 3,
+        direct_runner_invocations == 4
+        and job.count("-LicenseReturnOwner Central") == direct_runner_invocations,
         "each directly invoked grouped test mode needs central cleanup",
     )
 
@@ -2935,6 +2941,8 @@ def validate_grouped_unity_correctness() -> None:
         and "Empty -eq 'true' -and $mode.Run -ne 'skipped'" in gate
         and "$env:SHIPPING_REQUIRED -eq 'true'" in gate
         and "$env:SHIPPING_RUN -ne 'success'" in gate
+        and "$env:WEBGL_REQUIRED -eq 'true'" in gate
+        and "$env:WEBGL_RUN -ne 'success'" in gate
         and 'throw "Unity mode failures:' in gate,
         "grouped mode gate must fail closed on run, skip, and verification outcomes",
     )
@@ -2944,6 +2952,7 @@ def validate_grouped_unity_correctness() -> None:
             "PLAY_COMPUTE": "success", "PLAY_EMPTY": "false", "PLAY_RUN": "success", "PLAY_VERIFY": "success",
             "STANDALONE_COMPUTE": "success", "STANDALONE_EMPTY": "false", "STANDALONE_RUN": "success", "STANDALONE_VERIFY": "success",
             "SHIPPING_REQUIRED": "true", "SHIPPING_RUN": "success",
+            "WEBGL_REQUIRED": "true", "WEBGL_RUN": "success",
         }
         cases = (
             ("all modes pass", {}, 0),
@@ -2957,6 +2966,11 @@ def validate_grouped_unity_correctness() -> None:
             ("required shipping outcome missing", {"SHIPPING_RUN": ""}, 1),
             ("non-target shipping skips", {"SHIPPING_REQUIRED": "false", "SHIPPING_RUN": "skipped"}, 0),
             ("non-target shipping runs", {"SHIPPING_REQUIRED": "false"}, 1),
+            ("required WebGL fails", {"WEBGL_RUN": "failure"}, 1),
+            ("required WebGL skips", {"WEBGL_RUN": "skipped"}, 1),
+            ("required WebGL outcome missing", {"WEBGL_RUN": ""}, 1),
+            ("non-target WebGL skips", {"WEBGL_REQUIRED": "false", "WEBGL_RUN": "skipped"}, 0),
+            ("non-target WebGL runs", {"WEBGL_REQUIRED": "false"}, 1),
         )
         for name, mutation, expected in cases:
             environment = os.environ.copy()

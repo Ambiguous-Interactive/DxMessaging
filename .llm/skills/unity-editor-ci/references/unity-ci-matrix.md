@@ -23,12 +23,12 @@ remain an explicit manual qualification input.
 
 `unity-tests.yml` (active; direct Unity on self-hosted Windows; editor-grouped matrix):
 
-| Matrix axis     | Values                                                    |
-| --------------- | --------------------------------------------------------- |
-| `unity-version` | `2021.3.45f1`, `2022.3.45f1`, `6000.3.16f1`, `6000.5.2f1` |
+| Matrix axis     | Values                                                                  |
+| --------------- | ----------------------------------------------------------------------- |
+| `unity-version` | `2021.3.45f1`, `2022.3.45f1`, `6000.3.16f1`, `6000.5.2f1`, `6000.6.0f1` |
 
-The literal matrix lists four versions. Its conditional exclusions select only the newest
-version on PRs; a dispatch selects all four. Each selected job runs three independent test modes. `editmode`/`playmode` run in-editor
+The literal matrix lists five versions. Its conditional exclusions select only the newest
+version on PRs; a dispatch selects all five. Each selected job runs three independent test modes. `editmode`/`playmode` run in-editor
 on Mono; `standalone` builds and runs a `StandaloneWindows64` IL2CPP test player.
 When `shipping_fidelity` is explicitly selected on a dispatch, the oldest and current
 endpoint jobs also build Minimal, Low, Medium, and High IL2CPP shipping-fidelity players. Each level
@@ -41,8 +41,14 @@ the shipping artifact root and prints a build-time, player-size, and cold-start
 table before it raises the aggregate failure. A cell that passed its shipping
 proof but wrote unusable evidence is listed under `unreadableEvidenceCells`, not
 `failedCells`, so a malformed diagnostic file never reads as a stripping
-regression. Workflow cancellation or the 150-minute step timeout still aborts
-the group. The direct runner generates a package host project under
+regression. When `webgl_fidelity` is selected on a dispatch, the 2021.3, 2022.3
+and 6000.5 legs also build one WebGL smoke player from the generated project.
+A `Full` module probe runs before the lock, and the build uses the same license
+activation and cleanup chain. 6000.3 and 6000.6 are excluded until the runner
+audit confirms WebGL support there. The lane compiles the package and samples and
+verifies the player inventory; it does not execute browser tests. Workflow
+cancellation, the 60-minute WebGL step timeout, or the 150-minute shipping-group timeout still
+aborts the group. The direct runner generates a package host project under
 `$RUNNER_WORKSPACE/dxm-u/t/<version>-<mode>-<source-set-key>/`, imports the repo package with a
 `file:` dependency, and configures IL2CPP before either player build. Test hosts
 set `testables`; the shipping host omits test packages and `testables`. Dispatch
@@ -110,7 +116,7 @@ With both controls, a run consumes at most one seat while another repository can
 job timeout-minutes >= sum(all capped steps through cleanup gate) + 60
 ```
 
-Editor validation is capped at 10 minutes. The acquire input `timeout-minutes: "300"` is the internal lock-poll budget. Its enclosing step has `timeout-minutes: 305`, so the action can finish and report a timeout before GitHub terminates the step. Grouped correctness test modes use 90/90/150-minute caps, and the endpoint-only shipping group uses 150 minutes. Return/classify/release/gate use 5/2/5/2 minutes. `unity-tests.yml` uses `timeout-minutes: 1050`; other licensed jobs retain `timeout-minutes: 900`. `scripts/validate-unity-pr-policy.py` sums every enforced step cap through the cleanup gate and requires at least 60 minutes of remaining job time.
+Editor validation is capped at 10 minutes. The acquire input `timeout-minutes: "300"` is the internal lock-poll budget. Its enclosing step has `timeout-minutes: 305`, so the action can finish and report a timeout before GitHub terminates the step. Grouped correctness test modes use 90/90/150-minute caps, the optional WebGL smoke build uses 60 minutes, and the endpoint-only shipping group uses 150 minutes. Return/classify/release/gate use 5/2/5/2 minutes. `unity-tests.yml` uses `timeout-minutes: 1140`; other licensed jobs retain `timeout-minutes: 900`. `scripts/validate-unity-pr-policy.py` sums every enforced step cap through the cleanup gate and requires at least 60 minutes of remaining job time.
 
 The step-level caps protect the in-use seat from a hung editor or ancillary action. They must remain strictly below the job timeout so the step fails first and the cleanup chain still runs. This matters because `stuck-job-watchdog.yml` ignores any `in_progress` job; without step caps, a wedged action can squat the seat until the whole job is cancelled.
 

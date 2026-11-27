@@ -100,7 +100,7 @@ jobs:
         # .github/unity-versions.json by validate-unity-versions.js and remains
         # statically attestable by the organization lock analyzer.
         unity-version:
-          - 6000.5.2f1
+          - 6000.6.0f1
         # One published scope: the Standalone IL2CPP Release player that shipped
         # games run. The stripped player cannot measure GC.Alloc, so the renderer
         # omits allocation columns instead of adding a second Mono benchmark leg.
@@ -1153,7 +1153,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      LATEST_VERSION: 6000.5.2f1
+      LATEST_VERSION: 6000.6.0f1
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       MEASURED_SHA: ${{ github.sha }}
       PERF_BASELINE: .artifacts/perf-reference.csv
@@ -1304,7 +1304,7 @@ jobs:
     permissions:
       contents: read
     env:
-      LATEST_VERSION: 6000.5.2f1
+      LATEST_VERSION: 6000.6.0f1
       PERF_DOC: docs/architecture/performance.md
       # Commit the measured baseline and execution profile alongside the doc.
       # No push trigger exists, so this publication cannot restart benchmarks.

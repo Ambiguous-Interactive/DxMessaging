@@ -53,9 +53,13 @@ manual shipping project paths keep their separate cache scopes.
   Documentation-only PRs retain the reviewed `unity-docs-gate.yml` companion; both producers
   report the existing `Unity CI Success` context. The classifier validates complete API
   listings and both rename endpoints before declaring a documentation-only change.
-- Keep all four version literals in the matrix. Conditional `exclude` entries remove the
-  oldest three on PRs without introducing dynamic lock-holder identities. A version bump
+- Keep all five version literals in the matrix. Conditional `exclude` entries remove the
+  oldest four on PRs without introducing dynamic lock-holder identities. A version bump
   must update these exclusions as well as the literal axis.
+- An opt-in `webgl_fidelity` dispatch also builds one WebGL smoke player on 2021.3, 2022.3
+  and 6000.5, the editors whose WebGL modules the runner audit confirms. 6000.3 and 6000.6
+  are excluded until their modules are verified. This is a build/compatibility lane, not
+  browser test execution.
 - `nightly-validation.yml` runs on hosted infrastructure and dispatches correctness at
   01:00 UTC and performance at 03:00 UTC. It rejects stale scheduled revisions, skips
   active or successful dispatches for the same revision, and fails on API or dispatch errors.
@@ -86,8 +90,9 @@ manual shipping project paths keep their separate cache scopes.
   timeout. Editor validation is capped at `10`, and the acquire step cap (`305`) exceeds its
   internal wait (`300`). Grouped correctness invocations use `90`/`90`/`150` caps, and the
   endpoint-only shipping group uses `150`. Cleanup uses `5`/`2`/`5`/`2` for
-  return/classify/release/gate. `unity-tests.yml` uses a `1050`-minute job cap. Other licensed
-  jobs retain their `900`-minute cap. Each cap must retain at least 60 minutes beyond the sum
+  return/classify/release/gate. `unity-tests.yml` uses a `1140`-minute job cap because the
+  opt-in WebGL smoke build adds a 60-minute step. Other licensed jobs retain their
+  `900`-minute cap. Each cap must retain at least 60 minutes beyond the sum
   of its enforced step caps.
 - Editors and modules are installed manually by a runner administrator under
   `RUNNER_TOOL_CACHE/u6-v3`. Workflows MUST NOT install, repair, uninstall, or quarantine
