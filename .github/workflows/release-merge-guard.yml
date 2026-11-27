@@ -1,0 +1,275 @@
+name: Release Merge Guard
+
+# Merge-time gate for a release PR. The release PR head is the final candidate
+# tree; a squash merge preserves it. This workflow runs from the trusted
+# default branch after the CI workflow completes, checks out and packs the
+# candidate without executing candidate scripts, and applies the same 4.0.0
+# hold as tagging and publishing. It posts a `Release Merge Guard` commit
+# status on the PR head. Add that context to the required status checks for
+# the default branch.
+on:
+  issues:
+    types:
+      - opened
+      - closed
+      - reopened
+      - edited
+      - milestoned
+      - demilestoned
+  issue_comment:
+    types:
+      - edited
+      - deleted
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: "Release PR number to re-check after closing #575"
+        required: true
+        type: string
+
+concurrency:
+  # Serialize guard checks with issue-change invalidation. A later issue
+  # event must run after an in-flight guard and leave the status pending.
+  group: release-merge-guard
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+  issues: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  invalidate:
+    name: Invalidate stale merge statuses
+    if: ${{ github.event_name == 'issues' || github.event_name == 'issue_comment' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Mark open release PRs pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "issue_comment" ]; then
+            issue="$(jq -r '.issue.number // empty' "${GITHUB_EVENT_PATH}")"
+            if [ "${issue}" != "575" ]; then
+              echo "Ignoring a comment change on issue ${issue}; only #575 carries the approval marker."
+              exit 0
+            fi
+          fi
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+            --jq '.[] | [.head.sha, .head.ref, .number] | @tsv' |
+            while IFS=$'\t' read -r sha ref number; do
+              [ -n "${sha}" ] || continue
+              is_release=false
+              if [[ "${ref}" == release/v* ]]; then
+                is_release=true
+              else
+                version="$(
+                  gh api "repos/${GITHUB_REPOSITORY}/contents/package.json?ref=${sha}" --jq '.content' 2>/dev/null |
+                    tr -d '\n' | base64 -d 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true
+                )"
+                if [ -z "${version}" ]; then
+                  # Fail closed: an unreadable candidate cannot keep a success
+                  # status that would allow a 4.0.0 merge without the guard.
+                  echo "::warning::Could not read package.json for open PR #${number}; invalidating its guard status."
+                  is_release=true
+                elif [ "${version}" = "4.0.0" ]; then
+                  is_release=true
+                fi
+              fi
+              if [ "${is_release}" != true ]; then
+                continue
+              fi
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${sha}" \
+                -f state=pending \
+                -f context="Release Merge Guard" \
+                -f description="Milestone changed; re-run the guard" >/dev/null
+              echo "Marked release PR #${number} (${sha}) pending after a milestone change."
+            done
+
+  guard:
+    name: Release Merge Guard
+    if: ${{ github.event_name != 'issues' && github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Resolve the candidate
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          INPUT_PR: ${{ inputs.pull_request }}
+        run: |
+          set -euo pipefail
+          number="${INPUT_PR:-${EVENT_PR:-}}"
+          if [ -z "${number}" ]; then
+            echo "No pull request associated with this run; nothing to guard."
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}")"
+          state="$(jq -r '.state // empty' <<< "${pr}")"
+          head_ref="$(jq -r '.head.ref // empty' <<< "${pr}")"
+          head_sha="$(jq -r '.head.sha // empty' <<< "${pr}")"
+          if [ "${state}" != "open" ] || [ -z "${head_sha}" ]; then
+            echo "Pull request ${number} is not open; nothing to guard."
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          # A release PR is normally release/vX.Y.Z, but a hand-built 4.0.0
+          # version bump must not dodge the guard by using another branch name.
+          # Fail closed if the candidate version cannot be read.
+          content="$(gh api "repos/${GITHUB_REPOSITORY}/contents/package.json?ref=${head_sha}" --jq '.content')"
+          package_version="$(printf '%s' "${content}" | tr -d '\n' | base64 -d | jq -r '.version // empty')"
+          if [ -z "${package_version}" ]; then
+            echo "::error::Could not read the candidate package.json version for pull request ${number}."
+            exit 1
+          fi
+          {
+            echo "skip=false"
+            echo "number=${number}"
+            echo "head-sha=${head_sha}"
+            if [[ "${head_ref}" == release/v* || "${package_version}" == "4.0.0" ]]; then
+              echo "release=true"
+            else
+              echo "release=false"
+            fi
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Publish the non-release success status
+        if: ${{ steps.candidate.outputs.skip != 'true' && steps.candidate.outputs.release != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.candidate.outputs.head-sha }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=success \
+            -f context="Release Merge Guard" \
+            -f description="Not a release PR" >/dev/null
+
+      - name: Checkout the trusted base
+        if: ${{ steps.candidate.outputs.release == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Checkout the release candidate
+        if: ${{ steps.candidate.outputs.release == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.candidate.outputs.head-sha }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Setup Node.js
+        if: ${{ steps.candidate.outputs.release == 'true' }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.13.1"
+
+      - name: Read the candidate identity
+        id: identity
+        if: ${{ steps.candidate.outputs.release == 'true' }}
+        run: |
+          set -euo pipefail
+          version="$(jq -r '.version // empty' candidate/package.json)"
+          tree="$(git -C candidate rev-parse 'HEAD^{tree}')"
+          if [ -z "${version}" ] || [ -z "${tree}" ]; then
+            echo "::error::Could not read the candidate version or tree."
+            exit 1
+          fi
+          {
+            echo "version=${version}"
+            echo "tree=${tree}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Pack the exact candidate without running its scripts
+        id: pack
+        if: ${{ steps.candidate.outputs.release == 'true' }}
+        env:
+          # Never let the candidate's .npmrc choose the shell used to launch
+          # npm. The pack runs from the trusted base checkout with the
+          # candidate supplied as a package spec.
+          npm_config_script_shell: /bin/bash
+          npm_config_ignore_scripts: "true"
+        run: |
+          set -euo pipefail
+          mkdir -p candidate/.artifacts/release-merge-guard
+          npx --yes --package=npm@12.2.2 npm pack --ignore-scripts \
+            --pack-destination "${GITHUB_WORKSPACE}/candidate/.artifacts/release-merge-guard" \
+            "${GITHUB_WORKSPACE}/candidate"
+          mapfile -t files < <(find candidate/.artifacts/release-merge-guard -maxdepth 1 -type f -name '*.tgz' | sort)
+          if [ "${#files[@]}" -ne 1 ] || [ ! -s "${files[0]}" ]; then
+            echo "::error::npm pack must produce exactly one nonempty tarball for the merge guard."
+            exit 1
+          fi
+          echo "package-file=${GITHUB_WORKSPACE}/${files[0]}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify the release hold for the merge
+        if: ${{ steps.candidate.outputs.release == 'true' }}
+        timeout-minutes: 5
+        uses: ./.github/actions/verify-release-hold
+        with:
+          phase: tag
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
+          version: ${{ steps.identity.outputs.version }}
+          tree: ${{ steps.identity.outputs.tree }}
+          package-file: ${{ steps.pack.outputs.package-file }}
+
+      - name: Recheck the milestone immediately before success
+        if: ${{ steps.candidate.outputs.release == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          open="$(gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/issues?state=open&milestone=1&per_page=100" |
+            jq '[.[][]? | select(has("pull_request") | not)] | length')"
+          if [ "${open}" -ne 0 ]; then
+            echo "::error::The milestone changed during the guard check; ${open} open issue(s) remain."
+            exit 1
+          fi
+          readiness="$(gh api "repos/${GITHUB_REPOSITORY}/issues/575" --jq '.state + ":" + (.state_reason // "")')"
+          if [ "${readiness}" != "closed:completed" ]; then
+            echo "::error::#575 is no longer closed as completed (${readiness}); the guard cannot post success."
+            exit 1
+          fi
+
+      - name: Publish the success status
+        if: ${{ success() && steps.candidate.outputs.release == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.candidate.outputs.head-sha }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=success \
+            -f context="Release Merge Guard" \
+            -f description="Release hold satisfied" >/dev/null
+
+      - name: Publish the failure status
+        if: ${{ failure() && steps.candidate.outputs.release == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.candidate.outputs.head-sha }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=failure \
+            -f context="Release Merge Guard" \
+            -f description="Release hold is not satisfied" >/dev/null

@@ -59,9 +59,12 @@ harvest Unity ID browser sessions.
 ## Release hold
 
 Do not submit to the Asset Store while any open issue in the 4.0.0 milestone remains, or while
-the #575 technical or human gates are incomplete. Close #575 last. The npm/GitHub Release and
-Asset Store submission share the same exact-candidate approval; do not submit a different
-candidate or destination.
+the #575 technical or human gates are incomplete. Follow the
+[release hold order](../ops/npm-release-publishing.md#400-release-hold-and-order):
+record wallstop's approval marker on #575, close #575 as completed last, then merge, tag and
+publish. The Asset Store submission shares the exact-candidate approval; its marker must include
+`"asset-store"` in the destinations. Do not submit a different candidate, tree, package or
+destination.
 
 ## What the release pipeline stages for you
 

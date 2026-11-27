@@ -59,22 +59,6 @@ jobs:
             exit 1
           fi
 
-      - name: Require zero open milestone issues
-        if: ${{ !inputs.dry-run }}
-        timeout-minutes: 5
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          count="$(gh api "repos/${GITHUB_REPOSITORY}/issues?state=open&milestone=1&per_page=100" --jq 'length')"
-          if [ "${count}" -ne 0 ]; then
-            message="Refusing to prepare a release PR: ${count} open 4.0.0 milestone issue(s) remain. "
-            message+="Close every milestone issue and complete #575's technical and human gates before preparing the release. "
-            message+="A dry-run is still allowed for planning."
-            echo "::error::${message}"
-            exit 1
-          fi
-
       - name: Check for the auto-commit GitHub App credentials
         id: check-autocommit-app
         # Mirrors the perf-numbers.yml runner-preflight probe. Dry-run works
@@ -151,6 +135,15 @@ jobs:
             args+=(--version "${EXPLICIT_VERSION}")
           fi
           node scripts/release/prepare-release.js "${args[@]}"
+
+      - name: Verify the release hold before preparing
+        if: ${{ !inputs.dry-run }}
+        timeout-minutes: 5
+        uses: ./.github/actions/verify-release-hold
+        with:
+          phase: prepare
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
 
       - name: Sync the version into generated files
         # The banner SVG and llms.txt both embed the package version, the

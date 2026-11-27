@@ -1,0 +1,52 @@
+name: Verify the 4.0.0 release hold
+description: >-
+  Fail closed unless the milestone is clear and #575 is closed as completed with
+  wallstop's exact-candidate approval marker for the version, source tree and
+  package bytes. Preparation is staging only and may run while #575 stays open.
+inputs:
+  phase:
+    description: "Workflow phase: prepare, tag, or publish."
+    required: true
+  repository:
+    description: "owner/repo whose milestone and readiness issue are checked."
+    required: true
+  token:
+    description: "Token with issues read permission."
+    required: true
+  version:
+    description: "Expected package version. Defaults to package.json."
+    required: false
+    default: ""
+  tree:
+    description: "Expected source tree SHA. Defaults to HEAD^{tree}."
+    required: false
+    default: ""
+  package-file:
+    description: "Packed npm tarball to bind to the approval. Required for publish."
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Verify the release hold
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        DXM_RELEASE_PHASE: ${{ inputs.phase }}
+        DXM_RELEASE_REPOSITORY: ${{ inputs.repository }}
+        DXM_RELEASE_VERSION: ${{ inputs.version }}
+        DXM_RELEASE_TREE: ${{ inputs.tree }}
+        DXM_RELEASE_PACKAGE_FILE: ${{ inputs.package-file }}
+      run: |
+        set -euo pipefail
+        args=(--phase "${DXM_RELEASE_PHASE}" --repository "${DXM_RELEASE_REPOSITORY}")
+        if [ -n "${DXM_RELEASE_VERSION}" ]; then
+          args+=(--version "${DXM_RELEASE_VERSION}")
+        fi
+        if [ -n "${DXM_RELEASE_TREE}" ]; then
+          args+=(--tree "${DXM_RELEASE_TREE}")
+        fi
+        if [ -n "${DXM_RELEASE_PACKAGE_FILE}" ]; then
+          args+=(--package-file "${DXM_RELEASE_PACKAGE_FILE}")
+        fi
+        python3 scripts/release/verify_release_hold.py "${args[@]}"
