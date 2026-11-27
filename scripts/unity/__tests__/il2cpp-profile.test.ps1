@@ -486,9 +486,16 @@ public static class DxmCompilerInputsFixture {
         $compilerPreparation -lt $sdkAdmissionCall -and $sdkAdmissionCall -lt $completionMarker
     )
     $sdkAdmissionMethod = $generatedSources[0].Substring($sdkAdmissionStart, $preparationStart - $sdkAdmissionStart)
+    $loadedAssembliesStart = $generatedSources[0].IndexOf('private static System.Reflection.Assembly[] GetLoadedAssembliesForEvidence()')
+    $loadedAssembliesEnd = $sdkAdmissionStart
+    Assert-That 'the generated configurator exposes the assembly evidence helper' (
+        $loadedAssembliesStart -ge 0 -and $loadedAssembliesEnd -gt $loadedAssembliesStart
+    )
+    $loadedAssembliesHelper = $generatedSources[0].Substring($loadedAssembliesStart, $loadedAssembliesEnd - $loadedAssembliesStart)
     Add-Type -TypeDefinition @"
 using System;
 public static class DxmNativeSdkAdmissionFixture {
+    $loadedAssembliesHelper
     $sdkAdmissionMethod
 }
 "@
@@ -555,7 +562,7 @@ namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch {
         )
         $missingMethodSource = @"
 using System;
-public static class DxmMissingAdmissionMethodFixture { $sdkAdmissionMethod }
+public static class DxmMissingAdmissionMethodFixture { $loadedAssembliesHelper $sdkAdmissionMethod }
 namespace DxMessaging.Tests.Runtime.NativeCollectionsResearch { public sealed class NativeSdkFloorAdmission {} }
 "@
         $missingMethodCommand = @'
