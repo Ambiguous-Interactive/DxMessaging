@@ -61,6 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduce source-generator execution allocations by retaining concrete generator-owned lists and
   materializing registrar sort keys once, and reduce package size by shipping only the optimized
   analyzer payload instead of its development sources ([#576](https://github.com/Ambiguous-Interactive/DxMessaging/issues/576), [#577](https://github.com/Ambiguous-Interactive/DxMessaging/issues/577)).
+- Reduce warmed sticky publication and latest-value lookup to a sparse indexed read instead of a
+  dictionary lookup, keeping the same retained-state lifetime and immediate release when the last
+  value is cleared ([#749](https://github.com/Ambiguous-Interactive/DxMessaging/issues/749)).
 - **BREAKING:** Fast handlers and post-processors now use readonly references; change callback
   parameters from `ref` to `in` and follow the [4.0 migration guide](https://ambiguous-interactive.github.io/DxMessaging/guides/migration-guide/#migrating-to-400) ([#486](https://github.com/Ambiguous-Interactive/DxMessaging/issues/486)).
 - Show `DXMSG006` through `DXMSG010` in MessageAwareComponent Inspector diagnostic titles so
