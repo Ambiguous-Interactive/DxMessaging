@@ -1316,6 +1316,7 @@ function New-ManifestJson {
         [Parameter(Mandatory = $true)][string]$Root,
         [switch]$IncludeComparisons,
         [switch]$IncludeIntegrations,
+        [switch]$IncludeNativeCollectionsResearch,
         [switch]$ShippingFidelity,
         [switch]$WebGlSmoke,
         [string]$RepoRoot
@@ -1382,6 +1383,15 @@ function New-ManifestJson {
         if ($IncludeComparisons) {
             foreach ($pkg in $comparisons.packages.PSObject.Properties) {
                 $dependencies[$pkg.Name] = $pkg.Value
+            }
+            if ($IncludeNativeCollectionsResearch) {
+                $nativeResearchPackages = $comparisons.PSObject.Properties['nativeResearchPackages']
+                if (-not $nativeResearchPackages) {
+                    throw "comparison-packages.json is missing nativeResearchPackages; cannot generate the native research manifest."
+                }
+                foreach ($pkg in $nativeResearchPackages.Value.PSObject.Properties) {
+                    $dependencies[$pkg.Name] = $pkg.Value
+                }
             }
             $builtInPackages = $comparisons.PSObject.Properties['unityBuiltInPackages']
             if (-not $builtInPackages) {
@@ -4321,7 +4331,7 @@ function Initialize-EphemeralProject {
             $shippingProjectInputRelativePaths += 'Assets/DxmShippingCardinalityTopology.cs'
         }
     }
-    New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -IncludeIntegrations:$includeIntegrations -ShippingFidelity:$isShippingFidelity -WebGlSmoke:($Mode -eq 'webgl') -RepoRoot $RepoRoot |
+    New-ManifestJson -Root $Root -IncludeComparisons:$IncludeComparisons -IncludeIntegrations:$includeIntegrations -IncludeNativeCollectionsResearch:$IncludeNativeCollectionsResearch -ShippingFidelity:$isShippingFidelity -WebGlSmoke:($Mode -eq 'webgl') -RepoRoot $RepoRoot |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'Packages', 'manifest.json')) -Encoding UTF8
     "m_EditorVersion: $Version`n" |
         Set-Content -LiteralPath ([System.IO.Path]::Combine($project, 'ProjectSettings', 'ProjectVersion.txt')) -Encoding UTF8
