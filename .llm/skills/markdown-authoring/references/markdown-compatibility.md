@@ -18,8 +18,10 @@ Using MkDocs-specific syntax breaks rendering in standard viewers, creating a po
 MkDocs and its Material theme provide powerful extensions like admonitions, tabs, and buttons. However, these extensions use non-standard syntax that renders as broken text in
 standard markdown viewers:
 
+<!-- prettier-ignore -->
 ```markdown
-!!! warning "Caution" This will not render correctly on GitHub.
+!!! warning "Caution"
+    This will not render correctly on GitHub.
 ```
 
 On GitHub, this displays as literal text: `!!! warning "Caution"` followed by an indented paragraph -- not as a styled warning box.

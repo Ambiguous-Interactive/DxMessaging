@@ -165,7 +165,9 @@ reached in practice.
 | `OnDestroy`               | Handlers will not be deregistered and the registration token will not be released, causing a memory leak. |
 | `RegisterMessageHandlers` | Registrations declared by a parent component may not be registered.                                       |
 
-!!! note `OnApplicationQuit` is intentionally **not** guarded. The base implementation is a documented no-op -- missing a base call there is harmless and the analyzer ignores it.
+<!-- prettier-ignore -->
+!!! note
+    `OnApplicationQuit` is intentionally **not** guarded. The base implementation is a documented no-op -- missing a base call there is harmless and the analyzer ignores it.
 
 ### Detection policy (good-faith textual match)
 
@@ -537,8 +539,10 @@ public sealed class FlashyComponent : MessageAwareComponent
 public sealed class LegacyAdapter : MessageAwareComponent { /* ... */ }
 ```
 
-!!! warning Suppressing the diagnostic does not change the runtime behaviour: if your override genuinely never reaches `base.Awake()`, the messaging system on that component will
-still be dead. The suppression only silences the analyzer.
+<!-- prettier-ignore -->
+!!! warning
+    Suppressing the diagnostic does not change the runtime behaviour: if your override genuinely never reaches `base.Awake()`, the messaging system on that component will
+    still be dead. The suppression only silences the analyzer.
 
 ---
 

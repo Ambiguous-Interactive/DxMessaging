@@ -66,10 +66,13 @@ MkDocs supports collapsible sections with `???` syntax.
 
 #### No Forbidden: MkDocs Collapsibles
 
+<!-- prettier-ignore -->
 ```markdown
-??? note "Click to expand" This content is hidden by default in MkDocs. It appears as broken syntax elsewhere.
+??? note "Click to expand"
+    This content is hidden by default in MkDocs. It appears as broken syntax elsewhere.
 
-???+ warning "Expanded by default" The plus makes it expanded initially.
+???+ warning "Expanded by default"
+    The plus makes it expanded initially.
 ```
 
 #### Yes Correct: Use Details/Summary HTML
@@ -101,13 +104,26 @@ MkDocs Material provides tabbed content with `===` syntax.
 
 #### No Forbidden: MkDocs Tabs
 
-```markdown
-=== "Python" `python     print("Hello")     `
+<!-- prettier-ignore -->
+````markdown
+=== "Python"
 
-=== "JavaScript" `javascript     console.log("Hello");     `
+    ```python
+    print("Hello")
+    ```
 
-=== "C#" `csharp     Console.WriteLine("Hello");     `
-```
+=== "JavaScript"
+
+    ```javascript
+    console.log("Hello");
+    ```
+
+=== "C#"
+
+    ```csharp
+    Console.WriteLine("Hello");
+    ```
+````
 
 #### Yes Correct: Use Headers
 
