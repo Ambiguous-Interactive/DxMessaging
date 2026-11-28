@@ -6,6 +6,7 @@ namespace DxMessaging.Tests.Editor.Contract
     using System.Reflection;
     using DxMessaging.Core;
     using DxMessaging.Core.Helper;
+    using DxMessaging.Core.MessageBus;
     using DxMessaging.Core.Messages;
     using NUnit.Framework;
 
@@ -161,6 +162,77 @@ namespace DxMessaging.Tests.Editor.Contract
             }
         }
 
+        /// <summary>Retained sticky state must use the shared sparse index and release its array.</summary>
+        /// <remarks>
+        /// The warmed sticky path stores and reads by the shared message-type index. A dictionary
+        /// keyed by <see cref="Type"/> here would silently restore the old lookup cost.
+        /// </remarks>
+        [Test]
+        public void StickyValuesUseTheSharedSparseIndexAndReleaseTheirArray()
+        {
+            FieldInfo holder = typeof(MessageBus).GetField(
+                "_stickyValues",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            );
+            Assert.That(holder, Is.Not.Null, "The sticky store field was renamed.");
+            MessageBus bus = new MessageBus();
+            Assert.That(holder.GetValue(bus), Is.Null, "An idle bus owns no sticky storage.");
+
+            StickyFirstMessage first = new StickyFirstMessage(17);
+            bus.EmitSticky(ref first);
+            object store = holder.GetValue(bus);
+            Assert.That(store, Is.Not.Null, "Publication creates the sparse store.");
+            FieldInfo values = store
+                .GetType()
+                .GetField("_values", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(values, Is.Not.Null, "The sticky store keeps a values array.");
+            Assert.That(
+                values.FieldType.IsArray,
+                Is.True,
+                "Sticky values must use sparse indexed storage, not a dictionary."
+            );
+            int firstIndex = MessageHelperIndexer<StickyFirstMessage>.SequentialId;
+            Array firstArray = (Array)values.GetValue(store);
+            Assert.That(
+                firstIndex,
+                Is.GreaterThanOrEqualTo(0),
+                "Publication assigns the shared id."
+            );
+            Assert.That(firstArray.Length, Is.GreaterThan(firstIndex));
+            Assert.That(
+                firstArray.GetValue(firstIndex),
+                Is.Not.Null,
+                "The published value occupies the shared type index."
+            );
+
+            StickySecondMessage second = new StickySecondMessage(23);
+            bus.EmitSticky(ref second);
+            Assert.That(bus.ClearLatest<StickyFirstMessage>(), Is.True);
+            Assert.That(
+                holder.GetValue(bus),
+                Is.Not.Null,
+                "Clearing one type keeps the store for the other."
+            );
+            Assert.That(bus.TryGetLatest(out StickySecondMessage retained), Is.True);
+            Assert.That(retained.Value, Is.EqualTo(23));
+
+            Assert.That(bus.ClearLatest<StickySecondMessage>(), Is.True);
+            Assert.That(
+                holder.GetValue(bus),
+                Is.Null,
+                "The last clear releases the array immediately without a sweep."
+            );
+
+            StickyThirdMessage third = new StickyThirdMessage(29);
+            bus.EmitSticky(ref third);
+            Assert.That(
+                bus.TryGetLatest(out StickyThirdMessage republished),
+                Is.True,
+                "A dropped store is recreated on the next publication."
+            );
+            Assert.That(republished.Value, Is.EqualTo(29));
+        }
+
         private sealed class Box
         {
             public Box() { }
@@ -186,6 +258,36 @@ namespace DxMessaging.Tests.Editor.Contract
         private readonly struct OverflowMessage : IUntargetedMessage { }
 
         private readonly struct UnassignedOverflowMessage : IUntargetedMessage { }
+
+        private readonly struct StickyFirstMessage : IUntargetedMessage<StickyFirstMessage>
+        {
+            internal StickyFirstMessage(int value)
+            {
+                Value = value;
+            }
+
+            internal int Value { get; }
+        }
+
+        private readonly struct StickySecondMessage : IUntargetedMessage<StickySecondMessage>
+        {
+            internal StickySecondMessage(int value)
+            {
+                Value = value;
+            }
+
+            internal int Value { get; }
+        }
+
+        private readonly struct StickyThirdMessage : IUntargetedMessage<StickyThirdMessage>
+        {
+            internal StickyThirdMessage(int value)
+            {
+                Value = value;
+            }
+
+            internal int Value { get; }
+        }
     }
 }
 #endif
