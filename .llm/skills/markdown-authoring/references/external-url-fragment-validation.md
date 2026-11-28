@@ -64,7 +64,8 @@ Different sites generate fragment IDs differently:
 ```markdown
 <!-- Good: Includes context in case fragment breaks -->
 
-See the [Markdown links syntax](https://www.markdownguide.org/basic-syntax/) section for details on inline and reference-style links.
+See the [Markdown links syntax](https://www.markdownguide.org/basic-syntax/)
+section for details on inline and reference-style links.
 
 <!-- Risky: Fragment-only reference with no context -->
 

@@ -44,8 +44,8 @@ Write entries that are:
 
 ### Added
 
-- New `UntargetedInterceptableMessage` base class for broadcast messages that support interception and cancellation
-  ([#142](https://github.com/Ambiguous-Interactive/DxMessaging/pull/142))
+- New `UntargetedInterceptableMessage` base class for broadcast messages that support
+  interception and cancellation ([#142](https://github.com/Ambiguous-Interactive/DxMessaging/pull/142))
 ```
 
 ### Example 2: Fixing a Bug in Message Routing
@@ -55,8 +55,8 @@ Write entries that are:
 
 ### Fixed
 
-- Messages are now correctly delivered to components on inactive GameObjects when using `IncludeInactive` delivery option
-  ([#156](https://github.com/Ambiguous-Interactive/DxMessaging/issues/156))
+- Messages are now correctly delivered to components on inactive GameObjects when
+  using `IncludeInactive` delivery option ([#156](https://github.com/Ambiguous-Interactive/DxMessaging/issues/156))
 ```
 
 ### Example 3: Deprecating an Old API
@@ -66,7 +66,8 @@ Write entries that are:
 
 ### Deprecated
 
-- `MessageBus.GlobalBus` is deprecated and will be removed in v3.0.0. Use `MessageBusProvider.Instance` instead for improved testability and lifecycle management
+- `MessageBus.GlobalBus` is deprecated and will be removed in v3.0.0.
+  Use `MessageBusProvider.Instance` instead for improved testability and lifecycle management
 ```
 
 ### Example 4: Breaking Change With Migration Notes
@@ -76,8 +77,9 @@ Write entries that are:
 
 ### Changed
 
-- **BREAKING**: `IMessageHandler.Handle` now returns `MessageResult` instead of `void` to support cancellation. Update handlers to return `MessageResult.Continue` for existing
-  behavior
+- **BREAKING**: `IMessageHandler.Handle` now returns `MessageResult` instead of `void`
+  to support cancellation. Update handlers to return `MessageResult.Continue` for
+  existing behavior
 
 ### Removed
 
@@ -173,7 +175,8 @@ make them eligible. The same holds for documentation-site layout and brand artwo
 ```markdown
 ### Changed
 
-- **BREAKING**: `IMessageHandler.Handle` now requires a return value. See Migration section for upgrade instructions
+- **BREAKING**: `IMessageHandler.Handle` now requires a return value.
+  See Migration section for upgrade instructions
 ```
 
 ### Bad: Not Linking Issues/PRs
@@ -191,7 +194,8 @@ make them eligible. The same holds for documentation-site layout and brand artwo
 ```markdown
 ### Fixed
 
-- Fixed message delivery order when using priority handlers ([#178](https://github.com/Ambiguous-Interactive/DxMessaging/issues/178))
+- Fixed message delivery order when using priority handlers
+  ([#178](https://github.com/Ambiguous-Interactive/DxMessaging/issues/178))
 ```
 
 ### Bad: Updating Changelog After Release
@@ -213,7 +217,8 @@ make them eligible. The same holds for documentation-site layout and brand artwo
 
 ### Fixed
 
-- Fixed message delivery order when using priority handlers ([#178](https://github.com/Ambiguous-Interactive/DxMessaging/issues/178))
+- Fixed message delivery order when using priority handlers
+  ([#178](https://github.com/Ambiguous-Interactive/DxMessaging/issues/178))
 ```
 
 ## See Also

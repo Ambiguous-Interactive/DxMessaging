@@ -101,7 +101,8 @@ Unity documentation frequently reorganizes. Use current URL patterns:
 ```markdown
 <!-- Current Unity documentation format -->
 
-https://docs.unity3d.com/Manual/PageName.html https://docs.unity3d.com/ScriptReference/ClassName.html
+https://docs.unity3d.com/Manual/PageName.html
+https://docs.unity3d.com/ScriptReference/ClassName.html
 
 <!-- Versioned documentation (more stable) -->
 

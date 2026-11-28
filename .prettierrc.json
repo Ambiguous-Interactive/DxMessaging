@@ -8,6 +8,7 @@
   "trailingComma": "none",
   "bracketSpacing": true,
   "proseWrap": "always",
+  "embeddedLanguageFormatting": "off",
   "endOfLine": "lf",
   "overrides": [
     {
