@@ -12,16 +12,22 @@ Admonitions (callout boxes) are a common MkDocs extension that use `!!!` syntax.
 
 #### No Forbidden: MkDocs Admonitions
 
+<!-- prettier-ignore -->
 ```markdown
-!!! note "Important" This is a note admonition that only renders in MkDocs.
+!!! note "Important"
+    This is a note admonition that only renders in MkDocs.
 
-!!! warning "Caution" This warning will appear as broken text on GitHub.
+!!! warning "Caution"
+    This warning will appear as broken text on GitHub.
 
-!!! danger "Critical" This danger callout is MkDocs-specific.
+!!! danger "Critical"
+    This danger callout is MkDocs-specific.
 
-!!! tip "Pro Tip" This tip syntax is not standard markdown.
+!!! tip "Pro Tip"
+    This tip syntax is not standard markdown.
 
-!!! info Admonitions without titles are also forbidden.
+!!! info
+    Admonitions without titles are also forbidden.
 ```
 
 #### Yes Correct: Blockquotes with Emoji
