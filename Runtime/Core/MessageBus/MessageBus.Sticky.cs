@@ -73,14 +73,16 @@ namespace DxMessaging.Core.MessageBus
                     {
                         throw new InvalidOperationException("The message type index exceeds the store's supported capacity.");
                     }
-                    // Publish the shared index only after growth succeeds, so a rejected
-                    // capacity cannot consume a type ID.
+                    /*
+                        Publish the shared index only after growth succeeds, so a rejected
+                        capacity cannot consume a type ID.
+                    */
                     EnsureIndex(index);
                     values = _values;
                     MessageHelperIndexer<TMessage>.SequentialId = index;
                     MessageHelperIndexer.TotalMessages = index + 1;
                 }
-                else if (index >= values.Length)
+                else if (values.Length <= index)
                 {
                     EnsureIndex(index);
                     values = _values;

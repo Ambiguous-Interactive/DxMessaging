@@ -29,21 +29,9 @@
     parser, aggregator, IL inspector, and scanner core can be unit-tested without Unity APIs.
   -->
   <ItemGroup>
-    <Compile
-      Include="..\..\Editor\Analyzers\BaseCallLogMessageParser.cs"
-      Link="LinkedFromEditor\BaseCallLogMessageParser.cs"
-    />
-    <Compile
-      Include="..\..\Editor\Analyzers\BaseCallReportAggregator.cs"
-      Link="LinkedFromEditor\BaseCallReportAggregator.cs"
-    />
-    <Compile
-      Include="..\..\Editor\Analyzers\BaseCallIlInspector.cs"
-      Link="LinkedFromEditor\BaseCallIlInspector.cs"
-    />
-    <Compile
-      Include="..\..\Editor\Analyzers\BaseCallTypeScannerCore.cs"
-      Link="LinkedFromEditor\BaseCallTypeScannerCore.cs"
-    />
+    <Compile Include="..\..\Editor\Analyzers\BaseCallLogMessageParser.cs" Link="LinkedFromEditor\BaseCallLogMessageParser.cs" />
+    <Compile Include="..\..\Editor\Analyzers\BaseCallReportAggregator.cs" Link="LinkedFromEditor\BaseCallReportAggregator.cs" />
+    <Compile Include="..\..\Editor\Analyzers\BaseCallIlInspector.cs" Link="LinkedFromEditor\BaseCallIlInspector.cs" />
+    <Compile Include="..\..\Editor\Analyzers\BaseCallTypeScannerCore.cs" Link="LinkedFromEditor\BaseCallTypeScannerCore.cs" />
   </ItemGroup>
 </Project>

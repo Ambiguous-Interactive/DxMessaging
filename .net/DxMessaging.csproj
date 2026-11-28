@@ -10,10 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../.net-attributes/DxMessaging.Attributes.csproj" />
-    <Compile
-      Include="../Runtime/**/*.cs"
-      Exclude="../Runtime/Testing/**/*.cs;../Runtime/Attributes/**/*.cs"
-    />
+    <Compile Include="../Runtime/**/*.cs" Exclude="../Runtime/Testing/**/*.cs;../Runtime/Attributes/**/*.cs" />
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
     <Analyzer Include="../Runtime/Analyzers/*.dll" />
   </ItemGroup>

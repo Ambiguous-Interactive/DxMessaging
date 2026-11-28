@@ -5,50 +5,24 @@
     <AssemblyName>WallstopStudios.DxMessaging.Tests.Runtime.AttributesOnly</AssemblyName>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <IsPackable>false</IsPackable>
-    <AttributesPackageVersion Condition="'$(AttributesPackageVersion)' == ''"
-      >0.0.0-local</AttributesPackageVersion>
+    <AttributesPackageVersion Condition="'$(AttributesPackageVersion)' == ''">0.0.0-local</AttributesPackageVersion>
     <RestoreAdditionalProjectSources>$(MSBuildThisFileDirectory)../.artifacts/nuget</RestoreAdditionalProjectSources>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)generated</CompilerGeneratedFilesOutputPath>
   </PropertyGroup>
   <ItemGroup>
-    <Compile
-      Include="../Tests/Runtime/AttributesOnly/StandaloneAttributeRulesTests.cs"
-      Link="StandaloneAttributeRulesTests.cs"
-    />
-    <Compile
-      Include="../Tests/Runtime/Core/GeneratedEnumDefaultTests.cs"
-      Link="GeneratedEnumDefaultTests.cs"
-    />
-    <Compile
-      Include="../Tests/Runtime/Core/GeneratedNullableEnumDefaultTests.cs"
-      Link="GeneratedNullableEnumDefaultTests.cs"
-    />
-    <Compile
-      Include="../Tests/Runtime/Core/GeneratedFloatingDefaultTests.cs"
-      Link="GeneratedFloatingDefaultTests.cs"
-    />
-    <Compile
-      Include="../Tests/Runtime/Core/GeneratedIntegralDefaultTests.cs"
-      Link="GeneratedIntegralDefaultTests.cs"
-    />
-    <Compile
-      Include="../Tests/Runtime/Core/GeneratedNameofDefaultsTests.cs"
-      Link="GeneratedNameofDefaultsTests.cs"
-    />
-    <PackageReference
-      Include="WallstopStudios.DxMessaging.Attributes"
-      Version="$(AttributesPackageVersion)"
-    />
+    <Compile Include="../Tests/Runtime/AttributesOnly/StandaloneAttributeRulesTests.cs" Link="StandaloneAttributeRulesTests.cs" />
+    <Compile Include="../Tests/Runtime/Core/GeneratedEnumDefaultTests.cs" Link="GeneratedEnumDefaultTests.cs" />
+    <Compile Include="../Tests/Runtime/Core/GeneratedNullableEnumDefaultTests.cs" Link="GeneratedNullableEnumDefaultTests.cs" />
+    <Compile Include="../Tests/Runtime/Core/GeneratedFloatingDefaultTests.cs" Link="GeneratedFloatingDefaultTests.cs" />
+    <Compile Include="../Tests/Runtime/Core/GeneratedIntegralDefaultTests.cs" Link="GeneratedIntegralDefaultTests.cs" />
+    <Compile Include="../Tests/Runtime/Core/GeneratedNameofDefaultsTests.cs" Link="GeneratedNameofDefaultsTests.cs" />
+    <PackageReference Include="WallstopStudios.DxMessaging.Attributes" Version="$(AttributesPackageVersion)" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageReference Include="NUnit" Version="5.0.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.1" />
   </ItemGroup>
-  <Target
-    Name="RemoveDxGeneratorsForAbsenceControl"
-    BeforeTargets="CoreCompile"
-    Condition="'$(DisableDxGenerators)' == 'true'"
-  >
+  <Target Name="RemoveDxGeneratorsForAbsenceControl" BeforeTargets="CoreCompile" Condition="'$(DisableDxGenerators)' == 'true'">
     <ItemGroup>
       <DxCompilerInputs
         Include="@(Analyzer)"
@@ -56,10 +30,7 @@
       />
       <Analyzer Remove="@(DxCompilerInputs)" />
     </ItemGroup>
-    <Error
-      Condition="'@(DxCompilerInputs->Count())' != '2'"
-      Text="The absence control must remove exactly the two packaged DxMessaging compiler inputs."
-    />
+    <Error Condition="'@(DxCompilerInputs->Count())' != '2'" Text="The absence control must remove exactly the two packaged DxMessaging compiler inputs." />
     <Message Importance="high" Text="Removed DxMessaging compiler inputs: @(DxCompilerInputs)" />
   </Target>
 </Project>

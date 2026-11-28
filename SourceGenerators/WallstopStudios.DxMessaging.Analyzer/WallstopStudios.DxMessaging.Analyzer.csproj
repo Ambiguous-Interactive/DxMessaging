@@ -62,11 +62,7 @@
        analyzer to the DxMessaging runtime assembly and every assembly that
        references it (including the predefined Assembly-CSharp), so nothing is
        copied into the consumer's project. -->
-  <Target
-    Name="PostBuildCopyAnalyzers"
-    AfterTargets="Build"
-    Condition="'$(CopyAnalyzerPayload)' == 'true'"
-  >
+  <Target Name="PostBuildCopyAnalyzers" AfterTargets="Build" Condition="'$(CopyAnalyzerPayload)' == 'true'">
     <PropertyGroup>
       <!-- Repo/package root: two levels up from this project directory -->
       <PackageRootDir>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../'))</PackageRootDir>
@@ -75,14 +71,7 @@
     <ItemGroup>
       <AnalyzerOutput Include="$(AnalyzerDll)" />
     </ItemGroup>
-    <MakeDir
-      Directories="$(AnalyzerPayloadOutputDir)"
-      Condition="!Exists('$(AnalyzerPayloadOutputDir)')"
-    />
-    <Copy
-      SourceFiles="@(AnalyzerOutput)"
-      DestinationFolder="$(AnalyzerPayloadOutputDir)"
-      SkipUnchangedFiles="true"
-    />
+    <MakeDir Directories="$(AnalyzerPayloadOutputDir)" Condition="!Exists('$(AnalyzerPayloadOutputDir)')" />
+    <Copy SourceFiles="@(AnalyzerOutput)" DestinationFolder="$(AnalyzerPayloadOutputDir)" SkipUnchangedFiles="true" />
   </Target>
 </Project>
