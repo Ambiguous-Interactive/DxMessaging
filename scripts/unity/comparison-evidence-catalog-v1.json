@@ -83,7 +83,7 @@
     "pins": {
       "origin": "repository",
       "path": ".github/comparison-packages.json",
-      "sha256": "a64838f28d07aba685aa70ff69033cfb5a02cb01f7e17b6fe58bbc837a04fb18"
+      "sha256": "314c16875cbe6737d99201deae9d55d79f94d35758b17c2952eb4c4005537285"
     },
     "untargetedPayload": {
       "origin": "repository",

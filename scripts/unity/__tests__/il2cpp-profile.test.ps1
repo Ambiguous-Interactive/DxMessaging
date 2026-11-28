@@ -886,6 +886,14 @@ public static class DxmRuntimeSdkMetadataFixture {
             )
             $callback = Get-Content -LiteralPath (Join-Path $nativeArgs.ProjectPath 'Assets/DxmCiStandaloneTestCallback/DxmCiStandaloneTestCallback.cs') -Raw
             Assert-That 'the actual native callback embeds its distinct qualification identity' ($callback.Contains($nativeProfile.profileId))
+            $nativeManifest = Get-Content -LiteralPath (Join-Path $nativeResearchProject 'Packages/manifest.json') -Raw | ConvertFrom-Json
+            $nativeDependencies = @($nativeManifest.dependencies.PSObject.Properties.Name)
+            Assert-That 'native research generation installs the exact legacy package floor' (
+                $nativeDependencies -ccontains 'com.unity.jobs' -and
+                $nativeDependencies -ccontains 'com.unity.collections' -and
+                $nativeDependencies -ccontains 'com.unity.burst' -and
+                $nativeDependencies -ccontains 'com.unity.mathematics'
+            )
         } else {
             Assert-That "the actual runner rejects qualification scope drift $variant" (
                 $LASTEXITCODE -ne 0 -and ($generationOutput | Out-String).Contains('complete old-floor scope')
@@ -908,6 +916,18 @@ public static class DxmRuntimeSdkMetadataFixture {
     $comparisonResponse = Get-Content -LiteralPath (Join-Path $nativeResearchProject 'Assets/csc.rsp') -Raw
     Assert-That 'ordinary comparisons clear a prior research opt-in even when sharing its packages' (
         -not $comparisonResponse.Contains($nativeResearchSymbol)
+    )
+    $comparisonManifest = Get-Content -LiteralPath (Join-Path $nativeResearchProject 'Packages/manifest.json') -Raw | ConvertFrom-Json
+    $comparisonDependencies = @($comparisonManifest.dependencies.PSObject.Properties.Name)
+    Assert-That 'ordinary comparisons omit the legacy native research packages' (
+        -not ($comparisonDependencies -ccontains 'com.unity.jobs') -and
+        -not ($comparisonDependencies -ccontains 'com.unity.collections') -and
+        -not ($comparisonDependencies -ccontains 'com.unity.burst') -and
+        -not ($comparisonDependencies -ccontains 'com.unity.mathematics')
+    )
+    Assert-That 'ordinary comparisons keep the benchmark package pins' (
+        $comparisonDependencies -ccontains 'com.cysharp.messagepipe' -and
+        $comparisonDependencies -ccontains 'com.unity-atoms.unity-atoms-core'
     )
 
     $badProfilePath = Join-Path $fixtureRoot 'bad-profile.json'
