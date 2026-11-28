@@ -1,8 +1,7 @@
 <Project>
   <PropertyGroup>
     <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\</SolutionDir>
-    <ArtifactsRoot Condition="'$(ArtifactsRoot)' == ''"
-      >$(SolutionDir).artifacts/$(MSBuildProjectName)/</ArtifactsRoot>
+    <ArtifactsRoot Condition="'$(ArtifactsRoot)' == ''">$(SolutionDir).artifacts/$(MSBuildProjectName)/</ArtifactsRoot>
     <BaseIntermediateOutputPath>$(ArtifactsRoot)obj/</BaseIntermediateOutputPath>
     <IntermediateOutputPath>$(BaseIntermediateOutputPath)$(Configuration)/</IntermediateOutputPath>
     <OutputPath>$(ArtifactsRoot)bin/$(Configuration)/</OutputPath>
